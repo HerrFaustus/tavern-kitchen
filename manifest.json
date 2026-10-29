@@ -6,6 +6,6 @@
   "js": "dist/host/plugin.js",
   "css": "style.css",
   "author": "酒馆后厨 · Based on LittleWhiteBox by biex",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "generate_interceptor": "tavernKitchenGenerateInterceptor"
 }

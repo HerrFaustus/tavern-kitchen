@@ -68,6 +68,19 @@ test('opening an application does not statically start the host or another appli
     }
 });
 
+test('the public entry mounts chrome without statically loading the feature runtime or host adapters', () => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(root, 'dist/manifest.json')));
+    const audit = JSON.parse(fs.readFileSync(path.join(root, 'output/browser-build-audit.json')));
+    const seen = new Set();
+    const visit = file => { if (seen.has(file)) return; seen.add(file); manifest.resources[file]?.imports.forEach(visit); };
+    visit(manifest.entries['host/plugin'].file);
+    const modules = [...seen].flatMap(file => audit.modules[file] || []);
+    assert.ok(modules.includes('core/kitchen-bootstrap.js'));
+    assert.ok(modules.includes('core/kitchen-workspace.js'));
+    assert.equal(modules.some(file => file === 'core/kitchen-runtime.js' || file.startsWith('modules/')), false);
+    for (const file of seen) assert.doesNotMatch(fs.readFileSync(path.join(root, 'dist', file), 'utf8'), /["'][^"']*\/(?:script|extensions)\.js["']/);
+});
+
 test('resource loading uses the installed directory, shares manifest work, and surfaces failures', async () => {
     const savedFetch = globalThis.fetch;
     const savedLocation = globalThis.location;

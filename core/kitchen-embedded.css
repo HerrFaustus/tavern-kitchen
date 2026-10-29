@@ -138,6 +138,24 @@
 .tk-embedded .archive-search input { width: 100%; padding: 4px; }
 .tk-embedded .archive-content { padding-top: 6px; }
 .tk-embedded .archive-roster { margin: 6px 0 12px; }
+/* Both directions use the host's timing, regardless of a module's hover style. */
+.tk-embedded :is(button, [role="button"], summary, input, select, textarea),
+.tk-embedded :is(button, [role="button"], summary)::before,
+.tk-embedded :is(button, [role="button"], summary)::after {
+    transition-duration: var(--tk-motion-duration, 200ms) !important;
+    transition-timing-function: ease-in-out !important;
+    transition-delay: 0s !important;
+}
+.tk-embedded :is(.btn, .archive-icon, .xb-assistant-icon-button):hover { transform: none !important; }
+.tk-embedded .xiaobai-os-route-enter-active,
+.tk-embedded .xiaobai-os-route-leave-active { transition: opacity var(--tk-motion-duration, 200ms) ease-in-out !important; }
+.tk-embedded .xiaobai-os-route-enter-from,
+.tk-embedded .xiaobai-os-route-leave-to { opacity: 0; transform: none !important; }
+/* Instant visibility changes stay instant rather than animating only on entry. */
+.tk-embedded :is(.view.active, .tab-pane.active, .map-place-detail, .custom-select.open .sel-opts) { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+    :root.tk-embedded *, :root.tk-embedded *::before, :root.tk-embedded *::after { transition-duration: 0s !important; animation-duration: 0s !important; }
+}
 @media (max-width: 600px) {
     .tk-embedded .archive, .tk-embedded .container { padding-inline: 5px; }
     .tk-embedded .agent-api-scroll, .tk-embedded .world-toolbar, .tk-embedded .world-listing, .tk-embedded.tk-follow-host .dice-app { padding-inline: 12px; }

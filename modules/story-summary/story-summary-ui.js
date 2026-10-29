@@ -1418,8 +1418,8 @@ const UNANNOTATED_LABEL = '未标注';
             border: getCssVar('--bdr', isDark ? '#3a3a3a' : '#ddd'),
             line: getCssVar('--bdr', isDark ? 'rgba(224,224,224,.32)' : '#d8d8d8'),
             lineFocus: getCssVar('--txt3', isDark ? 'rgba(224,224,224,.58)' : '#aaa'),
-            nodeBorder: isDark ? getCssVar('--bg', '#121212') : '#fff',
-            nodeShadow: isDark ? 'rgba(0,0,0,.38)' : 'rgba(0,0,0,.1)',
+            nodeBorder: getCssVar('--bg', '#333'),
+            nodeShadow: getCssVar('--SmartThemeShadowColor', 'rgba(0,0,0,.25)'),
             tooltipShadow: isDark ? '0 8px 22px rgba(0,0,0,.38)' : '0 4px 12px rgba(0,0,0,.15)',
         };
     }
@@ -2661,7 +2661,7 @@ const UNANNOTATED_LABEL = '未标注';
         $('settings-save').onclick = saveSettings;
         $$('[data-workspace-page]').forEach(button => { button.onclick = () => selectSettingsTab(button.dataset.workspacePage); });
         $('settings-modal').addEventListener('input', event => {
-            if (event.target.closest('.text-api, #tab-agent-api') || ['theme-select', 'current-chat-enabled'].includes(event.target.id)) return;
+            if (event.target.closest('.text-api, #tab-agent-api') || event.target.id === 'current-chat-enabled') return;
             markSettingsDirty();
         });
 
@@ -2880,46 +2880,15 @@ const UNANNOTATED_LABEL = '未标注';
         bindEvents();
         syncCurrentChatSummaryControls();
 
-        // === THEME SWITCHER ===
-        (function () {
-            const STORAGE_KEY = 'xb-theme-alt';
-            const CSS_MAP = { host: 'story-summary.css', default: 'story-summary.css', dark: 'story-summary.css', neo: 'story-summary-a.css', 'neo-dark': 'story-summary-a.css' };
-            const link = document.querySelector('link[rel="stylesheet"]');
-            const sel = document.getElementById('theme-select');
-            if (!link || !sel) return;
+        // The host is the only appearance source; legacy local theme choices are ignored.
+        document.documentElement.dataset.kitchenTheme = 'host';
+        document.documentElement.classList.add('tk-follow-host');
+        document.addEventListener('kitchen-theme-change', () => {
+            hideRelationTooltip();
+            if (relationChart) renderRelations(summaryData.characters);
+        });
 
-            function applyTheme(theme) {
-                if (!CSS_MAP[theme]) return;
-                link.setAttribute('href', CSS_MAP[theme]);
-                document.documentElement.dataset.kitchenTheme = theme;
-                document.documentElement.classList.toggle('tk-follow-host', theme === 'host');
-                document.documentElement.setAttribute('data-theme', (theme === 'dark' || theme === 'neo-dark') ? 'dark' : '');
-                hideRelationTooltip();
-                if (relationChart) renderRelations(summaryData.characters);
-            }
 
-            // 启动时恢复主题
-            const stored = localStorage.getItem(STORAGE_KEY);
-            const saved = CSS_MAP[stored] ? stored : 'host';
-            applyTheme(saved);
-            sel.value = saved;
-
-            $('archive-theme').onclick = () => {
-                const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-                const neo = sel.value.startsWith('neo');
-                sel.value = neo ? (isDark ? 'neo' : 'neo-dark') : (isDark ? 'default' : 'dark');
-                sel.dispatchEvent(new Event('change'));
-            };
-
-            // 下拉框切换
-            sel.addEventListener('change', function () {
-                const theme = sel.value;
-                applyTheme(theme);
-                localStorage.setItem(STORAGE_KEY, theme);
-                console.log(`[Theme] Switched → ${theme} (${CSS_MAP[theme]})`);
-            });
-        })();
-        // === END THEME SWITCHER ===
 
         // Notify parent
         postMsg('FRAME_READY');

@@ -1,21 +1,21 @@
 {
-  "version": "0.1.7",
-  "verified_at_utc": "2026-10-29T20:51:31.658Z",
-  "build_id": "82ae2b5151b9128c41f2",
+  "version": "0.1.8",
+  "verified_at_utc": "2026-10-29T21:48:07.446Z",
+  "build_id": "00c50a01fbce02a7abe4",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
   "quality": "passed",
   "unit_tests": {
-    "total": 1472,
-    "passed": 1472,
+    "total": 1474,
+    "passed": 1474,
     "failed": 0
   },
   "memory_runtime": "passed",
   "removed_source_paths": 1763,
   "removed_modules_in_build": 0,
   "browser_entries": 11,
-  "chunks": 64,
+  "chunks": 62,
   "host_static_validation": {
     "version": "1.19.0",
     "commit": "06bde939fb1e9c4c8d8641d810f0a916b5bce127"
@@ -37,6 +37,7 @@
     "script_errors": 0,
     "horizontal_overflow": false,
     "checks": {
+      "tabOrder": true,
       "buttonOrder": true,
       "horizontalButtons": true,
       "noExpand": true,
@@ -44,6 +45,11 @@
       "nativeIcon": true,
       "topFlush": true,
       "downwardMotion": true,
+      "forcedHost": true,
+      "noLocalThemes": true,
+      "symmetricButtons": true,
+      "stableFrame": true,
+      "appearanceReadOnly": true,
       "situationSplit": true,
       "loreSplit": true,
       "peopleName": true,
@@ -53,7 +59,9 @@
       "draftPreserved": true,
       "mobileOverflow": false,
       "mobileTop": true,
+      "liveStoryPalette": true,
       "mapPalette": true,
+      "frameReducedMotion": true,
       "reducedMotion": true,
       "outerOverflow": false
     },
@@ -73,5 +81,5 @@
       "ECharts renderer"
     ]
   },
-  "ui_review": "passed (native icon and controls, top-flush downward drawer, split situation/lore, desktop and mobile; offline fixture only)"
+  "ui_review": "passed (early stable entry, world-first navigation, host-only themes, symmetric hover timing and reduced motion, desktop and mobile; offline fixture only)"
 }

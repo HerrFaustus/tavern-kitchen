@@ -42,8 +42,11 @@
 #tk-workspace .vm-section-header { border-bottom-width: 1px; padding-block: 12px; }
 #tk-workspace .vm-item { opacity: 1; }
 #tk-workspace .vm-item-controls { position: static; }
+#tk-workspace #vm-container { background: transparent; }
+#tk-workspace .vm-inline-form.active { animation: none; }
+#tk-workspace :is(button, [role="button"], summary, input, select, textarea) { transition-duration: var(--animation-duration-2x, 200ms) !important; transition-timing-function: ease-in-out !important; transition-delay: 0s !important; }
 @media (max-width: 1000px) {
     #tk-workspace { top: var(--topBarBlockSize, 40px); width: 100dvw; --tk-drawer-height: calc(100dvh - var(--topBarBlockSize, 40px)); }
     #tk-workspace #tavern-kitchen-settings { padding: 12px; }
 }
-@media (prefers-reduced-motion: reduce) { #tk-workspace { transition-duration: 0s; animation: none; } }
+@media (prefers-reduced-motion: reduce) { #tk-workspace, #tk-workspace * { transition-duration: 0s !important; animation: none !important; } }

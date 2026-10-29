@@ -2,7 +2,7 @@ import { extensionFolderPath } from './constants.js';
 import { observeBackgroundTask } from '../shared/common/async-errors.js';
 
 let workspace;
-export const KITCHEN_TABS = [['memory', '剧情'], ['world', '世界'], ['planner', '规划'], ['settings', '设置']];
+export const KITCHEN_TABS = [['world', '世界'], ['memory', '剧情'], ['planner', '规划'], ['settings', '设置']];
 export const KITCHEN_ROUTES = {
     memory: [['memory', '事件时间线']],
     world: [['world', '局势'], ['lore', '设定'], ['people', '人物'], ['variables', '变量'], ['map', '地图'], ['world-engine', '后台演化']],
@@ -22,21 +22,24 @@ export function bindKitchenFrame(frame) {
     frame.addEventListener('load', () => {
         const doc = frame.contentDocument;
         if (!doc) return;
-        doc.documentElement.classList.add('tk-embedded');
-        doc.documentElement.classList.toggle('tk-follow-host', !doc.documentElement.dataset.kitchenTheme || doc.documentElement.dataset.kitchenTheme === 'host');
+        doc.documentElement.classList.add('tk-embedded', 'tk-follow-host');
+        doc.documentElement.dataset.kitchenTheme = 'host';
+        doc.documentElement.removeAttribute('data-theme');
         const link = doc.createElement('link');
         link.rel = 'stylesheet';
         link.href = new URL(`${extensionFolderPath}/core/kitchen-embedded.css`, document.baseURI).href;
         doc.head.append(link);
         const sync = () => {
             const theme = getComputedStyle(document.body);
-            for (const key of ['SmartThemeBodyColor', 'SmartThemeEmColor', 'SmartThemeQuoteColor', 'SmartThemeBorderColor', 'SmartThemeBlurTintColor', 'SmartThemeChatTintColor']) {
+            for (const key of ['SmartThemeBodyColor', 'SmartThemeEmColor', 'SmartThemeQuoteColor', 'SmartThemeBorderColor', 'SmartThemeBlurTintColor', 'SmartThemeChatTintColor', 'SmartThemeShadowColor']) {
                 doc.documentElement.style.setProperty(`--${key}`, theme.getPropertyValue(`--${key}`));
             }
             doc.documentElement.style.setProperty('--tk-font', theme.fontFamily);
             doc.documentElement.style.setProperty('--tk-font-size', theme.fontSize);
             doc.documentElement.style.setProperty('--tk-text-shadow', theme.textShadow);
             doc.documentElement.style.setProperty('--tk-color-scheme', theme.colorScheme);
+            doc.documentElement.style.setProperty('--tk-motion-duration', theme.getPropertyValue('--animation-duration-2x').trim() || '200ms');
+            doc.dispatchEvent(new doc.defaultView.CustomEvent('kitchen-theme-change'));
         };
         sync();
         const observer = new MutationObserver(sync);
@@ -51,7 +54,7 @@ export function bindKitchenFrame(frame) {
     });
 }
 
-export function createKitchenWorkspace({ actions, settingsElement, onVisibility = () => {}, toggleDrawer, documentTarget = document }) {
+export function createKitchenWorkspace({ actions = {}, settingsElement, onVisibility = () => {}, toggleDrawer, documentTarget = document }) {
     if (workspace) return workspace;
     const doc = documentTarget;
     const panel = doc.createElement('section');
@@ -105,14 +108,15 @@ export function createKitchenWorkspace({ actions, settingsElement, onVisibility 
         if (!holder) return false;
         const persona = doc.getElementById('persona-management-button');
         const characters = doc.getElementById('rightNavHolder') || doc.getElementById('rightNavDrawerIcon')?.closest('.drawer');
+        if (entry.parentElement === holder && (characters?.parentElement === holder ? entry.nextElementSibling === characters : persona?.parentElement === holder ? persona.nextElementSibling === entry : true)) return true;
         holder.insertBefore(entry, characters?.parentElement === holder ? characters : persona?.parentElement === holder ? persona.nextElementSibling : null);
         return true;
     };
-    let entryObserver;
-    if (!inject()) {
-        entryObserver = new MutationObserver(() => { if (inject()) entryObserver.disconnect(); });
-        entryObserver.observe(doc.body, { childList: true, subtree: true });
-    }
+    inject();
+    const entryObserver = new doc.defaultView.MutationObserver(records => {
+        if (!entry.isConnected || records.some(record => record.target === entry.parentElement)) inject();
+    });
+    entryObserver.observe(doc.body, { childList: true, subtree: true });
     let active = null, previousFocus = null, generation = 0, visible = false, pendingOpen = null;
     const isOpen = () => panel.classList.contains('openDrawer');
     const setOpen = (element, open) => {
@@ -157,9 +161,29 @@ export function createKitchenWorkspace({ actions, settingsElement, onVisibility 
     };
     const navigate = id => observeBackgroundTask(api.open(id), { source: import.meta.url, operation: 'open-workspace' });
     const api = {
+        configure(options) {
+            actions = options.actions;
+            toggleDrawer = options.toggleDrawer;
+            onVisibility = options.onVisibility || (() => {});
+            mounts.get('settings').replaceChildren(options.settingsElement);
+            if (active && isOpen()) { const id = active; active = null; navigate(id); }
+        },
+        failStartup(error) {
+            for (const [id] of Object.values(KITCHEN_ROUTES).flat()) {
+                const mount = api.getMount(id);
+                mount.querySelector('.tk-panel-message')?.remove();
+                const message = doc.createElement('div'); message.className = 'tk-panel-message'; message.setAttribute('role', 'alert');
+                const text = doc.createElement('p'); text.textContent = `后厨加载失败：${error?.message || '请刷新后重试。'}`;
+                const reload = doc.createElement('button'); reload.type = 'button'; reload.className = 'menu_button'; reload.textContent = '重新加载';
+                reload.addEventListener('click', () => doc.defaultView.location.reload());
+                message.append(text, reload); mount.replaceChildren(message);
+                mount.removeAttribute('aria-busy');
+                actions[id] = () => { throw error; };
+            }
+        },
         getMount: id => worldTabs.has(id) ? worldMount : memoryTabs.has(id) ? memoryMount : mounts.get(id),
         isActive: id => isOpen() && active === canonicalRoute(id),
-        async open(id = active || 'memory') {
+        async open(id = active || 'world') {
             id = canonicalRoute(id);
             const parent = parentOf(id);
             if (!parent) return;
@@ -192,12 +216,15 @@ export function createKitchenWorkspace({ actions, settingsElement, onVisibility 
                 button.classList.toggle('active', button.dataset.route === id);
             }
             onVisibility(true, id);
+            if (wasClosed) buttons.get(parent).focus({ preventScroll: true });
             const mount = api.getMount(id); mount.querySelector('.tk-panel-message')?.remove();
             mount.setAttribute('aria-busy', 'true');
+            const loading = !mount.childElementCount ? doc.createElement('p') : null;
+            if (loading) { loading.className = 'tk-panel-message'; loading.setAttribute('role', 'status'); loading.textContent = '正在加载后厨…'; mount.append(loading); }
+            if (!actions[id] && id !== 'settings') return;
             Promise.resolve().then(() => actions[id]?.()).catch(error => {
                 if (token === generation) report(mount, error, id);
-            }).finally(() => { mount.removeAttribute('aria-busy'); });
-            if (wasClosed) buttons.get(parent).focus({ preventScroll: true });
+            }).finally(() => { loading?.remove(); mount.removeAttribute('aria-busy'); });
         },
         close() {
             generation += 1;
