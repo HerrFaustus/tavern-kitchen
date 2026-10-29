@@ -25,7 +25,9 @@ export default defineConfig({
             if (!importer || !source.startsWith('.')) return;
             let resolved = path.resolve(path.dirname(importer.split('?')[0]), source.split('?')[0]);
             const hostPath = hostPathForImport(importer, source);
-            if (hostPath) return { id: `/__st__/${hostPath}`, external: true };
+            // Keep the marker absolute until generateBundle rewrites it for deployment.
+            // Linux otherwise relativizes it against the checkout before that hook runs.
+            if (hostPath) return { id: `/__st__/${hostPath}`, external: 'absolute' };
             if (resolved.endsWith('.js') && fs.existsSync(resolved.slice(0, -3) + '.ts')) return posix(resolved.slice(0, -3) + '.ts');
         },
         load(id) {
