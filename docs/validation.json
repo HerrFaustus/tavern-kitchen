@@ -1,7 +1,7 @@
 {
-  "version": "0.1.5",
-  "verified_at_utc": "2026-10-29T19:55:41.820Z",
-  "build_id": "866aa6028f9efd4134dc",
+  "version": "0.1.6",
+  "verified_at_utc": "2026-10-29T20:27:27.789Z",
+  "build_id": "27b2e19f249c15c6c379",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
@@ -41,7 +41,8 @@
       "host globals",
       "server file API",
       "chat data stores",
-      "maintenance and model gateways"
+      "maintenance and model gateways",
+      "ECharts renderer (node callback and layout exercised; chart drawing mocked)"
     ],
     "real_components": [
       "OS lifecycle",
@@ -62,7 +63,11 @@
     "pinned_drawer_preserved": true,
     "escape_draft_preserved": true,
     "contextual_back": true,
-    "reduced_motion": true
+    "reduced_motion": true,
+    "right_sidebar": true,
+    "top_button_order": "persona / kitchen / character",
+    "merged_people_relations": true,
+    "legacy_relations_route": true
   },
-  "ui_review": "passed (native drawer, desktop and mobile, contextual back, draft persistence; offline fixture only)"
+  "ui_review": "passed (right sidebar, merged people and relationships, story labels, desktop and mobile; offline fixture only)"
 }

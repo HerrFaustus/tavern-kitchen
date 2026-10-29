@@ -5,7 +5,7 @@ import { parseHTML } from 'linkedom';
 import { createKitchenWorkspace, getKitchenMount } from './kitchen-workspace.js';
 
 test('one native workspace owns tabs, keeps the shared frame attached and recovers failed panels', async () => {
-    const { document } = parseHTML('<html><head></head><body><div id="top-settings-holder"><div id="persona-management-button"></div></div></body></html>');
+    const { document } = parseHTML('<html><head></head><body><div id="top-settings-holder"><div id="persona-management-button"></div><div id="rightNavHolder"></div></div></body></html>');
     const settingsElement = document.createElement('div');
     const calls = [];
     const visibility = [];
@@ -16,13 +16,14 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
         world: () => { calls.push('world'); },
     } });
     assert.equal(document.querySelectorAll('#tk-topbar').length, 1);
-    assert.equal(document.querySelector('#persona-management-button').previousElementSibling.id, 'tk-topbar');
+    assert.equal(document.querySelector('#persona-management-button').nextElementSibling.id, 'tk-topbar');
+    assert.equal(document.querySelector('#rightNavHolder').previousElementSibling.id, 'tk-topbar');
     assert.equal(document.querySelector('#tk-workspace').parentElement.id, 'tk-topbar', 'native drawer must own its content');
     await workspace.open('memory');
     await setImmediate();
     assert.deepEqual(calls, ['memory']);
     assert.equal(document.querySelectorAll('[role="tab"]').length, 4);
-    assert.equal(document.querySelector('[aria-selected="true"]').textContent, '记忆');
+    assert.equal(document.querySelector('[aria-selected="true"]').textContent, '剧情');
     await workspace.open('memory');
     await setImmediate();
     assert.deepEqual(calls, ['memory']);
@@ -41,6 +42,9 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
         assert.equal(getKitchenMount(route), getKitchenMount('memory'));
         assert.equal(document.querySelector('[aria-selected="true"]').textContent, '世界');
     }
+    assert.equal(workspace.isActive('people'), true, 'legacy relations links open the merged page');
+    assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '人物与关系');
+    assert.equal(document.querySelector('.tk-subnav [data-route="relations"]'), null);
     await workspace.open('memory-settings');
     assert.equal(document.querySelector('[aria-selected="true"]').textContent, '设置');
     assert.equal(getKitchenMount('memory-settings'), getKitchenMount('memory'));

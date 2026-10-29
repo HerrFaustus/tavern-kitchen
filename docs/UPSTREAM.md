@@ -23,3 +23,5 @@ Based on LittleWhiteBox by biex.
 0.1.4 解除面板打开时的聊天门槛，保留聊天数据操作的绑定校验；共享 Agent 设置改用后厨 AgentApiStorage，修复默认动态导入旧存储导致的 get 报错。统一 OS 页面的宿主主题、字体、控件及返回导航，移除已删除短信模块的残余样式引用和世界页随机外部装饰图。
 
 0.1.5 将后厨内容移入原生 drawer-content，优先调用宿主公开的 doNavbarIconClick；缺少该导出的 Tavern 宿主使用兼容类切换。同步宿主关闭状态，保留固定抽屉，新增桌面展开宽度与减少动画支持。嵌入工具移除底部系统导航，按当前返回栈显示顶部返回；Esc 收起不卸载共享页面。主题桥新增宿主字号，表单字体统一继承。
+
+0.1.6 将人物档案和关系图合并在“人物与关系”，旧 relations 路由兼容转向 people；记忆一级标签及关联入口改称剧情。入口移至 persona-management-button 之后、rightNavHolder 之前。工作台采用 fillRight 右侧布局和水平滑入，窄屏全宽；保持宿主开合行为及已有存储键。

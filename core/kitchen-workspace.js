@@ -2,13 +2,14 @@ import { extensionFolderPath } from './constants.js';
 import { observeBackgroundTask } from '../shared/common/async-errors.js';
 
 let workspace;
-export const KITCHEN_TABS = [['memory', '记忆'], ['world', '世界'], ['planner', '规划'], ['settings', '设置']];
+export const KITCHEN_TABS = [['memory', '剧情'], ['world', '世界'], ['planner', '规划'], ['settings', '设置']];
 export const KITCHEN_ROUTES = {
     memory: [['memory', '事件时间线']],
-    world: [['world', '局势与设定'], ['people', '人物'], ['relations', '关系'], ['variables', '变量'], ['map', '地图'], ['world-engine', '后台演化']],
+    world: [['world', '局势与设定'], ['people', '人物与关系'], ['variables', '变量'], ['map', '地图'], ['world-engine', '后台演化']],
     planner: [['planner', '剧情规划'], ['dice', '行动判定']],
-    settings: [['settings', '功能开关'], ['memory-settings', '记忆设置'], ['agent-api', '模型接口']],
+    settings: [['settings', '功能开关'], ['memory-settings', '剧情设置'], ['agent-api', '模型接口']],
 };
+const canonicalRoute = id => id === 'relations' ? 'people' : id;
 const parentOf = id => KITCHEN_TABS.find(([key]) => KITCHEN_ROUTES[key].some(([route]) => route === id))?.[0];
 const worldTabs = new Set(['map', 'world-engine', 'dice', 'agent-api']);
 const memoryTabs = new Set(['memory', 'world', 'people', 'relations', 'memory-settings']);
@@ -69,7 +70,7 @@ export function createKitchenWorkspace({ actions, settingsElement, onVisibility 
     const doc = documentTarget;
     const panel = doc.createElement('section');
     panel.id = 'tk-workspace';
-    panel.className = 'drawer-content closedDrawer';
+    panel.className = 'drawer-content closedDrawer fillRight';
     panel.setAttribute('aria-label', '酒馆后厨');
     const header = doc.createElement('header');
     header.className = 'tk-workspace-header';
@@ -125,7 +126,8 @@ export function createKitchenWorkspace({ actions, settingsElement, onVisibility 
         const holder = doc.getElementById('top-settings-holder');
         if (!holder) return false;
         const persona = doc.getElementById('persona-management-button');
-        holder.insertBefore(entry, persona?.parentElement === holder ? persona : null);
+        const characters = doc.getElementById('rightNavHolder') || doc.getElementById('rightNavDrawerIcon')?.closest('.drawer');
+        holder.insertBefore(entry, characters?.parentElement === holder ? characters : persona?.parentElement === holder ? persona.nextElementSibling : null);
         return true;
     };
     let entryObserver;
@@ -178,8 +180,9 @@ export function createKitchenWorkspace({ actions, settingsElement, onVisibility 
     const navigate = id => observeBackgroundTask(api.open(id), { source: import.meta.url, operation: 'open-workspace' });
     const api = {
         getMount: id => worldTabs.has(id) ? worldMount : memoryTabs.has(id) ? memoryMount : mounts.get(id),
-        isActive: id => isOpen() && active === id,
+        isActive: id => isOpen() && active === canonicalRoute(id),
         async open(id = active || 'memory') {
+            id = canonicalRoute(id);
             const parent = parentOf(id);
             if (!parent) return;
             const wasClosed = !isOpen();

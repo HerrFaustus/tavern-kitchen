@@ -36,7 +36,7 @@ export function installFloorSummaries({ getSnapshot, openMemory, documentTarget 
                 node = doc.createElement('details'); node.className = 'tk-floor-summary';
                 const heading = doc.createElement('summary');
                 const content = doc.createElement('p');
-                const button = doc.createElement('button'); button.type = 'button'; button.className = 'menu_button'; button.textContent = '查看记忆';
+                const button = doc.createElement('button'); button.type = 'button'; button.className = 'menu_button'; button.textContent = '查看剧情';
                 button.addEventListener('click', () => openMemory(Number(message.getAttribute('mesid'))));
                 node.append(heading, content, button); text.after(node); nodes.set(message, node);
             }
@@ -44,7 +44,7 @@ export function installFloorSummaries({ getSnapshot, openMemory, documentTarget 
             const heading = summary
                 ? summary.start === summary.end ? `第 ${floor} 楼总结` : `区间总结 · 第 ${summary.start}–${summary.end} 楼`
                 : `第 ${floor} 楼 · ${store?.lastSummarizedMesId >= floor ? '暂无逐楼摘要' : '尚未总结'}`;
-            const detail = summary?.text || '暂无可核实归属的摘要。可在记忆页生成或查看总结。';
+            const detail = summary?.text || '暂无可核实归属的摘要。可在剧情页生成或查看总结。';
             const signature = heading + '\n' + detail;
             if (node.dataset.signature !== signature) {
                 node.querySelector('summary').textContent = heading;

@@ -66,6 +66,7 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
     function showPerson() {
         if (document.documentElement.classList.contains('tk-embedded')) {
             if (document.documentElement.dataset.kitchenView !== 'people') postMsg('KITCHEN_ARCHIVE_VIEW', { view: 'people' });
+            else profile.scrollIntoView({ block: 'nearest' });
             return;
         }
         if (!matchMedia('(max-width: 768px)').matches) return;

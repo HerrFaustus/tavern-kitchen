@@ -2388,7 +2388,7 @@ const UNANNOTATED_LABEL = '未标注';
 
         switch (d.type) {
             case 'KITCHEN_MEMORY_VIEW': {
-                document.documentElement.dataset.kitchenView = d.view;
+                document.documentElement.dataset.kitchenView = d.view === 'relations' ? 'people' : d.view;
                 document.querySelector('.archive').inert = d.view === 'settings';
                 if (d.view === 'settings' && !$('settings-modal').classList.contains('active')) openSettings();
                 if (d.view !== 'settings') {

@@ -86,13 +86,13 @@ async function mountSettings() {
         memory: async () => {
             await requireFeatures();
             if (!kitchen.isActive('memory')) return;
-            if (!memory) throw new Error('记忆尚未启用，请在设置中开启并保存刷新。');
+            if (!memory) throw new Error('剧情模块尚未启用，请在设置中开启并保存刷新。');
             memory.openStoryMemory();
         },
         'memory-settings': async () => {
             await requireFeatures();
             if (!kitchen.isActive('memory-settings')) return;
-            if (!memory) throw new Error('请先启用记忆功能并保存刷新，再配置记忆设置。');
+            if (!memory) throw new Error('请先启用剧情模块并保存刷新，再配置剧情设置。');
             memory.openStoryMemorySettings();
         },
         planner: async () => {
