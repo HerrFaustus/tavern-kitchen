@@ -5,14 +5,14 @@ let workspace;
 export const KITCHEN_TABS = [['memory', '剧情'], ['world', '世界'], ['planner', '规划'], ['settings', '设置']];
 export const KITCHEN_ROUTES = {
     memory: [['memory', '事件时间线']],
-    world: [['world', '局势与设定'], ['people', '人物与关系'], ['variables', '变量'], ['map', '地图'], ['world-engine', '后台演化']],
+    world: [['world', '局势'], ['lore', '设定'], ['people', '人物'], ['variables', '变量'], ['map', '地图'], ['world-engine', '后台演化']],
     planner: [['planner', '剧情规划'], ['dice', '行动判定']],
     settings: [['settings', '功能开关'], ['memory-settings', '剧情设置'], ['agent-api', '模型接口']],
 };
 const canonicalRoute = id => id === 'relations' ? 'people' : id;
 const parentOf = id => KITCHEN_TABS.find(([key]) => KITCHEN_ROUTES[key].some(([route]) => route === id))?.[0];
 const worldTabs = new Set(['map', 'world-engine', 'dice', 'agent-api']);
-const memoryTabs = new Set(['memory', 'world', 'people', 'relations', 'memory-settings']);
+const memoryTabs = new Set(['memory', 'world', 'lore', 'people', 'relations', 'memory-settings']);
 export const getKitchenMount = id => workspace?.getMount(id) ?? null;
 export const openKitchenTab = id => workspace?.open(id);
 export const closeKitchenWorkspace = () => workspace?.close();
@@ -35,6 +35,7 @@ export function bindKitchenFrame(frame) {
             }
             doc.documentElement.style.setProperty('--tk-font', theme.fontFamily);
             doc.documentElement.style.setProperty('--tk-font-size', theme.fontSize);
+            doc.documentElement.style.setProperty('--tk-text-shadow', theme.textShadow);
             doc.documentElement.style.setProperty('--tk-color-scheme', theme.colorScheme);
         };
         sync();
@@ -50,21 +51,6 @@ export function bindKitchenFrame(frame) {
     });
 }
 
-function chefIcon(doc) {
-    const svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('aria-hidden', 'true');
-    svg.setAttribute('fill', 'none');
-    svg.setAttribute('stroke', 'currentColor');
-    svg.setAttribute('stroke-width', '1.8');
-    svg.setAttribute('stroke-linecap', 'round');
-    svg.setAttribute('stroke-linejoin', 'round');
-    const shape = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
-    shape.setAttribute('d', 'M7 14a4.5 4.5 0 1 1 .6-8.96 4.7 4.7 0 0 1 8.8 0A4.5 4.5 0 1 1 17 14v6H7v-6Zm0 3h10M10 13v1m4-1v1');
-    svg.append(shape);
-    return svg;
-}
-
 export function createKitchenWorkspace({ actions, settingsElement, onVisibility = () => {}, toggleDrawer, documentTarget = document }) {
     if (workspace) return workspace;
     const doc = documentTarget;
@@ -75,20 +61,12 @@ export function createKitchenWorkspace({ actions, settingsElement, onVisibility 
     const header = doc.createElement('header');
     header.className = 'tk-workspace-header';
     const title = doc.createElement('h2');
-    title.append(chefIcon(doc), doc.createTextNode('酒馆后厨'));
+    title.textContent = '酒馆后厨';
     const close = doc.createElement('button');
     close.type = 'button'; close.className = 'menu_button tk-close';
-    close.textContent = '收起'; close.setAttribute('aria-label', '收起酒馆后厨');
-    const expand = doc.createElement('button');
-    expand.type = 'button'; expand.className = 'menu_button tk-expand';
-    expand.textContent = '展开工作区'; expand.setAttribute('aria-pressed', 'false');
-    expand.addEventListener('click', () => {
-        const expanded = panel.classList.toggle('tk-expanded');
-        expand.textContent = expanded ? '恢复宽度' : '展开工作区';
-        expand.setAttribute('aria-pressed', String(expanded));
-    });
-    const tools = doc.createElement('div'); tools.className = 'tk-workspace-tools'; tools.append(expand, close);
-    header.append(title, tools);
+    close.setAttribute('aria-label', '收起酒馆后厨'); close.title = '收起';
+    const closeIcon = doc.createElement('i'); closeIcon.className = 'fa-solid fa-chevron-up'; closeIcon.setAttribute('aria-hidden', 'true'); close.append(closeIcon);
+    header.append(title, close);
     const tabs = doc.createElement('nav');
     tabs.className = 'tk-tabs'; tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', '后厨板块');
     const subnav = doc.createElement('nav'); subnav.className = 'tk-subnav'; subnav.setAttribute('aria-label', '板块内导航');
@@ -96,7 +74,7 @@ export function createKitchenWorkspace({ actions, settingsElement, onVisibility 
     const mounts = new Map(), buttons = new Map();
     for (const [id, label] of KITCHEN_TABS) {
         const button = doc.createElement('button');
-        button.type = 'button'; button.id = `tk-tab-${id}`; button.textContent = label;
+        button.type = 'button'; button.id = `tk-tab-${id}`; button.textContent = label; button.className = 'menu_button';
         button.setAttribute('role', 'tab'); button.setAttribute('aria-selected', 'false');
         button.setAttribute('aria-controls', body.id); button.tabIndex = -1;
         button.addEventListener('click', () => navigate(id));
@@ -120,7 +98,7 @@ export function createKitchenWorkspace({ actions, settingsElement, onVisibility 
     trigger.type = 'button'; trigger.className = 'drawer-toggle tk-topbar-toggle';
     trigger.title = '酒馆后厨'; trigger.setAttribute('aria-label', '酒馆后厨');
     trigger.setAttribute('aria-controls', panel.id); trigger.setAttribute('aria-expanded', 'false');
-    const icon = doc.createElement('span'); icon.className = 'drawer-icon closedIcon'; icon.append(chefIcon(doc));
+    const icon = doc.createElement('span'); icon.className = 'drawer-icon fa-solid fa-door-open fa-fw closedIcon'; icon.setAttribute('aria-hidden', 'true');
     trigger.append(icon); entry.append(trigger, panel);
     const inject = () => {
         const holder = doc.getElementById('top-settings-holder');
@@ -193,6 +171,7 @@ export function createKitchenWorkspace({ actions, settingsElement, onVisibility 
             active = id;
             for (const [key, button] of buttons) {
                 button.setAttribute('aria-selected', String(key === parent)); button.tabIndex = key === parent ? 0 : -1;
+                button.classList.toggle('active', key === parent);
             }
             body.setAttribute('aria-labelledby', `tk-tab-${parent}`);
             for (const [key, mount] of mounts) mount.hidden = key !== id || worldTabs.has(key) || memoryTabs.has(key);
@@ -203,12 +182,15 @@ export function createKitchenWorkspace({ actions, settingsElement, onVisibility 
             if (subnav.dataset.section !== parent) {
                 subnav.replaceChildren(); subnav.dataset.section = parent;
                 for (const [route, label] of KITCHEN_ROUTES[parent]) {
-                    const button = doc.createElement('button'); button.type = 'button'; button.textContent = label;
+                    const button = doc.createElement('button'); button.type = 'button'; button.textContent = label; button.className = 'menu_button';
                     button.dataset.route = route; button.addEventListener('click', () => navigate(route));
                     subnav.append(button);
                 }
             }
-            for (const button of subnav.children) button.setAttribute('aria-pressed', String(button.dataset.route === id));
+            for (const button of subnav.children) {
+                button.setAttribute('aria-pressed', String(button.dataset.route === id));
+                button.classList.toggle('active', button.dataset.route === id);
+            }
             onVisibility(true, id);
             const mount = api.getMount(id); mount.querySelector('.tk-panel-message')?.remove();
             mount.setAttribute('aria-busy', 'true');

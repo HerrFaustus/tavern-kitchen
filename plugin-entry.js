@@ -108,7 +108,7 @@ async function mountSettings() {
             variables.getVariablesPanelInstance()?.open();
         },
     };
-    for (const id of ['world', 'people', 'relations']) actions[id] = async () => {
+    for (const id of ['world', 'lore', 'people', 'relations']) actions[id] = async () => {
         await requireFeatures();
         if (!kitchen.isActive(id)) return;
         if (!memory) throw new Error('请先启用记忆记录功能并保存刷新，再查看已记录的世界状态。');

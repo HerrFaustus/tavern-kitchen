@@ -23,8 +23,15 @@ export function getArchiveCharacters(data) {
     return [...entries.values()];
 }
 
-export function getArchiveStateFacts(data) {
-    return data.facts.filter(fact => !fact.retracted && !/^对.+的/.test(fact.p));
+/** Read-only grouping of existing facts. Unknown predicates stay in the situation view. */
+export function getWorldFactSection(fact) {
+    const predicate = String(fact.p || '');
+    if (/当前|目前|正在|临时|现任|局势|状态|动向|进展|计划|战况|天气/.test(predicate)) return 'world';
+    return /设定|规则|地理|地形|气候|历史|文化|风俗|法律|制度|种族|物种|能力体系|魔法体系|货币|语言|信仰体系|组织宗旨|起源|背景|常识/.test(predicate) ? 'lore' : 'world';
+}
+
+export function getArchiveStateFacts(data, section) {
+    return data.facts.filter(fact => !fact.retracted && !/^对.+的/.test(fact.p) && (!section || getWorldFactSection(fact) === section));
 }
 
 // Presentation state belongs to this iframe. Data and all writes remain owned by story-summary-ui.
@@ -40,6 +47,8 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
     let profileInDialog = false;
     let restoreFocus = null;
     const matches = (...values) => values.join(' ').toLocaleLowerCase().includes($('archive-search').value.trim().toLocaleLowerCase());
+    const worldSection = () => document.documentElement.classList.contains('tk-embedded') ? document.documentElement.dataset.kitchenView === 'lore' ? 'lore' : 'world' : undefined;
+    const worldFacts = () => getArchiveStateFacts(getData(), worldSection());
 
     function closeDialogs() {
         for (const dialog of [detail]) {
@@ -118,11 +127,14 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
         setHtml($('archive-story-index'), ['', ...roles].map(item => `<button class="archive-index-button" data-archive-role="${h(item)}" aria-pressed="${item === role}">${h(item || ARCHIVE_COPY.allEvents)}<span>${item ? data.events.filter(e => (e.memoryRole || ARCHIVE_COPY.unknownRole) === item).length : data.events.length}</span></button>`).join(''));
         $('archive-story-heading').textContent = role || ARCHIVE_COPY.allEvents;
         $('archive-order').textContent = descending ? ARCHIVE_COPY.newest : ARCHIVE_COPY.oldest;
-        const facts = getArchiveStateFacts(data);
+        const facts = worldFacts();
         const subjects = [...new Set(facts.map(f => f.s))];
         if (subject && !subjects.includes(subject)) subject = '';
         setHtml($('archive-world-index'), ['', ...subjects].map(item => `<button class="archive-index-button" data-archive-subject="${h(item)}" aria-pressed="${item === subject}">${h(item || ARCHIVE_COPY.allSubjects)}<span>${item ? facts.filter(f => f.s === item).length : facts.length}</span></button>`).join(''));
         $('archive-world-count').textContent = facts.length;
+        $('archive-world-heading').textContent = worldSection() === 'lore' ? '设定' : worldSection() === 'world' ? '局势' : '世界状态';
+        $('archive-world-hint').textContent = worldSection() === 'lore' ? '规则、地理、历史等背景记录。' : '当前状态与变化；未明确分类的旧记录也暂列于此。';
+        $('archive-world-hint').hidden = !worldSection();
         $('archive-people-count').textContent = getArchiveCharacters(data).length;
     }
 
@@ -144,7 +156,7 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
         closeDialogs();
         view = next;
         $('archive-search').value = '';
-        $('archive-search').placeholder = ARCHIVE_COPY.search[view];
+        $('archive-search').placeholder = view === 'world' && worldSection() ? worldSection() === 'lore' ? '搜索设定' : '搜索局势' : ARCHIVE_COPY.search[view];
         document.querySelectorAll('.archive-tab').forEach(tab => {
             const selected = tab.dataset.view === view;
             tab.setAttribute('aria-selected', String(selected));
@@ -226,7 +238,8 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
         hasTimelineFilter: () => !!role || (view === 'story' && !!$('archive-search').value.trim()),
         isPeopleVisible: () => view === 'people',
         isStoryVisible: () => view === 'story',
-        filteredFacts: () => getArchiveStateFacts(getData()).filter(f => (!subject || f.s === subject) && (view !== 'world' || matches(f.s, f.p, f.o))),
+        worldFacts,
+        filteredFacts: () => worldFacts().filter(f => (!subject || f.s === subject) && (view !== 'world' || matches(f.s, f.p, f.o))),
         refresh() {
             refreshIndexes(); refreshRoster();
             if (detail.open && detailEventId != null) {

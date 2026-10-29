@@ -5067,7 +5067,7 @@ export function openStoryMemorySettings() {
     postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view: 'settings' });
 }
 export function openStoryWorld(route = 'world') {
-    if (!['world', 'people', 'relations'].includes(route)) return;
+    if (!['world', 'lore', 'people', 'relations'].includes(route)) return;
     memoryWorkspaceView = route;
     openPanelForMessage(Math.max(0, getContext().chat.length - 1));
     postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view: route });

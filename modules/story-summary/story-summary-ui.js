@@ -4,7 +4,7 @@ import { createSummaryAgentSettings } from './maintenance/api-settings.js';
 // story-summary-ui.js
 // iframe 内 UI 逻辑
 
-import { ARCHIVE_COPY, createSummaryArchive, getArchiveCharacters, getArchiveStateFacts } from './archive-view.js';
+import { ARCHIVE_COPY, createSummaryArchive, getArchiveCharacters } from './archive-view.js';
 import { EVENT_MEMORY_ROLES, projectEditedSummaryEvents } from './data/events.js';
 import { DEFAULT_SUMMARY_DELAY_FLOORS, normalizeSummaryDelayFloors } from './data/summary-delay.js';
 import { DEFAULT_RECALL_TIMEOUT_SEC, MAX_RECALL_TIMEOUT_SEC, normalizeRecallTimeoutSec } from './data/recall-settings.js';
@@ -2392,7 +2392,7 @@ const UNANNOTATED_LABEL = '未标注';
                 document.querySelector('.archive').inert = d.view === 'settings';
                 if (d.view === 'settings' && !$('settings-modal').classList.contains('active')) openSettings();
                 if (d.view !== 'settings') {
-                    const view = { memory: 'story', world: 'world', people: 'people', relations: 'people' }[d.view];
+                    const view = { memory: 'story', world: 'world', lore: 'world', people: 'people', relations: 'people' }[d.view];
                     if (view) archiveView.switchView(view, { notify: false });
                 }
                 break;
@@ -2944,7 +2944,7 @@ const UNANNOTATED_LABEL = '未标注';
         const stateFacts = archiveView.filteredFacts();
 
         if (!stateFacts.length) {
-            setHtml(container, `<div class="archive-empty">${getArchiveStateFacts(summaryData).length ? ARCHIVE_COPY.noResults : ARCHIVE_COPY.noFacts}</div>`);
+            setHtml(container, `<div class="archive-empty">${archiveView.worldFacts().length ? ARCHIVE_COPY.noResults : document.documentElement.dataset.kitchenView === 'lore' ? '暂无设定记录' : ARCHIVE_COPY.noFacts}</div>`);
             return;
         }
 

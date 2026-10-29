@@ -25,3 +25,5 @@ Based on LittleWhiteBox by biex.
 0.1.5 将后厨内容移入原生 drawer-content，优先调用宿主公开的 doNavbarIconClick；缺少该导出的 Tavern 宿主使用兼容类切换。同步宿主关闭状态，保留固定抽屉，新增桌面展开宽度与减少动画支持。嵌入工具移除底部系统导航，按当前返回栈显示顶部返回；Esc 收起不卸载共享页面。主题桥新增宿主字号，表单字体统一继承。
 
 0.1.6 将人物档案和关系图合并在“人物与关系”，旧 relations 路由兼容转向 people；记忆一级标签及关联入口改称剧情。入口移至 persona-management-button 之后、rightNavHolder 之前。工作台采用 fillRight 右侧布局和水平滑入，窄屏全宽；保持宿主开合行为及已有存储键。
+
+0.1.7 移除自绘厨师帽 SVG，使用宿主 Font Awesome 的 fa-door-open；移除展开工作区及横向动画，右侧面板桌面贴顶、按高度向下展开。导航按钮使用 menu_button/active，移除重复着色背景，跟随宿主文字阴影。人物与关系入口简称人物。局势与设定基于既有事实属性做互斥只读分组，关系事实及已撤销记录不进入这两个视图，重点保留标志不参与分类。

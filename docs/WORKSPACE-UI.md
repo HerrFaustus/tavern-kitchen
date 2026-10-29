@@ -4,20 +4,20 @@
 
 ## 宿主主题与入口
 
-- 厨师帽为内联 SVG，使用 `currentColor`；入口沿用 `drawer` / `drawer-toggle` / `drawer-icon` 结构，插入 `top-settings-holder` 内、`persona-management-button` 之后、`rightNavHolder` 之前。宿主尚未生成工具栏时等待插入；没有角色管理入口时追加到工具栏末尾。
+- 后厨入口使用宿主 `fa-solid fa-door-open fa-fw`；入口沿用 `drawer` / `drawer-toggle` / `drawer-icon` 结构，插入 `top-settings-holder` 内、`persona-management-button` 之后、`rightNavHolder` 之前。宿主尚未生成工具栏时等待插入；没有角色管理入口时追加到工具栏末尾。
 - 外层工作台始终跟随宿主主题；记忆 iframe 的外观默认选“跟随酒馆”（`host`），用 `tk-follow-host` 启用宿主配色。沿用 `xb-theme-alt` 存储键，已有有效的 `default`、`dark`、`neo`、`neo-dark` 选择继续保留；手动选择这些主题时移除跟随标记，宿主配色不强制覆盖所选主题。没有有效存储值时才回退到 `host`。
 - 跟随宿主时，文本、次要文本、强调、边框、面板背景与悬停背景分别使用 `SmartThemeBodyColor`、`SmartThemeEmColor`、`SmartThemeQuoteColor`、`SmartThemeBorderColor`、`SmartThemeBlurTintColor`、`SmartThemeChatTintColor`。嵌入字体继承宿主；默认色仅作缺失变量时的回退。
 - 跟随宿主时，嵌入页主按钮沿用主题派生变量：`--acc` 取正文色，反色文字 `--inv` 取面板背景，`--btn-p-hover` 混合正文色（90%）与背景，禁用背景取 `--bg3`、文字取 `--txt3`；这些配色映射限定在 `tk-follow-host` 下。
-- 工作台使用边框和背景区分层次。选中标签通过强调色底线与加粗标识，键盘焦点保留可见轮廓；不以固定品牌色覆盖用户主题。
+- 工作台使用边框和背景区分层次。选中标签通过原生 menu_button.active 状态及加粗标识，键盘焦点保留可见轮廓；不以固定品牌色覆盖用户主题。
 
 ## 共享面板与导航
 
-一个非模态面板承载四个一级标签，顺序固定为剧情、世界、规划、设置。面板作为厨师帽 drawer 的 drawer-content fillRight 从右侧滑入，无遮罩或焦点锁定；功能内容在面板内部滚动。二级入口以 `KITCHEN_ROUTES` 为准：
+一个非模态面板承载四个一级标签，顺序固定为剧情、世界、规划、设置。面板作为后厨 drawer 的 drawer-content fillRight 在右侧从顶端向下展开，无遮罩或焦点锁定；功能内容在面板内部滚动。二级入口以 `KITCHEN_ROUTES` 为准：
 
 | 一级标签 | 二级入口（路由） |
 | --- | --- |
 | 剧情 | 事件时间线（`memory`） |
-| 世界 | 局势与设定（`world`）、人物与关系（`people`）、变量（`variables`）、地图（`map`）、后台演化（`world-engine`） |
+| 世界 | 局势（`world`）、设定（`lore`）、人物（`people`）、变量（`variables`）、地图（`map`）、后台演化（`world-engine`） |
 | 规划 | 剧情规划（`planner`）、行动判定（`dice`） |
 | 设置 | 功能开关（`settings`）、剧情设置（`memory-settings`）、模型接口（`agent-api`） |
 
@@ -99,3 +99,15 @@
 - 0.1.5 章节记载上一版顶部抽屉历史；当前布局以本节、style.css 和 KITCHEN_ROUTES 为准。
 
 0.1.6 离线截图：`output/sidebar-preview/people-sidebar.png` 为默认右侧人物页，`people-expanded.png` 为展开后的档案与关系区域并排，`people-mobile.png` 和 `relations-mobile.png` 为窄屏上下布局，`story-sidebar.png` 展示剧情命名。夹具中的关系图绘制被替换，仅检验关系区域布局和节点选择回调。
+
+## 0.1.7 当前原生面板规范
+
+- 后厨入口改用酒馆自带实心门形 Font Awesome 图标，与用户管理和角色管理共用字体、字号和开合状态。无自绘 SVG；不新增图标下载。
+- 右侧定位不变。桌面 top: 0，展开高度充满视口；1000px 以下与原生角色管理一致，顶部保留实际工具栏高度。面板按 height/display 自上而下开合，无横向位移。
+- 删除展开工作区按钮和对应状态。标题紧凑，一级与二级导航采用宿主 menu_button/active；二级导航必要时换行。
+- 面板沿用宿主 tint、border 和 backdrop-filter。跟随宿主的 iframe 根部及工具页背景透明，避免多层相同半透明背景把面板叠暗。输入框等局部控件仍使用主题变量。手动主题保留。
+- 世界入口为局势、设定、人物、变量、地图、后台演化。人物页同时呈现名单、档案及关系图，旧 relations 路由兼容。
+- world 为局势，lore 为设定，共用稳定 iframe。以属性名称只读分类：规则、地理、历史、文化、制度、物种、语言等归设定；包含当前、临时、状态、进展等变化词优先归局势；未知旧属性保留在局势。关系事实留在人物，已撤销事实不显示。分类不利用 _isState（它表示重点保留），不触发模型，也不修改原记录或存储键。
+- 两个视图分别过滤内容、对象索引、计数、搜索和空状态。编辑全部记录仍打开原有共享事实编辑器，名称明确提示编辑范围。0.1.5/0.1.6 章节仅记录历史，当前行为以本节为准。
+
+当前离线截图保存在 `output/native-panel-preview/`：`settings-desktop.png` 展示宿主门形图标、原生按钮与桌面贴顶；`situation-desktop.png`、`lore-desktop.png` 分别展示局势和设定；`lore-mobile-light.png` 展示窄屏浅色。检查实测开合中间帧高度变化、无 transform，保留工具栏的手机顶端区域不计作留白。

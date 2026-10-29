@@ -121,8 +121,25 @@
 .tk-embedded .world-opening { max-width: none; padding: 24px 0; }
 .tk-embedded.tk-follow-host .dice-app { max-width: none; padding: 20px 24px 32px; }
 .tk-embedded .dice-app > .dice-intro { grid-column: 1 / -1; margin: 0; }
+/* The host drawer owns the tint and blur; stacked frame backgrounds must not darken it. */
+:root.tk-embedded.tk-follow-host,
+.tk-embedded.tk-follow-host body,
+.tk-embedded.tk-follow-host .xiaobai-os-shell,
+.tk-embedded.tk-follow-host .xiaobai-os-glass,
+.tk-embedded.tk-follow-host .xiaobai-os-shell .agent-api-app,
+.tk-embedded.tk-follow-host .xiaobai-os-shell .world-app,
+.tk-embedded.tk-follow-host .xiaobai-os-shell .map-app { background: transparent; }
+.tk-embedded.tk-follow-host body { text-shadow: var(--tk-text-shadow, none); }
+.tk-embedded .archive { padding: 0 5px 16px; }
+.tk-embedded .archive-topbar { height: 32px; justify-content: flex-end; }
+.tk-embedded .archive-hero { padding: 4px 0; }
+.tk-embedded .archive-nav { padding: 4px 0; }
+.tk-embedded .archive-search { flex: 1; }
+.tk-embedded .archive-search input { width: 100%; padding: 4px; }
+.tk-embedded .archive-content { padding-top: 6px; }
+.tk-embedded .archive-roster { margin: 6px 0 12px; }
 @media (max-width: 600px) {
-    .tk-embedded .archive, .tk-embedded .container { padding-inline: 12px; }
+    .tk-embedded .archive, .tk-embedded .container { padding-inline: 5px; }
     .tk-embedded .agent-api-scroll, .tk-embedded .world-toolbar, .tk-embedded .world-listing, .tk-embedded.tk-follow-host .dice-app { padding-inline: 12px; }
     .tk-embedded .xb-agent-settings-surface :is(input, select, textarea) { font-size: 16px; }
 }

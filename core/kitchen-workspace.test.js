@@ -43,8 +43,14 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
         assert.equal(document.querySelector('[aria-selected="true"]').textContent, '世界');
     }
     assert.equal(workspace.isActive('people'), true, 'legacy relations links open the merged page');
-    assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '人物与关系');
+    assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '人物');
     assert.equal(document.querySelector('.tk-subnav [data-route="relations"]'), null);
+    assert.equal(document.querySelector('.tk-expand'), null);
+    assert.equal(document.querySelector('#tk-topbar .fa-door-open')?.classList.contains('fa-solid'), true);
+    await workspace.open('lore');
+    assert.equal(getKitchenMount('lore'), getKitchenMount('world'));
+    assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '设定');
+    assert.equal(document.querySelector('.tk-subnav [data-route="world"]').textContent, '局势');
     await workspace.open('memory-settings');
     assert.equal(document.querySelector('[aria-selected="true"]').textContent, '设置');
     assert.equal(getKitchenMount('memory-settings'), getKitchenMount('memory'));
