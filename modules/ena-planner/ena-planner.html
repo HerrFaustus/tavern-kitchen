@@ -38,25 +38,18 @@
 
     <!-- Desktop tabs -->
     <div class="nav-tabs">
-      <div class="nav-item active" data-view="quickstart">快速开始</div>
-      <div class="nav-item" data-view="api">模型接口</div>
-      <div class="nav-item" data-view="prompt">提示词</div>
-      <div class="nav-item" data-view="context">上下文</div>
-      <div class="nav-item" data-view="debug">调试</div>
+      <button type="button" class="nav-item active" data-view="quickstart">基本设置</button>
+      <button type="button" class="nav-item" data-view="api">模型接口</button>
+      <button type="button" class="nav-item" data-view="prompt">提示词</button>
+      <button type="button" class="nav-item" data-view="context">上下文</button>
+      <button type="button" class="nav-item" data-view="debug">调试</button>
     </div>
 
     <main class="app-main">
 
-      <!-- ── 快速开始 ── -->
+      <!-- ── 基本设置 ── -->
       <div id="view-quickstart" class="view active">
-        <div class="tip-box">
-          <div class="tip-icon">ℹ</div>
-          <div class="tip-text">
-            <strong>工作流程：</strong>发送原文 → 酒馆准备同轮上下文 → USER 楼层下方流式预览规划 → 点击“发送”保存规划并生成正文。可停止或重新规划；不操作就保留临时预览，不自动保存规划或生成正文。
-          </div>
-        </div>
-
-        <section class="card">
+<section class="card">
           <div class="card-title">基本设置</div>
           <div class="form-row">
             <div class="form-group">
@@ -90,14 +83,7 @@
       <div id="view-api" class="view"><div id="planner-text-api"></div></div>
       <!-- ── 提示词 ── -->
       <div id="view-prompt" class="view">
-        <div class="tip-box">
-          <div class="tip-icon">💡</div>
-          <div class="tip-text">
-            规划会读取酒馆本轮处理好的完整文字上下文。这里编写规划指令，不需要重复添加世界书或剧情记忆。
-          </div>
-        </div>
-
-        <section class="card">
+<section class="card">
           <div class="card-title">模板管理</div>
           <div class="form-row">
             <div class="form-group" style="flex:2;">
@@ -107,9 +93,9 @@
             </div>
             <div class="form-group" style="flex:3;">
               <div class="btn-group btn-group-compact">
-                <button id="ep_tpl_save" class="btn btn-p btn-icon" type="button" title="保存当前模板" aria-label="保存当前模板">💾</button>
-                <button id="ep_tpl_saveas" class="btn btn-icon" type="button" title="另存为新模板" aria-label="另存为新模板">📄</button>
-                <button id="ep_tpl_delete" class="btn btn-del btn-icon" type="button" title="删除当前模板" aria-label="删除当前模板">🗑️</button>
+                <button id="ep_tpl_save" class="btn btn-p btn-icon" type="button" title="保存当前模板" aria-label="保存当前模板">保存</button>
+                <button id="ep_tpl_saveas" class="btn btn-icon" type="button" title="另存为新模板" aria-label="另存为新模板">另存为</button>
+                <button id="ep_tpl_delete" class="btn btn-del btn-icon" type="button" title="删除当前模板" aria-label="删除当前模板">删除</button>
               </div>
             </div>
           </div>
@@ -187,26 +173,6 @@
 
     </main>
 
-    <!-- Mobile bottom nav -->
-    <nav class="mobile-nav">
-      <div class="mobile-nav-inner">
-        <div class="mobile-nav-item active" data-view="quickstart">
-          <div class="nav-dot"></div><span>开始</span>
-        </div>
-        <div class="mobile-nav-item" data-view="api">
-          <div class="nav-dot"></div><span>接口</span>
-        </div>
-        <div class="mobile-nav-item" data-view="prompt">
-          <div class="nav-dot"></div><span>提示词</span>
-        </div>
-        <div class="mobile-nav-item" data-view="context">
-          <div class="nav-dot"></div><span>上下文</span>
-        </div>
-        <div class="mobile-nav-item" data-view="debug">
-          <div class="nav-dot"></div><span>调试</span>
-        </div>
-      </div>
-    </nav>
 
   </div>
 

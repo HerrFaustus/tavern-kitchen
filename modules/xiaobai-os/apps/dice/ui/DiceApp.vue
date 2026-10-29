@@ -58,12 +58,10 @@ function clearSheetFailure() {
         <section aria-labelledby="dice-action-label" class="dice-feature">
             <div class="dice-switch-row">
                 <h1 id="dice-action-label">行动检定</h1>
-                <button
-                    type="button" class="dice-switch" role="switch" aria-labelledby="dice-action-label" :aria-checked="state.actionChecksEnabled"
-                    :disabled="busy" @click="send('dice/set-feature', { feature: 'actionChecksEnabled', enabled: !state.actionChecksEnabled })"
+                <input
+                    type="checkbox" class="dice-switch" role="switch" aria-labelledby="dice-action-label" :checked="state.actionChecksEnabled"
+                    :disabled="busy" @click.prevent="send('dice/set-feature', { feature: 'actionChecksEnabled', enabled: !state.actionChecksEnabled })"
                 >
-                    <span aria-hidden="true" /><span class="dice-sr">{{ state.actionChecksEnabled ? '关闭' : '开启' }}</span>
-                </button>
             </div>
             <p class="dice-intro">当你尝试不确定的事——说服陌生人、翻越高墙、破译符文——由骰点裁决，而非 AI。</p>
             <fieldset v-if="state.actionChecksEnabled" class="dice-frequency" :disabled="busy" aria-describedby="dice-rule-description">
@@ -109,12 +107,10 @@ function clearSheetFailure() {
         <section aria-labelledby="dice-encounter-label" class="dice-feature">
             <div class="dice-switch-row">
                 <h2 id="dice-encounter-label">随机遭遇</h2>
-                <button
-                    type="button" class="dice-switch" role="switch" aria-labelledby="dice-encounter-label" :aria-checked="state.encountersEnabled"
-                    :disabled="busy" @click="send('dice/set-feature', { feature: 'encountersEnabled', enabled: !state.encountersEnabled })"
+                <input
+                    type="checkbox" class="dice-switch" role="switch" aria-labelledby="dice-encounter-label" :checked="state.encountersEnabled"
+                    :disabled="busy" @click.prevent="send('dice/set-feature', { feature: 'encountersEnabled', enabled: !state.encountersEnabled })"
                 >
-                    <span aria-hidden="true" /><span class="dice-sr">{{ state.encountersEnabled ? '关闭' : '开启' }}</span>
-                </button>
             </div>
             <p>偶尔为剧情添一点变数，也可从已开启的世界背景与剧情记忆中寻找灵感。</p>
             <p class="dice-rates">轻微 5% <span aria-hidden="true">·</span> 中等 3% <span aria-hidden="true">·</span> 重大 1%</p>
@@ -145,20 +141,14 @@ p { margin:14px 0; }
 .dice-frequency:disabled { opacity:.6; }
 .dice-frequency-option:disabled { cursor:wait; }
 .dice-frequency p { margin:8px 0 0; font-size:13px; }
-.dice-switch { position:relative; width:48px; height:32px; border:0; padding:4px; flex-shrink:0; border-radius:20px; background:#858795; cursor:pointer; }
-.dice-switch::after { content:""; position:absolute; inset:-6px 0; }
-.dice-switch > span:first-child { display:block; width:24px; height:24px; border-radius:50%; background:white; transition:transform .15s; }
-.dice-switch[aria-checked="true"] { background:#7062d9; }
-.dice-switch[aria-checked="true"] > span:first-child { transform:translateX(16px); }
+.dice-switch { width:1em; height:1em; flex-shrink:0; margin:3px; accent-color:var(--xiaobai-os-accent); cursor:pointer; }
 .dice-switch:disabled { opacity:.5; cursor:wait; }
 .dice-switch:focus-visible { outline:2px solid #8577f0; outline-offset:4px; }
 .dice-notice { margin-top:28px; border-top:1px solid color-mix(in srgb,currentColor 15%,transparent); font-size:13px; }
 .dice-recovery { margin-top:20px; }
-.dice-sr { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
 @container os-stage (min-width: 900px) {
     .dice-app { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-content: start; align-items: start; gap: 36px; max-width: 1000px; padding: 28px 32px; }
     .dice-feature + .dice-feature { margin: 0; padding: 0 0 0 32px; border-top: 0; border-left: 1px solid color-mix(in srgb, currentColor 15%, transparent); }
     .dice-recovery { grid-column: 1 / -1; }
 }
-@media (prefers-reduced-motion: reduce) { .dice-switch > span:first-child { transition:none; } }
 </style>

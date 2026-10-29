@@ -1227,7 +1227,7 @@ const UNANNOTATED_LABEL = '未标注';
         $('assistant-page-title').textContent = childPage ? $(targetId).dataset.title : targetId === 'tab-agent-api' ? WORKSPACE_COPY.agentApi : assistant ? MEMORY_COPY.tab : tab.textContent;
         $('settings-close').setAttribute('aria-label', childPage || targetId === 'tab-agent-api' ? WORKSPACE_COPY.backParent : WORKSPACE_COPY.back);
         $$('.settings-tab').forEach(item => { item.hidden = !!childPage || assistant || item.dataset.family !== tab.dataset.family; });
-        $('settings-save').parentElement.hidden = ['tab-agent-api', 'tab-models', 'tab-appearance', 'tab-transfer', 'tab-backups', 'tab-clear', 'tab-guide'].includes(targetId);
+        $('settings-save').parentElement.hidden = ['tab-agent-api', 'tab-models', 'tab-appearance', 'tab-transfer', 'tab-backups', 'tab-clear'].includes(targetId);
         $('settings-cancel').hidden = targetId === 'tab-agent';
         $('settings-chat').hidden = targetId !== 'tab-agent';
         if (targetId === 'tab-vector') postMsg('REQUEST_RECALL_LOG');
@@ -2749,8 +2749,6 @@ const UNANNOTATED_LABEL = '未标注';
         $('btn-fullscreen-relations').onclick = openRelationsFullscreen;
         $('rel-fs-backdrop').onclick = closeRelationsFullscreen;
         $('rel-fs-close').onclick = closeRelationsFullscreen;
-
-        // HF guide
 
         // Vector UI
         initSummaryIOUI();

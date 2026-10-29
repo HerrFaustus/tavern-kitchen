@@ -138,6 +138,86 @@
 .tk-embedded .archive-search input { width: 100%; padding: 4px; }
 .tk-embedded .archive-content { padding-top: 6px; }
 .tk-embedded .archive-roster { margin: 6px 0 12px; }
+/* Match the host's menu_button, text_pole and inline-drawer header controls. */
+.tk-embedded.tk-follow-host :is(button, .sel-trigger):not([role="switch"]) {
+    background-color: var(--tk-button-background-color, var(--bg)) !important;
+    background-image: var(--tk-button-background-image, none) !important;
+    color: var(--tk-button-color, var(--txt)) !important;
+    border: var(--tk-button-border, 1px solid var(--bdr)) !important;
+    border-radius: var(--tk-button-border-radius, 5px) !important;
+    padding: var(--tk-button-padding, 3px 5px) !important;
+    font-family: var(--tk-button-font-family, inherit) !important;
+    font-size: var(--tk-button-font-size, inherit) !important;
+    font-weight: var(--tk-button-font-weight, 400) !important;
+    line-height: var(--tk-button-line-height, normal) !important;
+    letter-spacing: normal !important;
+    text-transform: none !important;
+    box-shadow: none !important;
+    filter: var(--tk-button-filter, none) !important;
+}
+.tk-embedded.tk-follow-host :is(button, .sel-trigger):not([role="switch"]):not(:disabled):not([aria-disabled="true"]):is(:hover, .active, .is-active, [aria-pressed="true"], [aria-selected="true"], [aria-current="page"]) {
+    background-color: var(--tk-selected-background-color, var(--bg3)) !important;
+    background-image: var(--tk-selected-background-image, none) !important;
+    color: var(--tk-selected-color, var(--txt)) !important;
+    border: var(--tk-selected-border, 1px solid var(--bdr)) !important;
+}
+.tk-embedded.tk-follow-host button:is(:disabled, [aria-disabled="true"]) {
+    opacity: var(--tk-disabled-opacity, .5) !important;
+    cursor: not-allowed !important;
+}
+.tk-embedded.tk-follow-host :is(.btn, .xb-assistant-config button, .agent-api-connection button) { min-height: 0; }
+.tk-embedded.tk-follow-host :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]), select, textarea) {
+    background-color: var(--tk-field-background-color, var(--bg2)) !important;
+    background-image: var(--tk-field-background-image, none) !important;
+    color: var(--tk-field-color, var(--txt)) !important;
+    border: var(--tk-field-border, 1px solid var(--bdr)) !important;
+    border-radius: var(--tk-field-border-radius, 5px) !important;
+    padding: var(--tk-field-padding, 3px 5px) !important;
+    font-family: var(--tk-field-font-family, inherit) !important;
+    font-size: var(--tk-field-font-size, inherit) !important;
+    min-height: 0 !important;
+    box-shadow: none !important;
+}
+.tk-embedded.tk-follow-host select { appearance: auto !important; }
+.tk-embedded.tk-follow-host input:is([type="checkbox"], [type="radio"]) {
+    appearance: auto !important; position: static !important; opacity: 1 !important;
+    width: 1em !important; height: 1em !important; min-width: 1em !important; min-height: 1em !important;
+    padding: 0 !important; margin: 3px !important; transform: none !important;
+    accent-color: var(--hl); cursor: pointer;
+}
+.tk-embedded.tk-follow-host .xb-sampling-toggle > span { display: none; }
+.tk-embedded.tk-follow-host input:is([type="checkbox"], [type="radio"])::before,
+.tk-embedded.tk-follow-host input:is([type="checkbox"], [type="radio"])::after { display: none !important; }
+.tk-embedded.tk-follow-host :is(.container, .workspace-shell, .agent-api-scroll, .world-toolbar, .world-listing, .dice-app) { padding: 5px !important; }
+.tk-embedded.tk-follow-host :is(.card, .neo-card, .settings-section, .settings-collapse, .agent-api-state, .map-settings-section, .dice-feature) {
+    background: transparent; border: 0; border-radius: 0; box-shadow: none;
+    padding: 5px 0; margin-bottom: 12px; transform: none;
+}
+.tk-embedded.tk-follow-host :is(.card-title, .neo-card-title, .settings-section-title, .settings-collapse-header, .summary-group > summary, .xb-sampling > summary) {
+    background-color: var(--tk-heading-background-color, transparent);
+    background-image: var(--tk-heading-background-image, none);
+    color: var(--txt); border: var(--tk-heading-border, 1px solid var(--bdr));
+    border-radius: var(--tk-heading-border-radius, 5px);
+    padding: var(--tk-heading-padding, 5px); margin: 0 0 5px;
+    font-size: 1em; font-weight: 600; letter-spacing: normal; text-transform: none;
+}
+.tk-embedded.tk-follow-host :is(.settings-row, .form-row, .form-group) { gap: 5px; margin-bottom: 8px; }
+.tk-embedded.tk-follow-host :is(.settings-field label, .form-label) { font-size: .9em; letter-spacing: normal; text-transform: none; }
+.tk-embedded.tk-follow-host .settings-tabs { flex-wrap: wrap; gap: 5px; width: 100%; padding: 0; margin: 0 0 8px; align-self: stretch; }
+.tk-embedded.tk-follow-host .settings-tab { flex: 1 0 auto; }
+.tk-embedded.tk-follow-host .workspace-shell > .modal-head { min-height: 40px; gap: 8px; }
+.tk-embedded.tk-follow-host #settings-close { width: 28px; height: 28px; }
+.tk-embedded.tk-follow-host .workspace-layout { gap: 10px; padding-top: 8px; }
+.tk-embedded.tk-follow-host #tab-summary :is(.settings-checkbox, .archive-setting, .settings-field) { min-height: 32px; padding: 5px 0; }
+.tk-embedded.tk-follow-host .summary-group > summary { min-height: 0; }
+.tk-embedded.tk-follow-host .nav-tabs { display: flex !important; flex-wrap: wrap; gap: 5px; padding: 0; margin-bottom: 10px; border: 0; }
+.tk-embedded.tk-follow-host .nav-item { flex: 1 0 auto; }
+.tk-embedded.tk-follow-host .nav-item::after { display: none; }
+.tk-embedded.tk-follow-host .container { padding-bottom: 5px !important; }
+.tk-embedded.tk-follow-host :is(.modal-head, .modal-body, .modal-foot, .settings-collapse-content) { padding: 8px 5px; }
+.tk-embedded.tk-follow-host .agent-api-header { margin-bottom: 12px; }
+.tk-embedded.tk-follow-host .xb-assistant-preset-row { gap: 5px; padding-bottom: 8px; }
+.tk-embedded.tk-follow-host :is(.btn-icon, .archive-icon, .modal-close, .xb-assistant-icon-button) { width: auto; min-width: 28px; height: auto; min-height: 28px; }
 /* Both directions use the host's timing, regardless of a module's hover style. */
 .tk-embedded :is(button, [role="button"], summary, input, select, textarea),
 .tk-embedded :is(button, [role="button"], summary)::before,

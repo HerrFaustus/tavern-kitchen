@@ -2,6 +2,31 @@ import { extensionFolderPath } from './constants.js';
 import { observeBackgroundTask } from '../shared/common/async-errors.js';
 
 let workspace;
+let nativeControls;
+
+/** Read real host controls so custom Tavern themes also reach isolated frames. */
+function syncNativeControls(target) {
+    if (!nativeControls?.isConnected) {
+        nativeControls = document.createElement('div');
+        nativeControls.id = 'tk-native-controls';
+        nativeControls.inert = true;
+        nativeControls.setAttribute('aria-hidden', 'true');
+        nativeControls.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;left:-10000px;top:0;';
+        for (const [name, tag, classes] of [['button', 'button', 'menu_button'], ['selected', 'button', 'menu_button active'], ['disabled', 'button', 'menu_button'], ['field', 'input', 'text_pole'], ['heading', 'div', 'standoutHeader inline-drawer-header']]) {
+            const control = document.createElement(tag);
+            control.dataset.control = name; control.className = classes;
+            if (tag === 'button') { control.type = 'button'; control.textContent = '后厨'; }
+            if (name === 'disabled') control.disabled = true;
+            nativeControls.append(control);
+        }
+        document.body.append(nativeControls);
+    }
+    const properties = ['background-color', 'background-image', 'color', 'border', 'border-radius', 'padding', 'font-size', 'font-family', 'font-weight', 'line-height', 'filter', 'opacity'];
+    for (const control of nativeControls.children) {
+        const style = getComputedStyle(control);
+        for (const property of properties) target.style.setProperty(`--tk-${control.dataset.control}-${property}`, style.getPropertyValue(property));
+    }
+}
 export const KITCHEN_TABS = [['world', '世界'], ['memory', '剧情'], ['planner', '规划'], ['settings', '设置']];
 export const KITCHEN_ROUTES = {
     memory: [['memory', '事件时间线']],
@@ -39,6 +64,7 @@ export function bindKitchenFrame(frame) {
             doc.documentElement.style.setProperty('--tk-text-shadow', theme.textShadow);
             doc.documentElement.style.setProperty('--tk-color-scheme', theme.colorScheme);
             doc.documentElement.style.setProperty('--tk-motion-duration', theme.getPropertyValue('--animation-duration-2x').trim() || '200ms');
+            syncNativeControls(doc.documentElement);
             doc.dispatchEvent(new doc.defaultView.CustomEvent('kitchen-theme-change'));
         };
         sync();

@@ -130,7 +130,7 @@
 .map-settings-feedback { position: sticky; top: 0; z-index: 1; padding: 14px 22px; background: var(--map-surface); border-bottom: 1px solid var(--map-line); overflow-wrap: anywhere; }
 .map-settings-feedback strong { display: block; margin-bottom: 4px; font-size: 11px; font-weight: 600; }
 .map-settings-feedback.is-error p { color: var(--map-danger); }
-.map-switch { width: 42px; height: 25px; background: var(--map-line); padding: 3px; border-radius: 25px; border: 0; flex: 0 0 auto; }.map-switch span { display: block; width: 19px; height: 19px; border-radius: 50%; background: #fffdf6; transition: transform 160ms; box-shadow: 0 1px 3px #0002; }.map-switch[aria-checked="true"] { background: #286a5c; }.map-switch[aria-checked="true"] span { transform: translateX(17px); }
+.map-switch { width: 1em; height: 1em; margin: 3px; flex: 0 0 auto; accent-color: var(--map-accent); cursor: pointer; }
 .map-settings-section { padding: 20px 0; border-top: 1px solid var(--map-line); }.map-settings-section > .map-icon { color: var(--map-accent); margin-bottom: 8px; }.map-settings-section button { margin-top: 12px; }.map-settings-section small { display: block; color: var(--map-muted); margin-top: 7px; font-size: 10px; }
 .map-setting-note { font-size: 10px !important; color: var(--map-muted); }.map-sync-button { display: flex; align-items: center; gap: 6px; padding: 10px 0; border: 0; background: transparent; color: var(--map-accent) !important; font-size: 11px !important; }
 .os-app-dialog-shade > .map-search-dialog { height: min(640px, calc(100% - 35px)); display: flex; flex-direction: column; }

@@ -28,12 +28,12 @@ const EMBEDDED_CSS = `
 .vm-title,.vm-item-name{font-weight:bold}
 .vm-header{padding:15px}.vm-title{font-size:16px}
 .vm-section-header{padding:5px 15px;border-bottom:5px solid var(--SmartThemeBorderColor);font-size:14px;color:var(--SmartThemeEmColor)}
-.vm-close,.vm-btn{background:none;border:none;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+.vm-close{background:none;border:none;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
 .vm-close{font-size:18px;padding:5px}
-.vm-btn{border:1px solid var(--SmartThemeBorderColor);border-radius:3px;font-size:12px;padding:2px 4px;color:var(--SmartThemeBodyColor)}
+.vm-btn{display:inline-flex;gap:4px}
 .vm-search-container{padding:10px;border-bottom:1px solid var(--SmartThemeBorderColor)}
 .vm-search-input{width:100%;padding:3px 6px}
-.vm-clear-all-btn{color:#ff6b6b;border-color:#ff6b6b;opacity:.3}
+.vm-clear-all-btn{color:#ff6b6b;border-color:#ff6b6b}
 .vm-list{flex:1;overflow-y:auto;padding:10px}
 .vm-item{border:1px solid var(--SmartThemeBorderColor);opacity:.7}
 .vm-item.expanded{opacity:1}
@@ -45,8 +45,8 @@ const EMBEDDED_CSS = `
 .vm-inline-form{background:var(--SmartThemeChatTintColor);border:1px solid var(--SmartThemeBorderColor);border-top:none;padding:10px;margin:0;display:none}
 .vm-inline-form.active{display:block;animation:slideDown .2s ease-out}
 @keyframes slideDown{from{opacity:0;max-height:0;padding-top:0;padding-bottom:0}to{opacity:1;max-height:200px;padding-top:10px;padding-bottom:10px}}
-@media (hover:hover){.vm-close:hover,.vm-btn:hover{opacity:.8}.vm-close:hover{color:red}.vm-clear-all-btn:hover{opacity:1}.vm-item:hover>.vm-item-header .vm-item-controls{opacity:1;visibility:visible}.vm-list:hover::-webkit-scrollbar-thumb{background:var(--SmartThemeQuoteColor)}.vm-variable-checkbox:hover{background-color:rgba(255,255,255,.1)}}
-@media (hover:none){.vm-close:active,.vm-btn:active{opacity:.8}.vm-close:active{color:red}.vm-clear-all-btn:active{opacity:1}.vm-item:active>.vm-item-header .vm-item-controls,.vm-item.touched>.vm-item-header .vm-item-controls{opacity:1;visibility:visible}.vm-item.touched>.vm-item-header{background-color:rgba(255,255,255,.05)}.vm-btn:active{background-color:rgba(255,255,255,.1);transform:scale(.95)}.vm-variable-checkbox:active{background-color:rgba(255,255,255,.1)}}
+@media (hover:hover){.vm-close:hover{opacity:.8}.vm-close:hover{color:red}.vm-clear-all-btn:hover{opacity:1}.vm-item:hover>.vm-item-header .vm-item-controls{opacity:1;visibility:visible}.vm-list:hover::-webkit-scrollbar-thumb{background:var(--SmartThemeQuoteColor)}.vm-variable-checkbox:hover{background-color:rgba(255,255,255,.1)}}
+@media (hover:none){.vm-close:active{opacity:.8}.vm-close:active{color:red}.vm-clear-all-btn:active{opacity:1}.vm-item:active>.vm-item-header .vm-item-controls,.vm-item.touched>.vm-item-header .vm-item-controls{opacity:1;visibility:visible}.vm-item.touched>.vm-item-header{background-color:rgba(255,255,255,.05)}.vm-variable-checkbox:active{background-color:rgba(255,255,255,.1)}}
 .vm-item:not([data-level]).expanded .vm-item[data-level="1"]{--level-color:hsl(36,100%,50%)}
 .vm-item[data-level="1"].expanded .vm-item[data-level="2"]{--level-color:hsl(60,100%,50%)}
 .vm-item[data-level="2"].expanded .vm-item[data-level="3"]{--level-color:hsl(120,100%,50%)}
@@ -101,7 +101,7 @@ const EMBEDDED_HTML = `
         <div class="vm-section-header">
           <div class="vm-section-title"><i class="fa-solid ${t==='character'?'fa-user':'fa-globe'}"></i>${t==='character'?' 本地变量':' 全局变量'}</div>
           <div class="vm-section-controls">
-            ${[['import','fa-upload','导入变量'],['export','fa-download','导出变量'],['add','fa-plus','添加变量'],['collapse','fa-chevron-down','展开/折叠所有'],['clear-all','fa-trash','清除所有变量']].map(([a,ic,ti])=>`<button class="vm-btn ${a==='clear-all'?'vm-clear-all-btn':''}" data-type="${t}" data-act="${a}" title="${ti}"><i class="fa-solid ${ic}"></i></button>`).join('')}
+            ${[['import','fa-upload','导入变量'],['export','fa-download','导出变量'],['add','fa-plus','添加变量'],['collapse','fa-chevron-down','展开/折叠所有'],['clear-all','fa-trash','清除所有变量']].map(([a,ic,ti])=>`<button class="menu_button vm-btn ${a==='clear-all'?'vm-clear-all-btn':''}" data-type="${t}" data-act="${a}" title="${ti}"><i class="fa-solid ${ic}"></i></button>`).join('')}
           </div>
         </div>
         <div class="vm-search-container"><input type="text" class="vm-input vm-search-input" id="${t}-vm-search" placeholder="搜索${t==='character'?'本地':'全局'}变量..."></div>
@@ -110,8 +110,8 @@ const EMBEDDED_HTML = `
           <div class="vm-form-row"><label class="vm-form-label">名称:</label><input type="text" class="vm-input vm-form-input" id="${t}-vm-name" placeholder="变量名称"></div>
           <div class="vm-form-row"><label class="vm-form-label">值:</label><textarea class="vm-textarea vm-form-input" id="${t}-vm-value" placeholder="变量值 (支持JSON格式)"></textarea></div>
           <div class="vm-form-buttons">
-            <button class="vm-btn" data-type="${t}" data-act="save-add"><i class="fa-solid fa-floppy-disk"></i>保存</button>
-            <button class="vm-btn" data-type="${t}" data-act="cancel-add">取消</button>
+            <button class="menu_button vm-btn" data-type="${t}" data-act="save-add"><i class="fa-solid fa-floppy-disk"></i>保存</button>
+            <button class="menu_button vm-btn" data-type="${t}" data-act="cancel-add">取消</button>
           </div>
         </div>
       </div>`).join('')}
@@ -370,7 +370,7 @@ class VariablesPanel {
       ['add-child','fa-plus-circle','添加子变量'],
       ['copy','fa-eye-dropper','复制（长按: 宏，单击: 变量路径）'],
       ['delete','fa-trash','删除'],
-    ].map(([act,ic,ti])=>`<button class="vm-btn" data-act="${act}" title="${ti}"><i class="fa-solid ${ic}"></i></button>`).join('');
+    ].map(([act,ic,ti])=>`<button class="menu_button vm-btn" data-act="${act}" title="${ti}"><i class="fa-solid ${ic}"></i></button>`).join('');
   }
 
   createInlineForm(t,target,fs){
@@ -380,8 +380,8 @@ class VariablesPanel {
       <div class="vm-form-row"><label class="vm-form-label">名称:</label><input type="text" class="vm-input vm-form-input inline-name" placeholder="变量名称"></div>
       <div class="vm-form-row"><label class="vm-form-label">值:</label><textarea class="vm-textarea vm-form-input inline-value" placeholder="变量值 (支持JSON格式)"></textarea></div>
       <div class="vm-form-buttons">
-        <button class="vm-btn" data-act="inline-save"><i class="fa-solid fa-floppy-disk"></i>保存</button>
-        <button class="vm-btn" data-act="inline-cancel">取消</button>
+        <button class="menu_button vm-btn" data-act="inline-save"><i class="fa-solid fa-floppy-disk"></i>保存</button>
+        <button class="menu_button vm-btn" data-act="inline-cancel">取消</button>
       </div>
     </div>`);
     this.state.currentInlineForm?.remove();

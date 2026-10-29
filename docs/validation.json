@@ -1,7 +1,7 @@
 {
-  "version": "0.1.8",
-  "verified_at_utc": "2026-10-29T21:48:07.446Z",
-  "build_id": "00c50a01fbce02a7abe4",
+  "version": "0.1.9",
+  "verified_at_utc": "2026-10-29T22:42:11.636Z",
+  "build_id": "e1247069b6c37d38c12b",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
@@ -49,17 +49,26 @@
       "noLocalThemes": true,
       "symmetricButtons": true,
       "stableFrame": true,
+      "noTutorial": true,
       "appearanceReadOnly": true,
+      "nativeStoryButton": true,
+      "nativePlannerButton": true,
+      "plannerTopNavigation": true,
+      "plannerFlat": true,
       "situationSplit": true,
       "loreSplit": true,
       "peopleName": true,
       "profileAndGraph": true,
       "hostCloses": true,
+      "nativeApiButton": true,
       "transparentFrame": true,
       "draftPreserved": true,
       "mobileOverflow": false,
       "mobileTop": true,
       "liveStoryPalette": true,
+      "nativeDiceSwitch": true,
+      "diceToggleBack": true,
+      "mapToggle": true,
       "mapPalette": true,
       "frameReducedMotion": true,
       "reducedMotion": true,
@@ -71,7 +80,8 @@
       "workspace",
       "built story-summary page",
       "OS lifecycle and frame bridge",
-      "built Vue pages"
+      "built Vue pages",
+      "host menu_button, text_pole and standoutHeader computed styles"
     ],
     "mocked_dependencies": [
       "host globals",
@@ -81,5 +91,5 @@
       "ECharts renderer"
     ]
   },
-  "ui_review": "passed (early stable entry, world-first navigation, host-only themes, symmetric hover timing and reduced motion, desktop and mobile; offline fixture only)"
+  "ui_review": "passed (tutorial removal, native buttons and fields, planner top navigation, dice and map checkbox persistence, desktop and mobile; offline fixture only)"
 }
