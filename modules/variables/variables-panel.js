@@ -1,3 +1,4 @@
+import { getKitchenMount, openKitchenTab, closeKitchenWorkspace } from '../../core/kitchen-workspace.js';
 import { extension_settings, getContext, saveMetadataDebounced } from "../../../../../extensions.js";
 import { saveSettingsDebounced, chat_metadata } from "../../../../../../script.js";
 import { getLocalVariable, setLocalVariable, getGlobalVariable, setGlobalVariable } from "../../../../../variables.js";
@@ -221,7 +222,7 @@ class VariablesPanel {
 
   createContainer(){
     if(!this.state.container?.length){
-      $('body').append(this.containerHtml);
+      $(getKitchenMount('variables') || document.body).append(this.containerHtml);
       this.state.container=$("#vm-container");
       $("#vm-close").off('click').on('click',()=>this.close());
     }
@@ -229,12 +230,13 @@ class VariablesPanel {
   removeContainer(){ this.state.container?.remove(); this.state.container=null; }
 
   open(){
+    openKitchenTab('variables');
     if(!this.state.isEnabled) return toastr.warning('请先启用变量面板');
     this.createContainer(); this.bindEvents(); this.state.isOpen=true; this.state.container.show();
     this.state.rulesChecksum = JSON.stringify(getRulesTable()||{});
     this.loadVariables(); this.startWatcher();
   }
-  close(){ this.state.isOpen=false; this.stopWatcher(); this.unbindEvents(); this.removeContainer(); }
+  close(){ if(getKitchenMount('variables')) closeKitchenWorkspace(); this.state.isOpen=false; this.stopWatcher(); this.unbindEvents(); this.removeContainer(); }
 
   bindEvents(){
     if(!this.state.container?.length) return;

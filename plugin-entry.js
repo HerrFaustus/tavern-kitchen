@@ -1,4 +1,7 @@
 // 酒馆后厨 0.1 — Based on LittleWhiteBox by biex.
+import { createKitchenWorkspace } from './core/kitchen-workspace.js';
+import { createModuleEvents, event_types } from './core/event-manager.js';
+import { DOMPurify } from '../../../../lib.js';
 import { extension_settings } from '../../../extensions.js';
 import { saveSettings, chat } from '../../../../script.js';
 import { EXT_ID, extensionFolderPath } from './core/constants.js';
@@ -22,6 +25,16 @@ window.registerKitchenModuleCleanup = (id, cleanup) => cleanups.set(id, cleanup)
 configureL0ContinuationCheck(isDiceContinuationPending);
 let memory;
 let planner;
+let variables;
+let kitchen;
+let readyResolve;
+const featureReady = new Promise(resolve => { readyResolve = resolve; });
+let startupError;
+async function requireFeatures() {
+    await featureReady;
+    if (!settings.enabled) throw new Error('后厨已停用，请在设置中启用并保存刷新。');
+    if (startupError) throw startupError;
+}
 
 function showError(error) {
     console.error('[TavernKitchen]', error);
@@ -42,8 +55,13 @@ async function loadBridge(entry, id) {
 async function mountSettings() {
     const response = await fetch(`${extensionFolderPath}/settings.html`);
     if (!response.ok) throw new Error(`后厨设置页加载失败：${response.status}`);
-    $('#extensions_settings').append(await response.text());
-    const root = document.getElementById('tavern-kitchen-settings');
+    const fragment = document.createElement('div');
+    fragment.innerHTML = DOMPurify.sanitize(await response.text());
+    const root = fragment.firstElementChild;
+    const shortcut = document.createElement('button');
+    shortcut.type = 'button'; shortcut.className = 'menu_button'; shortcut.textContent = '打开酒馆后厨';
+    shortcut.addEventListener('click', () => kitchen.open('settings'));
+    document.getElementById('extensions_settings')?.append(shortcut);
     for (const input of root.querySelectorAll('[data-feature]')) {
         input.checked = input.dataset.feature === 'enabled' ? settings.enabled : !!settings[input.dataset.feature]?.enabled;
     }
@@ -63,27 +81,45 @@ async function mountSettings() {
         }
     }, { source: import.meta.url, operation: 'save-settings' }));
     const actions = {
-        memory: () => {
-            if (!memory || !chat.length) throw new Error('请启用记忆、刷新页面并进入一段聊天。');
+        memory: async () => {
+            await requireFeatures();
+            if (!kitchen.isActive('memory')) return;
+            if (!memory) throw new Error('记忆尚未启用，请在设置中开启并保存刷新。');
+            if (!chat.length) throw new Error('先进入一段聊天并发送消息，再查看本段故事的记忆。');
             memory.openStoryMemory();
         },
-        planner: () => {
-            if (!planner) throw new Error('请先勾选剧情规划，保存并刷新。');
+        planner: async () => {
+            await requireFeatures();
+            if (!kitchen.isActive('planner')) return;
+            if (!planner) throw new Error('规划尚未启用，请在设置中开启并保存刷新。');
             window.tavernKitchenEnaPlanner?.openSettings();
         },
-        world: () => openXiaobaiOs(),
+        variables: async () => {
+            await requireFeatures();
+            if (!kitchen.isActive('variables')) return;
+            if (!variables) throw new Error('变量面板尚未启用，请在设置中开启并保存刷新。');
+            variables.getVariablesPanelInstance()?.open();
+        },
     };
-    for (const [name, action] of Object.entries(actions)) {
-        const button = root.querySelector(`[data-action="${name}"]`);
-        button.disabled = !settings.enabled;
-        button.addEventListener('click', () => { void Promise.resolve().then(action).catch(showError); });
-    }
+    for (const id of ['map', 'world', 'dice', 'agent-api']) actions[id] = async () => {
+        await requireFeatures();
+        if (!kitchen.isActive(id)) return;
+        if (!settings.xiaobaiOs?.enabled) throw new Error('世界相关板块尚未启用，请在设置中开启并保存刷新。');
+        if (!await openXiaobaiOs(id)) throw new Error('请先选择角色并进入一段聊天，再使用此板块。');
+    };
+    kitchen = createKitchenWorkspace({ actions, settingsElement: root, onVisibility(visible, tab) {
+        const instance = variables?.getVariablesPanelInstance();
+        if (!visible || tab !== 'variables') instance?.stopWatcher();
+    } });
+    const events = createModuleEvents('kitchen-workspace');
+    events.on(event_types.CHAT_CHANGED, () => kitchen.reset());
 }
 
 jQuery(observeAsyncCallback(async () => {
     await prepareXiaobaiOsSettings();
     await mountSettings();
-    if (!settings.enabled) return;
+    if (!settings.enabled) { readyResolve(); return; }
+    try {
     for (const [entry, id] of [
         ['runtime/call-generate', 'tk-call-generate'],
         ['runtime/worldbook', 'tk-worldbook'],
@@ -96,11 +132,15 @@ jQuery(observeAsyncCallback(async () => {
         commands.initVarCommands();
         events.initVareventEditor();
         if (settings.variablesCore?.enabled) (await import('./modules/variables/variables-core.js')).initVariablesCore();
-        if (settings.variablesPanel?.enabled) await (await import('./modules/variables/variables-panel.js')).initVariablesPanel();
+        if (settings.variablesPanel?.enabled) {
+            variables = await import('./modules/variables/variables-panel.js');
+            await variables.initVariablesPanel();
+        }
     }
     if (settings.enaPlanner?.enabled) {
         planner = await import('./modules/ena-planner/ena-planner.js');
         await planner.initEnaPlanner();
     }
     if (settings.xiaobaiOs?.enabled) await initXiaobaiOs();
+    } catch (error) { startupError = error; showError(error); } finally { readyResolve(); }
 }, { source: import.meta.url, operation: 'startup' }));

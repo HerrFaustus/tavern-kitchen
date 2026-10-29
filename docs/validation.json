@@ -1,21 +1,21 @@
 {
-  "version": "0.1.0",
-  "verified_at_utc": "2026-10-29T05:04:56.720006+00:00",
-  "build_id": "2656f5b0468503dd6289",
+  "version": "0.1.1",
+  "verified_at_utc": "2026-10-29T06:30:34.902Z",
+  "build_id": "40fb7873cc89301427d3",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
   "quality": "passed",
   "unit_tests": {
-    "total": 1462,
-    "passed": 1462,
+    "total": 1464,
+    "passed": 1464,
     "failed": 0
   },
   "memory_runtime": "passed",
   "removed_source_paths": 1763,
   "removed_modules_in_build": 0,
   "browser_entries": 11,
-  "chunks": 63,
+  "chunks": 64,
   "host_static_validation": {
     "version": "1.19.0",
     "commit": "06bde939fb1e9c4c8d8641d810f0a916b5bce127"
@@ -23,5 +23,24 @@
   "live_host_browser_test": false,
   "paid_model_calls": 0,
   "upstream": "RT15548/LittleWhiteBox",
-  "upstream_commit": "e30ebadf69cd53e9fafc5f81f74b9499911f78f5"
+  "upstream_commit": "e30ebadf69cd53e9fafc5f81f74b9499911f78f5",
+  "browser_fixture": {
+    "desktop": [
+      1440,
+      1000
+    ],
+    "mobile": [
+      390,
+      844
+    ],
+    "tabs": 8,
+    "horizontal_overflow": false,
+    "script_errors": 0,
+    "live_host": false,
+    "mocked_dependencies": [
+      "host DOMPurify",
+      "echarts"
+    ]
+  },
+  "ui_review": "ship (desktop settings/memory/planner, mobile settings)"
 }

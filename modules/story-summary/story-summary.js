@@ -1,3 +1,4 @@
+import { getKitchenMount, openKitchenTab, closeKitchenWorkspace, bindKitchenFrame } from '../../core/kitchen-workspace.js';
 import { handleTextApiRequest } from '../text-api/host.js';
 // ═══════════════════════════════════════════════════════════════════════════
 // Story Summary - 主入口
@@ -2168,6 +2169,17 @@ let stopOverlayViewport = null;
 function createOverlay() {
     if (overlayCreated) return;
     overlayCreated = true;
+    const mount = getKitchenMount('memory');
+    if (mount) {
+        const host = document.createElement('div');
+        host.id = 'tavernKitchen-story-summary-overlay'; host.className = 'tk-embedded-host';
+        const frame = document.createElement('iframe');
+        frame.id = 'tavernKitchen-story-summary-iframe'; frame.title = '记忆与召回';
+        bindKitchenFrame(frame); frame.src = iframePath;
+        host.append(frame); mount.append(host);
+        window.addEventListener(MESSAGE_EVENT, handleFrameMessageEvent);
+        return;
+    }
 
     const $overlay = $(`
         <div id="tavernKitchen-story-summary-overlay" style="
@@ -2204,11 +2216,13 @@ function createOverlay() {
 }
 
 function showOverlay() {
+    openKitchenTab('memory');
     if (!overlayCreated) createOverlay();
     $("#tavernKitchen-story-summary-overlay").show();
 }
 
 function hideOverlay() {
+    if (getKitchenMount('memory')) closeKitchenWorkspace();
     stopOverlayViewport?.();
     stopOverlayViewport = null;
     removeBackupManagerModal();

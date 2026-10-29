@@ -12,6 +12,7 @@ import { MEMORY_CHAT_MESSAGES as routes } from '../maintenance/chat-contract.js'
 import { createSummaryDiagnostics } from '../summary-diagnostics.js';
 import { getChatIdentity } from '../data/chat-identity.js';
 import { isTrustedMessage, postToIframe } from '../../../core/iframe-messaging.js';
+import { getKitchenMount, closeKitchenWorkspace } from '../../../core/kitchen-workspace.js';
 import { getMemoryChatPrompt } from '../maintenance/prompt.js';
 
 // This boundary test joins the real host/save path, frame entrypoints and chat UI.
@@ -98,6 +99,7 @@ function harness(t) {
         memoryMaintenance: maintenance, document: parent.document, window: parent.window,
         isTrustedMessage, postToIframe, frameReady: false, pendingFrameMessages: [], overlayCreated: false,
         stopOverlayViewport: null, removeBackupManagerModal() {}, MESSAGE_EVENT: 'message', handleFrameMessageEvent() {},
+        getKitchenMount, closeKitchenWorkspace,
         MODULE_ID: 'lifecycle-test', xbLog: { error() {} },
     });
     maintenance.start();

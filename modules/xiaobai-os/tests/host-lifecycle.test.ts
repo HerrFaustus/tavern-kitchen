@@ -32,6 +32,28 @@ function harness(t: TestContext, options: XiaobaiOsLifecycleOptions = {}) {
     return { lifecycle, document, window, bridge, frameOptions: () => frameOptions };
 }
 
+test('embedded workspace opens inside its mount without adding a chat launcher or another modal', async t => {
+    let mount: HTMLElement;
+    const h = harness(t, { embeddedMount: () => mount, getAppDescriptors: () => [
+        { id: 'map', name: '地图', description: '', accent: '#aaa' },
+        { id: 'world', name: '世界', description: '', accent: '#aaa' },
+    ] });
+    mount = h.document.createElement('div') as unknown as HTMLElement;
+    h.document.body.append(mount);
+    h.lifecycle.init();
+    assert.equal(h.document.getElementById('tavernKitchen-os-button'), null);
+    assert.equal(h.lifecycle.open('map'), true);
+    const frame = mount.querySelector('iframe');
+    assert.ok(frame);
+    assert.equal(frame.getAttribute('src'), '/os.html?embedded=1');
+    const post = t.mock.method(h.bridge, 'post', () => true);
+    assert.equal(h.lifecycle.open('world'), true);
+    assert.equal(mount.querySelector('iframe'), frame);
+    assert.deepEqual(post.mock.calls[0].arguments, ['os/navigate', { appId: 'world' }]);
+    await h.lifecycle.closeWindow();
+    assert.equal(mount.childElementCount, 0);
+});
+
 test('a failing background start and failing error owner are observed without adding a dialog', async t => {
     const log = t.mock.method(console, 'error', () => undefined);
     const error = new Error('background start failed');

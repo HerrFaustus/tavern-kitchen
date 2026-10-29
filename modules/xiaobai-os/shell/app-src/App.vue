@@ -38,6 +38,7 @@ interface PendingAppOpening {
     latestState?: unknown;
 }
 
+const embedded = new URLSearchParams(window.location.search).get('embedded') === '1';
 const bridge = createFrameBridge();
 const root = ref<HTMLElement | null>(null);
 const device = ref<InstanceType<typeof XiaobaiOsDevice> | null>(null);
@@ -304,7 +305,7 @@ function goHome(): void {
 }
 
 function goBack(): void {
-    if (!device.value?.back()) { goHome(); }
+    if (!device.value?.back() && !embedded) { goHome(); }
 }
 
 function close(): void {
@@ -324,7 +325,7 @@ function handleKeydown(event: KeyboardEvent): void {
         }
         return;
     }
-    if (event.key !== 'Tab' || !root.value) {
+    if (embedded || event.key !== 'Tab' || !root.value) {
         return;
     }
     const focusable = Array.from(root.value.querySelectorAll<HTMLElement>('button:not(:disabled), [href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), summary, [tabindex]:not([tabindex="-1"])'))
@@ -370,7 +371,7 @@ onBeforeUnmount(() => {
         class="xiaobai-os-shell"
         :class="`theme-${theme}`"
         role="dialog"
-        aria-modal="true"
+        :aria-modal="embedded ? undefined : true"
         aria-label="后厨工作台"
         tabindex="-1"
         @keydown="handleKeydown"

@@ -1,3 +1,4 @@
+import { getKitchenMount, closeKitchenWorkspace, bindKitchenFrame } from '../../../core/kitchen-workspace.js';
 import { observeBackgroundTask } from '../../../shared/common/async-errors.js';
 import { getRequestHeaders } from '../../../../../../../script.js';
 import { extensionFolderPath } from '../../../core/constants.js';
@@ -194,6 +195,9 @@ export function createProductionBootstrap(
         composition: productionComposition,
         stylesheetHref: hostStylesheet,
         frameSrc: frameSource,
+        embeddedMount: () => getKitchenMount('map'),
+        onEmbeddedClose: closeKitchenWorkspace,
+        onFrameCreated: bindKitchenFrame,
         subscribeChatChanged: subscribeXiaobaiOsChatChanged,
         getInitSnapshot: getSillyTavernShellSnapshot,
         getAppOrder: () => settings.read()?.appOrder ?? [],

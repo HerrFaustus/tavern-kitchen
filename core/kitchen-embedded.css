@@ -1,0 +1,39 @@
+/* Feature frames share SillyTavern's live theme and the outer workspace chrome. */
+:root.tk-embedded, .tk-embedded [data-theme], .tk-embedded .xiaobai-os-shell {
+    --bg: var(--SmartThemeBlurTintColor, #202024);
+    --bg2: var(--SmartThemeChatTintColor, #29292e);
+    --bg3: color-mix(in srgb, var(--SmartThemeBodyColor, #ddd) 8%, var(--bg));
+    --txt: var(--SmartThemeBodyColor, #ddd);
+    --txt2: var(--txt); --txt3: var(--SmartThemeEmColor, #aaa);
+    --bdr: var(--SmartThemeBorderColor, #555); --bdr2: var(--bdr);
+    --acc: var(--txt); --hl: var(--SmartThemeQuoteColor, #d5b18a); --hl2: var(--hl);
+    --hl-soft: color-mix(in srgb, var(--hl) 12%, transparent);
+    --archive-accent: var(--hl); --archive-accent-soft: var(--bg3);
+    --xiaobai-os-screen: var(--bg); --xiaobai-os-surface: var(--bg2);
+    --xiaobai-os-ink: var(--txt); --xiaobai-os-muted: var(--txt3);
+    --xiaobai-os-divider: var(--bdr); --xiaobai-os-accent: var(--hl);
+    --os-radius-card: 8px; --os-radius-control: 5px; --os-shadow-card: none;
+    font-family: var(--tk-font, sans-serif); color: var(--txt); background: var(--bg);
+}
+.tk-embedded body { font-family: var(--tk-font, sans-serif); color: var(--txt); background: var(--bg); }
+.tk-embedded #xb-frame-boot { color: var(--txt); background: var(--bg); }
+.tk-embedded .archive { padding: 0 24px 32px; font-family: inherit; }
+.tk-embedded .archive-topbar { height: 52px; }
+.tk-embedded .archive-brand, .tk-embedded #archive-close, .tk-embedded #archive-theme,
+.tk-embedded #ep_close, .tk-embedded .header-left { display: none; }
+.tk-embedded .container { max-width: none; padding: 16px 24px; }
+.tk-embedded .container > header { justify-content: flex-end; padding: 0 0 12px; margin: 0 0 16px; }
+.tk-embedded .xiaobai-os-shell { padding: 0; background: var(--bg); backdrop-filter: none; }
+.tk-embedded .xiaobai-os-device { width: 100%; height: 100%; border: 0; border-radius: 0; box-shadow: none; }
+.tk-embedded .xiaobai-os-glass { border-radius: 0; }
+.tk-embedded .xiaobai-os-system-bar { display: none; }
+.tk-embedded .xiaobai-os-home-button, .tk-embedded .xiaobai-os-close-button { display: none; }
+.tk-embedded .xiaobai-os-navigation { justify-content: flex-start; min-height: 36px; height: 36px; background: var(--bg); border-top: 1px solid var(--bdr); padding: 0 12px; }
+.tk-embedded .xiaobai-os-navigation .xiaobai-os-nav-button { width: auto; height: 32px; gap: 4px; border-radius: 4px; }
+.tk-embedded .xiaobai-os-navigation .xiaobai-os-nav-button::after { content: '返回上一层'; font-size: 12px; }
+.tk-embedded :focus-visible { outline: 2px solid var(--hl); outline-offset: 2px; }
+.tk-embedded ::selection { background: var(--hl-soft); color: var(--txt); }
+.tk-embedded input, .tk-embedded textarea { caret-color: var(--txt); }
+@media (max-width: 600px) {
+    .tk-embedded .archive, .tk-embedded .container { padding-inline: 12px; }
+}

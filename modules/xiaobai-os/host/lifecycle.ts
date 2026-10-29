@@ -28,6 +28,9 @@ type XiaobaiOsWindow = Window & {
 };
 
 export interface XiaobaiOsLifecycleOptions {
+    onFrameCreated?: (frame: HTMLIFrameElement) => void;
+    embeddedMount?: () => HTMLElement | null;
+    onEmbeddedClose?: () => void;
     documentTarget?: Document;
     windowTarget?: XiaobaiOsWindow;
     stylesheetHref?: string;
@@ -122,6 +125,9 @@ function insertLauncher(documentTarget: Document, button: HTMLElement): void {
  *
  */
 export function createXiaobaiOsLifecycle({
+    onFrameCreated,
+    embeddedMount,
+    onEmbeddedClose,
     documentTarget = document,
     windowTarget = window as XiaobaiOsWindow,
     stylesheetHref,
@@ -285,6 +291,7 @@ export function createXiaobaiOsLifecycle({
         windowOpenPromise = null;
         stopThemeObserver();
         overlay?.close();
+        if (embeddedMount && reason === 'frame-close') { onEmbeddedClose?.(); }
         overlay?.remove();
         overlay = null;
         iframe = null;
@@ -614,12 +621,20 @@ export function createXiaobaiOsLifecycle({
         iframe = documentTarget.createElement('iframe');
         iframe.id = IFRAME_ID;
         iframe.className = 'tavernKitchen-os-frame';
-        iframe.src = resolvedFrameSrc;
+        onFrameCreated?.(iframe);
+        iframe.src = resolvedFrameSrc + (embeddedMount ? '?embedded=1' : '');
         iframe.title = '后厨工作台';
         iframe.setAttribute('allow', 'clipboard-read; clipboard-write');
         overlay.append(iframe);
-        documentTarget.body.append(overlay);
-        overlay.showModal();
+        const mount = embeddedMount?.();
+        if (mount) {
+            overlay.className = 'tk-embedded-host';
+            overlay.setAttribute('open', '');
+            mount.append(overlay);
+        } else {
+            documentTarget.body.append(overlay);
+            overlay.showModal();
+        }
         bridge = bridgeFactory({
             iframe,
             windowTarget,
@@ -655,6 +670,7 @@ export function createXiaobaiOsLifecycle({
             return true;
         }
         addStylesheet();
+        if (!embeddedMount) {
         launcher = documentTarget.getElementById(BUTTON_ID);
         if (!launcher) {
             launcher = createLauncherButton(documentTarget);
@@ -676,6 +692,7 @@ export function createXiaobaiOsLifecycle({
                 else if (!overlay) { stopThemeObserver(); }
             },
         });
+        }
         unsubscribeChatChanged = subscribeChatChanged(handleChatChanged);
         unsubscribeAppDescriptorsChanged = subscribeAppDescriptorsChanged(handleAppDescriptorsChanged);
         unsubscribeAppStatusChanged = subscribeAppStatusChanged(handleAppStatusChanged);

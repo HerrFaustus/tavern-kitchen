@@ -1,3 +1,4 @@
+import { getKitchenMount, openKitchenTab, closeKitchenWorkspace, bindKitchenFrame } from '../../core/kitchen-workspace.js';
 import { resolveTextApi, generateFeatureText, handleTextApiRequest } from '../text-api/host.js';
 import { getTextApiRepository } from '../text-api/repository.js';
 import { extension_settings } from '../../../../../extensions.js';
@@ -554,6 +555,7 @@ function getIframeConfigPayload() {
 }
 
 function openSettings() {
+    openKitchenTab('planner');
     if (document.getElementById(OVERLAY_ID)) return;
 
     overlay = document.createElement('div');
@@ -583,8 +585,13 @@ function openSettings() {
         background: #1a1a1a;
     `;
 
+    const mount = getKitchenMount('planner');
+    if (mount) {
+        overlay.removeAttribute('style'); overlay.className = 'tk-embedded-host';
+        iframe.removeAttribute('style'); iframe.title = '剧情规划'; bindKitchenFrame(iframe);
+    }
     overlay.appendChild(iframe);
-    document.body.appendChild(overlay);
+    (mount || document.body).appendChild(overlay);
 
     if (!iframeMessageBound) {
         // eslint-disable-next-line no-restricted-syntax -- Guarded by isTrustedIframeEvent (origin + source).
@@ -594,6 +601,7 @@ function openSettings() {
 }
 
 function closeSettings() {
+    if (getKitchenMount('planner')) closeKitchenWorkspace();
     const overlayEl = document.getElementById(OVERLAY_ID);
     if (overlayEl) overlayEl.remove();
     overlay = null;
