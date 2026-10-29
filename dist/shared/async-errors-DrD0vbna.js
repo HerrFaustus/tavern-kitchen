@@ -1,0 +1,1 @@
+function c(e,r){Promise.resolve(e).catch(n=>console.error("[TavernKitchen]",r,n))}function a(e,r){return function(...n){try{c(e.apply(this,n),r)}catch(o){console.error("[TavernKitchen]",r,o)}}}export{c as n,a as t};

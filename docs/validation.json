@@ -1,0 +1,27 @@
+{
+  "version": "0.1.0",
+  "verified_at_utc": "2026-10-29T05:04:56.720006+00:00",
+  "build_id": "2656f5b0468503dd6289",
+  "build": "passed",
+  "reproducible_build": "passed",
+  "typecheck": "passed",
+  "quality": "passed",
+  "unit_tests": {
+    "total": 1462,
+    "passed": 1462,
+    "failed": 0
+  },
+  "memory_runtime": "passed",
+  "removed_source_paths": 1763,
+  "removed_modules_in_build": 0,
+  "browser_entries": 11,
+  "chunks": 63,
+  "host_static_validation": {
+    "version": "1.19.0",
+    "commit": "06bde939fb1e9c4c8d8641d810f0a916b5bce127"
+  },
+  "live_host_browser_test": false,
+  "paid_model_calls": 0,
+  "upstream": "RT15548/LittleWhiteBox",
+  "upstream_commit": "e30ebadf69cd53e9fafc5f81f74b9499911f78f5"
+}

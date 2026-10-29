@@ -1,0 +1,11 @@
+{
+  "display_name": "酒馆后厨",
+  "loading_order": 10,
+  "requires": [],
+  "optional": [],
+  "js": "dist/host/plugin.js",
+  "css": "style.css",
+  "author": "酒馆后厨 · Based on LittleWhiteBox by biex",
+  "version": "0.1.0",
+  "generate_interceptor": "tavernKitchenGenerateInterceptor"
+}

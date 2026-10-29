@@ -1,0 +1,1 @@
+var r="TavernKitchen",e=(()=>{try{const t=new URL(import.meta.url).pathname.match(/\/scripts\/extensions\/third-party\/([^/]+)\//);return t?.[1]?decodeURIComponent(t[1]):r}catch{return r}})(),n=`scripts/extensions/third-party/${e}`;export{n,r as t};

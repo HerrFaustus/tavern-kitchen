@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TavernKitchen 监控台</title>
+  <style>
+    :root {
+      --border: rgba(255,255,255,0.10);
+      --text: rgba(255,255,255,0.92);
+      --muted: rgba(255,255,255,0.65);
+      --info: #bdbdbd;
+      --warn: #ffcc66;
+      --error: #ff6b6b;
+      --accent: #7aa2ff;
+      --success: #4ade80;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+      font-size: 12px;
+    }
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: transparent;
+      color: var(--text);
+    }
+    .root {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+    .topbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(18,18,18,0.65);
+      backdrop-filter: blur(6px);
+      flex-shrink: 0;
+    }
+    .content {
+      flex: 1;
+      overflow: auto;
+      padding: 10px;
+    }
+    .tabs {
+      display: flex;
+      gap: 6px;
+    }
+    .tab {
+      padding: 6px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      user-select: none;
+    }
+    .tab.active {
+      border-color: rgba(122,162,255,0.55);
+      background: rgba(122,162,255,0.10);
+    }
+    button {
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.05);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    button:hover {
+      background: rgba(255,255,255,0.09);
+    }
+    select {
+      border: 1px solid var(--border);
+      background: rgba(0,0,0,0.25);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-size: 12px;
+      outline: none;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .card {
+      border: 1px solid var(--border);
+      background: rgba(0,0,0,0.18);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .muted { color: var(--muted); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .empty-hint { padding: 20px; text-align: center; color: var(--muted); }
+
+    /* 日志 */
+    .log-item {
+      padding: 8px 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .log-item:last-child { border-bottom: none; }
+    .log-header {
+      display: flex;
+      gap: 8px;
+      align-items: baseline;
+      flex-wrap: wrap;
+    }
+    .log-toggle {
+      width: 16px;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 10px;
+      flex-shrink: 0;
+      border-radius: 4px;
+      user-select: none;
+      transition: transform 0.15s;
+    }
+    .log-toggle:hover { background: rgba(255,255,255,0.1); }
+    .log-toggle.empty { visibility: hidden; cursor: default; }
+    .log-item.open .log-toggle { transform: rotate(90deg); }
+    .time { color: var(--muted); }
+    .lvl { font-weight: 700; }
+    .lvl.info { color: var(--info); }
+    .lvl.warn { color: var(--warn); }
+    .lvl.error { color: var(--error); }
+    .mod { color: var(--accent); }
+    .msg { color: var(--text); word-break: break-word; }
+    .stack {
+      margin: 8px 0 0 24px;
+      padding: 10px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      color: rgba(255,255,255,0.85);
+      background: rgba(0,0,0,0.3);
+      border-radius: 6px;
+      font-size: 11px;
+      display: none;
+    }
+    .log-item.open .stack { display: block; }
+
+    /* 事件 */
+    .section-collapse { margin-bottom: 12px; }
+    .section-collapse-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      cursor: pointer;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      user-select: none;
+    }
+    .section-collapse-header:hover { background: rgba(255,255,255,0.06); }
+    .section-collapse-header .arrow {
+      transition: transform 0.2s;
+      color: var(--muted);
+      font-size: 10px;
+    }
+    .section-collapse-header.open .arrow { transform: rotate(90deg); }
+    .section-collapse-header .title { flex: 1; }
+    .section-collapse-header .count { color: var(--muted); font-size: 11px; }
+    .section-collapse-content {
+      display: none;
+      padding: 8px 0 0 0;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .section-collapse-header.open + .section-collapse-content { display: block; }
+    .module-section { margin-bottom: 8px; }
+    .module-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.06);
+      user-select: none;
+    }
+    .module-header:hover { background: rgba(255,255,255,0.05); }
+    .module-header .arrow { transition: transform 0.2s; color: var(--muted); font-size: 9px; }
+    .module-header.open .arrow { transform: rotate(90deg); }
+    .module-header .name { color: var(--accent); font-weight: 600; }
+    .module-header .count { color: var(--muted); }
+    .module-events { display: none; padding: 6px 10px 6px 28px; }
+    .module-header.open + .module-events { display: block; }
+    .event-tag {
+      display: inline-block;
+      padding: 2px 8px;
+      margin: 2px 4px 2px 0;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      font-size: 11px;
+      font-family: ui-monospace, monospace;
+    }
+    .event-tag .dup { color: var(--error); font-weight: 700; margin-left: 4px; }
+    .pill {
+      display: inline-flex;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.05);
+    }
+    .repeat-badge {
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.12);
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 600;
+      margin-left: 6px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* 缓存 */
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); text-align: left; }
+    th { color: rgba(255,255,255,0.75); font-weight: 600; }
+    .right { text-align: right; }
+    .cache-detail-row { display: none; }
+    .cache-detail-row.open { display: table-row; }
+    .cache-detail-row td { padding: 0; }
+    .pre {
+      padding: 10px;
+      white-space: pre-wrap;
+      font-family: ui-monospace, monospace;
+      color: rgba(255,255,255,0.80);
+      background: rgba(0,0,0,0.25);
+      font-size: 11px;
+    }
+
+    /* 性能 */
+    .perf-overview {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      padding: 12px;
+      margin-bottom: 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(0,0,0,0.18);
+    }
+    .perf-stat { display: flex; flex-direction: column; gap: 2px; }
+    .perf-stat .label { font-size: 10px; color: var(--muted); text-transform: uppercase; }
+    .perf-stat .value { font-size: 16px; font-weight: 700; }
+    .perf-stat .value.good { color: var(--success); }
+    .perf-stat .value.warn { color: var(--warn); }
+    .perf-stat .value.bad { color: var(--error); }
+    .perf-section { margin-bottom: 16px; }
+    .perf-section-title {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .perf-item { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .perf-item:last-child { border-bottom: none; }
+    .perf-item .top { display: flex; gap: 8px; align-items: baseline; }
+    .perf-item .url { flex: 1; font-family: ui-monospace, monospace; font-size: 11px; word-break: break-all; }
+    .perf-item .duration { font-weight: 700; }
+    .perf-item .duration.slow { color: var(--warn); }
+    .perf-item .duration.very-slow { color: var(--error); }
+  </style>
+</head>
+<body>
+  <div class="root">
+    <div class="topbar">
+      <div class="tabs">
+        <div class="tab active" data-tab="logs">日志</div>
+        <div class="tab" data-tab="events">事件</div>
+        <div class="tab" data-tab="caches">缓存</div>
+        <div class="tab" data-tab="performance">性能</div>
+      </div>
+      <button id="btn-refresh" type="button">刷新</button>
+    </div>
+
+    <div class="content">
+      <section id="tab-logs">
+        <div class="row">
+          <span class="muted">过滤</span>
+          <select id="log-level"><option value="all">全部</option><option value="info">INFO</option><option value="warn">WARN</option><option value="error">ERROR</option></select>
+          <span class="muted">模块</span>
+          <select id="log-module"><option value="all">全部</option></select>
+          <button id="btn-clear-logs" type="button">清空</button>
+          <span class="muted" id="log-count"></span>
+        </div>
+        <div class="card" id="log-list"></div>
+      </section>
+
+      <section id="tab-events" style="display:none">
+        <div class="section-collapse">
+          <div class="section-collapse-header" id="module-section-header">
+            <span class="arrow">▶</span>
+            <span class="title">模块事件监听</span>
+            <span class="count" id="module-count"></span>
+          </div>
+          <div class="section-collapse-content" id="module-list"></div>
+        </div>
+        <div class="row">
+          <span class="muted">触发历史</span>
+          <button id="btn-clear-events" type="button">清空历史</button>
+        </div>
+        <div class="card" id="event-list"></div>
+      </section>
+
+      <section id="tab-caches" style="display:none">
+        <div class="row">
+          <button id="btn-clear-all-caches" type="button">清理全部</button>
+          <span class="muted" id="cache-count"></span>
+        </div>
+        <div class="card" id="cache-card">
+          <table>
+            <thead><tr><th>缓存项目</th><th>条数</th><th>大小</th><th class="right">操作</th></tr></thead>
+            <tbody id="cache-tbody"></tbody>
+          </table>
+          <div id="cache-empty" class="empty-hint" style="display:none;">暂无缓存注册</div>
+        </div>
+      </section>
+
+      <section id="tab-performance" style="display:none">
+        <div class="perf-overview">
+          <div class="perf-stat"><span class="label">FPS</span><span class="value" id="perf-fps">--</span></div>
+          <div class="perf-stat" id="perf-memory-stat"><span class="label">内存</span><span class="value" id="perf-memory">--</span></div>
+          <div class="perf-stat"><span class="label">DOM</span><span class="value" id="perf-dom">--</span></div>
+          <div class="perf-stat"><span class="label">消息</span><span class="value" id="perf-messages">--</span></div>
+          <div class="perf-stat"><span class="label">图片</span><span class="value" id="perf-images">--</span></div>
+        </div>
+        <div class="perf-section">
+          <div class="perf-section-title"><span>慢请求 (≥500ms)</span><button id="btn-clear-requests" type="button">清空</button></div>
+          <div class="card" id="perf-requests"></div>
+        </div>
+        <div class="perf-section">
+          <div class="perf-section-title"><span>长任务</span><button id="btn-clear-tasks" type="button">清空</button></div>
+          <div class="card" id="perf-tasks"></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script type="module">
+import { loadBuildEntry, reportBuildFailure } from '../../core/build-assets.js';
+loadBuildEntry('apps/debug-panel').catch(reportBuildFailure);
+</script>
+</body>
+</html>

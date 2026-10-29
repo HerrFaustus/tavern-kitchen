@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Ena Planner</title>
+  <link rel="stylesheet" href="./ena-planner.css">
+</head>
+
+<body>
+  <div class="container">
+
+    <header>
+      <div class="header-left">
+        <h1>Ena<span>Planner</span></h1>
+        <div class="subtitle">Story Planning · LLM Integration —— Created by Hao19911125</div>
+      </div>
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-val" id="ep_badge"><span class="hl">未启用</span></div>
+          <div class="stat-lbl">状态</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val" id="ep_save_status">就绪</div>
+          <div class="stat-lbl">保存</div>
+        </div>
+        <button class="modal-close" id="ep_close" title="关闭">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Desktop tabs -->
+    <div class="nav-tabs">
+      <div class="nav-item active" data-view="quickstart">快速开始</div>
+      <div class="nav-item" data-view="api">API 配置</div>
+      <div class="nav-item" data-view="prompt">提示词</div>
+      <div class="nav-item" data-view="context">上下文</div>
+      <div class="nav-item" data-view="debug">调试</div>
+    </div>
+
+    <main class="app-main">
+
+      <!-- ── 快速开始 ── -->
+      <div id="view-quickstart" class="view active">
+        <div class="tip-box">
+          <div class="tip-icon">ℹ</div>
+          <div class="tip-text">
+            <strong>工作流程：</strong>发送原文 → 酒馆准备同轮上下文 → USER 楼层下方流式预览规划 → 点击“发送”保存规划并生成正文。可停止或重新规划；不操作就保留临时预览，不自动保存规划或生成正文。
+          </div>
+        </div>
+
+        <section class="card">
+          <div class="card-title">基本设置</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">启用规划器</label>
+              <select id="ep_enabled" class="input">
+                <option value="true">开启</option>
+                <option value="false">关闭</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">合并连续 system</label>
+              <select id="ep_merge_system_msgs" class="input">
+                <option value="false">关闭</option>
+                <option value="true">开启</option>
+              </select>
+            </div>
+          </div>
+          <p class="form-hint">输入中已有 &lt;plot&gt; 标签时会直接发送。开启“合并连续 system”后，会把相邻的 system 消息折叠为一条，不跨过 user。</p>
+        </section>
+
+        <section class="card">
+          <div class="card-title">快速测试</div>
+          <div class="btn-group">
+            <button id="ep_run_test" class="btn btn-p">测试规划 API</button>
+          </div>
+          <div id="ep_test_status" class="status-text"></div>
+        </section>
+      </div>
+
+      <!-- ── API 配置 ── -->
+      <div id="view-api" class="view"><div id="planner-text-api"></div></div>
+      <!-- ── 提示词 ── -->
+      <div id="view-prompt" class="view">
+        <div class="tip-box">
+          <div class="tip-icon">💡</div>
+          <div class="tip-text">
+            规划会读取酒馆本轮处理好的完整文字上下文。这里编写规划指令，不需要重复添加世界书或剧情记忆。
+          </div>
+        </div>
+
+        <section class="card">
+          <div class="card-title">模板管理</div>
+          <div class="form-row">
+            <div class="form-group" style="flex:2;">
+              <select id="ep_tpl_select" class="input">
+                <option value="">-- 选择模板 --</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex:3;">
+              <div class="btn-group btn-group-compact">
+                <button id="ep_tpl_save" class="btn btn-p btn-icon" type="button" title="保存当前模板" aria-label="保存当前模板">💾</button>
+                <button id="ep_tpl_saveas" class="btn btn-icon" type="button" title="另存为新模板" aria-label="另存为新模板">📄</button>
+                <button id="ep_tpl_delete" class="btn btn-del btn-icon" type="button" title="删除当前模板" aria-label="删除当前模板">🗑️</button>
+              </div>
+            </div>
+          </div>
+          <div id="ep_tpl_undo" class="undo-bar hidden">
+            <span>模板 <strong id="ep_tpl_undo_name"></strong> 已删除</span>
+            <button id="ep_tpl_undo_btn" class="btn btn-p btn-sm">撤销</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-title">提示词块</div>
+          <div id="ep_prompt_list"></div>
+          <div class="prompt-empty" id="ep_prompt_empty" style="display:none;">暂无提示词块</div>
+          <div class="btn-group" style="margin-top:16px;">
+            <button id="ep_add_prompt" class="btn">添加区块</button>
+            <button id="ep_reset_prompt" class="btn btn-del">恢复默认</button>
+          </div>
+        </section>
+      </div>
+
+      <!-- ── 上下文 ── -->
+      <div id="view-context" class="view">
+        <section class="card">
+          <div class="card-title">世界书</div>
+          <p class="form-hint">沿用当前聊天的世界书与触发设置；请在酒馆的世界书面板中调整。</p>
+        </section>
+
+        <section class="card">
+          <div class="card-title">聊天与历史</div>
+          <div class="form-group">
+            <label class="form-label">保留的规划输出标签（逗号分隔）</label>
+            <input id="ep_keep_tags" type="text" class="input" placeholder="plot, note, plot-log, state">
+            <p class="form-hint">仅支持英文标签（如 plot, note, memory）。留空表示不按标签过滤（仅去除 think）。无效标签会自动忽略。</p>
+          </div>
+        </section>
+      </div>
+
+      <!-- ── 调试 ── -->
+      <div id="view-debug" class="view">
+        <section class="card">
+          <div class="card-title">诊断工具</div>
+          <div class="btn-group">
+            <button id="ep_debug_worldbook" class="btn">查看本轮上下文</button>
+            <button id="ep_debug_char" class="btn">诊断角色卡</button>
+            <button id="ep_test_planner" class="btn btn-p">测试规划 API</button>
+          </div>
+          <pre id="ep_debug_output" class="debug-output"></pre>
+        </section>
+
+        <section class="card">
+          <div class="card-title">日志</div>
+          <div class="form-row" style="margin-bottom:16px;">
+            <div class="form-group">
+              <label class="form-label">持久化日志</label>
+              <select id="ep_logs_persist" class="input">
+                <option value="true">是</option>
+                <option value="false">否</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">最大日志条数</label>
+              <input id="ep_logs_max" type="number" class="input" min="1" max="200" step="1">
+            </div>
+          </div>
+          <div class="btn-group" style="margin-bottom:16px;">
+            <button id="ep_open_logs" class="btn">刷新</button>
+            <button id="ep_log_export" class="btn">导出 JSON</button>
+            <button id="ep_log_clear" class="btn btn-del">清空日志</button>
+          </div>
+          <div id="ep_log_body" class="log-list">
+            <div class="log-empty">暂无日志</div>
+          </div>
+        </section>
+      </div>
+
+    </main>
+
+    <!-- Mobile bottom nav -->
+    <nav class="mobile-nav">
+      <div class="mobile-nav-inner">
+        <div class="mobile-nav-item active" data-view="quickstart">
+          <div class="nav-dot"></div><span>开始</span>
+        </div>
+        <div class="mobile-nav-item" data-view="api">
+          <div class="nav-dot"></div><span>API</span>
+        </div>
+        <div class="mobile-nav-item" data-view="prompt">
+          <div class="nav-dot"></div><span>提示词</span>
+        </div>
+        <div class="mobile-nav-item" data-view="context">
+          <div class="nav-dot"></div><span>上下文</span>
+        </div>
+        <div class="mobile-nav-item" data-view="debug">
+          <div class="nav-dot"></div><span>调试</span>
+        </div>
+      </div>
+    </nav>
+
+  </div>
+
+  <script type="module">
+import { loadBuildEntry, reportBuildFailure } from '../../core/build-assets.js';
+loadBuildEntry('apps/ena-planner').catch(reportBuildFailure);
+</script>
+</body>
+
+</html>

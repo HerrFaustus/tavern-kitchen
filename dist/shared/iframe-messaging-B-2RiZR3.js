@@ -1,0 +1,1 @@
+function s(){return window.location.origin}function a(n,t,r,i=null){if(!n?.contentWindow)return!1;const o=r?{source:r,...t}:t,e=i||s();return n.contentWindow.postMessage(o,e),!0}function u(n,t){return!!t&&n.origin===s()&&n.source===t.contentWindow}function f(n,t,r){return!(!u(n,t)||r&&n?.data?.source!==r)}export{a as i,u as n,f as r,s as t};

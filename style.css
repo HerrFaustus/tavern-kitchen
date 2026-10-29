@@ -1,0 +1,6 @@
+#tavern-kitchen-settings .inline-drawer-content { padding: 0.75rem; }
+#tavern-kitchen-settings .checkbox_label { margin-block: 0.5rem; }
+#tavern-kitchen-settings .tk-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-block: 0.75rem; }
+#tavern-kitchen-settings .tk-note,
+#tavern-kitchen-settings .tk-credit { font-size: 0.85em; line-height: 1.55; opacity: 0.8; }
+#tavern-kitchen-settings small { margin-inline-start: 0.5rem; font-weight: normal; }
