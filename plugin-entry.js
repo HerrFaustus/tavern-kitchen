@@ -108,11 +108,18 @@ async function mountSettings() {
             variables.getVariablesPanelInstance()?.open();
         },
     };
-    for (const id of ['map', 'world', 'dice', 'agent-api']) actions[id] = async () => {
+    for (const id of ['world', 'people', 'relations']) actions[id] = async () => {
+        await requireFeatures();
+        if (!kitchen.isActive(id)) return;
+        if (!memory) throw new Error('请先启用记忆记录功能并保存刷新，再查看已记录的世界状态。');
+        if (!chat.length) throw new Error('先进入一段聊天，再查看人物与世界状态。');
+        memory.openStoryWorld(id);
+    };
+    for (const id of ['map', 'world-engine', 'dice', 'agent-api']) actions[id] = async () => {
         await requireFeatures();
         if (!kitchen.isActive(id)) return;
         if (!settings.xiaobaiOs?.enabled) throw new Error('世界相关板块尚未启用，请在设置中开启并保存刷新。');
-        if (!await openXiaobaiOs(id)) throw new Error('请先选择角色并进入一段聊天，再使用此板块。');
+        if (!await openXiaobaiOs(id === 'world-engine' ? 'world' : id)) throw new Error('请先选择角色并进入一段聊天，再使用此板块。');
     };
     kitchen = createKitchenWorkspace({ actions, settingsElement: root, onVisibility(visible, tab) {
         const instance = variables?.getVariablesPanelInstance();

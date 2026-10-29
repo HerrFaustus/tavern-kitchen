@@ -130,10 +130,10 @@
                 </div>
             </section>
             <section id="archive-people" role="tabpanel" aria-labelledby="archive-tab-people" hidden>
+                <div class="archive-roster" id="archive-roster"></div>
                 <div class="archive-people-layout">
                     <div class="archive-graph">
                         <div class="archive-section-head"><h2>人物关系</h2><div class="archive-actions"><button class="archive-text" id="archive-profile-open"></button><button class="archive-text" id="btn-fullscreen-relations">全屏查看</button><button class="archive-text sec-btn" data-section="characters">编辑关系</button></div></div>
-                        <div class="archive-roster" id="archive-roster"></div>
                         <div id="relation-chart"></div>
                     </div>
                     <div id="archive-profile-home">
@@ -709,6 +709,7 @@
                             <div class="settings-field full">
                                 <label>界面主题</label>
                                 <select id="theme-select">
+                                    <option value="host">跟随酒馆（默认）</option>
                                     <option value="default">默认主题 · 亮色</option>
                                     <option value="dark">默认主题 · 暗色</option>
                                     <option value="neo">Neo主题 · 亮色</option>

@@ -3141,6 +3141,11 @@ async function handleFrameMessage(event) {
     if (!isTrustedMessage(event, iframe, "TavernKitchen-StoryFrame")) return;
 
     const data = event.data;
+    if (data.type === 'KITCHEN_ARCHIVE_VIEW') {
+        const route = { story: 'memory', people: 'people', world: 'world' }[data.view];
+        if (route) openKitchenTab(route);
+        return;
+    }
     if (data.type === 'OPEN_KITCHEN_SETTINGS') {
         openKitchenTab('memory-settings');
         return;
@@ -5060,6 +5065,12 @@ export function openStoryMemorySettings() {
     memoryWorkspaceView = 'memory-settings';
     openPanelForMessage(Math.max(0, getContext().chat.length - 1));
     postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view: 'settings' });
+}
+export function openStoryWorld(route = 'world') {
+    if (!['world', 'people', 'relations'].includes(route)) return;
+    memoryWorkspaceView = route;
+    openPanelForMessage(Math.max(0, getContext().chat.length - 1));
+    postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view: route });
 }
 export function getFloorSummarySnapshot() {
     return { enabled: isXiaobaiMasterEnabled() && isStorySummaryEnabledForCurrentChat(),

@@ -19,7 +19,7 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     workspace.open('memory');
     await setImmediate();
     assert.deepEqual(calls, ['memory']);
-    assert.equal(document.querySelectorAll('[role="tab"]').length, 3);
+    assert.equal(document.querySelectorAll('[role="tab"]').length, 4);
     assert.equal(document.querySelector('[aria-selected="true"]').textContent, '记忆');
     workspace.open('memory');
     await setImmediate();
@@ -28,12 +28,17 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     const mount = getKitchenMount('map');
     const parent = mount.parentElement;
     const frame = document.createElement('iframe'); mount.append(frame);
-    workspace.open('world');
+    workspace.open('world-engine');
     await setImmediate();
-    assert.equal(getKitchenMount('world'), mount);
+    assert.equal(getKitchenMount('world-engine'), mount);
     assert.equal(mount.parentElement, parent, 'tab switches must not detach a live iframe');
     assert.equal(mount.firstElementChild, frame);
-    assert.equal(mount.getAttribute('aria-label'), '世界');
+    assert.equal(mount.getAttribute('aria-label'), '后台演化');
+    for (const route of ['world', 'people', 'relations']) {
+        workspace.open(route);
+        assert.equal(getKitchenMount(route), getKitchenMount('memory'));
+        assert.equal(document.querySelector('[aria-selected="true"]').textContent, '世界');
+    }
     workspace.open('memory-settings');
     assert.equal(document.querySelector('[aria-selected="true"]').textContent, '设置');
     assert.equal(getKitchenMount('memory-settings'), getKitchenMount('memory'));
@@ -48,6 +53,6 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     workspace.close();
     assert.equal(document.querySelector('#tk-workspace').hidden, true);
     assert.equal(document.querySelector('#tk-topbar button').getAttribute('aria-expanded'), 'false');
-    workspace.open('world');
+    workspace.open('world-engine');
     assert.equal(mount.firstElementChild, frame);
 });

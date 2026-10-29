@@ -1,5 +1,5 @@
 /* Feature frames share SillyTavern's live theme and the outer workspace chrome. */
-:root.tk-embedded, .tk-embedded [data-theme], .tk-embedded .xiaobai-os-shell {
+:root.tk-embedded.tk-follow-host, .tk-follow-host [data-theme], .tk-follow-host .xiaobai-os-shell {
     --bg: var(--SmartThemeBlurTintColor, #202024);
     --bg2: var(--SmartThemeChatTintColor, #29292e);
     --bg3: color-mix(in srgb, var(--SmartThemeBodyColor, #ddd) 8%, var(--bg));
@@ -20,8 +20,15 @@
 }
 .tk-embedded body { font-family: var(--tk-font, sans-serif); color: var(--txt); background: var(--bg); }
 .tk-embedded #xb-frame-boot { color: var(--txt); background: var(--bg); }
-.tk-embedded[data-kitchen-view="memory"] #settings-modal { display: none !important; }
-.tk-embedded[data-kitchen-view="memory"] body { overflow-y: auto; }
+.tk-embedded:not([data-kitchen-view="settings"]) #settings-modal { display: none !important; }
+.tk-embedded:not([data-kitchen-view="settings"]) body { overflow-y: auto; }
+.tk-embedded .archive-tabs { display: none; }
+.tk-embedded[data-kitchen-view="people"] .archive-graph { display: none; }
+.tk-embedded[data-kitchen-view="people"] .archive-people-layout { grid-template-columns: 1fr; }
+.tk-embedded[data-kitchen-view="people"] #archive-profile-home { display: block; }
+.tk-embedded[data-kitchen-view="people"] .archive-profile { padding-left: 0; border-left: 0; }
+.tk-embedded[data-kitchen-view="relations"] #archive-profile-home { display: none; }
+.tk-embedded[data-kitchen-view="relations"] .archive-people-layout { grid-template-columns: 1fr; }
 .tk-embedded[data-kitchen-view="settings"] .archive { display: none; }
 .tk-embedded[data-kitchen-view="settings"] .workspace-shell { padding-inline: 24px; }
 .tk-embedded #archive-manage-open { display: none; }

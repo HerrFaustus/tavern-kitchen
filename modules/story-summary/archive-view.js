@@ -64,6 +64,10 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
     }
 
     function showPerson() {
+        if (document.documentElement.classList.contains('tk-embedded')) {
+            if (document.documentElement.dataset.kitchenView !== 'people') postMsg('KITCHEN_ARCHIVE_VIEW', { view: 'people' });
+            return;
+        }
         if (!matchMedia('(max-width: 768px)').matches) return;
         $('archive-detail-title').textContent = ARCHIVE_COPY.personDetail;
         detailEventId = null;
@@ -132,7 +136,10 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
         setHtml($('archive-roster'), chars.length ? chars.map(c => `<button class="archive-person" data-archive-person="${h(c.id)}" aria-pressed="${getSelectedCharacter() === c.id}"><span class="archive-avatar" aria-hidden="true">${h(Array.from(c.name)[0])}</span><span>${h(c.name)}</span></button>`).join('') : `<p class="archive-empty">${getArchiveCharacters(data).length ? ARCHIVE_COPY.noResults : ARCHIVE_COPY.noPeople}</p>`);
     }
 
-    function switchView(next) {
+    function switchView(next, { notify = true } = {}) {
+        if (notify && document.documentElement.classList.contains('tk-embedded') && view !== next) {
+            postMsg('KITCHEN_ARCHIVE_VIEW', { view: next });
+        }
         closeDialogs();
         view = next;
         $('archive-search').value = '';
@@ -214,7 +221,7 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
     $('archive-story').querySelector('details').open = !compact.matches;
 
     return {
-        closeDialogs, reset, timelineEvents, timelineItem, refreshIndexes, refreshRoster, showPerson,
+        closeDialogs, reset, switchView, timelineEvents, timelineItem, refreshIndexes, refreshRoster, showPerson,
         hasTimelineFilter: () => !!role || (view === 'story' && !!$('archive-search').value.trim()),
         isPeopleVisible: () => view === 'people',
         isStoryVisible: () => view === 'story',

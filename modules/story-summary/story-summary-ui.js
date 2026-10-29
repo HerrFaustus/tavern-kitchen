@@ -2391,6 +2391,10 @@ const UNANNOTATED_LABEL = '未标注';
                 document.documentElement.dataset.kitchenView = d.view;
                 document.querySelector('.archive').inert = d.view === 'settings';
                 if (d.view === 'settings' && !$('settings-modal').classList.contains('active')) openSettings();
+                if (d.view !== 'settings') {
+                    const view = { memory: 'story', world: 'world', people: 'people', relations: 'people' }[d.view];
+                    if (view) archiveView.switchView(view, { notify: false });
+                }
                 break;
             }
             case 'SUMMARY_AGENT_SETTINGS_RESULT':
@@ -2879,7 +2883,7 @@ const UNANNOTATED_LABEL = '未标注';
         // === THEME SWITCHER ===
         (function () {
             const STORAGE_KEY = 'xb-theme-alt';
-            const CSS_MAP = { default: 'story-summary.css', dark: 'story-summary.css', neo: 'story-summary-a.css', 'neo-dark': 'story-summary-a.css' };
+            const CSS_MAP = { host: 'story-summary.css', default: 'story-summary.css', dark: 'story-summary.css', neo: 'story-summary-a.css', 'neo-dark': 'story-summary-a.css' };
             const link = document.querySelector('link[rel="stylesheet"]');
             const sel = document.getElementById('theme-select');
             if (!link || !sel) return;
@@ -2887,13 +2891,16 @@ const UNANNOTATED_LABEL = '未标注';
             function applyTheme(theme) {
                 if (!CSS_MAP[theme]) return;
                 link.setAttribute('href', CSS_MAP[theme]);
+                document.documentElement.dataset.kitchenTheme = theme;
+                document.documentElement.classList.toggle('tk-follow-host', theme === 'host');
                 document.documentElement.setAttribute('data-theme', (theme === 'dark' || theme === 'neo-dark') ? 'dark' : '');
                 hideRelationTooltip();
                 if (relationChart) renderRelations(summaryData.characters);
             }
 
             // 启动时恢复主题
-            const saved = localStorage.getItem(STORAGE_KEY) || 'default';
+            const stored = localStorage.getItem(STORAGE_KEY);
+            const saved = CSS_MAP[stored] ? stored : 'host';
             applyTheme(saved);
             sel.value = saved;
 

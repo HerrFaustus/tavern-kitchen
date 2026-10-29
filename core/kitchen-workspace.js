@@ -1,14 +1,16 @@
 import { extensionFolderPath } from './constants.js';
 
 let workspace;
-export const KITCHEN_TABS = [['memory', '记忆'], ['planner', '规划'], ['settings', '设置']];
+export const KITCHEN_TABS = [['memory', '记忆'], ['world', '世界'], ['planner', '规划'], ['settings', '设置']];
 export const KITCHEN_ROUTES = {
-    memory: [['memory', '剧情记录'], ['variables', '变量'], ['map', '地图'], ['world', '世界']],
+    memory: [['memory', '事件时间线']],
+    world: [['world', '局势与设定'], ['people', '人物'], ['relations', '关系'], ['variables', '变量'], ['map', '地图'], ['world-engine', '后台演化']],
     planner: [['planner', '剧情规划'], ['dice', '行动判定']],
     settings: [['settings', '功能开关'], ['memory-settings', '记忆设置'], ['agent-api', '模型接口']],
 };
 const parentOf = id => KITCHEN_TABS.find(([key]) => KITCHEN_ROUTES[key].some(([route]) => route === id))?.[0];
-const worldTabs = new Set(['map', 'world', 'dice', 'agent-api']);
+const worldTabs = new Set(['map', 'world-engine', 'dice', 'agent-api']);
+const memoryTabs = new Set(['memory', 'world', 'people', 'relations', 'memory-settings']);
 export const getKitchenMount = id => workspace?.getMount(id) ?? null;
 export const openKitchenTab = id => workspace?.open(id);
 export const closeKitchenWorkspace = () => workspace?.close();
@@ -19,6 +21,7 @@ export function bindKitchenFrame(frame) {
         const doc = frame.contentDocument;
         if (!doc) return;
         doc.documentElement.classList.add('tk-embedded');
+        doc.documentElement.classList.toggle('tk-follow-host', !doc.documentElement.dataset.kitchenTheme || doc.documentElement.dataset.kitchenTheme === 'host');
         const link = doc.createElement('link');
         link.rel = 'stylesheet';
         link.href = new URL(`${extensionFolderPath}/core/kitchen-embedded.css`, document.baseURI).href;
@@ -129,7 +132,7 @@ export function createKitchenWorkspace({ actions, settingsElement, onVisibility 
         message.append(text, retry, settings); mount.prepend(message);
     };
     const api = {
-        getMount: id => worldTabs.has(id) ? worldMount : ['memory', 'memory-settings'].includes(id) ? memoryMount : mounts.get(id),
+        getMount: id => worldTabs.has(id) ? worldMount : memoryTabs.has(id) ? memoryMount : mounts.get(id),
         isActive: id => !panel.hidden && active === id,
         open(id = active || 'memory') {
             const parent = parentOf(id);
@@ -143,9 +146,9 @@ export function createKitchenWorkspace({ actions, settingsElement, onVisibility 
                 button.setAttribute('aria-selected', String(key === parent)); button.tabIndex = key === parent ? 0 : -1;
             }
             body.setAttribute('aria-labelledby', `tk-tab-${parent}`);
-            for (const [key, mount] of mounts) mount.hidden = key !== id || worldTabs.has(key) || ['memory', 'memory-settings'].includes(key);
+            for (const [key, mount] of mounts) mount.hidden = key !== id || worldTabs.has(key) || memoryTabs.has(key);
             worldMount.hidden = !worldTabs.has(id);
-            memoryMount.hidden = !['memory', 'memory-settings'].includes(id);
+            memoryMount.hidden = !memoryTabs.has(id);
             worldMount.setAttribute('aria-label', Object.values(KITCHEN_ROUTES).flat().find(([key]) => key === id)?.[1] || '世界工具');
             // Retain focused controls when switching routes inside one section.
             if (subnav.dataset.section !== parent) {
