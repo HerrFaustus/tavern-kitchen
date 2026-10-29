@@ -2,6 +2,7 @@ import type { MaintenanceRunner } from '../../../capabilities/maintenance/runner
 import type { XiaobaiOsAppActivationContext, XiaobaiOsAppRuntime } from '../../../types.js';
 import type { WorldService } from '../application/service.js';
 import type { WorldClientState } from '../types.js';
+import { createEmptyWorld } from '../../../domains/world/types.js';
 import { worldSkippedMessage, worldStatusMessage } from './status.js';
 import type { XiaobaiOsSettingsRepository } from '../../../host/settings-repository.js';
 
@@ -21,6 +22,11 @@ export function createWorldController({ world, settings, maintenance, getChatIde
     let cancellationGeneration = 0;
     function state(): WorldClientState {
         const chatIdentity = getChatIdentity();
+        if (!chatIdentity) {
+            return { chatIdentity: '', world: createEmptyWorld(), settings: settings.read()!.apps.world,
+                writeState: 'ready', pendingSave: false, maintenance: 'idle',
+                message: '选择一段对话后，可以查看和更新这段故事的后台动态。' };
+        }
         const view = world.readCurrent();
         if (!chatIdentity || view.chatIdentity !== chatIdentity) { throw new Error('聊天已切换，请重新打开世界。'); }
         const status = maintenance.getStatus('world', chatIdentity);
@@ -86,7 +92,7 @@ export function createWorldController({ world, settings, maintenance, getChatIde
         async handleMessage(message) {
             const payload = message.payload as { chatIdentity?: unknown; enabled?: unknown } | undefined;
             const current = activation;
-            if (!current || !isCurrent(current) || payload?.chatIdentity !== current.chatIdentity) {
+            if (!current?.chatIdentity || !isCurrent(current) || payload?.chatIdentity !== current.chatIdentity) {
                 throw new Error('聊天已切换，请重新打开世界。');
             }
             if (current.busy) { throw new Error('正在处理上一次操作，请稍候。'); }

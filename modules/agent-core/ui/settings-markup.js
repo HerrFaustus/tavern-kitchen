@@ -140,7 +140,7 @@ export function buildAgentSettingsPanelMarkup(options = {}) {
         showDelegateSettings = true,
         showWebSettings = true,
         activePage = 'main',
-        delegatePresetHint = 'DelegateRun 分身会使用这里的独立 API 配置；可以和主助手使用不同 Provider、Base URL、模型和 Tool 调用格式。',
+        delegatePresetHint = 'DelegateRun 分身会使用这里的独立 API 配置；可以和主助手使用不同 Provider、Base URL、模型和 工具调用格式。',
         isBusy = false,
         canDeletePreset = true,
         configLoadError = '',
@@ -178,7 +178,7 @@ export function buildAgentSettingsPanelMarkup(options = {}) {
                     </div>
                 </div>
                 <label>
-                    <span>Provider</span>
+                    <span>服务商</span>
                     <select id="xb-assistant-delegate-provider">
                         <option value="openai-responses">OpenAI Responses</option>
                         <option value="openai-compatible">OpenAI 兼容</option>
@@ -190,18 +190,18 @@ export function buildAgentSettingsPanelMarkup(options = {}) {
                     </select>
                 </label>
                 <label>
-                    <span>Base URL</span>
+                    <span>接口地址</span>
                     <input id="xb-assistant-delegate-base-url" type="text" />
                 </label>
                 <label>
-                    <span>API Key</span>
+                    <span>API 密钥</span>
                     <div class="xb-assistant-inline-input">
                         <input id="xb-assistant-delegate-api-key" type="password" />
                         <button id="xb-assistant-delegate-toggle-key" type="button" class="secondary ghost">显示</button>
                     </div>
                 </label>
                 <label>
-                    <span>Model</span>
+                    <span>模型名称</span>
                     <input id="xb-assistant-delegate-model" type="text" />
                 </label>
                 ${buildModelListAuthMarkup('delegate')}
@@ -221,11 +221,11 @@ export function buildAgentSettingsPanelMarkup(options = {}) {
                 </label>
                 ${buildSamplingSettingsMarkup('delegate')}
                 <label id="xb-assistant-delegate-tool-mode-wrap">
-                    <span>Tool 调用格式</span>
+                    <span>工具调用格式</span>
                     <select id="xb-assistant-delegate-tool-mode"></select>
                 </label>
                 <label>
-                    <span>Reasoning 模式</span>
+                    <span>推理模式</span>
                     <select id="xb-assistant-delegate-reasoning-mode"></select>
                     <small id="xb-assistant-delegate-reasoning-capability"></small>
                 </label>
@@ -265,7 +265,7 @@ export function buildAgentSettingsPanelMarkup(options = {}) {
             <div class="xb-assistant-config-page" data-config-page-panel="main" ${mainActive ? '' : 'hidden'}>
             ${presetRowMarkup}
             <label>
-                <span>Provider</span>
+                <span>服务商</span>
                 <select id="xb-assistant-provider">
                     <option value="openai-responses">OpenAI Responses</option>
                     <option value="openai-compatible">OpenAI 兼容</option>
@@ -277,18 +277,18 @@ export function buildAgentSettingsPanelMarkup(options = {}) {
                 </select>
             </label>
             <label>
-                <span>Base URL</span>
+                <span>接口地址</span>
                 <input id="xb-assistant-base-url" type="text" />
             </label>
             <label>
-                <span>API Key</span>
+                <span>API 密钥</span>
                 <div class="xb-assistant-inline-input">
                     <input id="xb-assistant-api-key" type="password" />
                     <button id="xb-assistant-toggle-key" type="button" class="secondary ghost">显示</button>
                 </div>
             </label>
             <label>
-                <span>Model</span>
+                <span>模型名称</span>
                 <input id="xb-assistant-model" type="text" />
             </label>
             ${buildModelListAuthMarkup()}
@@ -309,12 +309,12 @@ export function buildAgentSettingsPanelMarkup(options = {}) {
             ${buildSamplingSettingsMarkup('main')}
             ${showWebSettings ? buildWebSettingsMarkup() : ''}
             <label id="xb-assistant-tool-mode-wrap">
-                <span>Tool 调用格式</span>
+                <span>工具调用格式</span>
                 <select id="xb-assistant-tool-mode"></select>
             </label>
             ${assistantPermissionMarkup}
             <label>
-                <span>Reasoning 模式</span>
+                <span>推理模式</span>
                 <select id="xb-assistant-reasoning-mode"></select>
                 <small id="xb-assistant-reasoning-capability"></small>
             </label>

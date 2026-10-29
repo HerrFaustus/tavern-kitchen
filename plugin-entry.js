@@ -4,7 +4,7 @@ import { installFloorSummaries } from './modules/story-summary/floor-summary.js'
 import { createModuleEvents, event_types } from './core/event-manager.js';
 import { DOMPurify } from '../../../../lib.js';
 import { extension_settings } from '../../../extensions.js';
-import { saveSettings, chat } from '../../../../script.js';
+import { saveSettings } from '../../../../script.js';
 import { EXT_ID, extensionFolderPath } from './core/constants.js';
 import { buildEntryUrl } from './core/build-assets.js';
 import { createDefaultXiaobaiOsSettings, prepareXiaobaiOsSettings, initXiaobaiOs, openXiaobaiOs, isDiceContinuationPending } from './modules/xiaobai-os/index.js';
@@ -86,7 +86,6 @@ async function mountSettings() {
             await requireFeatures();
             if (!kitchen.isActive('memory')) return;
             if (!memory) throw new Error('记忆尚未启用，请在设置中开启并保存刷新。');
-            if (!chat.length) throw new Error('先进入一段聊天并发送消息，再查看本段故事的记忆。');
             memory.openStoryMemory();
         },
         'memory-settings': async () => {
@@ -112,14 +111,13 @@ async function mountSettings() {
         await requireFeatures();
         if (!kitchen.isActive(id)) return;
         if (!memory) throw new Error('请先启用记忆记录功能并保存刷新，再查看已记录的世界状态。');
-        if (!chat.length) throw new Error('先进入一段聊天，再查看人物与世界状态。');
         memory.openStoryWorld(id);
     };
     for (const id of ['map', 'world-engine', 'dice', 'agent-api']) actions[id] = async () => {
         await requireFeatures();
         if (!kitchen.isActive(id)) return;
         if (!settings.xiaobaiOs?.enabled) throw new Error('世界相关板块尚未启用，请在设置中开启并保存刷新。');
-        if (!await openXiaobaiOs(id === 'world-engine' ? 'world' : id)) throw new Error('请先选择角色并进入一段聊天，再使用此板块。');
+        if (!await openXiaobaiOs(id === 'world-engine' ? 'world' : id)) throw new Error('此板块尚未准备好，请重试。');
     };
     kitchen = createKitchenWorkspace({ actions, settingsElement: root, onVisibility(visible, tab) {
         const instance = variables?.getVariablesPanelInstance();

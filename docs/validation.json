@@ -1,14 +1,14 @@
 {
-  "version": "0.1.3",
-  "verified_at_utc": "2026-10-29T18:47:34.946Z",
-  "build_id": "51cbf665493f65a24195",
+  "version": "0.1.4",
+  "verified_at_utc": "2026-10-29T19:25:02.442Z",
+  "build_id": "ad9456e21e5e6438013b",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
   "quality": "passed",
   "unit_tests": {
-    "total": 1466,
-    "passed": 1466,
+    "total": 1470,
+    "passed": 1470,
     "failed": 0
   },
   "memory_runtime": "passed",
@@ -38,21 +38,24 @@
     "script_errors": 0,
     "live_host": false,
     "mocked_dependencies": [
-      "host DOMPurify",
-      "echarts",
-      "host configuration and chat"
+      "host globals",
+      "server file API",
+      "chat data stores",
+      "maintenance and model gateways"
     ],
-    "settings_draft_preserved": true,
-    "floor_summaries": true,
-    "populated_world": true,
-    "people_search": true,
-    "relationship_roster_to_profile": true,
-    "relationship_node_callback_to_profile": true,
-    "relationship_graph_rendered": false,
-    "host_theme_default": true,
+    "real_components": [
+      "OS lifecycle",
+      "frame bridge",
+      "app controllers",
+      "shared settings repository",
+      "built Vue pages"
+    ],
+    "api_save_without_chat": true,
+    "dice_preferences_without_chat": true,
+    "unbound_world_map_actions_disabled": true,
+    "populated_map": true,
     "host_theme_live_updates": true,
-    "manual_theme_preserved": true,
-    "mobile_profile_visible": true
+    "light_and_dark": true
   },
-  "ui_review": "ship (four-section navigation, populated people/world, appearance and mobile; offline fixture only)"
+  "ui_review": "passed (desktop and mobile, shared API/map/world/dice theme; offline fixture only)"
 }

@@ -94,7 +94,7 @@ useAppBack(() => {
                         <label>
                             <span>自动新闻</span>
                             <input
-                                type="checkbox" :checked="state.settings.subscribed" :disabled="pending"
+                                type="checkbox" :checked="state.settings.subscribed" :disabled="pending || !state.chatIdentity"
                                 @change="setPreference($event, 'subscribed')"
                             >
                         </label>
@@ -102,7 +102,7 @@ useAppBack(() => {
                         <label>
                             <span>作为剧情背景</span>
                             <input
-                                type="checkbox" :checked="state.settings.injectToStory" :disabled="pending"
+                                type="checkbox" :checked="state.settings.injectToStory" :disabled="pending || !state.chatIdentity"
                                 @change="setPreference($event, 'injectToStory')"
                             >
                         </label>

@@ -65,7 +65,7 @@ export interface XiaobaiOsLifecycle {
 interface ActiveApp {
     appId: string;
     activationToken: string;
-    binding: CapturedChatBinding;
+    binding: CapturedChatBinding | null;
     generation: number;
 }
 
@@ -142,7 +142,6 @@ export function createXiaobaiOsLifecycle({
     subscribeAppOrderChanged = () => () => {},
     getAppStatuses = () => ({}),
     captureChatBinding = () => null,
-    onChatRequired = () => undefined,
     isChatBindingCurrent = () => true,
     createActivationToken = createStorageId,
     appRuntime = {},
@@ -185,9 +184,15 @@ export function createXiaobaiOsLifecycle({
 
     function isLocallyCurrent(app: ActiveApp): boolean {
         const current = captureChatBinding();
-        if (app.generation !== appActivationGeneration || !sameBinding(app.binding, current)) { return false; }
+        if (app.generation !== appActivationGeneration) { return false; }
+        if (!app.binding) { return !current; }
+        if (!sameBinding(app.binding, current)) { return false; }
         if (!app.binding.reference && current?.reference) { app.binding = current; }
         return true;
+    }
+
+    async function isAppBindingCurrent(app: ActiveApp): Promise<boolean> {
+        return app.binding ? await isChatBindingCurrent(app.binding) : !captureChatBinding();
     }
 
     function reportError(error: unknown): void {
@@ -452,10 +457,6 @@ export function createXiaobaiOsLifecycle({
                 return;
             }
             const binding = captureChatBinding();
-            if (!binding) {
-                frameBridge.post('app/activation-result', { ok: false, error: 'chat_unavailable' }, requestId);
-                return;
-            }
             const candidate: ActiveApp = {
                 appId,
                 activationToken: createActivationToken(),
@@ -482,7 +483,7 @@ export function createXiaobaiOsLifecycle({
                     frameBridge !== bridge ||
                     pendingApp !== candidate ||
                     !isLocallyCurrent(candidate) ||
-                    !await isChatBindingCurrent(candidate.binding)
+                    !await isAppBindingCurrent(candidate)
                 ) {
                     if (
                         openGeneration === generation &&
@@ -541,7 +542,7 @@ export function createXiaobaiOsLifecycle({
             || message.activationToken !== current.activationToken
             || !type.startsWith(`${current.appId}/`)
             || !isLocallyCurrent(current)
-            || !await isChatBindingCurrent(current.binding)
+            || !await isAppBindingCurrent(current)
         ) {
             if (requestId) { frameBridge.post('app/result', { ok: false, error: 'app_inactive' }, requestId); }
             return;
@@ -555,7 +556,7 @@ export function createXiaobaiOsLifecycle({
         try {
             const result = await appRuntime.handleMessage?.(messageAppId, { type, requestId, payload });
             if (requestId && openGeneration === generation && frameBridge === bridge) {
-                if (!isMessageActivationCurrent() || !await isChatBindingCurrent(current.binding)) {
+                if (!isMessageActivationCurrent() || !await isAppBindingCurrent(current)) {
                     frameBridge.post(`${messageAppId}/result`, { ok: false, error: 'app_inactive' }, requestId, current);
                 } else if (result !== undefined) {
                     frameBridge.post(`${messageAppId}/result`, { ok: true, result }, requestId, current);
@@ -586,10 +587,6 @@ export function createXiaobaiOsLifecycle({
 
     function canOpen(): boolean {
         if (!initialized) {
-            return false;
-        }
-        if (!captureChatBinding()) {
-            onChatRequired();
             return false;
         }
         return true;

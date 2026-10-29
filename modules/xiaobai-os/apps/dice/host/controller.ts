@@ -42,7 +42,7 @@ export function createDiceController(settings: Pick<XiaobaiOsSettingsRepository,
     }
 
     return {
-        async activate(context) { await sheets.refresh(); activation = context; return state(); },
+        async activate(context) { if (getChatIdentity()) { await sheets.refresh(); } activation = context; return state(); },
         deactivate() { activation = null; },
         cancelForeground() { activation = null; },
         startBackground() {
@@ -75,6 +75,7 @@ export function createDiceController(settings: Pick<XiaobaiOsSettingsRepository,
                 }
                 emit();
             } else if (message.type === 'dice/set-coc7-sheet') {
+                if (!getChatIdentity()) { throw new Error('选择一段对话后，再编辑人物属性。'); }
                 const sheet = payload?.sheet === null ? null : parseCoc7Sheet(payload?.sheet);
                 try { await sheets.save(sheet, () => activation === owner && owner.isCurrent()); }
                 finally { emit(); }
@@ -83,6 +84,7 @@ export function createDiceController(settings: Pick<XiaobaiOsSettingsRepository,
                 }
                 emit();
             } else if (message.type === 'dice/confirm-sheet-save') {
+                if (!getChatIdentity()) { throw new Error('选择一段对话后，再确认人物属性保存。'); }
                 await sheets.confirm(); emit();
             } else if (message.type === 'dice/set-frequency') {
                 const frequency = payload?.frequency;

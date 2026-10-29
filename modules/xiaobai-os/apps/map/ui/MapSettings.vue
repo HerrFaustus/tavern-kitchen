@@ -8,7 +8,7 @@ defineEmits<{ close: []; setAuto: [enabled: boolean]; setProjection: [enabled: b
 </script>
 <template>
     <AppDialog class="map-dialog map-settings" aria-labelledby="map-settings-title" @close="$emit('close')">
-        <header class="map-dialog-header"><div><small>让地图跟上你的故事</small><h2 id="map-settings-title">地图设置</h2></div><button type="button" class="map-round-button" aria-label="关闭地图设置" @click="$emit('close')"><MapIcon name="close" /></button></header>
+        <header class="map-dialog-header"><div><h2 id="map-settings-title">地图设置</h2></div><button type="button" class="map-round-button" aria-label="关闭地图设置" @click="$emit('close')"><MapIcon name="close" /></button></header>
         <section v-if="status || notice || maintenanceMessage" class="map-settings-feedback" :class="{ 'is-error': notice ? noticeError : maintenanceError }" role="status">
             <strong>{{ notice ? (notice === maintenanceMessage ? '最近一次更新' : '操作提示') : status || '最近一次更新' }}</strong>
             <p v-if="notice || maintenanceMessage">{{ notice || maintenanceMessage }}</p>

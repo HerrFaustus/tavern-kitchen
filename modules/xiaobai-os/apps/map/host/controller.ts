@@ -88,7 +88,7 @@ export function createMapController({
     }
 
     function buildState(chatIdentity: string): MapClientState {
-        const view = map.readCurrent();
+        const view = chatIdentity ? map.readCurrent() : { map: null, writeState: 'ready' as const };
         const status = clientStatus(view.writeState);
         const maintenanceStatus = maintenanceState(maintenance.getStatus('map', chatIdentity));
         const preferences = settings.read()?.apps.map;
@@ -100,6 +100,7 @@ export function createMapController({
             autoMaintenance: preferences?.autoMaintenance === true,
             projectToChat: preferences?.projectToChat === true,
             ...maintenanceStatus,
+            ...(!chatIdentity ? { message: '选择一段对话后，可以生成和维护这段故事的地图。' } : {}),
         };
     }
 
@@ -123,7 +124,6 @@ export function createMapController({
     function activate(context: XiaobaiOsAppActivationContext): MapClientState {
         deactivate();
         const chatIdentity = currentChatIdentity();
-        if (!chatIdentity) { throw new Error('请先打开一个聊天'); }
         activation = { chatIdentity, post: context.post };
         return buildState(chatIdentity);
     }

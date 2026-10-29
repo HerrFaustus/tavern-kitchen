@@ -54,6 +54,7 @@ function clearSheetFailure() {
 
 <template>
     <main class="dice-app">
+        <p v-if="!state.chatIdentity" class="dice-intro">可以先配置判定规则；进入对话后，规则会用于故事推进。</p>
         <section aria-labelledby="dice-action-label" class="dice-feature">
             <div class="dice-switch-row">
                 <h1 id="dice-action-label">行动检定</h1>
@@ -94,7 +95,7 @@ function clearSheetFailure() {
             <Coc7Sheet
                 v-if="state.coc7Sheet.kind === 'invalid' || state.actionChecksEnabled && state.actionCheckRule === 'coc7'"
                 :sheet="state.coc7Sheet.kind === 'ready' ? state.coc7Sheet.sheet : null" :invalid="state.coc7Sheet.kind === 'invalid'"
-                :busy="busy" :failure="error?.message" :blocked="state.sheetStorage !== 'ready'"
+                :busy="busy" :failure="error?.message" :blocked="!state.chatIdentity || state.sheetStorage !== 'ready'"
                 :check-save="() => send('dice/confirm-sheet-save', {})" :save="sheet => send('dice/set-coc7-sheet', { sheet })"
                 @confirmed="clearSheetFailure"
             />

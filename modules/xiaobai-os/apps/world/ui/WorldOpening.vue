@@ -4,12 +4,10 @@ import { ref, useId } from 'vue';
 defineProps<{ overview: string }>();
 const expanded = ref(false);
 const overviewId = useId();
-const coverImage = `url("https://picsum.photos/800/300?random=${Math.random()}")`;
 </script>
 
 <template>
-    <div class="world-opening">
-        <div class="world-horizon" aria-hidden="true" :style="{ '--world-cover-image': coverImage }" />
+    <div v-if="overview" class="world-opening">
         <div v-if="overview" class="world-overview">
             <p :id="overviewId" class="world-overview-text" :class="{ 'is-expanded': expanded }">{{ overview }}</p>
             <button

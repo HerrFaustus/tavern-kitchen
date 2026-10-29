@@ -191,7 +191,7 @@ onBeforeUnmount(() => {
             <div class="agent-api-content">
                 <header class="agent-api-header">
                     <h1>模型接口</h1>
-                    <p>与小白助手等功能共用主预设</p>
+                    <p>配置助手、地图与后台演化使用的模型预设。</p>
                 </header>
 
                 <section v-if="clientState.status === 'loading'" class="agent-api-state" aria-live="polite">

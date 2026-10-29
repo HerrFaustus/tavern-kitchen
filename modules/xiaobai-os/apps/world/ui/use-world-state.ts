@@ -16,7 +16,7 @@ export function useWorldState(props: XiaobaiOsAppProps) {
         localMessage.value = '';
         localError.value = false;
     }
-    const writable = computed(() => !pending.value && state.value.writeState === 'ready');
+    const writable = computed(() => !!state.value.chatIdentity && !pending.value && state.value.writeState === 'ready');
     const refreshing = computed(() => state.value.maintenance === 'running');
     const notice = computed(() => localError.value ? localMessage.value : state.value.writeState === 'unconfirmed' ? '' : state.value.writeState !== 'ready'
         ? state.value.message : localMessage.value || state.value.message);

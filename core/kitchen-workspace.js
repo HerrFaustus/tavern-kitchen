@@ -32,6 +32,7 @@ export function bindKitchenFrame(frame) {
                 doc.documentElement.style.setProperty(`--${key}`, theme.getPropertyValue(`--${key}`));
             }
             doc.documentElement.style.setProperty('--tk-font', theme.fontFamily);
+            doc.documentElement.style.setProperty('--tk-color-scheme', theme.colorScheme);
         };
         sync();
         const observer = new MutationObserver(sync);

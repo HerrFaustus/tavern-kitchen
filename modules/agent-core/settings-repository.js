@@ -17,7 +17,7 @@ function describeError(error) {
 async function resolveStorage(storage) {
     if (storage) return storage;
     assistantStoragePromise ||= import('../../core/server-storage.js')
-        .then((storageModule) => storageModule.AssistantStorage)
+        .then((storageModule) => storageModule.AgentApiStorage)
         .catch((error) => {
             assistantStoragePromise = null;
             throw error;

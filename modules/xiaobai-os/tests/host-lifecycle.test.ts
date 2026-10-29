@@ -4,6 +4,7 @@ import { setImmediate } from 'node:timers/promises';
 import { parseHTML } from 'linkedom';
 import { createXiaobaiOsLifecycle, type XiaobaiOsLifecycleOptions } from '../host/lifecycle.js';
 import type { XiaobaiOsFrameBridgeOptions } from '../host/frame-bridge.js';
+import type { CapturedChatBinding } from '../kernel/contracts.js';
 
 function harness(t: TestContext, options: XiaobaiOsLifecycleOptions = {}) {
     const { document, window } = parseHTML('<html><head></head><body><button id="send_but"></button></body></html>');
@@ -31,6 +32,31 @@ function harness(t: TestContext, options: XiaobaiOsLifecycleOptions = {}) {
     t.after(async () => { await lifecycle.cleanup(); });
     return { lifecycle, document, window, bridge, frameOptions: () => frameOptions };
 }
+
+test('panels and global API requests work without a chat; selecting a chat expires the old activation', async t => {
+    let binding: CapturedChatBinding | null = null;
+    let requests = 0;
+    const h = harness(t, {
+        captureChatBinding: () => binding,
+        isChatBindingCurrent: () => { throw new Error('A global page must not require a chat binding'); },
+        getAppDescriptors: () => [{ id: 'agent-api', name: '模型接口', description: '', accent: '' }],
+        createActivationToken: () => 'api-session',
+        appRuntime: { activate: async () => ({ status: 'ready' }), handleMessage: async () => { requests++; return { saved: true }; } },
+    });
+    const post = t.mock.method(h.bridge, 'post', () => true);
+    h.lifecycle.init();
+    assert.equal(h.lifecycle.open('agent-api'), true);
+    await h.frameOptions()?.onMessage?.({ type: 'app/activate', requestId: 'open', payload: { appId: 'agent-api' } }, h.bridge);
+    assert.equal((post.mock.calls.at(-1)?.arguments as unknown[])[0], 'app/activation-result');
+    assert.equal(((post.mock.calls.at(-1)?.arguments as unknown[])[1] as { ok: boolean }).ok, true);
+    const request = { type: 'agent-api/save', requestId: 'save', appId: 'agent-api', activationToken: 'api-session' };
+    await h.frameOptions()?.onMessage?.(request, h.bridge);
+    assert.equal(requests, 1);
+    binding = { identityKey: 'chat-a', binding: { kind: 'character', ownerLocator: 'a.png', chatId: 'chat-a' }, reference: null };
+    await h.frameOptions()?.onMessage?.(request, h.bridge);
+    assert.equal(requests, 1, 'an old page cannot write after selecting a chat');
+    assert.equal(((post.mock.calls.at(-1)?.arguments as unknown[])[1] as { error: string }).error, 'app_inactive');
+});
 
 test('embedded workspace opens inside its mount without adding a chat launcher or another modal', async t => {
     let mount: HTMLElement;

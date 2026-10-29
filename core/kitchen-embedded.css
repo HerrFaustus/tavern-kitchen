@@ -43,13 +43,78 @@
 .tk-embedded .xiaobai-os-glass { border-radius: 0; }
 .tk-embedded .xiaobai-os-system-bar { display: none; }
 .tk-embedded .xiaobai-os-home-button, .tk-embedded .xiaobai-os-close-button { display: none; }
-.tk-embedded .xiaobai-os-navigation { justify-content: flex-start; min-height: 36px; height: 36px; background: var(--bg); border-top: 1px solid var(--bdr); padding: 0 12px; }
+.tk-embedded .xiaobai-os-navigation { display: flex; justify-content: flex-start; min-height: 36px; height: 36px; color: var(--txt); background: var(--bg); border-top: 1px solid var(--bdr); padding: 0 12px; }
 .tk-embedded .xiaobai-os-navigation .xiaobai-os-nav-button { width: auto; height: 32px; gap: 4px; border-radius: 4px; }
-.tk-embedded .xiaobai-os-navigation .xiaobai-os-nav-button::after { content: '返回上一层'; font-size: 12px; }
+.tk-embedded .xiaobai-os-navigation .xiaobai-os-nav-button::after { content: '返回上一层'; font-size: 12px; white-space: nowrap; }
 .tk-embedded :focus-visible { outline: 2px solid var(--hl); outline-offset: 2px; }
 .tk-embedded ::selection { background: var(--hl-soft); color: var(--txt); }
 .tk-embedded input, .tk-embedded textarea { caret-color: var(--txt); }
 .tk-embedded .btn-p:disabled { color: var(--txt3); }
+
+/* All retained OS pages use the same controls and live host palette. */
+:root.tk-embedded.tk-follow-host { --os-status-height: 0px; }
+.tk-embedded.tk-follow-host .xiaobai-os-shell {
+    --os-status-height: 0px;
+    --xiaobai-os-screen: var(--bg); --xiaobai-os-surface: var(--bg2);
+    --xiaobai-os-ink: var(--txt); --xiaobai-os-muted: var(--txt3);
+    --xiaobai-os-divider: var(--bdr); --xiaobai-os-accent: var(--hl);
+    font-family: var(--tk-font, sans-serif);
+    color-scheme: var(--tk-color-scheme, normal);
+}
+.tk-embedded.tk-follow-host .xiaobai-os-shell .agent-api-app {
+    --bg-primary: var(--bg); --bg-secondary: var(--bg2); --bg-tertiary: var(--bg3); --bg-input: var(--bg);
+    --text-primary: var(--txt); --text-secondary: var(--txt3); --text-muted: var(--txt3);
+    --border: var(--bdr); --border-focus: var(--hl); --accent: var(--hl); --accent-soft: var(--hl-soft);
+    font-family: inherit; color-scheme: inherit;
+}
+.tk-embedded.tk-follow-host .xiaobai-os-shell .map-app {
+    --map-ground: var(--bg); --map-surface: var(--bg2); --map-ink: var(--txt); --map-muted: var(--txt3);
+    --map-accent: var(--hl); --map-tint: var(--bg3); --map-line: var(--bdr); --map-canvas-bg: var(--bg);
+    background: var(--bg); font-family: inherit; color-scheme: inherit;
+}
+.tk-embedded.tk-follow-host .xiaobai-os-shell .world-app {
+    --world-paper: var(--bg); --world-surface: var(--bg2); --world-ink: var(--txt); --world-muted: var(--txt3);
+    --world-rule: var(--bdr); --world-accent: var(--hl); --world-soft: var(--bg3);
+    color-scheme: inherit;
+}
+.tk-embedded .agent-api-scroll { padding: 20px 24px 32px; }
+.tk-embedded .agent-api-content { max-width: none; }
+.tk-embedded .agent-api-header { margin-bottom: 24px; }
+.tk-embedded .agent-api-header h1, .tk-embedded .world-toolbar-title { font-size: 18px; letter-spacing: normal; }
+.tk-embedded .xb-agent-settings-surface .xb-assistant-preset-row {
+    padding: 0 0 16px; border: 0; border-bottom: 1px solid var(--bdr); border-radius: 0; background: none;
+}
+.tk-embedded .agent-api-state, .tk-embedded .agent-api-connection { border-radius: 5px; padding: 16px; }
+.tk-embedded .agent-api-connection { background: none; border: 0; border-top: 1px solid var(--bdr); border-radius: 0; padding-inline: 0; margin-top: 24px; }
+.tk-embedded .xb-agent-settings-surface :is(input, select, textarea, button),
+.tk-embedded .agent-api-connection button, .tk-embedded .agent-api-state button { border-radius: 5px; }
+.tk-embedded .xb-agent-settings-surface .xb-assistant-config label { font-size: 14px; }
+.tk-embedded .xb-agent-settings-surface .xb-assistant-config :is(input, select, textarea) { font-family: inherit; font-size: 14px; }
+.tk-embedded .xb-agent-settings-surface .xb-assistant-icon-button:hover { transform: none; }
+.tk-embedded .agent-api-state span { font-size: 13px; }
+.tk-embedded .map-search-bar, .tk-embedded .map-view-switch, .tk-embedded .map-notice,
+.tk-embedded .map-viewport-controls, .tk-embedded .map-place-detail, .tk-embedded .map-region-card { box-shadow: none; border-radius: 5px; }
+.tk-embedded .map-round-button, .tk-embedded .map-region-trail button,
+.tk-embedded .map-view-switch button, .tk-embedded .map-primary-button, .tk-embedded .map-secondary-button { border-radius: 5px; }
+.tk-embedded .map-app .map-primary-button, .tk-embedded .world-empty .world-primary {
+    background: var(--txt); color: var(--bg); border-radius: 5px;
+}
+.tk-embedded .map-switch[aria-checked="true"] { background: var(--map-accent); }
+.tk-embedded .map-dialog { border-radius: 8px; }
+.tk-embedded .map-dialog-header h2 { font-size: 18px; margin: 0; }
+.tk-embedded .map-empty { padding: 24px; }
+.tk-embedded .map-empty h1 { font-size: 18px; margin-top: 0; }
+.tk-embedded .map-empty p { font-size: 14px; max-width: 52ch; }
+.tk-embedded .map-setting-note, .tk-embedded .map-search-bar small { font-size: 13px !important; }
+.tk-embedded .world-horizon { display: none; }
+.tk-embedded .world-toolbar { padding: 20px 24px 12px; }
+.tk-embedded .world-listing { padding-inline: 24px; }
+.tk-embedded .world-news-list, .tk-embedded .world-empty { max-width: none; }
+.tk-embedded .world-opening { max-width: none; padding: 24px 0; }
+.tk-embedded.tk-follow-host .dice-app { max-width: none; padding: 20px 24px 32px; }
+.tk-embedded .dice-app > .dice-intro { grid-column: 1 / -1; margin: 0; }
 @media (max-width: 600px) {
     .tk-embedded .archive, .tk-embedded .container { padding-inline: 12px; }
+    .tk-embedded .agent-api-scroll, .tk-embedded .world-toolbar, .tk-embedded .world-listing, .tk-embedded.tk-follow-host .dice-app { padding-inline: 12px; }
+    .tk-embedded .xb-agent-settings-surface :is(input, select, textarea) { font-size: 16px; }
 }
