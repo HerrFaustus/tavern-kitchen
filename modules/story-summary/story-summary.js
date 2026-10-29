@@ -100,6 +100,7 @@ import { normalizeEventMemoryRole, projectEditedSummaryEvents } from "./data/eve
 import { isRelationFact, parseRelationTarget } from "./data/fact-predicates.js";
 import { formatStorySummaryL2Events } from "./prompt-events.js";
 import { projectStoryCharacters } from "./prompt-characters.js";
+import { notifyWorldSourcesChanged } from '../world-records/sources.js';
 import { getAutoSummaryPlan } from './generate/summary-trigger.js';
 import { buildEventVectorText, selectMissingEventVectorPairs } from './vector/pipeline/event-vector-input.js';
 import { createHideStateController } from './hide-state.js';
@@ -781,6 +782,7 @@ function notifySummaryState() {
 
 function postToFrame(payload) {
     if (['SUMMARY_FULL_DATA', 'SUMMARY_CLEARED', 'GENERATION_STATE', 'CHAT_SUMMARY_STATE'].includes(payload?.type)) refreshFloorSummaries();
+    if (['SUMMARY_FULL_DATA', 'SUMMARY_CLEARED', 'GENERATION_STATE', 'CHAT_SUMMARY_STATE'].includes(payload?.type)) notifyWorldSourcesChanged();
     if (payload?.type === "RECALL_LOG") {
         lastRecallLogText = String(payload.text || "");
     }

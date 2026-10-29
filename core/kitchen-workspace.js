@@ -30,7 +30,7 @@ function syncNativeControls(target) {
 export const KITCHEN_TABS = [['world', '世界'], ['memory', '剧情'], ['planner', '规划'], ['settings', '设置']];
 export const KITCHEN_ROUTES = {
     memory: [['memory', '事件时间线']],
-    world: [['world', '局势'], ['lore', '设定'], ['people', '人物'], ['variables', '变量'], ['map', '地图'], ['world-engine', '后台演化']],
+    world: [['world', '局势'], ['lore', '设定'], ['world-records', '档案'], ['people', '人物'], ['variables', '变量'], ['map', '地图'], ['world-engine', '后台演化']],
     planner: [['planner', '剧情规划'], ['dice', '行动判定']],
     settings: [['settings', '功能开关'], ['memory-settings', '剧情设置'], ['agent-api', '模型接口']],
 };

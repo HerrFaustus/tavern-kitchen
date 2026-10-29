@@ -1,21 +1,21 @@
 {
-  "version": "0.1.9",
-  "verified_at_utc": "2026-10-29T22:42:11.636Z",
-  "build_id": "e1247069b6c37d38c12b",
+  "version": "0.2.0",
+  "verified_at_utc": "2026-10-29T23:33:03.798Z",
+  "build_id": "dfdb64f3caf3d5b8b7f5",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
   "quality": "passed",
   "unit_tests": {
-    "total": 1474,
-    "passed": 1474,
+    "total": 1494,
+    "passed": 1494,
     "failed": 0
   },
   "memory_runtime": "passed",
   "removed_source_paths": 1763,
   "removed_modules_in_build": 0,
   "browser_entries": 11,
-  "chunks": 62,
+  "chunks": 64,
   "host_static_validation": {
     "version": "1.19.0",
     "commit": "06bde939fb1e9c4c8d8641d810f0a916b5bce127"
@@ -89,7 +89,47 @@
       "chat data",
       "maintenance and model gateways",
       "ECharts renderer"
-    ]
+    ],
+    "verified_version": "0.1.9"
   },
-  "ui_review": "passed (tutorial removal, native buttons and fields, planner top navigation, dice and map checkbox persistence, desktop and mobile; offline fixture only)"
+  "ui_review": "passed (native world archive, transaction success/failure, reload, source confirmation, export/restore, branch switching and chat isolation; offline fixture only)",
+  "world_archive_fixture": {
+    "version": "0.2.0",
+    "desktop": [
+      1440,
+      1000
+    ],
+    "mobile": [
+      390,
+      844
+    ],
+    "live_host": false,
+    "real_components": [
+      "world archive kernel",
+      "IndexedDB storage",
+      "source import adapters",
+      "world archive host and native panel",
+      "native Tavern control CSS"
+    ],
+    "mocked_dependencies": [
+      "host context",
+      "memory and map source data"
+    ],
+    "checks": {
+      "sharedIdentity": true,
+      "rejectedNoPartial": true,
+      "purchase": true,
+      "reload": true,
+      "createEntity": true,
+      "confirmedNotOverwritten": true,
+      "noOverflow": true,
+      "aliasSearch": true,
+      "export": true,
+      "restore": true,
+      "branchSwitch": true,
+      "isolation": true,
+      "noChat": true
+    },
+    "errors": []
+  }
 }

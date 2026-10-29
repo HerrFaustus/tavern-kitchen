@@ -50,3 +50,21 @@
     #tk-workspace #tavern-kitchen-settings { padding: 12px; }
 }
 @media (prefers-reduced-motion: reduce) { #tk-workspace, #tk-workspace * { transition-duration: 0s !important; animation: none !important; } }
+
+#tk-workspace .tk-world-records { padding: 5px; color: var(--SmartThemeBodyColor); overflow-wrap: anywhere; }
+#tk-workspace .tk-world-records :is(input,select,textarea) { min-width: 0; max-width: 100%; box-sizing: border-box; }
+#tk-workspace .tk-world-records .menu_button { white-space: normal; text-align: start; }
+#tk-workspace .tk-record-actions { display: flex; flex-wrap: wrap; gap: 5px; margin: 5px 0 10px; }
+#tk-workspace .tk-record-actions .menu_button { margin: 0; }
+#tk-workspace .tk-record-status { margin: 0 0 5px; font-size: .9em; }
+#tk-workspace .tk-record-note { color: var(--SmartThemeEmColor); font-size: .85em; line-height: 1.5; }
+#tk-workspace .tk-record-field { display: flex; flex-direction: column; gap: 5px; margin: 12px 0; }
+#tk-workspace .tk-record-results { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0 15px; max-height: 190px; overflow: auto; }
+#tk-workspace .tk-record-result { margin: 0; }
+#tk-workspace .tk-world-records h3 { margin: 15px 0 10px; }
+#tk-workspace .tk-world-records h4 { font-size: 1em; margin: 18px 0 8px; }
+#tk-workspace .tk-record-value { border-bottom: 1px solid var(--SmartThemeBorderColor); padding: 8px 0; }
+#tk-workspace .tk-record-value p { margin: 5px 0; white-space: pre-wrap; }
+#tk-workspace .tk-record-value small { display: block; color: var(--SmartThemeEmColor); }
+#tk-workspace .tk-world-records details { padding: 10px 0; border-bottom: 1px solid var(--SmartThemeBorderColor); }
+#tk-workspace .tk-world-records summary { cursor: pointer; }

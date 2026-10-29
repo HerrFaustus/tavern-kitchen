@@ -15,6 +15,8 @@ import type { PartitionStore } from '../../kernel/contracts.js';
 import type { MapDomainV1 } from '../../domains/map/types.js';
 import type { XiaobaiOsAppModule } from '../../kernel/app-registry.js';
 import { MANAGEMENT_CAPABILITY } from '../../capabilities/management/index.js';
+import { registerWorldSource, notifyWorldSourcesChanged, storyIdentityKey } from '../../../world-records/sources.js';
+import { mapRecords } from '../../../world-records/imports.js';
 
 export interface ProductionMapModuleDependencies {
     settings: XiaobaiOsSettingsRepository;
@@ -29,6 +31,11 @@ export interface ProductionMapModuleDependencies {
 export function createProductionMapModule(dependencies: ProductionMapModuleDependencies): XiaobaiOsAppModule {
     const module = createMapModule({
         async install({ map, maintenance, prompts, execution }) {
+            execution.addCleanup(registerWorldSource('map', () => {
+                const view = map.readCurrent();
+                return { available: view.writeState === 'ready', identity: storyIdentityKey(dependencies.getChatIdentity()), label: '世界地图', records: mapRecords(view.map) };
+            }));
+            execution.addCleanup(map.subscribe(notifyWorldSourcesChanged));
             const injection = prompts.register(MAP_PROMPTS);
             execution.addCleanup(injection.dispose);
             const unregisterParticipant = maintenance.registerParticipant(createMapMaintenanceParticipant({

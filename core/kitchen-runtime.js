@@ -2,8 +2,9 @@
 import { installFloorSummaries } from '../modules/story-summary/floor-summary.js';
 import { createModuleEvents, event_types } from './event-manager.js';
 import { DOMPurify } from '../../../../../lib.js';
-import { extension_settings } from '../../../../extensions.js';
+import { extension_settings, getContext } from '../../../../extensions.js';
 import * as hostScript from '../../../../../script.js';
+import { getCurrentUserHandle } from '../../../../user.js';
 import { EXT_ID, extensionFolderPath } from './constants.js';
 import { buildEntryUrl } from './build-assets.js';
 import { createDefaultXiaobaiOsSettings, prepareXiaobaiOsSettings, initXiaobaiOs, openXiaobaiOs, isDiceContinuationPending } from '../modules/xiaobai-os/index.js';
@@ -27,6 +28,7 @@ configureL0ContinuationCheck(isDiceContinuationPending);
 let memory;
 let planner;
 let variables;
+let worldArchive;
 let kitchen;
 let readyResolve;
 const featureReady = new Promise(resolve => { readyResolve = resolve; });
@@ -82,6 +84,10 @@ async function mountSettings() {
         }
     }, { source: import.meta.url, operation: 'save-settings' }));
     const actions = {
+        'world-records': async () => {
+            await requireFeatures();
+            if (kitchen.isActive('world-records')) await worldArchive.open();
+        },
         memory: async () => {
             await requireFeatures();
             if (!kitchen.isActive('memory')) return;
@@ -124,7 +130,7 @@ async function mountSettings() {
         if (!visible || tab !== 'variables') instance?.stopWatcher();
     } });
     const events = createModuleEvents('kitchen-workspace');
-    events.on(event_types.CHAT_CHANGED, () => kitchen.reset());
+    events.on(event_types.CHAT_CHANGED, () => { kitchen.reset(); worldArchive?.reset(); });
 }
 
 export async function startKitchen(workspace) {
@@ -164,5 +170,9 @@ export async function startKitchen(workspace) {
         await planner.initEnaPlanner();
     }
     if (settings.xiaobaiOs?.enabled) await initXiaobaiOs();
+    const { createWorldArchive } = await import('../modules/world-records/host.js');
+    worldArchive = createWorldArchive({ getContext, getAccountId: getCurrentUserHandle, getMemorySnapshot: () => memory?.getFloorSummarySnapshot(),
+        getMount: () => kitchen.getMount('world-records'), isVisible: () => kitchen.isActive('world-records'), onError: showError });
+    window.registerKitchenModuleCleanup('world-records', () => worldArchive.dispose());
     } catch (error) { startupError = error; throw error; } finally { readyResolve(); }
 }

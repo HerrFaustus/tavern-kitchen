@@ -51,6 +51,10 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     assert.equal(getKitchenMount('lore'), getKitchenMount('world'));
     assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '设定');
     assert.equal(document.querySelector('.tk-subnav [data-route="world"]').textContent, '局势');
+    await workspace.open('world-records');
+    assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '档案');
+    assert.notEqual(getKitchenMount('world-records'), getKitchenMount('memory'));
+    assert.equal(document.querySelector('[aria-selected="true"]').textContent, '世界');
     await workspace.open('memory-settings');
     assert.equal(document.querySelector('[aria-selected="true"]').textContent, '设置');
     assert.equal(getKitchenMount('memory-settings'), getKitchenMount('memory'));
