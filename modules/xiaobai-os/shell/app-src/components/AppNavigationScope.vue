@@ -6,7 +6,8 @@ import { createBackStack } from '../navigation/back-stack.js';
 const props = defineProps<{ owner: string }>();
 const root = ref<HTMLElement | null>(null);
 const layers = shallowRef<AppLayer[]>([]);
-const stack = createBackStack();
+const backCount = ref(0);
+const stack = createBackStack(size => { backCount.value = size; });
 const navigation = { root, layers, stack };
 provide(appNavigationKey, navigation);
 watchEffect(cleanup => {
@@ -33,7 +34,7 @@ watchEffect(cleanup => {
     }
     cleanup(() => { observer.disconnect(); for (const entry of changed) { entry.inert = false; } });
 }, { flush: 'post' });
-defineExpose({ back: stack.back, get owner() { return props.owner; } });
+defineExpose({ back: stack.back, get canBack() { return backCount.value > 0 && !topModalLayer(navigation); }, get owner() { return props.owner; } });
 </script>
 <template><div ref="root" class="xiaobai-os-app-route" tabindex="-1"><slot /></div></template>
 <style>

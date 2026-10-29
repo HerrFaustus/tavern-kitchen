@@ -9,6 +9,7 @@ import XiaobaiOsNavigation from './XiaobaiOsNavigation.vue';
 import XiaobaiOsSystemBar from './XiaobaiOsSystemBar.vue';
 
 const props = defineProps<{
+    embedded?: boolean;
     apps: readonly XiaobaiOsAppDefinition[];
     activeApp: XiaobaiOsAppDefinition | null;
     activeComponent: Component | null;
@@ -48,6 +49,9 @@ defineExpose({
     <div class="xiaobai-os-device">
         <div class="xiaobai-os-glass">
             <XiaobaiOsSystemBar :is-home="isHome" />
+            <nav v-if="embedded && !appLoading && !appFailure && navigation?.canBack" class="tk-context-nav" aria-label="页面导航">
+                <button type="button" @click="$emit('back')"><span aria-hidden="true">←</span> 返回上一层</button>
+            </nav>
             <div class="xiaobai-os-stage" :style="activeApp ? { '--app-accent': activeApp.accent } : null">
                 <Transition name="xiaobai-os-route" mode="out-in">
                     <XiaobaiOsHome
@@ -89,6 +93,7 @@ defineExpose({
                 </Transition>
             </div>
             <XiaobaiOsNavigation
+                v-if="!embedded"
                 :is-home="isHome"
                 :can-back="!isHome || !!home?.editing"
                 @back="$emit('back')"

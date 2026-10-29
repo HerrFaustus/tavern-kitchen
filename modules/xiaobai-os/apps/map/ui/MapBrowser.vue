@@ -123,7 +123,7 @@ useAppBack(() => {
     if (selectedKey.value) { selectedKey.value = ''; return true; }
     if (view.value.kind === 'region') { showWorld(); return true; }
     return false;
-});
+}, () => helpOpen.value || showingScene.value || !!selectedKey.value || view.value.kind === 'region');
 </script>
 <template>
     <main class="map-app" :class="{ 'has-view-switch': atlas?.locations.length, 'is-scene-view': showingScene }">

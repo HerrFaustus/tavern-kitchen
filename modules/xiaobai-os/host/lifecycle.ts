@@ -395,6 +395,7 @@ export function createXiaobaiOsLifecycle({
             return;
         }
         if (type === 'os/close') {
+            if (embeddedMount && onEmbeddedClose) { onEmbeddedClose(); return; }
             await closeWindow('frame-close');
             return;
         }

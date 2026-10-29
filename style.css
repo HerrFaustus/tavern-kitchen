@@ -9,12 +9,18 @@
 #tk-topbar .drawer-icon { display: flex; align-items: center; justify-content: center; }
 #tk-topbar svg { width: 1em; height: 1em; display: block; }
 #tk-topbar button:focus-visible { outline: 2px solid var(--SmartThemeQuoteColor); outline-offset: 3px; }
-#tk-workspace { position: fixed; top: var(--topBarBlockSize, 40px); bottom: max(12px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); width: min(1240px, calc(100vw - 32px)); z-index: 2990; display: flex; flex-direction: column; overflow: hidden; color: var(--SmartThemeBodyColor); background: var(--SmartThemeBlurTintColor); border: 1px solid var(--SmartThemeBorderColor); border-radius: 0 0 10px 10px; font-family: inherit; }
+#tk-workspace { --tk-drawer-height: min(720px, calc(100dvh - var(--topBarBlockSize, 40px) - var(--bottomFormBlockSize, 60px) - 12px)); top: var(--topBarBlockSize, 40px); width: min(var(--sheldWidth, 800px), calc(100vw - 24px)); min-width: 0; padding: 0; max-height: none; flex-direction: column; overflow: hidden; font-family: inherit; }
+#tk-workspace.openDrawer { display: flex; height: var(--tk-drawer-height); overflow: hidden; }
+#tk-workspace.closedDrawer { display: none; height: 0; }
+#tk-workspace.tk-expanded { width: min(1240px, calc(100vw - 24px)); --tk-drawer-height: calc(100dvh - var(--topBarBlockSize, 40px) - 12px); }
+@starting-style { #tk-workspace.openDrawer { height: 0; } }
 #tk-workspace[hidden], #tk-workspace [hidden] { display: none !important; }
 #tk-workspace .tk-workspace-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 20px 8px; }
 #tk-workspace h2 { display: flex; align-items: center; gap: 9px; font: inherit; font-size: 17px; font-weight: 600; margin: 0; }
 #tk-workspace h2 svg { width: 23px; height: 23px; }
 #tk-workspace .tk-close { margin: 0; min-height: 32px; }
+#tk-workspace .tk-workspace-tools { display: flex; align-items: center; gap: 8px; }
+#tk-workspace .tk-expand { margin: 0; min-height: 32px; }
 #tk-workspace .tk-tabs { display: flex; flex-shrink: 0; gap: 4px; padding: 0 16px; overflow-x: auto; border-bottom: 1px solid var(--SmartThemeBorderColor); }
 #tk-workspace .tk-tabs button { flex: 0 0 auto; color: inherit; background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 12px 18px; font: inherit; font-size: 14px; cursor: pointer; }
 #tk-workspace .tk-tabs button:hover { background: var(--SmartThemeChatTintColor); }
@@ -44,9 +50,11 @@
 #tk-workspace .vm-item { opacity: 1; }
 #tk-workspace .vm-item-controls { position: static; }
 @media (max-width: 600px) {
-    #tk-workspace { width: 100%; bottom: 0; border-radius: 0; border-inline: 0; }
+    #tk-workspace, #tk-workspace.tk-expanded { width: 100%; --tk-drawer-height: calc(100dvh - var(--topBarBlockSize, 40px) - var(--bottomFormBlockSize, 60px)); border-radius: 0 0 8px 8px; border-inline: 0; }
+    #tk-workspace .tk-expand { display: none; }
     #tk-workspace .tk-workspace-header { padding: 10px 12px 4px; }
     #tk-workspace .tk-tabs { padding-inline: 4px; gap: 0; }
     #tk-workspace .tk-tabs button { flex: 1 0 44px; padding-inline: 6px; }
     #tk-workspace #tavern-kitchen-settings { padding: 16px; }
 }
+@media (prefers-reduced-motion: reduce) { #tk-workspace { transition-duration: 0s; animation: none; } }

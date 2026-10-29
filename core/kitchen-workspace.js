@@ -1,4 +1,5 @@
 import { extensionFolderPath } from './constants.js';
+import { observeBackgroundTask } from '../shared/common/async-errors.js';
 
 let workspace;
 export const KITCHEN_TABS = [['memory', '记忆'], ['world', '世界'], ['planner', '规划'], ['settings', '设置']];
@@ -32,6 +33,7 @@ export function bindKitchenFrame(frame) {
                 doc.documentElement.style.setProperty(`--${key}`, theme.getPropertyValue(`--${key}`));
             }
             doc.documentElement.style.setProperty('--tk-font', theme.fontFamily);
+            doc.documentElement.style.setProperty('--tk-font-size', theme.fontSize);
             doc.documentElement.style.setProperty('--tk-color-scheme', theme.colorScheme);
         };
         sync();
@@ -62,12 +64,12 @@ function chefIcon(doc) {
     return svg;
 }
 
-export function createKitchenWorkspace({ actions, settingsElement, onVisibility = () => {}, documentTarget = document }) {
+export function createKitchenWorkspace({ actions, settingsElement, onVisibility = () => {}, toggleDrawer, documentTarget = document }) {
     if (workspace) return workspace;
     const doc = documentTarget;
     const panel = doc.createElement('section');
     panel.id = 'tk-workspace';
-    panel.hidden = true;
+    panel.className = 'drawer-content closedDrawer';
     panel.setAttribute('aria-label', '酒馆后厨');
     const header = doc.createElement('header');
     header.className = 'tk-workspace-header';
@@ -76,7 +78,16 @@ export function createKitchenWorkspace({ actions, settingsElement, onVisibility 
     const close = doc.createElement('button');
     close.type = 'button'; close.className = 'menu_button tk-close';
     close.textContent = '收起'; close.setAttribute('aria-label', '收起酒馆后厨');
-    header.append(title, close);
+    const expand = doc.createElement('button');
+    expand.type = 'button'; expand.className = 'menu_button tk-expand';
+    expand.textContent = '展开工作区'; expand.setAttribute('aria-pressed', 'false');
+    expand.addEventListener('click', () => {
+        const expanded = panel.classList.toggle('tk-expanded');
+        expand.textContent = expanded ? '恢复宽度' : '展开工作区';
+        expand.setAttribute('aria-pressed', String(expanded));
+    });
+    const tools = doc.createElement('div'); tools.className = 'tk-workspace-tools'; tools.append(expand, close);
+    header.append(title, tools);
     const tabs = doc.createElement('nav');
     tabs.className = 'tk-tabs'; tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', '后厨板块');
     const subnav = doc.createElement('nav'); subnav.className = 'tk-subnav'; subnav.setAttribute('aria-label', '板块内导航');
@@ -87,7 +98,7 @@ export function createKitchenWorkspace({ actions, settingsElement, onVisibility 
         button.type = 'button'; button.id = `tk-tab-${id}`; button.textContent = label;
         button.setAttribute('role', 'tab'); button.setAttribute('aria-selected', 'false');
         button.setAttribute('aria-controls', body.id); button.tabIndex = -1;
-        button.addEventListener('click', () => api.open(id));
+        button.addEventListener('click', () => navigate(id));
         tabs.append(button); buttons.set(id, button);
     }
     for (const [id, label] of Object.values(KITCHEN_ROUTES).flat()) {
@@ -102,14 +113,14 @@ export function createKitchenWorkspace({ actions, settingsElement, onVisibility 
     body.append(worldMount);
     const memoryMount = doc.createElement('div'); memoryMount.id = 'tk-memory-mount'; memoryMount.hidden = true; body.append(memoryMount);
     mounts.get('settings').append(settingsElement);
-    panel.append(header, tabs, subnav, body); doc.body.append(panel);
+    panel.append(header, tabs, subnav, body);
     const entry = doc.createElement('div'); entry.id = 'tk-topbar'; entry.className = 'drawer';
     const trigger = doc.createElement('button');
     trigger.type = 'button'; trigger.className = 'drawer-toggle tk-topbar-toggle';
     trigger.title = '酒馆后厨'; trigger.setAttribute('aria-label', '酒馆后厨');
     trigger.setAttribute('aria-controls', panel.id); trigger.setAttribute('aria-expanded', 'false');
     const icon = doc.createElement('span'); icon.className = 'drawer-icon closedIcon'; icon.append(chefIcon(doc));
-    trigger.append(icon); entry.append(trigger);
+    trigger.append(icon); entry.append(trigger, panel);
     const inject = () => {
         const holder = doc.getElementById('top-settings-holder');
         if (!holder) return false;
@@ -122,27 +133,61 @@ export function createKitchenWorkspace({ actions, settingsElement, onVisibility 
         entryObserver = new MutationObserver(() => { if (inject()) entryObserver.disconnect(); });
         entryObserver.observe(doc.body, { childList: true, subtree: true });
     }
-    let active = null, opening = false, previousFocus = null, generation = 0;
+    let active = null, previousFocus = null, generation = 0, visible = false, pendingOpen = null;
+    const isOpen = () => panel.classList.contains('openDrawer');
+    const setOpen = (element, open) => {
+        element.classList.toggle('openDrawer', open); element.classList.toggle('closedDrawer', !open);
+        const drawerIcon = element.parentElement?.querySelector('.drawer-icon');
+        drawerIcon?.classList.toggle('openIcon', open); drawerIcon?.classList.toggle('closedIcon', !open);
+    };
+    const syncVisibility = () => {
+        const open = isOpen(); trigger.setAttribute('aria-expanded', String(open));
+        panel.inert = !open;
+        if (visible === open) return;
+        visible = open;
+        if (!open) generation += 1;
+        onVisibility(open, active);
+    };
+    panel.inert = true;
+    // Native outside-click, other drawers and host shortcuts can close us directly.
+    const drawerObserver = new doc.defaultView.MutationObserver(syncVisibility);
+    drawerObserver.observe(panel, { attributes: true, attributeFilter: ['class'] });
+    const ensureOpen = async () => {
+        if (isOpen()) return;
+        if (!pendingOpen) {
+            previousFocus = doc.activeElement;
+            pendingOpen = Promise.resolve().then(async () => {
+                if (typeof toggleDrawer === 'function') await toggleDrawer.call(trigger);
+                else {
+                    for (const other of doc.querySelectorAll('.openDrawer:not(.pinnedOpen)')) setOpen(other, false);
+                    setOpen(panel, true);
+                }
+            }).finally(() => { pendingOpen = null; syncVisibility(); });
+        }
+        await pendingOpen;
+    };
     const report = (mount, error, id) => {
         const message = doc.createElement('div'); message.className = 'tk-panel-message'; message.setAttribute('role', 'status');
         const text = doc.createElement('p'); text.textContent = error?.message || '暂时无法打开此板块。';
         const retry = doc.createElement('button'); retry.type = 'button'; retry.className = 'menu_button'; retry.textContent = '重试';
-        retry.addEventListener('click', () => { active = null; api.open(id); });
+        retry.addEventListener('click', () => { active = null; navigate(id); });
         const settings = doc.createElement('button'); settings.type = 'button'; settings.className = 'menu_button'; settings.textContent = '前往设置';
-        settings.addEventListener('click', () => api.open('settings'));
+        settings.addEventListener('click', () => navigate('settings'));
         message.append(text, retry, settings); mount.prepend(message);
     };
+    const navigate = id => observeBackgroundTask(api.open(id), { source: import.meta.url, operation: 'open-workspace' });
     const api = {
         getMount: id => worldTabs.has(id) ? worldMount : memoryTabs.has(id) ? memoryMount : mounts.get(id),
-        isActive: id => !panel.hidden && active === id,
-        open(id = active || 'memory') {
+        isActive: id => isOpen() && active === id,
+        async open(id = active || 'memory') {
             const parent = parentOf(id);
             if (!parent) return;
-            const wasClosed = panel.hidden;
-            if (wasClosed) previousFocus = doc.activeElement;
-            panel.hidden = false; trigger.setAttribute('aria-expanded', 'true');
+            const wasClosed = !isOpen();
             if (active === id && !wasClosed) return;
-            const token = ++generation; active = id;
+            const token = ++generation;
+            await ensureOpen();
+            if (token !== generation || !isOpen()) return;
+            active = id;
             for (const [key, button] of buttons) {
                 button.setAttribute('aria-selected', String(key === parent)); button.tabIndex = key === parent ? 0 : -1;
             }
@@ -156,38 +201,35 @@ export function createKitchenWorkspace({ actions, settingsElement, onVisibility 
                 subnav.replaceChildren(); subnav.dataset.section = parent;
                 for (const [route, label] of KITCHEN_ROUTES[parent]) {
                     const button = doc.createElement('button'); button.type = 'button'; button.textContent = label;
-                    button.dataset.route = route; button.addEventListener('click', () => api.open(route));
+                    button.dataset.route = route; button.addEventListener('click', () => navigate(route));
                     subnav.append(button);
                 }
             }
             for (const button of subnav.children) button.setAttribute('aria-pressed', String(button.dataset.route === id));
             onVisibility(true, id);
-            if (opening) return;
-            opening = true;
             const mount = api.getMount(id); mount.querySelector('.tk-panel-message')?.remove();
             mount.setAttribute('aria-busy', 'true');
             Promise.resolve().then(() => actions[id]?.()).catch(error => {
                 if (token === generation) report(mount, error, id);
             }).finally(() => { mount.removeAttribute('aria-busy'); });
-            opening = false;
             if (wasClosed) buttons.get(parent).focus({ preventScroll: true });
         },
         close() {
-            if (panel.hidden) return;
             generation += 1;
-            panel.hidden = true; trigger.setAttribute('aria-expanded', 'false');
-            onVisibility(false, active); (previousFocus?.isConnected ? previousFocus : trigger).focus({ preventScroll: true });
+            if (pendingOpen) void pendingOpen.then(() => { setOpen(panel, false); syncVisibility(); });
+            setOpen(panel, false); syncVisibility();
+            (previousFocus?.isConnected ? previousFocus : trigger).focus({ preventScroll: true });
         },
         reset() { active = null; api.close(); generation += 1; },
     };
     close.addEventListener('click', api.close);
-    trigger.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); panel.hidden ? api.open() : api.close(); });
+    trigger.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); isOpen() || pendingOpen ? api.close() : navigate(); });
     tabs.addEventListener('keydown', event => {
         const ids = [...buttons.keys()]; const index = ids.indexOf(event.target.id?.replace('tk-tab-', ''));
         if (index < 0 || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();
         const next = event.key === 'Home' ? 0 : event.key === 'End' ? ids.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + ids.length) % ids.length;
-        buttons.get(ids[next]).focus(); api.open(ids[next]);
+        buttons.get(ids[next]).focus(); navigate(ids[next]);
     });
     panel.addEventListener('keydown', event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); api.close(); } });
     workspace = api;

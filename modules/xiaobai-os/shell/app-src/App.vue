@@ -309,6 +309,7 @@ function goBack(): void {
 }
 
 function close(): void {
+    if (embedded) { bridge.post('os/close'); return; }
     navigationGeneration += 1;
     pendingAppOpening = null;
     bridge.post('os/close');
@@ -317,8 +318,11 @@ function close(): void {
 
 function handleKeydown(event: KeyboardEvent): void {
     if (event.key === 'Escape') {
+        if (event.defaultPrevented) { return; }
         event.preventDefault();
-        if (activeApp.value) {
+        if (embedded) {
+            if (!device.value?.back()) { close(); }
+        } else if (activeApp.value) {
             goBack();
         } else if (!device.value?.back()) {
             close();
@@ -382,6 +386,7 @@ onBeforeUnmount(() => {
         <XiaobaiOsDevice
             v-else
             ref="device"
+            :embedded="embedded"
             :apps="availableApps"
             :active-app="activeApp"
             :active-component="activeComponent"

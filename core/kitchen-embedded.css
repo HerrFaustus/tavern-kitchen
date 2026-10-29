@@ -18,7 +18,8 @@
     --os-radius-card: 8px; --os-radius-control: 5px; --os-shadow-card: none;
     font-family: var(--tk-font, sans-serif); color: var(--txt); background: var(--bg);
 }
-.tk-embedded body { font-family: var(--tk-font, sans-serif); color: var(--txt); background: var(--bg); }
+.tk-embedded body { font-family: var(--tk-font, sans-serif); font-size: var(--tk-font-size, 15px); color: var(--txt); background: var(--bg); }
+.tk-embedded :is(button, input, select, textarea) { font-family: inherit; }
 .tk-embedded #xb-frame-boot { color: var(--txt); background: var(--bg); }
 .tk-embedded:not([data-kitchen-view="settings"]) #settings-modal { display: none !important; }
 .tk-embedded:not([data-kitchen-view="settings"]) body { overflow-y: auto; }
@@ -43,9 +44,12 @@
 .tk-embedded .xiaobai-os-glass { border-radius: 0; }
 .tk-embedded .xiaobai-os-system-bar { display: none; }
 .tk-embedded .xiaobai-os-home-button, .tk-embedded .xiaobai-os-close-button { display: none; }
-.tk-embedded .xiaobai-os-navigation { display: flex; justify-content: flex-start; min-height: 36px; height: 36px; color: var(--txt); background: var(--bg); border-top: 1px solid var(--bdr); padding: 0 12px; }
-.tk-embedded .xiaobai-os-navigation .xiaobai-os-nav-button { width: auto; height: 32px; gap: 4px; border-radius: 4px; }
-.tk-embedded .xiaobai-os-navigation .xiaobai-os-nav-button::after { content: '返回上一层'; font-size: 12px; white-space: nowrap; }
+.tk-embedded .tk-context-nav { flex: 0 0 auto; color: var(--txt); background: var(--bg); border-bottom: 1px solid var(--bdr); padding: 4px 16px; }
+.tk-embedded .tk-context-nav button { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; font: inherit; font-size: 13px; color: inherit; background: transparent; border: 0; border-radius: 5px; cursor: pointer; }
+.tk-embedded .tk-context-nav button:hover { background: var(--bg3); }
+.tk-embedded .xiaobai-os-glass { display: flex; flex-direction: column; }
+.tk-embedded .xiaobai-os-stage { flex: 1; }
+.tk-embedded .world-back { display: none; }
 .tk-embedded :focus-visible { outline: 2px solid var(--hl); outline-offset: 2px; }
 .tk-embedded ::selection { background: var(--hl-soft); color: var(--txt); }
 .tk-embedded input, .tk-embedded textarea { caret-color: var(--txt); }

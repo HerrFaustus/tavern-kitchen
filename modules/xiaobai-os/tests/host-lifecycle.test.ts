@@ -60,7 +60,8 @@ test('panels and global API requests work without a chat; selecting a chat expir
 
 test('embedded workspace opens inside its mount without adding a chat launcher or another modal', async t => {
     let mount: HTMLElement;
-    const h = harness(t, { embeddedMount: () => mount, getAppDescriptors: () => [
+    let dismissals = 0;
+    const h = harness(t, { embeddedMount: () => mount, onEmbeddedClose: () => { dismissals++; }, getAppDescriptors: () => [
         { id: 'map', name: '地图', description: '', accent: '#aaa' },
         { id: 'world', name: '世界', description: '', accent: '#aaa' },
     ] });
@@ -76,6 +77,10 @@ test('embedded workspace opens inside its mount without adding a chat launcher o
     assert.equal(h.lifecycle.open('world'), true);
     assert.equal(mount.querySelector('iframe'), frame);
     assert.deepEqual(post.mock.calls[0].arguments, ['os/navigate', { appId: 'world' }]);
+    await h.frameOptions()?.onMessage?.({ type: 'os/close' }, h.bridge);
+    assert.equal(dismissals, 1);
+    assert.equal(mount.querySelector('iframe'), frame, 'dismissing the native drawer keeps page state and drafts');
+    assert.equal(h.lifecycle.isOpen(), true);
     await h.lifecycle.closeWindow();
     assert.equal(mount.childElementCount, 0);
 });

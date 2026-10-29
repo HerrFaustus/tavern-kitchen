@@ -1,7 +1,7 @@
 {
-  "version": "0.1.4",
-  "verified_at_utc": "2026-10-29T19:25:02.442Z",
-  "build_id": "ad9456e21e5e6438013b",
+  "version": "0.1.5",
+  "verified_at_utc": "2026-10-29T19:55:41.820Z",
+  "build_id": "866aa6028f9efd4134dc",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
@@ -48,14 +48,21 @@
       "frame bridge",
       "app controllers",
       "shared settings repository",
-      "built Vue pages"
+      "built Vue pages",
+      "SillyTavern native drawer handler and CSS"
     ],
     "api_save_without_chat": true,
     "dice_preferences_without_chat": true,
     "unbound_world_map_actions_disabled": true,
     "populated_map": true,
     "host_theme_live_updates": true,
-    "light_and_dark": true
+    "light_and_dark": true,
+    "native_drawer": true,
+    "host_drawer_mutual_close": true,
+    "pinned_drawer_preserved": true,
+    "escape_draft_preserved": true,
+    "contextual_back": true,
+    "reduced_motion": true
   },
-  "ui_review": "passed (desktop and mobile, shared API/map/world/dice theme; offline fixture only)"
+  "ui_review": "passed (native drawer, desktop and mobile, contextual back, draft persistence; offline fixture only)"
 }

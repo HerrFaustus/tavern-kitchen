@@ -1,5 +1,5 @@
 {
-  "buildId": "ad9456e21e5e6438013b",
+  "buildId": "866aa6028f9efd4134dc",
   "entries": {
     "apps/debug-panel": {
       "file": "apps/debug-panel-D8bR9Oy2.js",
@@ -18,7 +18,7 @@
       ]
     },
     "apps/xiaobai-os": {
-      "file": "apps/xiaobai-os-Byq9nbv1.js",
+      "file": "apps/xiaobai-os-BX7frzoJ.js",
       "css": [
         "assets/xiaobai-os-D4R4PS39.css"
       ]
@@ -40,7 +40,7 @@
       "css": []
     },
     "runtime/map-projection": {
-      "file": "runtime/map-projection-D9l93j5b.js",
+      "file": "runtime/map-projection-CIu4FPfP.js",
       "css": [
         "assets/AppDialog-unQXjKJp.css",
         "assets/MapBrowser-BslFlSXq.css"
@@ -87,7 +87,7 @@
         "assets/settings-ui-3BrbRAIN.css"
       ]
     },
-    "apps/xiaobai-os-Byq9nbv1.js": {
+    "apps/xiaobai-os-BX7frzoJ.js": {
       "imports": [
         "shared/async-errors-DrD0vbna.js",
         "shared/app-launchers-DPvJTBvS.js",
@@ -98,8 +98,8 @@
       "dynamicImports": [
         "shared/DiceApp-BLJARO-s.js",
         "shared/AgentApiApp-Iv-NYskc.js",
-        "shared/MapApp-DzhvSMpI.js",
-        "shared/WorldApp-BF27if-M.js"
+        "shared/MapApp-BgITt7pT.js",
+        "shared/WorldApp-RzVmHxK2.js"
       ],
       "css": [
         "assets/xiaobai-os-D4R4PS39.css"
@@ -108,9 +108,9 @@
     "host/plugin.js": {
       "imports": [
         "shared/constants-CF4HAj3B.js",
-        "shared/kitchen-workspace-CRvLdS8T.js",
-        "shared/l0-eligibility-BvY0tOof.js",
         "shared/async-errors-DrD0vbna.js",
+        "shared/kitchen-workspace-Bby3X638.js",
+        "shared/l0-eligibility-BvY0tOof.js",
         "shared/event-manager-BErs-i52.js",
         "shared/map-copy-tDx9WeWJ.js",
         "shared/app-launchers-DPvJTBvS.js",
@@ -124,12 +124,12 @@
       ],
       "dynamicImports": [
         "shared/gateway-BQ1NgfUU.js",
-        "shared/story-summary-DYN7inLg.js",
+        "shared/story-summary-CUKwlf1S.js",
         "shared/var-commands-Dn982nqo.js",
         "shared/varevent-editor-CINhz1UQ.js",
         "shared/variables-core-Cg9Zk0NJ.js",
-        "shared/variables-panel-Wf2RbLeB.js",
-        "shared/ena-planner-BqZSZj9e.js"
+        "shared/variables-panel-CqlboG1x.js",
+        "shared/ena-planner-DBd-CL-J.js"
       ],
       "css": []
     },
@@ -159,11 +159,11 @@
       "dynamicImports": [],
       "css": []
     },
-    "runtime/map-projection-D9l93j5b.js": {
+    "runtime/map-projection-CIu4FPfP.js": {
       "imports": [
         "shared/map-copy-tDx9WeWJ.js",
         "shared/app-navigation-DRvopQpQ.js",
-        "shared/MapBrowser-Ciqm1dOm.js"
+        "shared/MapBrowser-DbVD55s8.js"
       ],
       "dynamicImports": [],
       "css": [
@@ -224,11 +224,11 @@
         "assets/DiceApp-CHNUFUcg.css"
       ]
     },
-    "shared/MapApp-DzhvSMpI.js": {
+    "shared/MapApp-BgITt7pT.js": {
       "imports": [
         "shared/map-copy-tDx9WeWJ.js",
         "shared/app-navigation-DRvopQpQ.js",
-        "shared/MapBrowser-Ciqm1dOm.js",
+        "shared/MapBrowser-DbVD55s8.js",
         "shared/AppDialog-DvRZBgOT.js"
       ],
       "dynamicImports": [],
@@ -237,7 +237,7 @@
         "assets/MapBrowser-BslFlSXq.css"
       ]
     },
-    "shared/MapBrowser-Ciqm1dOm.js": {
+    "shared/MapBrowser-DbVD55s8.js": {
       "imports": [
         "shared/map-copy-tDx9WeWJ.js",
         "shared/preload-helper-Ddh_c1lL.js",
@@ -245,14 +245,14 @@
         "shared/AppDialog-DvRZBgOT.js"
       ],
       "dynamicImports": [
-        "shared/three-runtime-BcjNnMvd.js"
+        "shared/three-runtime-Bw6PMbHk.js"
       ],
       "css": [
         "assets/AppDialog-unQXjKJp.css",
         "assets/MapBrowser-BslFlSXq.css"
       ]
     },
-    "shared/WorldApp-BF27if-M.js": {
+    "shared/WorldApp-RzVmHxK2.js": {
       "imports": [
         "shared/async-errors-DrD0vbna.js",
         "shared/app-navigation-DRvopQpQ.js",
@@ -311,11 +311,11 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/ena-planner-BqZSZj9e.js": {
+    "shared/ena-planner-DBd-CL-J.js": {
       "imports": [
         "shared/constants-CF4HAj3B.js",
-        "shared/kitchen-workspace-CRvLdS8T.js",
         "shared/async-errors-DrD0vbna.js",
+        "shared/kitchen-workspace-Bby3X638.js",
         "shared/generate-interceptor-DfhuI7TS.js",
         "shared/iframe-messaging-B-2RiZR3.js",
         "shared/model-D3Dduxkh.js",
@@ -401,9 +401,10 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/kitchen-workspace-CRvLdS8T.js": {
+    "shared/kitchen-workspace-Bby3X638.js": {
       "imports": [
-        "shared/constants-CF4HAj3B.js"
+        "shared/constants-CF4HAj3B.js",
+        "shared/async-errors-DrD0vbna.js"
       ],
       "dynamicImports": [],
       "css": []
@@ -549,12 +550,12 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/story-summary-DYN7inLg.js": {
+    "shared/story-summary-CUKwlf1S.js": {
       "imports": [
         "shared/constants-CF4HAj3B.js",
-        "shared/kitchen-workspace-CRvLdS8T.js",
-        "shared/l0-eligibility-BvY0tOof.js",
         "shared/async-errors-DrD0vbna.js",
+        "shared/kitchen-workspace-Bby3X638.js",
+        "shared/l0-eligibility-BvY0tOof.js",
         "shared/event-manager-BErs-i52.js",
         "shared/preload-helper-Ddh_c1lL.js",
         "shared/debug-core-BiaGo9yA.js",
@@ -591,10 +592,10 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/three-runtime-BcjNnMvd.js": {
+    "shared/three-runtime-Bw6PMbHk.js": {
       "imports": [
         "shared/map-copy-tDx9WeWJ.js",
-        "shared/MapBrowser-Ciqm1dOm.js"
+        "shared/MapBrowser-DbVD55s8.js"
       ],
       "dynamicImports": [],
       "css": [
@@ -636,11 +637,11 @@
       ],
       "css": []
     },
-    "shared/variables-panel-Wf2RbLeB.js": {
+    "shared/variables-panel-CqlboG1x.js": {
       "imports": [
         "shared/constants-CF4HAj3B.js",
-        "shared/kitchen-workspace-CRvLdS8T.js",
         "shared/async-errors-DrD0vbna.js",
+        "shared/kitchen-workspace-Bby3X638.js",
         "shared/event-manager-BErs-i52.js",
         "shared/message-button-ownership-CKhaFYjS.js"
       ],

@@ -17,6 +17,7 @@ const reading = shallowRef<WorldNews | null>(null);
 const listing = ref<HTMLElement | null>(null);
 const articlePage = ref<HTMLElement | null>(null);
 const menu = ref<HTMLDetailsElement | null>(null);
+const menuOpen = ref(false);
 const title = ref<HTMLHeadingElement | null>(null);
 let listScroll = 0;
 let returnId = '';
@@ -66,7 +67,7 @@ useAppBack(() => {
     if (menu.value?.open) { closeMenu(); return true; }
     if (reading.value) { observeBackgroundTask(back(), { source: import.meta.url, operation: "callback" }); return true; }
     return false;
-});
+}, () => menuOpen.value || !!reading.value);
 </script>
 
 <template>
@@ -86,7 +87,7 @@ useAppBack(() => {
                         <path d="M20 10a8 8 0 1 0-1 6M20 4v6h-6" stroke-linecap="round" stroke-linejoin="round" />
                     </svg>
                 </button>
-                <details ref="menu" class="world-menu" @keydown.esc.stop.prevent="closeMenu" @focusout="leaveMenu">
+                <details ref="menu" class="world-menu" @toggle="menuOpen = !!menu?.open" @keydown.esc.stop.prevent="closeMenu" @focusout="leaveMenu">
                     <summary aria-label="新闻设置" title="新闻设置">
                         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg>
                     </summary>

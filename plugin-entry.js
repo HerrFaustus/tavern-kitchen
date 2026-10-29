@@ -4,12 +4,13 @@ import { installFloorSummaries } from './modules/story-summary/floor-summary.js'
 import { createModuleEvents, event_types } from './core/event-manager.js';
 import { DOMPurify } from '../../../../lib.js';
 import { extension_settings } from '../../../extensions.js';
-import { saveSettings } from '../../../../script.js';
+import * as hostScript from '../../../../script.js';
 import { EXT_ID, extensionFolderPath } from './core/constants.js';
 import { buildEntryUrl } from './core/build-assets.js';
 import { createDefaultXiaobaiOsSettings, prepareXiaobaiOsSettings, initXiaobaiOs, openXiaobaiOs, isDiceContinuationPending } from './modules/xiaobai-os/index.js';
 import { configureL0ContinuationCheck } from './modules/story-summary/vector/pipeline/l0-eligibility.js';
 import { observeAsyncCallback } from './shared/common/async-errors.js';
+const { saveSettings } = hostScript;
 
 const settings = extension_settings[EXT_ID] ??= {
     enabled: true,
@@ -119,7 +120,7 @@ async function mountSettings() {
         if (!settings.xiaobaiOs?.enabled) throw new Error('世界相关板块尚未启用，请在设置中开启并保存刷新。');
         if (!await openXiaobaiOs(id === 'world-engine' ? 'world' : id)) throw new Error('此板块尚未准备好，请重试。');
     };
-    kitchen = createKitchenWorkspace({ actions, settingsElement: root, onVisibility(visible, tab) {
+    kitchen = createKitchenWorkspace({ actions, settingsElement: root, toggleDrawer: hostScript.doNavbarIconClick, onVisibility(visible, tab) {
         const instance = variables?.getVariablesPanelInstance();
         if (!visible || tab !== 'variables') instance?.stopWatcher();
     } });
