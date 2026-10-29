@@ -1,4 +1,6 @@
 import { getKitchenMount, openKitchenTab, closeKitchenWorkspace, bindKitchenFrame } from '../../core/kitchen-workspace.js';
+import { refreshFloorSummaries } from './floor-summary.js';
+import { getRuntimeInvalidSourceFloor } from './data/memory-commit.js';
 import { handleTextApiRequest } from '../text-api/host.js';
 // ═══════════════════════════════════════════════════════════════════════════
 // Story Summary - 主入口
@@ -778,6 +780,7 @@ function notifySummaryState() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function postToFrame(payload) {
+    if (['SUMMARY_FULL_DATA', 'SUMMARY_CLEARED', 'GENERATION_STATE', 'CHAT_SUMMARY_STATE'].includes(payload?.type)) refreshFloorSummaries();
     if (payload?.type === "RECALL_LOG") {
         lastRecallLogText = String(payload.text || "");
     }
@@ -2215,8 +2218,9 @@ function createOverlay() {
     window.addEventListener(MESSAGE_EVENT, handleFrameMessageEvent);
 }
 
+let memoryWorkspaceView = 'memory';
 function showOverlay() {
-    openKitchenTab('memory');
+    openKitchenTab(memoryWorkspaceView);
     if (!overlayCreated) createOverlay();
     $("#tavernKitchen-story-summary-overlay").show();
 }
@@ -2248,7 +2252,9 @@ function createSummaryBtn(mesId) {
         e.stopPropagation();
         if (!getSettings().storySummary?.enabled) return;
         currentMesId = Number(mesId);
+        memoryWorkspaceView = 'memory';
         openPanelForMessage(currentMesId);
+        postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view: 'memory' });
     });
     return btn;
 }
@@ -3135,6 +3141,10 @@ async function handleFrameMessage(event) {
     if (!isTrustedMessage(event, iframe, "TavernKitchen-StoryFrame")) return;
 
     const data = event.data;
+    if (data.type === 'OPEN_KITCHEN_SETTINGS') {
+        openKitchenTab('memory-settings');
+        return;
+    }
     if (data.type === 'SUMMARY_AGENT_SETTINGS') {
         try {
             let result;
@@ -3199,6 +3209,7 @@ async function handleFrameMessage(event) {
         }
 
         case "SETTINGS_CLOSED":
+            if (getKitchenMount('memory')) openKitchenTab('memory');
             removeBackupManagerModal();
             break;
 
@@ -5040,4 +5051,17 @@ jQuery(() => {
     initializeStorySummary().catch(reportStartupFailure);
 });
 
-export function openStoryMemory() { openPanelForMessage(Math.max(0, getContext().chat.length - 1)); }
+export function openStoryMemory(floor = Math.max(0, getContext().chat.length - 1)) {
+    memoryWorkspaceView = 'memory';
+    openPanelForMessage(floor);
+    postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view: 'memory' });
+}
+export function openStoryMemorySettings() {
+    memoryWorkspaceView = 'memory-settings';
+    openPanelForMessage(Math.max(0, getContext().chat.length - 1));
+    postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view: 'settings' });
+}
+export function getFloorSummarySnapshot() {
+    return { enabled: isXiaobaiMasterEnabled() && isStorySummaryEnabledForCurrentChat(),
+        chat: getContext().chat, store: getPublishedSummaryStore(), invalidFrom: getRuntimeInvalidSourceFloor() };
+}

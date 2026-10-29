@@ -19,7 +19,7 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     workspace.open('memory');
     await setImmediate();
     assert.deepEqual(calls, ['memory']);
-    assert.equal(document.querySelectorAll('[role="tab"]').length, 8);
+    assert.equal(document.querySelectorAll('[role="tab"]').length, 3);
     assert.equal(document.querySelector('[aria-selected="true"]').textContent, '记忆');
     workspace.open('memory');
     await setImmediate();
@@ -33,7 +33,12 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     assert.equal(getKitchenMount('world'), mount);
     assert.equal(mount.parentElement, parent, 'tab switches must not detach a live iframe');
     assert.equal(mount.firstElementChild, frame);
-    assert.equal(mount.getAttribute('aria-labelledby'), 'tk-tab-world');
+    assert.equal(mount.getAttribute('aria-label'), '世界');
+    workspace.open('memory-settings');
+    assert.equal(document.querySelector('[aria-selected="true"]').textContent, '设置');
+    assert.equal(getKitchenMount('memory-settings'), getKitchenMount('memory'));
+    workspace.open('agent-api');
+    assert.equal(document.querySelector('[aria-selected="true"]').textContent, '设置');
     workspace.open('planner');
     await setImmediate();
     assert.match(getKitchenMount('planner').textContent, /请先启用规划/);

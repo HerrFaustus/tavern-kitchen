@@ -1,5 +1,6 @@
 // 酒馆后厨 0.1 — Based on LittleWhiteBox by biex.
 import { createKitchenWorkspace } from './core/kitchen-workspace.js';
+import { installFloorSummaries } from './modules/story-summary/floor-summary.js';
 import { createModuleEvents, event_types } from './core/event-manager.js';
 import { DOMPurify } from '../../../../lib.js';
 import { extension_settings } from '../../../extensions.js';
@@ -88,6 +89,12 @@ async function mountSettings() {
             if (!chat.length) throw new Error('先进入一段聊天并发送消息，再查看本段故事的记忆。');
             memory.openStoryMemory();
         },
+        'memory-settings': async () => {
+            await requireFeatures();
+            if (!kitchen.isActive('memory-settings')) return;
+            if (!memory) throw new Error('请先启用记忆功能并保存刷新，再配置记忆设置。');
+            memory.openStoryMemorySettings();
+        },
         planner: async () => {
             await requireFeatures();
             if (!kitchen.isActive('planner')) return;
@@ -125,7 +132,16 @@ jQuery(observeAsyncCallback(async () => {
         ['runtime/worldbook', 'tk-worldbook'],
         ['runtime/context', 'tk-context'],
     ]) await loadBridge(entry, id);
-    if (settings.storySummary?.enabled) memory = await import('./modules/story-summary/story-summary.js');
+    if (settings.storySummary?.enabled) {
+        memory = await import('./modules/story-summary/story-summary.js');
+        const panels = installFloorSummaries({ getSnapshot: memory.getFloorSummarySnapshot, openMemory: floor => memory.openStoryMemory(floor) });
+        const floorEvents = createModuleEvents('kitchen-floor-summaries');
+        floorEvents.on(event_types.CHAT_CHANGED, panels.reset);
+        for (const key of ['CHARACTER_MESSAGE_RENDERED', 'USER_MESSAGE_RENDERED', 'MESSAGE_SWIPED', 'MESSAGE_EDITED', 'MESSAGE_DELETED', 'MESSAGE_UPDATED', 'MORE_MESSAGES_LOADED']) {
+            if (event_types[key]) floorEvents.on(event_types[key], panels.schedule);
+        }
+        window.registerKitchenModuleCleanup('kitchen-floor-summaries', () => { panels.dispose(); floorEvents.cleanup(); });
+    }
     if (settings.variablesCore?.enabled || settings.variablesPanel?.enabled) {
         const commands = await import('./modules/variables/var-commands.js');
         const events = await import('./modules/variables/varevent-editor.js');

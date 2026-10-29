@@ -39,7 +39,7 @@
     <!-- Desktop tabs -->
     <div class="nav-tabs">
       <div class="nav-item active" data-view="quickstart">快速开始</div>
-      <div class="nav-item" data-view="api">API 配置</div>
+      <div class="nav-item" data-view="api">模型接口</div>
       <div class="nav-item" data-view="prompt">提示词</div>
       <div class="nav-item" data-view="context">上下文</div>
       <div class="nav-item" data-view="debug">调试</div>
@@ -80,13 +80,13 @@
         <section class="card">
           <div class="card-title">快速测试</div>
           <div class="btn-group">
-            <button id="ep_run_test" class="btn btn-p">测试规划 API</button>
+            <button id="ep_run_test" class="btn btn-p">测试规划接口</button>
           </div>
           <div id="ep_test_status" class="status-text"></div>
         </section>
       </div>
 
-      <!-- ── API 配置 ── -->
+      <!-- ── 模型接口 ── -->
       <div id="view-api" class="view"><div id="planner-text-api"></div></div>
       <!-- ── 提示词 ── -->
       <div id="view-prompt" class="view">
@@ -154,7 +154,7 @@
           <div class="btn-group">
             <button id="ep_debug_worldbook" class="btn">查看本轮上下文</button>
             <button id="ep_debug_char" class="btn">诊断角色卡</button>
-            <button id="ep_test_planner" class="btn btn-p">测试规划 API</button>
+            <button id="ep_test_planner" class="btn btn-p">测试规划接口</button>
           </div>
           <pre id="ep_debug_output" class="debug-output"></pre>
         </section>
@@ -194,7 +194,7 @@
           <div class="nav-dot"></div><span>开始</span>
         </div>
         <div class="mobile-nav-item" data-view="api">
-          <div class="nav-dot"></div><span>API</span>
+          <div class="nav-dot"></div><span>接口</span>
         </div>
         <div class="mobile-nav-item" data-view="prompt">
           <div class="nav-dot"></div><span>提示词</span>

@@ -7,6 +7,9 @@
     --txt2: var(--txt); --txt3: var(--SmartThemeEmColor, #aaa);
     --bdr: var(--SmartThemeBorderColor, #555); --bdr2: var(--bdr);
     --acc: var(--txt); --hl: var(--SmartThemeQuoteColor, #d5b18a); --hl2: var(--hl);
+    --inv: var(--bg);
+    --btn-p-hover: color-mix(in srgb, var(--txt) 90%, var(--bg));
+    --btn-p-disabled: var(--bg3);
     --hl-soft: color-mix(in srgb, var(--hl) 12%, transparent);
     --archive-accent: var(--hl); --archive-accent-soft: var(--bg3);
     --xiaobai-os-screen: var(--bg); --xiaobai-os-surface: var(--bg2);
@@ -17,6 +20,11 @@
 }
 .tk-embedded body { font-family: var(--tk-font, sans-serif); color: var(--txt); background: var(--bg); }
 .tk-embedded #xb-frame-boot { color: var(--txt); background: var(--bg); }
+.tk-embedded[data-kitchen-view="memory"] #settings-modal { display: none !important; }
+.tk-embedded[data-kitchen-view="memory"] body { overflow-y: auto; }
+.tk-embedded[data-kitchen-view="settings"] .archive { display: none; }
+.tk-embedded[data-kitchen-view="settings"] .workspace-shell { padding-inline: 24px; }
+.tk-embedded #archive-manage-open { display: none; }
 .tk-embedded .archive { padding: 0 24px 32px; font-family: inherit; }
 .tk-embedded .archive-topbar { height: 52px; }
 .tk-embedded .archive-brand, .tk-embedded #archive-close, .tk-embedded #archive-theme,
@@ -34,6 +42,7 @@
 .tk-embedded :focus-visible { outline: 2px solid var(--hl); outline-offset: 2px; }
 .tk-embedded ::selection { background: var(--hl-soft); color: var(--txt); }
 .tk-embedded input, .tk-embedded textarea { caret-color: var(--txt); }
+.tk-embedded .btn-p:disabled { color: var(--txt3); }
 @media (max-width: 600px) {
     .tk-embedded .archive, .tk-embedded .container { padding-inline: 12px; }
 }

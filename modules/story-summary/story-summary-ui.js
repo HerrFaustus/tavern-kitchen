@@ -1243,6 +1243,10 @@ const UNANNOTATED_LABEL = '未标注';
     }
 
     function openSettings({ preserveTab = false, tab = 'tab-summary' } = {}) {
+        if (document.documentElement.classList.contains('tk-embedded')) {
+            document.documentElement.dataset.kitchenView = 'settings';
+            postMsg('OPEN_KITCHEN_SETTINGS');
+        }
         settingsDirty = false;
         settingsSnapshot = structuredClone(config);
         if (!preserveTab) {
@@ -2383,6 +2387,12 @@ const UNANNOTATED_LABEL = '未标注';
         if (!d || d.source !== 'TavernKitchen') return;
 
         switch (d.type) {
+            case 'KITCHEN_MEMORY_VIEW': {
+                document.documentElement.dataset.kitchenView = d.view;
+                document.querySelector('.archive').inert = d.view === 'settings';
+                if (d.view === 'settings' && !$('settings-modal').classList.contains('active')) openSettings();
+                break;
+            }
             case 'SUMMARY_AGENT_SETTINGS_RESULT':
                 agentSettings.receive(d);
                 break;

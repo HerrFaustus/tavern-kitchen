@@ -1,5 +1,5 @@
 {
-  "buildId": "40fb7873cc89301427d3",
+  "buildId": "a7c51cb5f7faaea7811f",
   "entries": {
     "apps/debug-panel": {
       "file": "apps/debug-panel-D8bR9Oy2.js",
@@ -12,13 +12,13 @@
       ]
     },
     "apps/story-summary": {
-      "file": "apps/story-summary-BrKymACw.js",
+      "file": "apps/story-summary-Fu7QbNgz.js",
       "css": [
         "assets/settings-ui-3BrbRAIN.css"
       ]
     },
     "apps/xiaobai-os": {
-      "file": "apps/xiaobai-os-DLNcNhWh.js",
+      "file": "apps/xiaobai-os-3HgSLQl9.js",
       "css": [
         "assets/xiaobai-os-D4R4PS39.css"
       ]
@@ -71,7 +71,7 @@
         "assets/settings-ui-3BrbRAIN.css"
       ]
     },
-    "apps/story-summary-BrKymACw.js": {
+    "apps/story-summary-Fu7QbNgz.js": {
       "imports": [
         "shared/rolldown-runtime-CRqgUL4m.js",
         "shared/provider-resolution-BhOb0Txa.js",
@@ -87,17 +87,17 @@
         "assets/settings-ui-3BrbRAIN.css"
       ]
     },
-    "apps/xiaobai-os-DLNcNhWh.js": {
+    "apps/xiaobai-os-3HgSLQl9.js": {
       "imports": [
         "shared/async-errors-DrD0vbna.js",
-        "shared/app-launchers-Doz9e-E3.js",
+        "shared/app-launchers-DPvJTBvS.js",
         "shared/preload-helper-Ddh_c1lL.js",
         "shared/app-navigation-DRvopQpQ.js",
         "shared/frame-bridge-DX0IfUsH.js"
       ],
       "dynamicImports": [
         "shared/DiceApp-VtFyP_Th.js",
-        "shared/AgentApiApp-QGus3hur.js",
+        "shared/AgentApiApp-BQEW_0G9.js",
         "shared/MapApp-EYFWyFGS.js",
         "shared/WorldApp-BLllhyI5.js"
       ],
@@ -108,13 +108,13 @@
     "host/plugin.js": {
       "imports": [
         "shared/constants-CF4HAj3B.js",
-        "shared/kitchen-workspace-D_rcOTPD.js",
+        "shared/kitchen-workspace-oVPF1Ruk.js",
+        "shared/l0-eligibility-BvY0tOof.js",
         "shared/async-errors-DrD0vbna.js",
         "shared/event-manager-BErs-i52.js",
         "shared/map-copy-tDx9WeWJ.js",
-        "shared/app-launchers-Doz9e-E3.js",
+        "shared/app-launchers-DPvJTBvS.js",
         "shared/preload-helper-Ddh_c1lL.js",
-        "shared/l0-eligibility-WtebuItZ.js",
         "shared/sheet-copy-BwN_BiNY.js",
         "shared/generate-interceptor-DfhuI7TS.js",
         "shared/sha256-CxhXNJS9.js",
@@ -124,12 +124,12 @@
       ],
       "dynamicImports": [
         "shared/gateway-BibESsJw.js",
-        "shared/story-summary-CQGO9juJ.js",
+        "shared/story-summary-CQWl5wkz.js",
         "shared/var-commands-Dn982nqo.js",
         "shared/varevent-editor-CINhz1UQ.js",
         "shared/variables-core-Cg9Zk0NJ.js",
-        "shared/variables-panel-_bVeSMsL.js",
-        "shared/ena-planner-BaI38b4s.js"
+        "shared/variables-panel-9LktiEat.js",
+        "shared/ena-planner-CyQCQYjI.js"
       ],
       "css": []
     },
@@ -189,7 +189,7 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/AgentApiApp-QGus3hur.js": {
+    "shared/AgentApiApp-BQEW_0G9.js": {
       "imports": [
         "shared/async-errors-DrD0vbna.js",
         "shared/provider-resolution-BhOb0Txa.js",
@@ -277,7 +277,7 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/app-launchers-Doz9e-E3.js": {
+    "shared/app-launchers-DPvJTBvS.js": {
       "imports": [],
       "dynamicImports": [],
       "css": []
@@ -311,10 +311,10 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/ena-planner-BaI38b4s.js": {
+    "shared/ena-planner-CyQCQYjI.js": {
       "imports": [
         "shared/constants-CF4HAj3B.js",
-        "shared/kitchen-workspace-D_rcOTPD.js",
+        "shared/kitchen-workspace-oVPF1Ruk.js",
         "shared/async-errors-DrD0vbna.js",
         "shared/generate-interceptor-DfhuI7TS.js",
         "shared/iframe-messaging-B-2RiZR3.js",
@@ -401,14 +401,14 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/kitchen-workspace-D_rcOTPD.js": {
+    "shared/kitchen-workspace-oVPF1Ruk.js": {
       "imports": [
         "shared/constants-CF4HAj3B.js"
       ],
       "dynamicImports": [],
       "css": []
     },
-    "shared/l0-eligibility-WtebuItZ.js": {
+    "shared/l0-eligibility-BvY0tOof.js": {
       "imports": [],
       "dynamicImports": [],
       "css": []
@@ -549,14 +549,14 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/story-summary-CQGO9juJ.js": {
+    "shared/story-summary-CQWl5wkz.js": {
       "imports": [
         "shared/constants-CF4HAj3B.js",
-        "shared/kitchen-workspace-D_rcOTPD.js",
+        "shared/kitchen-workspace-oVPF1Ruk.js",
+        "shared/l0-eligibility-BvY0tOof.js",
         "shared/async-errors-DrD0vbna.js",
         "shared/event-manager-BErs-i52.js",
         "shared/preload-helper-Ddh_c1lL.js",
-        "shared/l0-eligibility-WtebuItZ.js",
         "shared/debug-core-BiaGo9yA.js",
         "shared/generate-interceptor-DfhuI7TS.js",
         "shared/provider-resolution-BhOb0Txa.js",
@@ -636,10 +636,10 @@
       ],
       "css": []
     },
-    "shared/variables-panel-_bVeSMsL.js": {
+    "shared/variables-panel-9LktiEat.js": {
       "imports": [
         "shared/constants-CF4HAj3B.js",
-        "shared/kitchen-workspace-D_rcOTPD.js",
+        "shared/kitchen-workspace-oVPF1Ruk.js",
         "shared/async-errors-DrD0vbna.js",
         "shared/event-manager-BErs-i52.js",
         "shared/message-button-ownership-CKhaFYjS.js"

@@ -190,7 +190,7 @@ onBeforeUnmount(() => {
         <div class="agent-api-scroll">
             <div class="agent-api-content">
                 <header class="agent-api-header">
-                    <h1>API 设置</h1>
+                    <h1>模型接口</h1>
                     <p>与小白助手等功能共用主预设</p>
                 </header>
 
@@ -203,7 +203,7 @@ onBeforeUnmount(() => {
                     <button type="button" @click="reloadConfig()">重新加载</button>
                 </section>
 
-                <section v-show="configReady" class="agent-api-panel xb-agent-settings-surface" aria-label="API 设置">
+                <section v-show="configReady" class="agent-api-panel xb-agent-settings-surface" aria-label="模型接口">
                     <div ref="panelRoot" />
                     <div class="agent-api-connection" :class="`is-${connectionStatus}`">
                         <p aria-live="polite">{{ connectionMessage }}</p>

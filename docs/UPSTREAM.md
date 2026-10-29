@@ -4,7 +4,7 @@ Based on LittleWhiteBox by biex.
 
 - 上游：<https://github.com/RT15548/LittleWhiteBox>
 - 固定提交：`e30ebadf69cd53e9fafc5f81f74b9499911f78f5`
-- 上游版本：3.2.2；派生版：酒馆后厨 0.1.1。
+- 上游版本：3.2.2；派生版：酒馆后厨 0.1.2。
 - 修改日期：2026-10-29。
 - 原始快照保留在外层 `references`，不在原始快照上修改。
 
@@ -15,3 +15,5 @@ Based on LittleWhiteBox by biex.
 原有源码中的部分类型名、路径、`xb` 指令以及内部标识仍保留，以避免本次删减引入不必要的协议迁移。文件版权依照原始上游；上游许可证和附加声明保持原文。详细删除路径见 `v1-removed-files.json`。
 
 0.1.1 参考柏宝书固定快照 `0a3a1cdfe92bf5ff1b822b6b6588cb694090d0da` 的 `src/topbar.ts`，采用宿主 `#top-settings-holder`、`.drawer` 与 `.drawer-icon` 接入方式。厨师帽 SVG、统一标签工作台、嵌入接口与主题桥接为本次新写实现；未复制柏宝书业务代码。原有记忆、规划、变量和 OS 页面改为嵌入同一工作台，数据格式与消息校验保持原有机制。
+
+0.1.2 将一级导航收敛为记忆、规划、设置，把原记忆设置与模型接口归入设置。参考柏宝书 `floorPanel.ts`／`FloorPanel.vue` 的楼层下方摘要交互，新写 `modules/story-summary/floor-summary.js`；按后厨已提交批次的实际范围展示摘要，不移植柏宝书的数据写回或生成逻辑，也不新增模型调用。

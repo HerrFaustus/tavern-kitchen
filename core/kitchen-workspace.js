@@ -1,10 +1,13 @@
 import { extensionFolderPath } from './constants.js';
 
 let workspace;
-export const KITCHEN_TABS = [
-    ['memory', '记忆'], ['planner', '规划'], ['variables', '变量'],
-    ['map', '地图'], ['world', '世界'], ['dice', '骰子'], ['agent-api', 'API'], ['settings', '设置'],
-];
+export const KITCHEN_TABS = [['memory', '记忆'], ['planner', '规划'], ['settings', '设置']];
+export const KITCHEN_ROUTES = {
+    memory: [['memory', '剧情记录'], ['variables', '变量'], ['map', '地图'], ['world', '世界']],
+    planner: [['planner', '剧情规划'], ['dice', '行动判定']],
+    settings: [['settings', '功能开关'], ['memory-settings', '记忆设置'], ['agent-api', '模型接口']],
+};
+const parentOf = id => KITCHEN_TABS.find(([key]) => KITCHEN_ROUTES[key].some(([route]) => route === id))?.[0];
 const worldTabs = new Set(['map', 'world', 'dice', 'agent-api']);
 export const getKitchenMount = id => workspace?.getMount(id) ?? null;
 export const openKitchenTab = id => workspace?.open(id);
@@ -72,26 +75,30 @@ export function createKitchenWorkspace({ actions, settingsElement, onVisibility 
     header.append(title, close);
     const tabs = doc.createElement('nav');
     tabs.className = 'tk-tabs'; tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', '后厨板块');
-    const body = doc.createElement('div'); body.className = 'tk-workspace-body';
+    const subnav = doc.createElement('nav'); subnav.className = 'tk-subnav'; subnav.setAttribute('aria-label', '板块内导航');
+    const body = doc.createElement('div'); body.className = 'tk-workspace-body'; body.id = 'tk-workspace-content'; body.setAttribute('role', 'tabpanel');
     const mounts = new Map(), buttons = new Map();
     for (const [id, label] of KITCHEN_TABS) {
         const button = doc.createElement('button');
         button.type = 'button'; button.id = `tk-tab-${id}`; button.textContent = label;
         button.setAttribute('role', 'tab'); button.setAttribute('aria-selected', 'false');
-        button.setAttribute('aria-controls', worldTabs.has(id) ? 'tk-world-mount' : `tk-panel-${id}`); button.tabIndex = -1;
+        button.setAttribute('aria-controls', body.id); button.tabIndex = -1;
         button.addEventListener('click', () => api.open(id));
         tabs.append(button); buttons.set(id, button);
+    }
+    for (const [id, label] of Object.values(KITCHEN_ROUTES).flat()) {
         const mount = doc.createElement('div');
         mount.id = `tk-panel-${id}`; mount.className = 'tk-tab-panel'; mount.hidden = true;
-        mount.setAttribute('role', 'tabpanel'); mount.setAttribute('aria-labelledby', button.id);
+        mount.setAttribute('role', 'region'); mount.setAttribute('aria-label', label);
         mounts.set(id, mount); body.append(mount);
     }
     const worldMount = doc.createElement('div');
     worldMount.id = 'tk-world-mount';
-    worldMount.hidden = true; worldMount.setAttribute('role', 'tabpanel');
+    worldMount.hidden = true; worldMount.setAttribute('role', 'region');
     body.append(worldMount);
+    const memoryMount = doc.createElement('div'); memoryMount.id = 'tk-memory-mount'; memoryMount.hidden = true; body.append(memoryMount);
     mounts.get('settings').append(settingsElement);
-    panel.append(header, tabs, body); doc.body.append(panel);
+    panel.append(header, tabs, subnav, body); doc.body.append(panel);
     const entry = doc.createElement('div'); entry.id = 'tk-topbar'; entry.className = 'drawer';
     const trigger = doc.createElement('button');
     trigger.type = 'button'; trigger.className = 'drawer-toggle tk-topbar-toggle';
@@ -122,21 +129,34 @@ export function createKitchenWorkspace({ actions, settingsElement, onVisibility 
         message.append(text, retry, settings); mount.prepend(message);
     };
     const api = {
-        getMount: id => worldTabs.has(id) ? worldMount : mounts.get(id),
+        getMount: id => worldTabs.has(id) ? worldMount : ['memory', 'memory-settings'].includes(id) ? memoryMount : mounts.get(id),
         isActive: id => !panel.hidden && active === id,
         open(id = active || 'memory') {
-            if (!buttons.has(id)) return;
+            const parent = parentOf(id);
+            if (!parent) return;
             const wasClosed = panel.hidden;
             if (wasClosed) previousFocus = doc.activeElement;
             panel.hidden = false; trigger.setAttribute('aria-expanded', 'true');
             if (active === id && !wasClosed) return;
             const token = ++generation; active = id;
             for (const [key, button] of buttons) {
-                button.setAttribute('aria-selected', String(key === id)); button.tabIndex = key === id ? 0 : -1;
-                mounts.get(key).hidden = key !== id || worldTabs.has(key);
+                button.setAttribute('aria-selected', String(key === parent)); button.tabIndex = key === parent ? 0 : -1;
             }
+            body.setAttribute('aria-labelledby', `tk-tab-${parent}`);
+            for (const [key, mount] of mounts) mount.hidden = key !== id || worldTabs.has(key) || ['memory', 'memory-settings'].includes(key);
             worldMount.hidden = !worldTabs.has(id);
-            if (worldTabs.has(id)) worldMount.setAttribute('aria-labelledby', `tk-tab-${id}`);
+            memoryMount.hidden = !['memory', 'memory-settings'].includes(id);
+            worldMount.setAttribute('aria-label', Object.values(KITCHEN_ROUTES).flat().find(([key]) => key === id)?.[1] || '世界工具');
+            // Retain focused controls when switching routes inside one section.
+            if (subnav.dataset.section !== parent) {
+                subnav.replaceChildren(); subnav.dataset.section = parent;
+                for (const [route, label] of KITCHEN_ROUTES[parent]) {
+                    const button = doc.createElement('button'); button.type = 'button'; button.textContent = label;
+                    button.dataset.route = route; button.addEventListener('click', () => api.open(route));
+                    subnav.append(button);
+                }
+            }
+            for (const button of subnav.children) button.setAttribute('aria-pressed', String(button.dataset.route === id));
             onVisibility(true, id);
             if (opening) return;
             opening = true;
@@ -146,7 +166,7 @@ export function createKitchenWorkspace({ actions, settingsElement, onVisibility 
                 if (token === generation) report(mount, error, id);
             }).finally(() => { mount.removeAttribute('aria-busy'); });
             opening = false;
-            if (wasClosed) buttons.get(id).focus({ preventScroll: true });
+            if (wasClosed) buttons.get(parent).focus({ preventScroll: true });
         },
         close() {
             if (panel.hidden) return;

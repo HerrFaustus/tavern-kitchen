@@ -1,14 +1,14 @@
 {
-  "version": "0.1.1",
-  "verified_at_utc": "2026-10-29T06:30:34.902Z",
-  "build_id": "40fb7873cc89301427d3",
+  "version": "0.1.2",
+  "verified_at_utc": "2026-10-29T07:36:43.493Z",
+  "build_id": "a7c51cb5f7faaea7811f",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
   "quality": "passed",
   "unit_tests": {
-    "total": 1464,
-    "passed": 1464,
+    "total": 1466,
+    "passed": 1466,
     "failed": 0
   },
   "memory_runtime": "passed",
@@ -33,14 +33,17 @@
       390,
       844
     ],
-    "tabs": 8,
+    "tabs": 3,
     "horizontal_overflow": false,
     "script_errors": 0,
     "live_host": false,
     "mocked_dependencies": [
       "host DOMPurify",
-      "echarts"
-    ]
+      "echarts",
+      "host configuration and chat"
+    ],
+    "settings_draft_preserved": true,
+    "floor_summaries": true
   },
-  "ui_review": "ship (desktop settings/memory/planner, mobile settings)"
+  "ui_review": "ship (three-section navigation; save-button contrast fix resolved; offline fixture only)"
 }
