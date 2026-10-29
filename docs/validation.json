@@ -1,7 +1,7 @@
 {
-  "version": "0.2.0",
-  "verified_at_utc": "2026-10-29T23:33:03.798Z",
-  "build_id": "dfdb64f3caf3d5b8b7f5",
+  "version": "0.2.1",
+  "verified_at_utc": "2026-10-29T23:51:23.833Z",
+  "build_id": "154bb30cbe7ccfec909a",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
@@ -92,7 +92,7 @@
     ],
     "verified_version": "0.1.9"
   },
-  "ui_review": "passed (native world archive, transaction success/failure, reload, source confirmation, export/restore, branch switching and chat isolation; offline fixture only)",
+  "ui_review": "passed (world overview, shared management state, legacy route compatibility and mobile layout; offline fixture only)",
   "world_archive_fixture": {
     "version": "0.2.0",
     "desktop": [
@@ -128,6 +128,45 @@
       "restore": true,
       "branchSwitch": true,
       "isolation": true,
+      "noChat": true
+    },
+    "errors": []
+  },
+  "world_overview_fixture": {
+    "version": "0.2.1",
+    "desktop": [
+      1440,
+      1000
+    ],
+    "mobile": [
+      390,
+      844
+    ],
+    "live_host": false,
+    "real_components": [
+      "workspace navigation",
+      "world state kernel and IndexedDB",
+      "source adapters",
+      "overview and management panel",
+      "native Tavern control CSS"
+    ],
+    "mocked_dependencies": [
+      "host context",
+      "memory and map source data",
+      "situation destination content"
+    ],
+    "checks": {
+      "defaultOverview": true,
+      "noSeparateArchive": true,
+      "readOnly": true,
+      "pendingNotFact": true,
+      "confirmedFact": true,
+      "managementInSettings": true,
+      "sharedState": true,
+      "oneTransaction": true,
+      "situationRoute": true,
+      "navigationNoMutation": true,
+      "noOverflow": true,
       "noChat": true
     },
     "errors": []

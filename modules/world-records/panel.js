@@ -170,7 +170,7 @@ export function createWorldPanel({ service, sync, getIdentity }) {
         root.append(status, el('p', '管理档案中的修改暂不回写旧变量或地图；来源更新先进入待处理记录。', 'tk-record-note'), toolbar, search, filter, results, content, backups); renderList(); renderDetail();
     }
     return {
-        mount(parent) { if (!root) { root = el('div', undefined, 'tk-world-records'); root.setAttribute('aria-label', '世界档案'); } if (root.parentElement !== parent) parent.append(root); },
+        mount(parent) { if (!root) { root = el('div', undefined, 'tk-world-records'); root.setAttribute('aria-label', '世界管理'); } if (root.parentElement !== parent) parent.append(root); },
         show,
         isEditing: () => editing || busy,
         empty() { root.replaceChildren(el('p', '选择一段对话后，可以建立和管理这段故事的世界档案。', 'tk-record-note')); },

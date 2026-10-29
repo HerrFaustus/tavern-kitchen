@@ -1,16 +1,19 @@
 import { createWorldStorage } from './storage.js';
 import { createWorldService } from './service.js';
 import { createWorldPanel } from './panel.js';
+import { createWorldOverview } from './overview.js';
 import { memoryRecords } from './imports.js';
 import { readWorldSources, registerWorldSource, storyIdentityKey, subscribeWorldSources } from './sources.js';
 import { captureStoryIdentity } from '../xiaobai-os/host/story-identity.js';
 
-export function createWorldArchive({ getContext, getAccountId = () => 'default-user', getMemorySnapshot, getMount, isVisible, onError }) {
+export function createWorldArchive({ getContext, getAccountId = () => 'default-user', getMemorySnapshot, getMount, isVisible, navigate, onError }) {
     const sourceIdentity = () => storyIdentityKey(captureStoryIdentity(getContext()));
     const identity = () => { const story = sourceIdentity(); return story ? JSON.stringify([getAccountId(), story]) : ''; };
     const storage = createWorldStorage();
     const service = createWorldService({ storage, getIdentity: identity });
     const panel = createWorldPanel({ service, sync, getIdentity: identity });
+    const overview = createWorldOverview({ navigate });
+    const views = { world: overview, 'world-management': panel };
     let disposed = false, scheduled = false, epoch = 0;
     async function sync() {
         const key = identity(), token = epoch; if (!key || disposed) return null;
@@ -26,17 +29,18 @@ export function createWorldArchive({ getContext, getAccountId = () => 'default-u
         scheduled = true;
         queueMicrotask(() => {
             scheduled = false;
-            sync().then(state => { if (state && isVisible() && !panel.isEditing()) panel.show(state); }).catch(error => onError(error));
+            sync().then(state => { if (state) for (const [route, view] of Object.entries(views)) if (isVisible(route) && !view.isEditing()) view.show(state); }).catch(error => onError(error));
         });
     });
     return {
-        async open() {
-            panel.mount(getMount());
-            if (!identity()) { panel.empty(); return; }
+        async open(route = 'world') {
+            const view = views[route]; if (!view) return;
+            view.mount(getMount(route));
+            if (!identity()) { view.empty(); return; }
             await service.ensure(getContext().chatId || '当前故事');
-            const state = await sync(); if (isVisible() && !disposed) panel.show(state || await service.read());
+            const state = await sync(); if (isVisible(route) && !disposed) view.show(state || await service.read());
         },
-        reset() { epoch++; service.invalidate(); panel.reset(); },
-        dispose() { disposed = true; service.invalidate(); unsubscribe(); unregisterMemory(); panel.reset(); storage.close().catch(error => onError(error)); },
+        reset() { epoch++; service.invalidate(); panel.reset(); overview.reset(); },
+        dispose() { disposed = true; service.invalidate(); unsubscribe(); unregisterMemory(); panel.reset(); overview.reset(); storage.close().catch(error => onError(error)); },
     };
 }

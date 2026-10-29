@@ -84,9 +84,13 @@ async function mountSettings() {
         }
     }, { source: import.meta.url, operation: 'save-settings' }));
     const actions = {
-        'world-records': async () => {
+        world: async () => {
             await requireFeatures();
-            if (kitchen.isActive('world-records')) await worldArchive.open();
+            if (kitchen.isActive('world')) await worldArchive.open('world');
+        },
+        'world-management': async () => {
+            await requireFeatures();
+            if (kitchen.isActive('world-management')) await worldArchive.open('world-management');
         },
         memory: async () => {
             await requireFeatures();
@@ -113,11 +117,11 @@ async function mountSettings() {
             variables.getVariablesPanelInstance()?.open();
         },
     };
-    for (const id of ['world', 'lore', 'people', 'relations']) actions[id] = async () => {
+    for (const id of ['situation', 'lore', 'people', 'relations']) actions[id] = async () => {
         await requireFeatures();
         if (!kitchen.isActive(id)) return;
         if (!memory) throw new Error('请先启用记忆记录功能并保存刷新，再查看已记录的世界状态。');
-        memory.openStoryWorld(id);
+        memory.openStoryWorld(id === 'situation' ? 'world' : id);
     };
     for (const id of ['map', 'world-engine', 'dice', 'agent-api']) actions[id] = async () => {
         await requireFeatures();
@@ -172,7 +176,7 @@ export async function startKitchen(workspace) {
     if (settings.xiaobaiOs?.enabled) await initXiaobaiOs();
     const { createWorldArchive } = await import('../modules/world-records/host.js');
     worldArchive = createWorldArchive({ getContext, getAccountId: getCurrentUserHandle, getMemorySnapshot: () => memory?.getFloorSummarySnapshot(),
-        getMount: () => kitchen.getMount('world-records'), isVisible: () => kitchen.isActive('world-records'), onError: showError });
+        getMount: id => kitchen.getMount(id), isVisible: id => kitchen.isActive(id), navigate: id => { kitchen.open(id).catch(showError); }, onError: showError });
     window.registerKitchenModuleCleanup('world-records', () => worldArchive.dispose());
     } catch (error) { startupError = error; throw error; } finally { readyResolve(); }
 }

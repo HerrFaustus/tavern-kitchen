@@ -68,3 +68,7 @@
 #tk-workspace .tk-record-value small { display: block; color: var(--SmartThemeEmColor); }
 #tk-workspace .tk-world-records details { padding: 10px 0; border-bottom: 1px solid var(--SmartThemeBorderColor); }
 #tk-workspace .tk-world-records summary { cursor: pointer; }
+#tk-workspace .tk-world-overview-entity { margin-inline-start: 8px; }
+#tk-workspace .tk-world-overview-history { padding-inline-start: 20px; }
+#tk-workspace .tk-world-overview-history li { margin: 10px 0; }
+#tk-workspace .tk-world-overview-history p { margin: 4px 0; }

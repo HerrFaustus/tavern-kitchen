@@ -3144,7 +3144,7 @@ async function handleFrameMessage(event) {
 
     const data = event.data;
     if (data.type === 'KITCHEN_ARCHIVE_VIEW') {
-        const route = { story: 'memory', people: 'people', world: 'world' }[data.view];
+        const route = { story: 'memory', people: 'people', world: 'situation' }[data.view];
         if (route) openKitchenTab(route);
         return;
     }
@@ -5070,7 +5070,7 @@ export function openStoryMemorySettings() {
 }
 export function openStoryWorld(route = 'world') {
     if (!['world', 'lore', 'people', 'relations'].includes(route)) return;
-    memoryWorkspaceView = route;
+    memoryWorkspaceView = route === 'world' ? 'situation' : route;
     openPanelForMessage(Math.max(0, getContext().chat.length - 1));
     postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view: route });
 }

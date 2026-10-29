@@ -37,7 +37,7 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     assert.equal(mount.parentElement, parent, 'tab switches must not detach a live iframe');
     assert.equal(mount.firstElementChild, frame);
     assert.equal(mount.getAttribute('aria-label'), '后台演化');
-    for (const route of ['world', 'people', 'relations']) {
+    for (const route of ['situation', 'people', 'relations']) {
         await workspace.open(route);
         assert.equal(getKitchenMount(route), getKitchenMount('memory'));
         assert.equal(document.querySelector('[aria-selected="true"]').textContent, '世界');
@@ -48,13 +48,18 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     assert.equal(document.querySelector('.tk-expand'), null);
     assert.equal(document.querySelector('#tk-topbar .fa-door-open')?.classList.contains('fa-solid'), true);
     await workspace.open('lore');
-    assert.equal(getKitchenMount('lore'), getKitchenMount('world'));
+    assert.equal(getKitchenMount('lore'), getKitchenMount('situation'));
     assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '设定');
-    assert.equal(document.querySelector('.tk-subnav [data-route="world"]').textContent, '局势');
+    assert.equal(document.querySelector('.tk-subnav [data-route="world"]').textContent, '总览');
+    assert.equal(document.querySelector('.tk-subnav [data-route="situation"]').textContent, '局势');
     await workspace.open('world-records');
-    assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '档案');
+    assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '总览');
+    assert.equal(getKitchenMount('world-records'), getKitchenMount('world'));
     assert.notEqual(getKitchenMount('world-records'), getKitchenMount('memory'));
     assert.equal(document.querySelector('[aria-selected="true"]').textContent, '世界');
+    await workspace.open('world-management');
+    assert.equal(document.querySelector('[aria-selected="true"]').textContent, '设置');
+    assert.notEqual(getKitchenMount('world-management'), getKitchenMount('world'));
     await workspace.open('memory-settings');
     assert.equal(document.querySelector('[aria-selected="true"]').textContent, '设置');
     assert.equal(getKitchenMount('memory-settings'), getKitchenMount('memory'));
