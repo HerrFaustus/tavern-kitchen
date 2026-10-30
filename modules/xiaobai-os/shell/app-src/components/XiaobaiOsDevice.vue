@@ -48,14 +48,15 @@ defineExpose({
 <template>
     <div class="xiaobai-os-device">
         <div class="xiaobai-os-glass">
-            <XiaobaiOsSystemBar :is-home="isHome" />
+            <XiaobaiOsSystemBar v-if="!embedded" :is-home="isHome" />
             <nav v-if="embedded && !appLoading && !appFailure && navigation?.canBack" class="tk-context-nav" aria-label="页面导航">
                 <button type="button" @click="$emit('back')"><span aria-hidden="true">←</span> 返回上一层</button>
             </nav>
             <div class="xiaobai-os-stage" :style="activeApp ? { '--app-accent': activeApp.accent } : null">
-                <Transition name="xiaobai-os-route" mode="out-in">
+                <Transition name="xiaobai-os-route" :css="!embedded" :mode="embedded ? undefined : 'out-in'">
+                    <div v-if="embedded && isHome" key="embedded-idle" class="xiaobai-os-app-loading" role="status">从后厨导航选择一个板块。</div>
                     <XiaobaiOsHome
-                        v-if="isHome"
+                        v-else-if="isHome"
                         key="home"
                         ref="home"
                         :apps="apps"

@@ -596,6 +596,9 @@ export function createXiaobaiOsLifecycle({
     function open(appId?: string): boolean {
         if (!canOpen()) { return false; }
         if (appId && !getAppDescriptors().some(app => app.id === appId)) { return false; }
+        // Embedded tools must never fall back to the legacy desktop/modal during startup.
+        const mount = embeddedMount?.();
+        if (embeddedMount && (!appId || !mount?.isConnected)) { return false; }
         shortcuts?.hide(false);
         initialAppId = appId || null;
         if (overlay?.isConnected) {
@@ -624,7 +627,6 @@ export function createXiaobaiOsLifecycle({
         iframe.title = '后厨工作台';
         iframe.setAttribute('allow', 'clipboard-read; clipboard-write');
         overlay.append(iframe);
-        const mount = embeddedMount?.();
         if (mount) {
             overlay.className = 'tk-embedded-host';
             overlay.setAttribute('open', '');

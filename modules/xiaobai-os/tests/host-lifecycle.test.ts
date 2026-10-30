@@ -85,6 +85,25 @@ test('embedded workspace opens inside its mount without adding a chat launcher o
     assert.equal(mount.childElementCount, 0);
 });
 
+test('embedded startup and missing mounts never open the old desktop or a modal', async t => {
+    let mount: HTMLElement | null = null;
+    const h = harness(t, { embeddedMount: () => mount, getAppDescriptors: () => [
+        { id: 'map', name: '地图', description: '', accent: '' },
+    ] });
+    h.lifecycle.init();
+    await setImmediate();
+    assert.equal(h.document.querySelector('dialog, iframe, #tavernKitchen-os-button'), null);
+    assert.equal(h.lifecycle.open('map'), false);
+    mount = h.document.createElement('div') as unknown as HTMLElement;
+    assert.equal(h.lifecycle.open('map'), false, 'a detached mount is not a modal fallback');
+    h.document.body.append(mount);
+    assert.equal(h.lifecycle.open(), false, 'embedded mode has no phone desktop');
+    assert.equal(h.document.querySelector('dialog, iframe'), null);
+    assert.equal(h.lifecycle.open('map'), true, 'retry works after the workspace becomes available');
+    assert.equal(mount.querySelectorAll('iframe').length, 1);
+    assert.equal(h.lifecycle.open(), false, 'a stale generic open cannot replace the active tool with home');
+});
+
 test('a failing background start and failing error owner are observed without adding a dialog', async t => {
     const log = t.mock.method(console, 'error', () => undefined);
     const error = new Error('background start failed');

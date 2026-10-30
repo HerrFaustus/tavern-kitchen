@@ -44,16 +44,22 @@ export const closeKitchenWorkspace = () => workspace?.close();
 
 /** Same-origin feature frames inherit the host theme without sharing their DOM globals. */
 export function bindKitchenFrame(frame) {
+    // Do not paint an unthemed document while its first host palette is being applied.
+    frame.style.visibility = 'hidden';
     frame.addEventListener('load', () => {
         const doc = frame.contentDocument;
         if (!doc) return;
         doc.documentElement.classList.add('tk-embedded', 'tk-follow-host');
         doc.documentElement.dataset.kitchenTheme = 'host';
         doc.documentElement.removeAttribute('data-theme');
-        const link = doc.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = new URL(`${extensionFolderPath}/core/kitchen-embedded.css`, document.baseURI).href;
-        doc.head.append(link);
+        let link = doc.getElementById('tk-embedded-styles');
+        const preloaded = !!link;
+        if (!link) {
+            link = doc.createElement('link'); link.id = 'tk-embedded-styles';
+            link.rel = 'stylesheet';
+            link.href = new URL(`${extensionFolderPath}/core/kitchen-embedded.css`, document.baseURI).href;
+            doc.head.append(link);
+        }
         const sync = () => {
             const theme = getComputedStyle(document.body);
             for (const key of ['SmartThemeBodyColor', 'SmartThemeEmColor', 'SmartThemeQuoteColor', 'SmartThemeBorderColor', 'SmartThemeBlurTintColor', 'SmartThemeChatTintColor', 'SmartThemeShadowColor']) {
@@ -68,6 +74,18 @@ export function bindKitchenFrame(frame) {
             doc.dispatchEvent(new doc.defaultView.CustomEvent('kitchen-theme-change'));
         };
         sync();
+        const reveal = () => { if (frame.contentDocument === doc) { frame.style.removeProperty('visibility'); frame.dataset.kitchenFrameReady = 'true'; } };
+        const stylesheetFailed = () => {
+            const error = doc.createElement('p'); error.setAttribute('role', 'alert');
+            error.textContent = '后厨界面样式加载失败，请刷新酒馆重试。';
+            doc.body.replaceChildren(error); reveal();
+        };
+        if (link.sheet) reveal();
+        else if (preloaded) stylesheetFailed();
+        else {
+            link.addEventListener('load', reveal, { once: true });
+            link.addEventListener('error', stylesheetFailed, { once: true });
+        }
         const observer = new MutationObserver(sync);
         for (const target of [document.documentElement, document.body]) observer.observe(target, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
         const stop = new MutationObserver(() => {

@@ -1,14 +1,14 @@
 {
-  "version": "0.2.1",
-  "verified_at_utc": "2026-10-29T23:51:23.833Z",
-  "build_id": "154bb30cbe7ccfec909a",
+  "version": "0.2.2",
+  "verified_at_utc": "2026-10-30T00:07:31.891Z",
+  "build_id": "feca8a68b1d1769c5ea8",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
   "quality": "passed",
   "unit_tests": {
-    "total": 1494,
-    "passed": 1494,
+    "total": 1495,
+    "passed": 1495,
     "failed": 0
   },
   "memory_runtime": "passed",
@@ -92,7 +92,7 @@
     ],
     "verified_version": "0.1.9"
   },
-  "ui_review": "passed (world overview, shared management state, legacy route compatibility and mobile layout; offline fixture only)",
+  "ui_review": "passed (delayed first paint, no embedded phone chrome or route transitions, rapid navigation and retained drafts; offline fixture only)",
   "world_archive_fixture": {
     "version": "0.2.0",
     "desktop": [
@@ -168,6 +168,47 @@
       "navigationNoMutation": true,
       "noOverflow": true,
       "noChat": true
+    },
+    "errors": []
+  },
+  "native_entry_fixture": {
+    "version": "0.2.2",
+    "desktop": [
+      1440,
+      1000
+    ],
+    "mobile": [
+      390,
+      844
+    ],
+    "live_host": false,
+    "stylesheet_delay_ms": 400,
+    "real_components": [
+      "native drawer handler and controls",
+      "workspace and frame bridge",
+      "built story and planner pages",
+      "built OS Vue shell and pages",
+      "OS lifecycle and feature controllers"
+    ],
+    "mocked_dependencies": [
+      "host globals and chat data",
+      "file API and model gateways",
+      "ECharts renderer"
+    ],
+    "checks": {
+      "startupClosed": true,
+      "noStartupPhone": true,
+      "waitsForTheme": true,
+      "preloadedStyles": true,
+      "noPhoneChrome": true,
+      "draftPreserved": true,
+      "noRouteAnimations": true,
+      "noFlashWhileLoading": true,
+      "rapidNavigation": true,
+      "plannerNoEntrance": true,
+      "storyNoEntrance": true,
+      "mobileOverflow": false,
+      "reducedMotion": true
     },
     "errors": []
   }
