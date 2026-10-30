@@ -64,7 +64,7 @@ const bundled = await build({
         "export * from './modules/story-summary/generate/generator.js';",
         "export { buildVectorPromptText } from './modules/story-summary/generate/prompt.js';",
         "export * from './modules/story-summary/vector/storage/state-store.js';",
-        "export { initStateIntegration } from './modules/story-summary/vector/pipeline/state-integration.js';",
+        "export { initStateIntegration, vectorizeMissingStateAtoms, getL0VectorBuildStatus } from './modules/story-summary/vector/pipeline/state-integration.js';",
         "export { db, stateVectorsTable, chunksTable, chunkVectorsTable, metaTable } from './modules/story-summary/data/db.js';",
         "export { deleteChunksFromFloor, deleteChunksAtFloor, updateMeta, clearAllChunks, clearEventVectors } from './modules/story-summary/vector/storage/chunk-store.js';",
         "export { reload } from 'script.js';",
@@ -2632,4 +2632,76 @@ test('an unsummarized earlier floor can be filled without losing a later inline 
     assert.equal(ext().storySummary.summaryHistory.at(-2).floorEntry.floor, start + 1);
     assert.equal(ext().storySummary.summaryHistory.at(-1).floorEntry.eventIds[0], laterId);
     assert.equal(ext().storySummary.lastSummarizedMesId, start + 3);
+});
+
+const inlineAnchor = { scene: '贝拉来到渡口，将失踪的通行证交还给守卫。', where: '渡口', edges: [{ s: '贝拉', t: '守卫', r: '交还通行证' }] };
+test('main-reply anchors share review, confirmed save, omission, editing and exact rollback with summaries', async () => {
+    await importFixture(); const original = structuredClone(ext());
+    const floor = host.context.chat.length + 1;
+    const payload = { ...inlinePayload('交还通行证'), anchors: [inlineAnchor] };
+    host.context.chat.push({ mes: '还给守卫', is_user: true }, { mes: `<kitchen_summary>${JSON.stringify(payload)}</kitchen_summary>` });
+    const controller = inlineController();
+    await controller.update(floor, { payload, stage: true }); assert.deepEqual(ext().stateAtoms, original.stateAtoms);
+    await controller.update(floor, { reviewed: true });
+    const atom = ext().stateAtoms.find(row => row.floor === floor);
+    assert.equal(atom.semantic, inlineAnchor.scene); assert.deepEqual(atom.edges, inlineAnchor.edges);
+    assert.equal(ext().l0Index.byFloor[floor].status, 'ok'); assert.deepEqual(disk(), ext());
+    assert.equal(mod.projectMaintenanceReceipts(ext().storySummary).items.some(run => run.runId === `inline-anchors-${floor}`), false);
+    const before = structuredClone(ext()); host.mode = 'old';
+    await assert.rejects(controller.update(floor, { payload: { ...payload, anchors: [] } })); assert.deepEqual(ext(), before); host.mode = 'ok';
+    await controller.update(floor, { omitted: true }); assert.equal(ext().stateAtoms.some(row => row.floor === floor), false);
+    await controller.update(floor, { omitted: false }); assert.equal(ext().stateAtoms.find(row => row.floor === floor).atomId, atom.atomId);
+    await controller.update(floor, { payload: { ...payload, anchors: [{ ...inlineAnchor, where: '北岸渡口' }] } });
+    assert.notEqual(ext().stateAtoms.find(row => row.floor === floor).atomId, atom.atomId);
+    host.metadata = structuredClone(host.files.get(host.context.chatId)); mod.reload(); mod.getSummaryStore();
+    assert.equal((await mod.executeRollback(host.context.chatId, mod.getSummaryStore(), host.fixture.cutoff)).status, 'rolled_back');
+    assert.deepEqual(ext().stateAtoms, original.stateAtoms); assert.equal(ext().l0Index.byFloor[floor], undefined);
+});
+
+test('historical anchor replay preserves later manual corrections and explicit empty anchors remove the floor', async () => {
+    await importFixture(); const floor = host.context.chat.length + 1;
+    const payload = { ...inlinePayload('交还通行证'), anchors: [inlineAnchor] };
+    host.context.chat.push({ mes: '还给守卫', is_user: true }, { mes: `<kitchen_summary>${JSON.stringify(payload)}</kitchen_summary>` });
+    const controller = inlineController(); await controller.ingest(floor);
+    const key = ext().stateAtoms.find(row => row.floor === floor).atomId;
+    const session = mod.createMemorySession(readMaintenanceState()); session.initial();
+    session.runTool('ReadMemory', { collection: 'anchors', key }, readMaintenanceState());
+    const edit = session.runTool('EditMemory', { edits: [{ kind: 'edit', collection: 'anchors', key, patch: { where: '守卫岗亭' } }] });
+    assert.equal(edit.status, 'staged', JSON.stringify(edit)); await saveMaintenanceSession(session);
+    await controller.update(floor, { payload: { ...payload, summary: '修正摘要但保留本楼场景卡' } });
+    assert.equal(ext().stateAtoms.find(row => row.atomId === key).where, '守卫岗亭');
+    const before = structuredClone(ext());
+    await assert.rejects(controller.update(floor, { payload: { ...payload, anchors: [] } }), /修订.*移除/);
+    assert.deepEqual(ext(), before);
+});
+
+test('main reply anchors enter existing embedding repair without calling the anchor extraction model', async () => {
+    await importFixture(); const floor = host.context.chat.length + 1;
+    const payload = { ...inlinePayload('交还通行证'), anchors: [inlineAnchor] };
+    host.context.chat.push({ mes: '还给守卫', is_user: true }, { mes: `<kitchen_summary>${JSON.stringify(payload)}</kitchen_summary>` });
+    await inlineController().ingest(floor);
+    host.vectorConfig = { enabled: true, embeddingApi: {} };
+    const inputs = []; host.embed = texts => { inputs.push(...texts); return texts.map(() => [1, 0]); };
+    assert.equal((await mod.getL0VectorBuildStatus(host.context.chatId)).missing > 0, true);
+    const repaired = await mod.vectorizeMissingStateAtoms(host.context.chatId);
+    assert.equal(repaired.success, true, JSON.stringify(repaired));
+    assert.equal((await mod.getL0VectorBuildStatus(host.context.chatId)).missing, 0);
+    assert.ok(inputs.includes(inlineAnchor.scene));
+    const atom = ext().stateAtoms.find(row => row.floor === floor);
+    assert.equal(await mod.stateVectorsTable.where('[chatId+atomId]').equals([host.context.chatId, atom.atomId]).count(), 1);
+});
+
+test('undo restores the pre-existing anchor extraction status along with the original hand-maintained anchor', async () => {
+    await importFixture(); const floor = host.context.chat.length + 1;
+    const payload = { ...inlinePayload('交还通行证'), anchors: [inlineAnchor] };
+    host.context.chat.push({ mes: '还给守卫', is_user: true }, { mes: `<kitchen_summary>${JSON.stringify(payload)}</kitchen_summary>` });
+    const before = mod.readSummaryMemory();
+    before.stateAtoms.push({ atomId: 'hand-existing', floor, source: 'ai', semantic: '已手工整理的原场景记录，保留其原有含义。', where: '旧渡口', edges: [], quality: 0.3 });
+    before.l0Index.byFloor[floor] = { floor, status: 'ok', atoms: 1, updatedAt: 12345 };
+    await mod.commitSummaryMemory(host.context.chatId, before);
+    await inlineController().ingest(floor);
+    assert.equal(ext().stateAtoms.some(atom => atom.atomId === 'hand-existing'), false);
+    assert.equal((await mod.executeRollback(host.context.chatId, mod.getSummaryStore(), host.fixture.cutoff)).status, 'rolled_back');
+    assert.deepEqual(ext().stateAtoms, before.stateAtoms);
+    assert.deepEqual(ext().l0Index.byFloor[floor], before.l0Index.byFloor[floor]);
 });

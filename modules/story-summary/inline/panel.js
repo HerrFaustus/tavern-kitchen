@@ -9,6 +9,7 @@ const choices = { presence: { present: '在场', nearby: '附近', away: '离场
 const arrays = new Set(['participants', 'causedBy', 'from']);
 const booleans = new Set(['isState', 'retracted']);
 const iconNames = { 人物: 'user', 认知: 'brain', 场景: 'location-dot', 故事时钟: 'clock', 剧情: 'book-open',
+    场景锚点: 'bookmark',
     物品: 'box-open', 变量: 'sliders', 计划: 'list-check', 悬念: 'circle-question', 局面: 'flag', 世界: 'globe' };
 
 export function createFloorPanel({ doc, floor, updateFloor, extractFloor, openMemory, schedule }) {
@@ -85,7 +86,16 @@ export function createFloorPanel({ doc, floor, updateFloor, extractFloor, openMe
         editKey = key;
         const form = element('form', 'tk-fp-editform'); const controls = new Map();
         for (const name of fieldNames) {
-            const row = element('label', 'tk-fp-editrow'); row.append(element('span', 'tk-fp-label', FIELD_LABELS[name] || ({ timeStart: '起始时间', timeEnd: '结束时间', date: '明确公历日期', location: '地点' })[name] || name));
+            if (name === 'edges') {
+                const edges = values.edges || [];
+                for (let i = 0; i < 3; i++) for (const [key, label] of [['s', '发起者'], ['r', '行动'], ['t', '对象']]) {
+                    const row = element('label', 'tk-fp-editrow'); row.append(element('span', 'tk-fp-label', `互动${i + 1}·${label}`));
+                    const control = element('input', 'text_pole'); control.value = edges[i]?.[key] || ''; control.placeholder = '无此互动请整组留空';
+                    controls.set(`edge${i}${key}`, control); row.append(control); form.append(row);
+                }
+                continue;
+            }
+            const row = element('label', 'tk-fp-editrow'); row.append(element('span', 'tk-fp-label', FIELD_LABELS[name] || ({ scene: '场景叙述', where: '场景地点', timeStart: '起始时间', timeEnd: '结束时间', date: '明确公历日期', location: '地点' })[name] || name));
             let control;
             if (choices[name]) {
                 control = element('select', 'text_pole');
@@ -93,7 +103,7 @@ export function createFloorPanel({ doc, floor, updateFloor, extractFloor, openMe
                 control.value = values[name] || Object.keys(choices[name])[0];
             } else if (booleans.has(name)) { control = element('input'); control.type = 'checkbox'; control.checked = !!values[name]; }
             else {
-                control = element('textarea', 'text_pole'); control.rows = ['summary', 'description', 'content', 'evidence'].includes(name) ? 3 : 1;
+                control = element('textarea', 'text_pole'); control.rows = ['scene', 'summary', 'description', 'content', 'evidence'].includes(name) ? 3 : 1;
                 control.value = Array.isArray(values[name]) ? values[name].join('、') : String(values[name] ?? '');
                 const resize = () => { control.style.height = 'auto'; control.style.height = `${Math.max(30, control.scrollHeight + 2)}px`; };
                 control.addEventListener('input', resize); setTimeout(resize, 0);
@@ -110,12 +120,15 @@ export function createFloorPanel({ doc, floor, updateFloor, extractFloor, openMe
             event.preventDefault();
             const result = { ...values };
             for (const [name, control] of controls) {
+                if (name.startsWith('edge')) continue;
                 const value = booleans.has(name) ? control.checked : control.value.trim();
                 if (arrays.has(name)) result[name] = value ? value.split(/[、,，\n]/).map(part => part.trim()).filter(Boolean) : [];
                 else if (name === 'progress') result[name] = value === '' ? 0 : Number(value);
                 else if (value !== '' || ['summary', 'o', 'reason', 'date', 'timeStart', 'timeEnd', 'location'].includes(name)) result[name] = value;
                 else delete result[name];
             }
+            if (fieldNames.includes('edges')) result.edges = Array.from({ length: 3 }, (_, i) => Object.fromEntries(
+                ['s', 't', 'r'].map(key => [key, controls.get(`edge${i}${key}`).value.trim()]))).filter(edge => edge.s || edge.t || edge.r);
             run(() => save(result));
         });
         form.addEventListener('keydown', event => { if (event.key === 'Escape') { event.stopPropagation(); editKey = null; error = ''; renderContent(); schedule(); } });
@@ -132,6 +145,10 @@ export function createFloorPanel({ doc, floor, updateFloor, extractFloor, openMe
         const patch = (value, remove = false) => {
             const payload = structuredClone(model.payload);
             const eventIds = [...(model.entry?.eventIds || [])];
+            if (item.bucket === 'anchors') {
+                if (remove) payload.anchors.splice(item.index, 1); else payload.anchors[item.index] = value;
+                return commitPayload(payload);
+            }
             if (remove) { payload.updates[item.bucket].splice(item.index, 1); if (item.bucket === 'events') eventIds.splice(item.index, 1); }
             else payload.updates[item.bucket][item.index] = item.bucket === 'newCharacters' ? value.name : value;
             return commitPayload(payload, { eventIds, ...(remove && item.bucket === 'events' && !payload.updates.events.length ? { suppressDefaultEvent: true } : {}) });

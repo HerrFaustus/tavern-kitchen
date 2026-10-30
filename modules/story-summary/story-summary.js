@@ -180,6 +180,7 @@ import {
 } from "./vector/pipeline/state-integration.js";
 import {
     clearStateVectors,
+    deleteStateVectorsByIds,
     getStateAtoms,
     getStateAtomsCount,
     getStateVectorsCount,
@@ -4141,7 +4142,7 @@ const mainReplySummary = createFloorSummaryController({
     getFilterRules: getTextFilterRules,
     ensureSources: ensureFloorSources, read: readSummaryMemory, commit: commitSummaryMemory, merge: mergeNewData,
     busy: () => isHostGenerating() || isSummaryGenerating(), refresh: refreshFloorSummaries,
-    afterCommit: async (_floor, previous, next) => {
+    afterCommit: async (floor, previous, next) => {
         const chatId = getContext().chatId;
         cancelRecallAndClearPrompt('floor-summary-edited');
         recallReuse.invalidate();
@@ -4150,7 +4151,14 @@ const mainReplySummary = createFloorSummaryController({
         const changedIds = (previous.storySummary.json?.events || []).filter(event =>
             JSON.stringify(event) !== JSON.stringify(next.storySummary.json?.events?.find(item => item.id === event.id))).map(event => event.id);
         if (changedIds.length) await deleteEventVectorsByIds(chatId, changedIds);
+        const changedAtoms = (previous.stateAtoms || []).filter(atom =>
+            JSON.stringify(atom) !== JSON.stringify(next.stateAtoms?.find(item => item.atomId === atom.atomId))).map(atom => atom.atomId);
+        if (changedAtoms.length) await deleteStateVectorsByIds(chatId, changedAtoms);
         await clearRecallRuntime(chatId);
+        if (getVectorConfig()?.enabled) {
+            rememberVectorMaintenance(chatId, floor, 'main_reply');
+            scheduleAutoL0Backfill(AUTO_L0_BACKFILL_DELAY_MS, chatId);
+        }
         postToFrame({ type: 'SUMMARY_FULL_DATA', payload: buildFramePayload(getSummaryStore()) });
         await applyHideState();
     },

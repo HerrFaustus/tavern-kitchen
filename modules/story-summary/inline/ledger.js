@@ -3,6 +3,7 @@ import { applyExactSummaryHistoryUndo, summaryBatchChanges, buildSummaryUndo } f
 import { createSummaryBatch } from '../data/summary-history.js';
 import { memoryItems, memoryKey, replaceMemoryRecords, sameMemory } from '../maintenance/domain.js';
 import { memoryPolicy, memoryDigest } from '../data/memory-policy.js';
+import { applyInlineAnchors, isInlineAnchorReceipt } from './anchors.js';
 
 const clone = value => structuredClone(value);
 const conflict = message => { throw new Error(message); };
@@ -94,6 +95,8 @@ export function reviseFloorMemory(previous, chat, floor, edit, merge, filterRule
     const old = inserting ? null : tail[0]?.floorEntry;
     if (old && !isFloorEntryCurrent(old, chat)) conflict('本楼原文或候选回复已变化，请重新提取。');
     const entry = { version: 1, floor, source, payload: validateFloorPayload(edit.payload ?? old?.payload),
+        ...(!old || old.anchorVersion || Object.hasOwn(edit.payload || {}, 'anchors') ? { anchorVersion: 1,
+            anchorPreviousIndex: clone(old && Object.hasOwn(old, 'anchorPreviousIndex') ? old.anchorPreviousIndex : previous.l0Index?.byFloor?.[floor] ?? null) } : {}),
         eventIds: clone(edit.eventIds ?? old?.eventIds ?? []), omitted: edit.omitted ?? old?.omitted ?? false,
         deleted: edit.deleted ?? old?.deleted ?? false, empty: edit.empty ?? old?.empty ?? false,
         suppressDefaultEvent: edit.suppressDefaultEvent ?? old?.suppressDefaultEvent ?? false,
@@ -127,7 +130,8 @@ export function reviseFloorMemory(previous, chat, floor, edit, merge, filterRule
         }
         const batch = createSummaryBatch(end, original.endMesId, undo, original.policy || memoryPolicy(filterRules));
         if (current) batch.floorEntry = current;
-        batch.maintenance = replayMaintenance(memory, original.maintenance || []);
+        const generated = current?.anchorVersion ? [applyInlineAnchors(memory, current, batch.policy)] : [];
+        batch.maintenance = [...generated, ...replayMaintenance(memory, (original.maintenance || []).filter(receipt => !isInlineAnchorReceipt(receipt)))];
         rebuilt.push(batch); end = batch.endMesId;
     }
     const ids = new Set((memory.json.events || []).map(event => event.id));
@@ -138,5 +142,10 @@ export function reviseFloorMemory(previous, chat, floor, edit, merge, filterRule
     store.updatedAt = Date.now(); delete store.pendingImportBoundary;
     if (store.floorDrafts) delete store.floorDrafts[floor];
     next.stateAtoms = memory.atoms;
+    next.l0Index ||= { version: 1, byFloor: {} };
+    for (const batch of rebuilt) if (batch.floorEntry?.anchorVersion) {
+        const count = memory.atoms.filter(atom => atom.floor === batch.floorEntry.floor).length;
+        next.l0Index.byFloor[batch.floorEntry.floor] = { floor: batch.floorEntry.floor, status: count ? 'ok' : 'empty', atoms: count, origin: 'main_reply' };
+    }
     return next;
 }

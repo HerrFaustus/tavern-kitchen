@@ -56,6 +56,7 @@ function groupMaintenanceReceipts(store) {
         const receipts = history[batch].maintenance || [];
         for (let index = receipts.length - 1; index >= 0; index--) {
             const receipt = receipts[index];
+            if (receipt.origin === 'main_reply_anchors') continue;
             const group = groups.get(receipt.runId) || [];
             group.push(receipt); groups.set(receipt.runId, group);
         }

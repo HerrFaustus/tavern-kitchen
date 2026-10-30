@@ -133,3 +133,12 @@ test('native system notices are not narrative floors, while hidden real replies 
     assert.equal(parsed.events[0].memoryRole, '具体经历'); assert.equal(parsed.arcUpdates[0].progress, 0.3);
     assert.equal(prepareFloorPayload({ summary: '保留楼尾文字', updates: { events: [] } }, {}, { start: 0, floor: 0 }, [], [], true).events.length, 0);
 });
+
+test('main reply anchors reject malformed edges and never trust model IDs or provenance', () => {
+    const anchor = { scene: '贝拉来到渡口，将失踪的通行证交还给守卫。', where: '渡口', edges: [{ s: '贝拉', t: '守卫', r: '交还通行证' }], atomId: 'spoof', floor: 999 };
+    const parsed = extractFloorPayload(raw({ ...payload, anchors: [anchor] }));
+    assert.equal(parsed.status, 'ready'); assert.equal(parsed.payload.anchors[0].atomId, undefined);
+    assert.equal(extractFloorPayload(raw({ ...payload, anchors: [{ ...anchor, edges: [{ s: '贝拉' }] }] })).status, 'invalid');
+    assert.equal(extractFloorPayload(raw({ ...payload, anchors: [anchor, anchor, anchor] })).status, 'invalid');
+    assert.equal(extractFloorPayload(raw({ ...payload, anchors: [{ ...anchor, scene: '太短' }] })).status, 'invalid');
+});

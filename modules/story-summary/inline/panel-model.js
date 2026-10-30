@@ -1,6 +1,7 @@
 import { extractFloorPayload, floorSource } from './protocol.js';
 import { findFloorBatch, isFloorEntryCurrent } from './ledger.js';
 import { STORY_FIELDS, STORY_KINDS, storyRecordText } from '../../story-state/records.js';
+import { inlineAnchorInputs } from './anchors.js';
 
 export const EMPTY_FLOOR_PAYLOAD = { summary: '', timeStart: '', timeEnd: '', date: '', location: '', updates: {} };
 export const FIELD_LABELS = { summary: '摘要', title: '标题', participants: '涉及人物', causedBy: '前因事件编号', timeLabel: '故事时间', memoryRole: '记忆类型',
@@ -17,7 +18,7 @@ const storyFields = { scene: ['location', 'situation', 'participants', 'tension'
 const groups = { events: '剧情', factUpdates: '世界', arcUpdates: '人物', newCharacters: '人物', keywords: '关键词', characterAliasUpdates: '人物' };
 
 export function floorEditItems(payload, store) {
-    return Object.entries(payload.updates || {}).flatMap(([bucket, rows]) => (rows || []).map((raw, index) => {
+    const items = Object.entries(payload.updates || {}).flatMap(([bucket, rows]) => (rows || []).map((raw, index) => {
         const value = bucket === 'newCharacters' ? { name: raw } : raw;
         let group = groups[bucket] || '变化';
         if (bucket === 'storyUpdates') group = STORY_KINDS[value.kind] || '世界';
@@ -37,6 +38,10 @@ export function floorEditItems(payload, store) {
         return { key: `${bucket}:${index}`, bucket, index, value, group, operation, title, sub,
             fields: keys.filter(key => !removed || !['o', 'isState', 'trend'].includes(key)) };
     }));
+    for (const [index, anchor] of (payload.anchors || []).entries()) items.push({ key: `anchors:${index}`, bucket: 'anchors', index,
+        group: '场景锚点', operation: '记录', title: anchor.where || '当前场景', sub: anchor.scene,
+        value: anchor, fields: ['scene', 'where', 'edges'] });
+    return items;
 }
 
 export function floorPanelModel(snapshot, floor) {
@@ -49,7 +54,8 @@ export function floorPanelModel(snapshot, floor) {
     const extracted = extractFloorPayload(chat[floor].mes);
     const draft = store?.floorDrafts?.[floor];
     const staged = draft?.source?.digest === source.digest;
-    const payload = staged ? draft.payload : entry?.empty ? structuredClone(EMPTY_FLOOR_PAYLOAD) : entry?.payload || extracted.payload || structuredClone(EMPTY_FLOOR_PAYLOAD);
+    let payload = staged ? draft.payload : entry?.empty ? structuredClone(EMPTY_FLOOR_PAYLOAD) : entry?.payload || extracted.payload || structuredClone(EMPTY_FLOOR_PAYLOAD);
+    if ((!entry || entry.anchorVersion) && payload.anchors === undefined) payload = { ...payload, anchors: inlineAnchorInputs(payload) };
     const legacy = !store?.summaryInvalid && snapshot.invalidFrom == null && !batch && store?.summaryHistory?.find(item => item.kind === 'batch' && !item.floorEntry && floor > item.previousEndMesId && floor <= item.endMesId);
     const legacyEvents = legacy ? (store?.json?.events || []).filter(event => event._addedAt === legacy.endMesId) : [];
     const status = entry?.omitted ? '番外' : entry?.deleted ? '已删除' : staged ? '待审查' : entry ? '已写入'

@@ -735,6 +735,10 @@ export async function executeRollback(chatId, store, targetEndMesId, options = {
     draft.json = hasSummaryContent(restored.json) ? restored.json : null;
     next.stateAtoms = restored.atoms;
     updateMaintainedAnchorIndex(next, impact.floors);
+    for (const batch of draft.summaryHistory || []) if (batch.endMesId > targetEndMesId && batch.floorEntry?.anchorVersion) {
+        if (batch.floorEntry.anchorPreviousIndex) next.l0Index.byFloor[batch.floorEntry.floor] = structuredClone(batch.floorEntry.anchorPreviousIndex);
+        else delete next.l0Index.byFloor[batch.floorEntry.floor];
+    }
     draft.lastSummarizedMesId = targetEndMesId;
     draft.summaryHistory = (draft.summaryHistory || []).filter(entry => entry.endMesId <= targetEndMesId);
     if (maintenanceOnly) draft.summaryHistory.find(entry => entry.endMesId === targetEndMesId).maintenance = [];

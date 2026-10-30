@@ -68,8 +68,9 @@
 .tk-fp-editform { flex: 1 1 100%; width: 100%; min-width: 0; border: 1px solid var(--SmartThemeQuoteColor); border-radius: 5px; padding: 10px; margin: 0 0 8px; }
 .tk-fp-editrow { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 7px; }
 .tk-fp-label { flex: 0 0 84px; font-size: 12px; padding-top: 5px; }
-.tk-fp-editrow :is(textarea,select) { flex: 1 1 auto; width: 0; min-width: 0; margin: 0; font: inherit; resize: vertical; }
+.tk-fp-editrow :is(textarea,select,input.text_pole) { flex: 1 1 auto; width: 0; min-width: 0; margin: 0; font: inherit; resize: vertical; }
 .tk-fp-editrow input[type="checkbox"] { margin-top: 7px; }
+.tk-fp-editrow input.text_pole::placeholder { color: var(--SmartThemeEmColor); opacity: 1; }
 .tk-fp-editfoot, .tk-fp-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
 .tk-fp-spacer { flex: 1; }
 .tk-fp-footer { border-top: 1px solid var(--SmartThemeBorderColor); padding-top: 8px; }
