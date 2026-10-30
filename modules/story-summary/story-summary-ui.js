@@ -33,68 +33,30 @@ const UNANNOTATED_LABEL = '未标注';
     let agentSettingsParent = 'tab-agent';
     const textApiEditor = mountTextApiSettings(document.getElementById('summary-text-api'), { feature: 'summary', namespace: 'TavernKitchen-StoryFrame' });
 
+    const vectorProfileEditors = Object.fromEntries(['l0', 'embedding', 'rerank'].map(feature => [
+        'tab-' + feature + '-api', mountTextApiSettings(document.getElementById(feature + '-profile'),
+            { feature, namespace: 'TavernKitchen-StoryFrame' }),
+    ]));
+
     function formatVectorPackageCounts(result) {
         return `${result.stateVectorCount} 锚点向量、${result.chunkCount} 片段向量、${result.eventCount} 事件向量`;
     }
 
-    function normalizeApiBaseUrl(url) {
-        return String(url || '').trim().replace(/\/+$/, '');
-    }
+    
 
-    function normalizeApiPrefix(prefix) {
-        const raw = String(prefix || '').trim();
-        if (!raw) return '';
-        return `/${raw.replace(/^\/+/, '').replace(/\/+$/, '')}`;
-    }
+    
 
-    function hasExplicitApiVersion(url) {
-        const baseUrl = normalizeApiBaseUrl(url);
-        return /\/v\d[\w.-]*$/i.test(baseUrl);
-    }
+    
 
-    function getDefaultApiPrefix(provider) {
-        const key = String(provider || '').trim().toLowerCase();
-        if (key === 'google' || key === 'gemini') return '/v1beta';
-        return '/v1';
-    }
+    
 
-    function resolveApiBaseUrl(url, defaultPrefix = '') {
-        const baseUrl = normalizeApiBaseUrl(url);
-        const prefix = normalizeApiPrefix(defaultPrefix);
-        if (!baseUrl || !prefix || hasExplicitApiVersion(baseUrl)) return baseUrl;
-        if (baseUrl.toLowerCase().endsWith(prefix.toLowerCase())) return baseUrl;
-        return `${baseUrl}${prefix}`;
-    }
+    
 
-    function joinApiUrl(baseUrl, path) {
-        const normalizedBase = normalizeApiBaseUrl(baseUrl);
-        const normalizedPath = String(path || '').startsWith('/') ? String(path || '') : `/${String(path || '')}`;
-        return normalizedBase ? `${normalizedBase}${normalizedPath}` : normalizedPath;
-    }
+    
 
-    function getModelListCandidateUrls(url, defaultPrefix = '') {
-        const baseUrl = normalizeApiBaseUrl(url);
-        if (!baseUrl) return [];
+    
 
-        const candidates = [joinApiUrl(baseUrl, '/models')];
-        const resolvedBase = resolveApiBaseUrl(baseUrl, defaultPrefix);
-        if (resolvedBase && resolvedBase !== baseUrl) {
-            candidates.push(joinApiUrl(resolvedBase, '/models'));
-        }
-
-        return [...new Set(candidates)];
-    }
-
-    async function tryParseModelIds(url, fetchOptions = {}) {
-        try {
-            const res = await fetch(url, fetchOptions);
-            if (!res.ok) return null;
-            const data = await res.json();
-            return data?.data?.map(m => m?.id).filter(Boolean) || null;
-        } catch {
-            return null;
-        }
-    }
+    
 
     const DEFAULT_MEMORY_PROMPT_TEMPLATE = `以上是还留在眼前的对话
 以下是脑海里的记忆：
@@ -135,22 +97,7 @@ const UNANNOTATED_LABEL = '未标注';
         const fragment = range.createContextualFragment(String(html ?? ''));
         el.replaceChildren(fragment);
     };
-    const setSelectOptions = (select, items, placeholderText) => {
-        if (!select) return;
-        select.replaceChildren();
-        if (placeholderText != null) {
-            const option = document.createElement('option');
-            option.value = '';
-            option.textContent = placeholderText;
-            select.appendChild(option);
-        }
-        (items || []).forEach(item => {
-            const option = document.createElement('option');
-            option.value = item;
-            option.textContent = item;
-            select.appendChild(option);
-        });
-    };
+    
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Constants
@@ -179,35 +126,7 @@ const UNANNOTATED_LABEL = '未标注';
         rerank: 'BAAI/bge-reranker-v2-m3',
     };
 
-    const VECTOR_MODEL_FILTERS = {
-        embedding: {
-            include: [
-                'embedding', 'embed', 'bge-m3', 'bge-large', 'bge-base', 'e5-', 'multilingual-e5',
-                'jina-embeddings', 'text-embedding', 'voyage', 'gte-', 'gte_', 'gte.'
-            ],
-            exclude: [
-                'rerank', 'reranker', 'chat', 'instruct', 'reasoner', 'vl', 'vision',
-                'tts', 'speech', 'audio', 'whisper', 'transcription', 'image', 'sdxl', 'moderation'
-            ],
-        },
-        rerank: {
-            include: [
-                'rerank', 'reranker', 'bge-reranker', 'jina-reranker', 'cohere-rerank'
-            ],
-            exclude: [
-                'embedding', 'embed', 'chat', 'instruct', 'reasoner', 'vl', 'vision',
-                'tts', 'speech', 'audio', 'whisper', 'transcription', 'image', 'sdxl', 'moderation'
-            ],
-        },
-        l0: {
-            include: [],
-            exclude: [
-                'embedding', 'embed', 'rerank', 'reranker', 'tts', 'speech', 'audio',
-                'whisper', 'transcription', 'stt', 'image', 'sdxl', 'flux', 'wanx',
-                'midjourney', 'moderation'
-            ],
-        },
-    };
+    
 
     function setStatusText(el, message, kind = '') {
         if (!el) return;
@@ -221,20 +140,7 @@ const UNANNOTATED_LABEL = '未标注';
                     : '';
     }
 
-    function filterVectorModelsByPurpose(prefix, models) {
-        const rule = VECTOR_MODEL_FILTERS[prefix];
-        if (!rule || !Array.isArray(models)) return [];
-
-        const normalized = [...new Set(models.filter(Boolean).map(m => String(m).trim()).filter(Boolean))];
-        const matched = normalized.filter(modelId => {
-            const lower = modelId.toLowerCase();
-            if (rule.exclude.some(keyword => lower.includes(keyword))) return false;
-            if (!rule.include.length) return true;
-            return rule.include.some(keyword => lower.includes(keyword));
-        });
-
-        return matched.length ? matched : normalized;
-    }
+    
 
     function createDefaultProviderProfile(provider, model = '') {
         const pv = VECTOR_PROVIDER_DEFAULTS[provider] || VECTOR_PROVIDER_DEFAULTS.custom;
@@ -690,145 +596,7 @@ const UNANNOTATED_LABEL = '未标注';
     // ═══════════════════════════════════════════════════════════════════════════
 
     function getVectorApiConfig(prefix) {
-        const provider = $(`${prefix}-api-provider`)?.value || 'siliconflow';
-        const providers = normalizeProviderProfiles(prefix, config.vector?.[`${prefix}Api`] || {});
-        providers[provider] = {
-            url: $(`${prefix}-api-url`)?.value?.trim() || '',
-            key: $(`${prefix}-api-key`)?.value?.trim() || '',
-            model: $(`${prefix}-api-model-text`)?.value?.trim() || '',
-            modelCache: Array.isArray(config.vector?.[`${prefix}Api`]?.providers?.[provider]?.modelCache)
-                ? [...config.vector[`${prefix}Api`].providers[provider].modelCache]
-                : [],
-        };
-        return {
-            provider,
-            url: providers[provider]?.url || '',
-            key: providers[provider]?.key || '',
-            model: providers[provider]?.model || '',
-            modelCache: Array.isArray(providers[provider]?.modelCache) ? [...providers[provider].modelCache] : [],
-            providers,
-        };
-    }
-
-    function loadVectorApiConfig(prefix, cfg) {
-        const next = cfg || {};
-        const provider = next.provider || 'siliconflow';
-        const profiles = normalizeProviderProfiles(prefix, next);
-        const profile = profiles[provider] || createDefaultProviderProfile(provider, VECTOR_API_DEFAULT_MODELS[prefix]);
-        $(`${prefix}-api-provider`).value = provider;
-        $(`${prefix}-api-url`).value = profile.url || '';
-        $(`${prefix}-api-key`).value = profile.key || '';
-        $(`${prefix}-api-model-text`).value = profile.model || '';
-
-        const cache = Array.isArray(profile.modelCache) ? profile.modelCache : [];
-        setSelectOptions($(`${prefix}-api-model-select`), cache, '请选择');
-        $(`${prefix}-api-model-select`).value = cache.includes(profile.model) ? profile.model : '';
-        updateVectorProviderUI(prefix, provider);
-    }
-
-    function saveCurrentVectorApiProfile(prefix, providerOverride = null) {
-        const apiCfg = config.vector[`${prefix}Api`] ||= {};
-        const provider = providerOverride || $(`${prefix}-api-provider`)?.value || apiCfg.provider || 'siliconflow';
-        apiCfg.providers = normalizeProviderProfiles(prefix, apiCfg);
-        apiCfg.providers[provider] = {
-            url: $(`${prefix}-api-url`)?.value?.trim() || '',
-            key: $(`${prefix}-api-key`)?.value?.trim() || '',
-            model: $(`${prefix}-api-model-text`)?.value?.trim() || '',
-            modelCache: Array.isArray(apiCfg.providers?.[provider]?.modelCache) ? [...apiCfg.providers[provider].modelCache] : [],
-        };
-        apiCfg.provider = provider;
-        apiCfg.url = apiCfg.providers[provider].url;
-        apiCfg.key = apiCfg.providers[provider].key;
-        apiCfg.model = apiCfg.providers[provider].model;
-        apiCfg.modelCache = [...apiCfg.providers[provider].modelCache];
-    }
-
-    function updateVectorProviderUI(prefix, provider) {
-        const pv = VECTOR_PROVIDER_DEFAULTS[provider] || VECTOR_PROVIDER_DEFAULTS.custom;
-        const apiCfg = config.vector?.[`${prefix}Api`] || {};
-        apiCfg.providers = normalizeProviderProfiles(prefix, apiCfg);
-        const profile = apiCfg.providers[provider] || createDefaultProviderProfile(provider, VECTOR_API_DEFAULT_MODELS[prefix]);
-        const cache = Array.isArray(profile.modelCache) ? profile.modelCache : [];
-        const hasModelCache = cache.length > 0;
-
-        $(`${prefix}-api-url-row`).classList.toggle('hidden', false);
-        $(`${prefix}-api-key-row`).classList.toggle('hidden', !pv.needKey);
-        $(`${prefix}-api-model-manual-row`).classList.toggle('hidden', false);
-        $(`${prefix}-api-model-select-row`).classList.toggle('hidden', !hasModelCache);
-        $(`${prefix}-api-connect-row`).classList.toggle('hidden', !pv.canFetch);
-        $(`${prefix}-api-connect-status`).classList.toggle('hidden', !pv.canFetch);
-
-        const urlInput = $(`${prefix}-api-url`);
-        if (urlInput) {
-            if (provider === 'custom') {
-                urlInput.readOnly = false;
-                urlInput.placeholder = 'https://your-openai-compatible-api/v1';
-                urlInput.value = profile.url || '';
-            } else {
-                urlInput.value = pv.url || '';
-                urlInput.readOnly = true;
-                urlInput.placeholder = pv.url || '';
-            }
-        }
-        $(`${prefix}-api-key`).value = profile.key || '';
-        $(`${prefix}-api-model-text`).value = profile.model || '';
-        setSelectOptions($(`${prefix}-api-model-select`), cache, '请选择');
-        $(`${prefix}-api-model-select`).value = cache.includes(profile.model) ? profile.model : '';
-    }
-
-    async function fetchVectorModels(prefix) {
-        const provider = $(`${prefix}-api-provider`).value;
-        const pv = VECTOR_PROVIDER_DEFAULTS[provider] || VECTOR_PROVIDER_DEFAULTS.custom;
-        const statusEl = $(`${prefix}-api-connect-status`);
-        const btn = $(`${prefix}-btn-connect`);
-        if (!pv.canFetch) {
-            statusEl.textContent = '当前渠道不支持自动拉取模型';
-            return;
-        }
-
-        const baseUrl = $(`${prefix}-api-url`).value.trim();
-        const apiKey = $(`${prefix}-api-key`).value.trim();
-        if (!apiKey) {
-            statusEl.textContent = '请先填写 API KEY';
-            return;
-        }
-
-        btn.disabled = true;
-        btn.textContent = '连接中...';
-        statusEl.textContent = '连接中...';
-
-        try {
-            let models = null;
-            for (const url of getModelListCandidateUrls(baseUrl, getDefaultApiPrefix(provider))) {
-                models = await tryParseModelIds(url, {
-                    headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' }
-                });
-                if (models?.length) break;
-            }
-            if (!models?.length) throw new Error('未获取到模型列表');
-
-            const allModels = [...new Set(models)];
-            const filteredModels = filterVectorModelsByPurpose(prefix, allModels);
-
-            const apiCfg = config.vector[`${prefix}Api`] ||= {};
-            apiCfg.providers = normalizeProviderProfiles(prefix, apiCfg);
-            apiCfg.providers[provider] ||= createDefaultProviderProfile(provider, VECTOR_API_DEFAULT_MODELS[prefix]);
-            apiCfg.providers[provider].modelCache = filteredModels;
-            setSelectOptions($(`${prefix}-api-model-select`), apiCfg.providers[provider].modelCache, '请选择');
-            $(`${prefix}-api-model-select-row`).classList.remove('hidden');
-            if (!$(`${prefix}-api-model-text`).value.trim()) {
-                $(`${prefix}-api-model-text`).value = filteredModels[0];
-                $(`${prefix}-api-model-select`).value = filteredModels[0];
-            }
-            statusEl.textContent = filteredModels.length === allModels.length
-                ? `拉取成功：${filteredModels.length} 个模型`
-                : `拉取成功：共 ${allModels.length} 个，已筛出 ${filteredModels.length} 个适合当前用途的模型`;
-        } catch (e) {
-            statusEl.textContent = '拉取失败：' + (e.message || '请检查 URL 和 KEY');
-        } finally {
-            btn.disabled = false;
-            btn.textContent = '连接 / 拉取模型列表';
-        }
+        return structuredClone(config.vector?.[prefix + 'Api'] || {});
     }
 
     function getVectorConfig() {
@@ -851,9 +619,6 @@ const UNANNOTATED_LABEL = '未标注';
         $('vector-l0-concurrency').value = String(Math.max(1, Math.min(50, Number(cfg.l0Concurrency) || 10)));
         $('vector-recall-timeout').max = String(MAX_RECALL_TIMEOUT_SEC);
         $('vector-recall-timeout').value = String(normalizeRecallTimeoutSec(cfg.recallTimeoutSec));
-        loadVectorApiConfig('l0', cfg.l0Api || {});
-        loadVectorApiConfig('embedding', cfg.embeddingApi || {});
-        loadVectorApiConfig('rerank', cfg.rerankApi || {});
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -1071,49 +836,6 @@ const UNANNOTATED_LABEL = '未标注';
         };
         syncVectorBoundaryControl(config.vector?.enabled, config.ui.hideSummarized);
 
-        ['l0', 'embedding', 'rerank'].forEach(prefix => {
-            $(`${prefix}-api-key-toggle`).onclick = () => {
-                const input = $(`${prefix}-api-key`);
-                const btn = $(`${prefix}-api-key-toggle`);
-                if (!input || !btn) return;
-                const show = input.type === 'password';
-                input.type = show ? 'text' : 'password';
-                btn.textContent = show ? '隐藏' : '显示';
-            };
-
-            $(`${prefix}-api-provider`).onchange = e => {
-                const target = config.vector[`${prefix}Api`] ||= {};
-                const previousProvider = target.provider || 'siliconflow';
-                saveCurrentVectorApiProfile(prefix, previousProvider);
-                target.providers = normalizeProviderProfiles(prefix, target);
-                target.provider = e.target.value;
-                target.providers[e.target.value] ||= createDefaultProviderProfile(e.target.value, VECTOR_API_DEFAULT_MODELS[prefix]);
-                updateVectorProviderUI(prefix, e.target.value);
-            };
-
-            $(`${prefix}-api-model-select`).onchange = e => {
-                if (e.target.value) $(`${prefix}-api-model-text`).value = e.target.value;
-            };
-
-            $(`${prefix}-btn-connect`).onclick = () => fetchVectorModels(prefix);
-            for (const field of ['provider', 'url', 'key', 'model-text', 'model-select']) {
-                $(`${prefix}-api-${field}`).addEventListener(field === 'provider' || field === 'model-select' ? 'change' : 'input', () => {
-                    postMsg('VECTOR_CANCEL_TEST', { target: prefix });
-                    updateVectorOnlineStatus(prefix, 'idle', '');
-                });
-            }
-            $(`${prefix}-btn-test`).onclick = () => {
-                const btn = $(`${prefix}-btn-test`);
-                if (btn) btn.disabled = true;
-                setStatusText($(`${prefix}-api-connect-status`), SUMMARY_FEEDBACK_COPY.connectionChecking, 'loading');
-                const cfg = getVectorConfig();
-                postMsg('VECTOR_TEST_ONLINE', {
-                    target: prefix,
-                    config: cfg[`${prefix}Api`],
-                });
-            };
-        });
-
         $('btn-add-filter-rule').onclick = addFilterRule;
 
         $('btn-gen-vectors').onclick = () => {
@@ -1230,6 +952,7 @@ const UNANNOTATED_LABEL = '未标注';
         $('settings-save').parentElement.hidden = ['tab-agent-api', 'tab-models', 'tab-appearance', 'tab-transfer', 'tab-backups', 'tab-clear'].includes(targetId);
         $('settings-cancel').hidden = targetId === 'tab-agent';
         $('settings-chat').hidden = targetId !== 'tab-agent';
+        vectorProfileEditors[targetId]?.refresh();
         if (targetId === 'tab-vector') postMsg('REQUEST_RECALL_LOG');
         if (targetId === 'tab-agent') memoryMaintenancePage.open();
         if (targetId === 'tab-agent-api') void agentSettings.open();

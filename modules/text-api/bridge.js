@@ -1,4 +1,5 @@
 import { listTextModels, testTextConnection, connectionError } from './runtime.js';
+import { TEXT_API_FEATURES } from './model.js';
 import { TEXT_API_COPY as COPY } from './copy.js';
 
 // Only request-local work lives here. Each owner authenticates the sending frame.
@@ -18,7 +19,7 @@ export function createTextApiRequestHandler({ getRepository, generateHost, prepa
             let result;
             switch (data.action) {
                 case 'load': result = await (await getRepository()).load(); break;
-                case 'mutate': result = await (await getRepository()).mutate(feature, data.mutation); break;
+                case 'mutate': result = await (await getRepository()).mutate(TEXT_API_FEATURES.includes(data.feature) ? data.feature : feature, data.mutation); break;
                 case 'models': result = await listTextModels(data.preset, { signal: controller.signal }); break;
                 case 'test': result = await testTextConnection(data.preset, { signal: controller.signal }, { generateHost }); break;
                 default: throw new Error(COPY.invalid);

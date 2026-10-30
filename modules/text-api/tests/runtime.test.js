@@ -222,3 +222,24 @@ test('SillyTavern routes retain source and explicit empty credentials without bo
         assert.equal(payload.temperature, undefined); assert.equal(payload.max_tokens, undefined);
     }
 });
+
+test('embedding and rerank use their own endpoints and retain non-chat model choices', async t => {
+    const seen = [];
+    t.mock.method(globalThis, 'fetch', async (url, options = {}) => {
+        seen.push({ url: String(url), body: options.body ? JSON.parse(options.body) : null });
+        const data = String(url).endsWith('/models')
+            ? { data: [{ id: 'chat-model' }, { id: 'embedding-model' }, { id: 'rerank-model' }] }
+            : String(url).endsWith('/embeddings') ? { data: [{ embedding: [0.1, 0.2] }] }
+            : { results: [{ index: 0, relevance_score: 1 }] };
+        return new Response(JSON.stringify(data), { status: 200 });
+    });
+    const preset = createPreset('vector', '向量', { kind: 'embedding', provider: 'openai-compatible',
+        baseUrl: 'https://fixture.test/v1', model: 'embedding-model', apiKey: 'fake' });
+    assert.deepEqual(await listTextModels(preset), ['chat-model', 'embedding-model', 'rerank-model']);
+    await testTextConnection(preset);
+    await testTextConnection({ ...preset, kind: 'rerank', model: 'rerank-model' });
+    assert.equal(seen[1].url, 'https://fixture.test/v1/embeddings');
+    assert.deepEqual(seen[1].body.input, ['connection test']);
+    assert.equal(seen[2].url, 'https://fixture.test/v1/rerank');
+    assert.deepEqual(seen[2].body.documents, ['connection test']);
+});

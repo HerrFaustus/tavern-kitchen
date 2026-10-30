@@ -14,6 +14,7 @@ defineEmits<{ close: []; setAuto: [enabled: boolean]; setProjection: [enabled: b
             <p v-if="notice || maintenanceMessage">{{ notice || maintenanceMessage }}</p>
         </section>
         <div class="map-settings-content">
+            <slot name="model-profile" />
             <section class="map-auto-setting"><div><h3>随对话自动更新</h3><p>你发送下一条消息时，根据上一轮对话更新地图。适用于所有普通聊天。</p></div><input type="checkbox" class="map-switch" role="switch" :checked="autoMaintenance" aria-label="随对话自动更新" :disabled="autoToggleBusy" @click.prevent="$emit('setAuto', !autoMaintenance)"></section>
             <section class="map-auto-setting"><div><h3>{{ MAP_PROJECTION_COPY.label }}</h3><p>{{ MAP_PROJECTION_COPY.description }}</p></div><input type="checkbox" class="map-switch" role="switch" :checked="projectToChat" :aria-label="MAP_PROJECTION_COPY.label" :disabled="autoToggleBusy" @click.prevent="$emit('setProjection', !projectToChat)"></section>
             <section class="map-settings-section"><MapIcon name="refresh" /><h3>补充最近的变化</h3><p>根据最近一轮对话更新位置和地点，并补全当前区域尚缺少的探索去处。</p><button type="button" class="map-primary-button" :disabled="busy || Boolean(disabledReason) || !hasMap" @click="$emit('update')">{{ busy ? status || '请稍候…' : '更新地图' }}</button><small v-if="!hasMap">请先建立世界地图</small></section>

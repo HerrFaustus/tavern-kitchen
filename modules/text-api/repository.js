@@ -1,12 +1,14 @@
 import { TEXT_API_SETTINGS_KEY as KEY, assertSettings, applyPresetAction } from './model.js';
 import { migrateLegacySettings, withoutLegacySummaryApi, withoutLegacyPlannerApi } from './migration.js';
+import { upgradeProfiles, assertProfileBinding } from './profiles.js';
 import { TEXT_API_COPY as COPY } from './copy.js';
 
 const SUMMARY_KEY = 'storySummaryPanelConfig';
 const LOCAL_SUMMARY = 'tavern_kitchen_summary_panel_config';
 
-export function createTextApiRepository({ common, planner, local }) {
+export function createTextApiRepository({ common, planner, local, agent }) {
     let initialized = null;
+    let snapshot = null;
     let queue = Promise.resolve();
     const serial = operation => {
         const pending = queue.then(operation, operation);
@@ -55,6 +57,15 @@ export function createTextApiRepository({ common, planner, local }) {
             const saved = await verify();
             if (JSON.stringify(saved) !== JSON.stringify(next)) throw new Error(COPY.saveFailed);
         } else assertSettings(current);
+        if (agent) {
+            const settings = await common.getStrict(KEY, null);
+            if (!settings.profilesVersion) {
+                const [oldAgent, summary] = await Promise.all([agent.getStrict('settings', null), common.getStrict(SUMMARY_KEY, null)]);
+                const upgraded = upgradeProfiles(settings, oldAgent, (summary ?? readLocal(LOCAL_SUMMARY))?.vector);
+                await common.updateAndSave(draft => { if (!draft[KEY].profilesVersion) draft[KEY] = upgraded; }, { silent: false });
+                await verify();
+            }
+        }
         await cleanup();
     }
     async function ready() {
@@ -62,14 +73,24 @@ export function createTextApiRepository({ common, planner, local }) {
         await initialized;
     }
     return {
-        load() { return serial(async () => { await ready(); return assertSettings(await common.getStrict(KEY, null)); }); },
+        load() { return serial(async () => { await ready(); snapshot = assertSettings(await common.getStrict(KEY, null)); return structuredClone(snapshot); }); },
+        snapshot() { return snapshot ? structuredClone(snapshot) : null; },
         mutate(feature, action) {
             return serial(async () => {
             await ready();
             let next;
             await common.updateAndSave(draft => {
-                next = applyPresetAction(draft[KEY], feature, action); draft[KEY] = next;
+                next = applyPresetAction(draft[KEY], feature, action);
+                if (next.profilesVersion) {
+                    for (const [consumer, id] of Object.entries(next.bindings)) {
+                        if (id == null || id === '@host') continue;
+                        assertProfileBinding(consumer, next.presets.find(p => p.id === id));
+                    }
+                    if (action.type === 'select-host' && feature !== 'summary') throw new Error('此模块需要独立的 API 配置');
+                }
+                draft[KEY] = next;
             }, { silent: false });
+            snapshot = next;
             return structuredClone(next);
             });
         },
@@ -79,9 +100,11 @@ export function createTextApiRepository({ common, planner, local }) {
 let repository;
 export async function getTextApiRepository() {
     if (!repository) {
-        const { CommonSettingStorage, EnaPlannerStorage } = await import('../../core/server-storage.js');
-        repository ??= createTextApiRepository({ common: CommonSettingStorage, planner: EnaPlannerStorage,
+        const { CommonSettingStorage, EnaPlannerStorage, AgentApiStorage } = await import('../../core/server-storage.js');
+        repository ??= createTextApiRepository({ common: CommonSettingStorage, planner: EnaPlannerStorage, agent: AgentApiStorage,
             local: globalThis.localStorage });
     }
     return repository;
 }
+
+export function getProfileSnapshot() { return repository?.snapshot() || null; }

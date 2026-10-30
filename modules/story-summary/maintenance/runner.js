@@ -1,5 +1,8 @@
 import { loadSharedAgentSettings } from '../../agent-core/settings-repository.js';
-import { resolveActiveProviderConfig, isSillyTavernProvider } from '../../agent-core/provider-resolution.js';
+import { normalizeWebSettings } from '../../agent-core/web/settings.js';
+import { getTextApiRepository } from '../../text-api/repository.js';
+import { resolveAgentProfile } from '../../text-api/profile-runtime.js';
+import { isSillyTavernProvider } from '../../agent-core/provider-resolution.js';
 import { buildProviderAssistantToolCallMessage, buildProviderToolResultMessage, resolveResultToolCalls, dropInvalidatedThinkingFromMessage } from '../../agent-core/runtime/protocol.js';
 import { getMemoryMaintenancePrompt, getMemoryChatPrompt, MEMORY_RESPONSE_REPAIR, MEMORY_SAVE_RECOVERY } from './prompt.js';
 import { MEMORY_TOOLS, READ_MAINTENANCE_TOOL, RECOVER_MAINTENANCE_SAVE_TOOL } from './tools.js';
@@ -13,8 +16,7 @@ export { REVIEW_LIMITS } from './limits.js';
 export { estimateMemoryChatContext } from './conversation.js';
 
 export async function createSharedMemoryAgent() {
-    const settings = await loadSharedAgentSettings();
-    const config = resolveActiveProviderConfig(settings);
+    const config = { ...normalizeWebSettings(await loadSharedAgentSettings()), ...resolveAgentProfile(await (await getTextApiRepository()).load(), 'memory') };
     requireMemory(config.model?.trim() && (isSillyTavernProvider(config.provider) || config.baseUrl?.trim()), 'not_configured');
     const core = await import('../../agent-core/browser-entry.js');
     const { getRequestHeaders } = await import('../../../../../../../script.js');

@@ -464,7 +464,18 @@ export function createXiaobaiOsLifecycle({
             && appActivationGeneration === messageActivationGeneration
             && isLocallyCurrent(current);
         try {
-            const result = await appRuntime.handleMessage?.(messageAppId, { type, requestId, payload });
+            let result: unknown;
+            if (['map', 'world'].includes(messageAppId) && type === messageAppId + '/model-profile') {
+                const data = isRecord(payload) ? payload : {};
+                if (!['load', 'mutate'].includes(String(data.action))) {throw new Error('未知的模型配置操作');}
+                if (data.action === 'mutate' && (!isRecord(data.mutation) || data.mutation.type !== 'select')) {
+                    throw new Error('请在模型接口页面编辑配置');
+                }
+                const { handleProfileRequest } = await import('../../text-api/profile-service.js');
+                result = await handleProfileRequest({ ...data, feature: 'world' });
+            } else {
+                result = await appRuntime.handleMessage?.(messageAppId, { type, requestId, payload });
+            }
             if (requestId && openGeneration === generation && frameBridge === bridge) {
                 if (!isMessageActivationCurrent() || !await isAppBindingCurrent(current)) {
                     frameBridge.post(`${messageAppId}/result`, { ok: false, error: 'app_inactive' }, requestId, current);

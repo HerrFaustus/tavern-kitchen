@@ -1,3 +1,5 @@
+import { getTextApiRepository } from '../../../text-api/repository.js';
+import { agentSettingsForProfile } from '../../../text-api/profile-runtime.js';
 import { normalizeAgentSettings } from '../../../agent-core/config.js';
 import { resolveActiveProviderConfig } from '../../../agent-core/provider-resolution.js';
 import {
@@ -42,7 +44,8 @@ export interface XiaobaiOsAgentGateway {
 
 export function createXiaobaiOsAgentGateway(): XiaobaiOsAgentGateway {
     const gateway: XiaobaiOsAgentGateway = {
-        loadConfig: async () => await loadSharedAgentSettings({ storage: AssistantStorage }),
+        loadConfig: async () => agentSettingsForProfile(await (await getTextApiRepository()).load(), 'world',
+            await loadSharedAgentSettings({ storage: AssistantStorage })),
         saveConfig: async (patch: UnknownRecord) => await saveSharedAgentSettings(patch, {
             storage: AssistantStorage,
             silent: false,

@@ -4,13 +4,13 @@ import { TEXT_API_COPY as COPY } from './copy.js';
 
 export const TEXT_API_SETTINGS_KEY = 'textApiPresets';
 export const TEXT_API_VERSION = 1;
-export const TEXT_API_FEATURES = Object.freeze(['summary', 'planner']);
+export const TEXT_API_FEATURES = Object.freeze(['summary', 'planner', 'memory', 'world', 'l0', 'embedding', 'rerank']);
 export const HOST_BINDING = '@host';
 export const HOST_PROVIDER = 'sillytavern-current';
 
 export function createPreset(id, name, input = {}) {
     return {
-        id, name, provider: input.provider ?? HOST_PROVIDER,
+        id, name, kind: input.kind || 'text', toolMode: input.toolMode || 'native', provider: input.provider ?? HOST_PROVIDER,
         baseUrl: input.baseUrl ?? '', apiKey: input.apiKey ?? '', model: input.model ?? '',
         prefixMode: input.prefixMode ?? 'auto', customPrefix: input.customPrefix ?? '',
         stream: input.stream ?? true, temperature: input.temperature ?? null,
@@ -21,7 +21,7 @@ export function createPreset(id, name, input = {}) {
 
 export function assertPreset(preset) {
     const providers = [HOST_PROVIDER, ...PROVIDER_OPTIONS.map(option => option.value)];
-    if (!preset || !providers.includes(preset.provider)
+    if (!preset || !['text', 'embedding', 'rerank'].includes(preset.kind || 'text') || !providers.includes(preset.provider)
         || !['baseUrl', 'apiKey', 'model', 'customPrefix'].every(key => typeof preset[key] === 'string')
         || !['auto', 'custom'].includes(preset.prefixMode)
         || typeof preset.stream !== 'boolean'
@@ -54,7 +54,7 @@ export function resolveFeaturePreset(settings, feature) {
 }
 
 export function applyPresetAction(settings, feature, action) {
-    if (!TEXT_API_FEATURES.includes(feature)) throw new Error(COPY.invalid);
+    if (feature !== 'library' && !TEXT_API_FEATURES.includes(feature)) throw new Error(COPY.invalid);
     const next = assertSettings(settings);
     const index = next.presets.findIndex(preset => preset.id === action.id);
     if (action.type === 'select') {
@@ -70,17 +70,18 @@ export function applyPresetAction(settings, feature, action) {
             if (index !== -1) throw new Error(COPY.duplicate);
             const afterIndex = next.presets.findIndex(preset => preset.id === action.afterId);
             next.presets.splice(afterIndex === -1 ? next.presets.length : afterIndex + 1, 0, createPreset(action.id, name, action.preset));
-            next.bindings[feature] = action.id;
+            if (feature !== 'library') next.bindings[feature] = action.id;
         } else {
             if (index === -1) throw new Error(COPY.missing);
             if (action.type === 'rename') next.presets[index].name = name;
             else {
                 next.presets[index] = createPreset(action.id, name, action.preset);
-                next.bindings[feature] = action.id;
+                if (feature !== 'library') next.bindings[feature] = action.id;
             }
         }
     } else if (action.type === 'delete') {
         if (index === -1) throw new Error(COPY.missing);
+        if (feature === 'library' && Object.values(next.bindings).includes(action.id)) throw new Error('此配置仍被模块使用，请先更换对应模块的配置');
         if (next.presets.length === 1) throw new Error(COPY.last);
         next.presets.splice(index, 1);
         const replacement = next.presets[Math.min(index, next.presets.length - 1)].id;

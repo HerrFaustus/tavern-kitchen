@@ -4,6 +4,7 @@ import { useAppBack } from '../../../shell/app-src/navigation/app-navigation.js'
 import type { XiaobaiOsAppProps } from '../../../shell/app-contract.js';
 import type { WorldNews } from '../../../domains/world/types.js';
 import type { WorldSettings } from '../types.js';
+import ModelProfileBinding from '../../../shell/app-src/components/ModelProfileBinding.vue';
 import NewsArticle from './NewsArticle.vue';
 import WorldOpening from './WorldOpening.vue';
 import { useWorldState } from './use-world-state.js';
@@ -92,6 +93,7 @@ useAppBack(() => {
                         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="19" cy="12" r="1.7" /></svg>
                     </summary>
                     <div class="world-menu-sheet">
+                        <ModelProfileBinding v-if="menuOpen" :bridge="props.bridge" app-id="world" />
                         <label>
                             <span>自动新闻</span>
                             <input

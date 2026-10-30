@@ -13,7 +13,7 @@ function encodeMessages(messages) {
     return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-async function generateHost(preset, { messages, signal, onDelta }) {
+export async function generateHost(preset, { messages, signal, onDelta }) {
     const { streamingGeneration } = await import('../streaming-generation.js');
     const args = { as: 'user', nonstream: preset.stream ? 'false' : 'true', top64: encodeMessages(messages),
         id: `text-api-${createIdentifier()}` };

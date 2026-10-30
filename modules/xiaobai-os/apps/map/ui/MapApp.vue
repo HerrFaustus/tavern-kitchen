@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 import type { XiaobaiOsAppProps } from '../../../shell/app-contract.js';
+import ModelProfileBinding from '../../../shell/app-src/components/ModelProfileBinding.vue';
 import MapBrowser from './MapBrowser.vue';
 import MapSettings from './MapSettings.vue';
 import MapIcon from './MapIcon.vue';
@@ -34,7 +35,7 @@ watch(() => state.value.chatIdentity, () => { settingsOpen.value = false; });
             <div class="map-empty map-first-map"><h1>{{ state.status === 'loading' ? MAP_NAV_COPY.loading : '尚未建立地图' }}</h1><p>依据世界设定与当前对话，建立地区、地点和所在位置。</p><button v-if="state.status !== 'loading'" type="button" class="map-primary-button" :disabled="Boolean(disabledReason)" @click="rebuild">{{ busy ? status || '正在准备…' : '绘制世界地图' }}</button><p v-if="disabledReason && !busy" class="map-setting-note">{{ disabledReason }}</p></div>
         </template>
         <template #overlay>
-            <MapSettings v-if="settingsOpen" :auto-maintenance="state.autoMaintenance" :project-to-chat="state.projectToChat" :busy="busy" :refresh-disabled="requiresConfirmation || !state.chatIdentity" :auto-toggle-busy="activeRequest !== null || !state.chatIdentity" :disabled-reason="disabledReason" :has-map="Boolean(state.map)" :status="status" :maintenance-message="state.maintenanceMessage || ''" :maintenance-error="state.maintenanceStatus === 'error'" :notice="notice" :notice-error="isError" @close="settingsOpen = false" @set-auto="setAuto" @set-projection="setProjection" @update="update" @rebuild="rebuild" @refresh="refresh" />
+            <MapSettings v-if="settingsOpen" :auto-maintenance="state.autoMaintenance" :project-to-chat="state.projectToChat" :busy="busy" :refresh-disabled="requiresConfirmation || !state.chatIdentity" :auto-toggle-busy="activeRequest !== null || !state.chatIdentity" :disabled-reason="disabledReason" :has-map="Boolean(state.map)" :status="status" :maintenance-message="state.maintenanceMessage || ''" :maintenance-error="state.maintenanceStatus === 'error'" :notice="notice" :notice-error="isError" @close="settingsOpen = false" @set-auto="setAuto" @set-projection="setProjection" @update="update" @rebuild="rebuild" @refresh="refresh"><template #model-profile><ModelProfileBinding :bridge="props.bridge" app-id="map" /></template></MapSettings>
         </template>
     </MapBrowser>
 </template>

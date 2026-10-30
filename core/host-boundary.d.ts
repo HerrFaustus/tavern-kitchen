@@ -116,3 +116,8 @@ declare module '*/world-info.js' {
     export const world_names: HostValue;
 }
 interface Window { toastr?: { info?(message: string): void; warning?(message: string): void; error?(message: string): void }; }
+
+declare module '*/secrets.js' {
+    export const findSecret: HostValue;
+    export const SECRET_KEYS: HostValue;
+}

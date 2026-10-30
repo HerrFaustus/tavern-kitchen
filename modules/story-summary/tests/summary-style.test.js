@@ -18,7 +18,7 @@ const state = globalThis.__summaryStyleTest = { disk: null, requests: [], dropSt
 after(() => { delete globalThis.__summaryStyleTest; });
 const shims = {
     'modules/text-api/host.js': 'export const generateFeatureText = async (_, request) => { globalThis.__summaryStyleTest.requests.push(request); return {text: "{}"}; };',
-    'modules/text-api/repository.js': 'export const getTextApiRepository = async () => ({load: async () => {}});',
+    'modules/text-api/repository.js': 'export const getProfileSnapshot=()=>null; export const getTextApiRepository = async () => ({load: async () => {}});',
     'core/debug-core.js': 'export const xbLog = {info(){},warn(){},error(){}};',
     'core/server-storage.js': `const state = globalThis.__summaryStyleTest;
         export const CommonSettingStorage = {

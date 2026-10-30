@@ -1,4 +1,3 @@
-import { createAgentAdapter } from '../agent-core/provider-config.js';
 import { getModelListApiPrefix, pullModelsForProvider } from '../agent-core/model-list.js';
 import { resolveRuntimeReasoning } from '../agent-core/reasoning-capabilities.js';
 import { getDefaultApiPrefix, resolveApiBaseUrl } from '../../shared/common/openai-url-utils.js';
@@ -28,9 +27,18 @@ export async function listTextModels(preset, { signal, timeoutMs = 30000 } = {})
     if (signal?.aborted) abort();
     signal?.addEventListener('abort', abort, { once: true });
     try {
-        return await runWithAbortDeadline(() => pullModelsForProvider(config, {
-            signal: controller.signal, baseUrlResolved: true,
-        }), { controller, timeoutMs, timeoutMessage: COPY.timeout });
+        return await runWithAbortDeadline(async () => {
+            if (['embedding', 'rerank'].includes(preset.kind)) {
+                const response = await fetch(config.baseUrl.replace(/\/$/, '') + '/models', {
+                    signal: controller.signal, headers: { Accept: 'application/json',
+                        ...(config.apiKey ? { Authorization: 'Bearer ' + config.apiKey } : {}) },
+                });
+                if (!response.ok) throw new Error('拉取模型失败：HTTP ' + response.status);
+                const data = await response.json();
+                return [...new Set((data.data || []).map(item => String(item.id || '').trim()).filter(Boolean))];
+            }
+            return pullModelsForProvider(config, { signal: controller.signal, baseUrlResolved: true });
+        }, { controller, timeoutMs, timeoutMessage: COPY.timeout });
     } catch (error) {
         throw connectionError(error, preset);
     } finally { signal?.removeEventListener('abort', abort); }
@@ -61,7 +69,8 @@ export async function generateText(preset, { messages, signal, onDelta, timeoutM
             const config = resolveConnection(snapshot);
             if (!config.model.trim()) throw new Error(COPY.modelRequired);
             if (!config.baseUrl.trim()) throw new Error(COPY.urlRequired);
-            const adapter = (dependencies.createAdapter || createAgentAdapter)({ ...config, timeoutMs });
+            const createAdapter = dependencies.createAdapter || (await import('../agent-core/provider-config.js')).createAgentAdapter;
+            const adapter = createAdapter({ ...config, timeoutMs });
             let previous = '';
             const result = await adapter.chat({
                 messages, signal: controller.signal, reasoning: config.reasoning,
@@ -86,6 +95,31 @@ export async function generateText(preset, { messages, signal, onDelta, timeoutM
 }
 
 export async function testTextConnection(preset, options = {}, dependencies = {}) {
+    if (['embedding', 'rerank'].includes(preset.kind)) {
+        const config = resolveConnection(preset);
+        if (!config.model.trim() || !config.baseUrl.trim()) throw new Error(COPY.modelRequired);
+        const controller = new AbortController();
+        const abort = () => controller.abort(options.signal.reason);
+        if (options.signal?.aborted) abort();
+        options.signal?.addEventListener('abort', abort, { once: true });
+        try {
+            return await runWithAbortDeadline(async () => {
+                const embedding = preset.kind === 'embedding';
+                const response = await fetch(config.baseUrl.replace(/\/$/, '') + (embedding ? '/embeddings' : '/rerank'), {
+                    method: 'POST', signal: controller.signal, headers: {
+                        'Content-Type': 'application/json', ...(config.apiKey ? { Authorization: 'Bearer ' + config.apiKey } : {}),
+                    }, body: JSON.stringify(embedding ? { model: config.model, input: ['connection test'] }
+                        : { model: config.model, query: 'test', documents: ['connection test'], top_n: 1 }),
+                });
+                if (!response.ok) throw new Error('接口测试失败：HTTP ' + response.status);
+                const result = await response.json();
+                if (embedding ? !Array.isArray(result.data?.[0]?.embedding) : !Array.isArray(result.results))
+                    throw new Error('接口返回格式与所选用途不匹配');
+                return { ok: true };
+            }, { controller, timeoutMs: options.timeoutMs || 30000, timeoutMessage: COPY.timeout });
+        } catch (error) { throw connectionError(error, preset); }
+        finally { options.signal?.removeEventListener('abort', abort); }
+    }
     const result = await generateText(preset, {
         ...options, messages: [{ role: 'user', content: CONNECTION_TEST_PROMPT }],
     }, dependencies);

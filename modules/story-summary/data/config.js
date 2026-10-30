@@ -1,4 +1,5 @@
-import { getTextApiRepository } from '../../text-api/repository.js';
+import { vectorProfiles } from '../../text-api/profiles.js';
+import { getTextApiRepository, getProfileSnapshot } from '../../text-api/repository.js';
 import { extension_settings } from "../../../../../../extensions.js";
 import { EXT_ID } from "../../../core/constants.js";
 import { xbLog } from "../../../core/debug-core.js";
@@ -480,7 +481,7 @@ export function saveSummaryPanelConfig(config) {
 
 export function getVectorConfig() {
     const cfg = ensureSummaryPanelConfigCache();
-    return cfg?.vector ? cloneConfig(cfg.vector) : normalizeVectorConfig();
+    return vectorProfiles(getProfileSnapshot(), cfg?.vector ? cloneConfig(cfg.vector) : normalizeVectorConfig());
 }
 
 export function getTextFilterRules() {
@@ -532,6 +533,7 @@ export function applySummaryPanelConfigSnapshot(config) {
 }
 
 export async function loadConfigFromServer() {
+    await (await getTextApiRepository()).load();
     const loaded = await readSummaryPanelConfigFromServer();
     const applied = applySummaryPanelConfigSnapshot(loaded);
     xbLog.info(MODULE_ID, "已从服务端加载面板配置");

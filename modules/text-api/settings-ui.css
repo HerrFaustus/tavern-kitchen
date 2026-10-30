@@ -25,3 +25,8 @@
 .text-api .text-api-status[data-error=true] { color: var(--danger, #c65353); }
 .text-api :focus-visible { outline: 2px solid var(--accent, #7878be); outline-offset: 2px; }
 @media (max-width: 420px) { .text-api .text-api-grid { grid-template-columns: 1fr; } .text-api .text-api-presets { gap: 3px; } .text-api .text-api-icon { width: 32px; } }
+
+.text-api h2 { font-size: 1em; margin: 12px 0 4px; }
+.text-api .text-api-imports { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.text-api .text-api-bindings { margin: 16px 0; padding: 10px 0; border-block: 1px solid var(--SmartThemeBorderColor, #8885); }
+.text-api .text-api-bindings summary { margin-bottom: 8px; }

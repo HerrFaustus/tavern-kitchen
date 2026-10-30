@@ -30,6 +30,7 @@ const shims = {
     'modules/story-summary/vector/runtime/runtime.js': 'export const clearRecallRuntime=async()=>{};',
     'modules/story-summary/maintenance/indexes.js': 'export const inspectMaintenanceIndexes=async()=>({status:"ready",events:[],atoms:[]}); export const repairMaintenanceIndexes=async()=>({status:"ready"});',
     'modules/story-summary/maintenance/runner.js': 'export {memoryRunId,runMemoryAgent} from "actual-maintenance-runner"; export const createSharedMemoryAgent=()=>globalThis.__maintenanceChatLifecycleTest.agent();',
+    'modules/text-api/repository.js': 'export const getTextApiRepository=async()=>({load:async()=>({})});',
     'modules/agent-core/settings-repository.js': 'export const loadSharedAgentSettings=async()=>({});',
     'modules/agent-core/browser-entry.js': 'export const setHostChatCompletionsRequestHeadersProvider=()=>{}; export const createAgentAdapter=()=>{};',
 };

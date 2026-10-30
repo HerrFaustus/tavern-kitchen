@@ -1,3 +1,4 @@
+import { handleProfileRequest } from '../../../../text-api/profile-service.js';
 import type { XiaobaiOsAgentGateway } from '../../../capabilities/agent/gateway.js';
 import type { XiaobaiOsExecutionScope } from '../../../kernel/execution-scope.js';
 import type { XiaobaiOsHostFrameMessage } from '../../../host/frame-bridge.js';
@@ -97,6 +98,14 @@ export function createAgentApiController(
     async function handleMessage(message: XiaobaiOsHostFrameMessage): Promise<unknown> {
         const current = assertActivation();
         const payload = isRecord(message.payload) ? message.payload : {};
+        if (message.type === 'agent-api/profiles') {
+            const operation = beginNetworkOperation();
+            try {
+                const result = await handleProfileRequest(payload, operation.signal);
+                if (!isCurrent(current)) {throw new Error('app_inactive');}
+                return result;
+            } finally { endNetworkOperation(operation); }
+        }
         if (message.type === 'agent-api/reload') {
             const state = await readState();
             if (!isCurrent(current)) {throw new Error('app_inactive');}
