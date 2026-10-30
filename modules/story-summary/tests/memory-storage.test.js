@@ -45,6 +45,7 @@ const shims = {
 const bundled = await build({
     stdin: { resolveDir: root, contents: [
         "export * from './modules/story-summary/data/store.js';",
+        "export { registerWorldAuthority } from './modules/world-records/sources.js';",
         "export * from './modules/story-summary/inline/ledger.js';",
         "export * from './modules/story-summary/inline/controller.js';",
         "export * from './modules/story-summary/data/memory-commit.js';",
@@ -2704,4 +2705,20 @@ test('undo restores the pre-existing anchor extraction status along with the ori
     assert.equal((await mod.executeRollback(host.context.chatId, mod.getSummaryStore(), host.fixture.cutoff)).status, 'rolled_back');
     assert.deepEqual(ext().stateAtoms, before.stateAtoms);
     assert.deepEqual(ext().l0Index.byFloor[floor], before.l0Index.byFloor[floor]);
+});
+
+test('published world authority filters actual summary constraint reads without rewriting historical summary data', async () => {
+    await importFixture(); const original = structuredClone(ext().storySummary.json);
+    host.context.characterId = 0; host.context.characters = [{ avatar: 'authority-test.png' }];
+    const fact = mod.getFacts()[0], identity = JSON.stringify(['character', 'authority-test.png', host.context.chatId]);
+    const entity = { id: 'world-person', name: fact.s, aliases: [], bindings: [JSON.stringify(['memory', 'person:source'])],
+        fields: { [fact.p]: { nature: 'established_fact', value: '世界已确认的新状态' } } };
+    const state = { entities: [entity], sources: { memory: { records: [{ key: 'person:source', name: fact.s, aliases: [] }] } } };
+    const remove = mod.registerWorldAuthority('world-test', () => ({ identity, state }));
+    try {
+        assert.equal(mod.getFacts().some(row => row.s === fact.s && row.p === fact.p), false);
+        assert.deepEqual(ext().storySummary.json, original);
+        host.context.chatId = 'another-story';
+        assert.ok(mod.getFacts().some(row => row.s === fact.s && row.p === fact.p));
+    } finally { remove(); }
 });

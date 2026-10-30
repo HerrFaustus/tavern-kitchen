@@ -17,6 +17,7 @@ import type { XiaobaiOsAppModule } from '../../kernel/app-registry.js';
 import { MANAGEMENT_CAPABILITY } from '../../capabilities/management/index.js';
 import { registerWorldSource, notifyWorldSourcesChanged, storyIdentityKey } from '../../../world-records/sources.js';
 import { mapRecords } from '../../../world-records/imports.js';
+import { authorityMap } from '../../../world-records/authority-context.js';
 
 export interface ProductionMapModuleDependencies {
     settings: XiaobaiOsSettingsRepository;
@@ -51,7 +52,7 @@ export function createProductionMapModule(dependencies: ProductionMapModuleDepen
                 subscribeData: map.subscribe,
             });
             const prompt = createMapPromptRuntime({
-                readCurrentMap: () => map.readCurrent().map,
+                readCurrentMap: () => authorityMap(map.readCurrent().map, dependencies.getChatIdentity()),
                 setPrompt: value => injection.set('context', value),
                 subscribe: dependencies.subscribePrompt,
             });

@@ -4,14 +4,18 @@ import { createWorldPanel } from './panel.js';
 import { createWorldOverview } from './overview.js';
 import { createStoryOverview } from '../story-state/view.js';
 import { memoryRecords } from './imports.js';
-import { readWorldSources, registerWorldSource, storyIdentityKey, subscribeWorldSources } from './sources.js';
+import { readWorldSources, registerWorldSource, registerWorldAuthority, storyIdentityKey, subscribeWorldSources } from './sources.js';
+import { createAuthorityRuntime } from './authority-runtime.js';
 import { captureStoryIdentity } from '../xiaobai-os/host/story-identity.js';
 
-export function createWorldArchive({ getContext, getAccountId = () => 'default-user', getMemorySnapshot, getMount, isVisible, navigate, onError }) {
+export function createWorldArchive({ getContext, getAccountId = () => 'default-user', getMemorySnapshot, getMount, isVisible, navigate, onError, onAuthorityChange = () => {} }) {
     const sourceIdentity = () => storyIdentityKey(captureStoryIdentity(getContext()));
     const identity = () => { const story = sourceIdentity(); return story ? JSON.stringify([getAccountId(), story]) : ''; };
     const storage = createWorldStorage();
-    const service = createWorldService({ storage, getIdentity: identity });
+    let authority;
+    const service = createWorldService({ storage, getIdentity: identity, onChanged: (state, owner) => authority?.publish(state, owner) });
+    authority = createAuthorityRuntime({ getIdentity: identity, getStoryIdentity: sourceIdentity, sync, onChange: onAuthorityChange });
+    const unregisterAuthority = registerWorldAuthority('world-records', authority.read);
     const panel = createWorldPanel({ service, sync, getIdentity: identity });
     const overview = createWorldOverview({ navigate });
     const storyOverview = createStoryOverview({ getSnapshot: getMemorySnapshot, navigate });
@@ -35,6 +39,7 @@ export function createWorldArchive({ getContext, getAccountId = () => 'default-u
         });
     });
     return {
+        prepare: query => authority.prepare(query),
         async open(route = 'world') {
             const view = views[route]; if (!view) return;
             view.mount(getMount(route));
@@ -42,7 +47,7 @@ export function createWorldArchive({ getContext, getAccountId = () => 'default-u
             await service.ensure(getContext().chatId || '当前故事');
             const state = await sync(); if (isVisible(route) && !disposed) view.show(state || await service.read());
         },
-        reset() { epoch++; service.invalidate(); for (const view of Object.values(views)) view.reset(); },
-        dispose() { disposed = true; service.invalidate(); unsubscribe(); unregisterMemory(); for (const view of Object.values(views)) view.reset(); storage.close().catch(error => onError(error)); },
+        reset() { epoch++; service.invalidate(); authority.reset(); for (const view of Object.values(views)) view.reset(); },
+        dispose() { disposed = true; service.invalidate(); authority.reset(); unregisterAuthority(); unsubscribe(); unregisterMemory(); for (const view of Object.values(views)) view.reset(); storage.close().catch(error => onError(error)); },
     };
 }

@@ -1,5 +1,17 @@
 // In-process adapters publish committed source changes; no model calls or polling.
 const readers = new Map(), listeners = new Set();
+const authorities = new Map();
+export function registerWorldAuthority(name, read) {
+    authorities.set(name, read);
+    return () => { if (authorities.get(name) === read) authorities.delete(name); };
+}
+export function readWorldAuthority(identity) {
+    if (!identity) return null;
+    for (const read of authorities.values()) {
+        const value = read(); if (value?.identity === identity) return value.state;
+    }
+    return null;
+}
 export function notifyWorldSourcesChanged() {
     for (const listener of listeners) try { listener(); } catch (error) { console.error('[TavernKitchen] 世界来源通知失败', error); }
 }

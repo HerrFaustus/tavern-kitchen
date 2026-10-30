@@ -29,6 +29,7 @@ import { readSummaryMemory, getPublishedSummaryMemory, commitSummaryMemory, getM
     getRuntimeInvalidSourceFloor, getRuntimeSourceRollbackFloor, noteInvalidMemorySource, waitForMemoryCommit,
     publishSummaryMemory, retireSummaryMemorySources } from './memory-commit.js';
 import { invalidateMemoryAnchors, updateMaintainedAnchorIndex } from './anchor-invalidation.js';
+import { authorityMemoryFacts } from '../../world-records/authority-context.js';
 
 const MODULE_ID = 'summaryStore';
 const loadedEventStores = new WeakSet();
@@ -832,7 +833,7 @@ export async function clearSummaryData(chatId) {
 
 export function getFacts() {
     const store = getPublishedSummaryStore();
-    return (store?.json?.facts || []).filter(f => !f.retracted);
+    return authorityMemoryFacts((store?.json?.facts || []).filter(f => !f.retracted), getContext());
 }
 
 /** Omission is a memory policy; it does not hide the user's raw chat. */

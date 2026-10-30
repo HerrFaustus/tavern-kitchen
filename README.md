@@ -1,6 +1,6 @@
-# 酒馆后厨 0.2.7
+# 酒馆后厨 0.2.8
 
-0.2.7 在主回复附带的本楼总结中加入场景锚点：同一次回复输出 0–2 张场景卡，每张最多三条互动关系，无需另调锚点模型。楼尾新增可编辑的“场景锚点”分组，锚点随摘要一起确认、审查、删除、标为番外和重放。旧 0.2.6 已提交记录不自动补写锚点。见[主回复总结与楼尾清单](docs/MAIN-REPLY-SUMMARY.md)与[记忆架构路线图](docs/MEMORY-ARCHITECTURE-ROADMAP.md)。
+0.2.8 将世界档案的已确认状态接入实际续写：同一实体的旧剧情事实不再覆盖当前世界值，地图上下文按来源绑定采用已确认的位置与名称。来源候选保留待确认，事务失败不发布新状态，生成前重新读取当前分支。变量与地图写入迁移仍在进行。见[权威世界上下文](docs/WORLD-AUTHORITY-CONTEXT.md)及[架构路线图](docs/MEMORY-ARCHITECTURE-ROADMAP.md)。
 
 **Based on LittleWhiteBox by biex.** 本项目基于 [小白X](https://github.com/RT15548/LittleWhiteBox) 固定提交 `e30ebadf69cd53e9fafc5f81f74b9499911f78f5`（上游版本 3.2.2）删减而来。
 

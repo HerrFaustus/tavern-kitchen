@@ -5166,3 +5166,6 @@ export function getFloorSummarySnapshot() {
 }
 export function updateFloorSummary(floor, change, source) { return mainReplySummary.update(floor, change, source); }
 export function extractMainReplySummary(floor) { return mainReplySummary.ingest(floor, { force: true }); }
+export function invalidateWorldContext() {
+    if (isStorySummaryEnabledForCurrentChat()) cancelRecallAndClearPrompt('world-state-changed');
+}

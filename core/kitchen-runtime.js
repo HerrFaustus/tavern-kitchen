@@ -181,8 +181,12 @@ export async function startKitchen(workspace) {
     }
     if (settings.xiaobaiOs?.enabled) await initXiaobaiOs();
     const { createWorldArchive } = await import('../modules/world-records/host.js');
+    let removeWorldGeneration;
     worldArchive = createWorldArchive({ getContext, getAccountId: getCurrentUserHandle, getMemorySnapshot: () => memory?.getFloorSummarySnapshot(),
-        getMount: id => kitchen.getMount(id), isVisible: id => kitchen.isActive(id), navigate: id => { kitchen.open(id).catch(showError); }, onError: showError });
-    window.registerKitchenModuleCleanup('world-records', () => worldArchive.dispose());
+        getMount: id => kitchen.getMount(id), isVisible: id => kitchen.isActive(id), navigate: id => { kitchen.open(id).catch(showError); }, onError: showError,
+        onAuthorityChange: () => { removeWorldGeneration?.clear(); memory?.invalidateWorldContext(); } });
+    const { installWorldAuthorityGeneration } = await import('../modules/world-records/generation-host.js');
+    removeWorldGeneration = installWorldAuthorityGeneration({ getContext, prepare: worldArchive.prepare, onError: showError });
+    window.registerKitchenModuleCleanup('world-records', () => { removeWorldGeneration(); worldArchive.dispose(); });
     } catch (error) { startupError = error; throw error; } finally { readyResolve(); }
 }
