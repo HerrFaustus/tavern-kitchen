@@ -9,6 +9,7 @@ export function projectMemoryRecord(record, history = [], ownership) {
     const value = structuredClone(record.value);
     if (value && typeof value === 'object') {
         delete value._addedAt;
+        delete value._sourceStart;
         delete value.quality;
         delete value.source;
         delete value.atomId;

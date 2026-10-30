@@ -117,6 +117,10 @@ export function buildSummaryUndo(beforeJson = {}, afterJson = {}, { aliasChanged
         getKey: factKey,
         forceSnapshot: aliasChanged,
     });
+    recordCollection(undo, beforeJson.storyRecords || [], afterJson.storyRecords || [], {
+        previousField: 'previousStoryRecords', generatedField: 'generatedStoryRecords',
+        changesField: 'storyRecordChanges', getKey: eventKey, forceSnapshot: aliasChanged,
+    });
 
     return undo;
 }
@@ -127,6 +131,7 @@ const SNAPSHOT_PAIRS = [
     ['previousMainCharacters', 'generatedMainCharacters'],
     ['previousArcs', 'generatedArcs'],
     ['previousFacts', 'generatedFacts'],
+    ['previousStoryRecords', 'generatedStoryRecords'],
 ];
 
 const CHANGE_FIELDS = [
@@ -134,12 +139,13 @@ const CHANGE_FIELDS = [
     ['mainCharacterChanges', characterKey],
     ['arcChanges', arcKey],
     ['factChanges', factKey],
+    ['storyRecordChanges', eventKey],
 ];
 
 /** Read-only projection of the generation delta; maintenance must not infer changes from creation dates. */
 export function summaryBatchChanges(undo) {
     if (!undo) return [];
-    const collections = ['keywords', 'events', 'characters', 'arcs', 'facts'];
+    const collections = ['keywords', 'events', 'characters', 'arcs', 'facts', 'storyRecords'];
     return SNAPSHOT_PAIRS.flatMap(([before, after], index) => {
         const [field] = CHANGE_FIELDS[index - 1] || [];
         const changes = field && undo[field];
@@ -209,6 +215,7 @@ export function normalizeSummaryUndo(value) {
         ['generatedMainCharacters', 'mainCharacterChanges'],
         ['generatedArcs', 'arcChanges'],
         ['generatedFacts', 'factChanges'],
+        ['generatedStoryRecords', 'storyRecordChanges'],
     ]) {
         if (Object.hasOwn(normalizedValue, snapshotField) && Object.hasOwn(normalizedValue, changesField)) return null;
     }
@@ -265,6 +272,7 @@ function collections(json) {
         mainCharacters: Array.isArray(json.characters?.main) ? json.characters.main : [],
         arcs: Array.isArray(json.arcs) ? json.arcs : [],
         facts: Array.isArray(json.facts) ? json.facts : [],
+        storyRecords: Array.isArray(json.storyRecords) ? json.storyRecords : [],
     };
 }
 
@@ -278,6 +286,7 @@ export function applySummaryUndo(json = {}, rawUndo) {
         ['previousMainCharacters', 'generatedMainCharacters', 'mainCharacters'],
         ['previousArcs', 'generatedArcs', 'arcs'],
         ['previousFacts', 'generatedFacts', 'facts'],
+        ['previousStoryRecords', 'generatedStoryRecords', 'storyRecords'],
     ];
     for (const [, generatedField, collection] of snapshots) {
         if (Object.hasOwn(undo, generatedField) && !sameJson(current[collection], undo[generatedField])) {
@@ -290,6 +299,7 @@ export function applySummaryUndo(json = {}, rawUndo) {
         ['mainCharacterChanges', 'mainCharacters', characterKey],
         ['arcChanges', 'arcs', arcKey],
         ['factChanges', 'facts', factKey],
+        ['storyRecordChanges', 'storyRecords', eventKey],
     ];
     for (const [field, collection, getKey] of changeSets) {
         if (undo[field] && !changesMatch(current[collection], undo[field], getKey)) return null;

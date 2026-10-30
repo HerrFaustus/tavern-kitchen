@@ -58,7 +58,7 @@ export const MEMORY_COPY = Object.freeze({
         note: '显示当前聊天原文；若后来编辑过，内容可能与维护时不同。',
         loading: '正在读取原文…', unavailable: '这段原文已无法查看，可能已删除或对应维护记录已撤销。',
         roles: { user: '用户', assistant: '角色', system: '系统' } },
-    collections: { events: '事件', facts: '持续事实', characters: '人物', arcs: '弧光', keywords: '关键词', characterAliases: '别名', anchors: '逐楼锚点' },
+    collections: { events: '事件', facts: '持续事实', characters: '人物', arcs: '弧光', keywords: '关键词', characterAliases: '别名', anchors: '逐楼锚点', storyRecords: '场景与进展' },
     anchorStates: { missing: '未生成', fail: '提取失败' },
     states: { idle: '', queued: '等待前一轮结束', running: '正在检查记忆…', saving: '正在保存修改…', indexing: '修改已保存，正在更新记忆检索…',
         ...MEMORY_RESULT_COPY,

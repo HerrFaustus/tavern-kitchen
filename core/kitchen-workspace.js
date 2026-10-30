@@ -27,10 +27,11 @@ function syncNativeControls(target) {
         for (const property of properties) target.style.setProperty(`--tk-${control.dataset.control}-${property}`, style.getPropertyValue(property));
     }
 }
-export const KITCHEN_TABS = [['world', '世界'], ['memory', '剧情'], ['planner', '规划'], ['settings', '设置']];
+export const KITCHEN_TABS = [['overview', '总览'], ['world', '世界'], ['memory', '剧情'], ['planner', '规划'], ['settings', '设置']];
 export const KITCHEN_ROUTES = {
+    overview: [['overview', '当前故事']],
     memory: [['memory', '事件时间线']],
-    world: [['world', '总览'], ['situation', '局势'], ['lore', '设定'], ['people', '人物'], ['variables', '变量'], ['map', '地图'], ['world-engine', '后台演化']],
+    world: [['world', '世界状态'], ['situation', '局势'], ['lore', '设定'], ['people', '人物'], ['variables', '变量'], ['map', '地图'], ['world-engine', '后台演化']],
     planner: [['planner', '剧情规划'], ['dice', '行动判定']],
     settings: [['settings', '功能开关'], ['memory-settings', '剧情设置'], ['agent-api', '模型接口'], ['world-management', '世界管理']],
 };
@@ -227,7 +228,7 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, onVisibi
         },
         getMount: id => worldTabs.has(id) ? worldMount : memoryTabs.has(id) ? memoryMount : mounts.get(canonicalRoute(id)),
         isActive: id => isOpen() && active === canonicalRoute(id),
-        async open(id = active || 'world') {
+        async open(id = active || 'overview') {
             id = canonicalRoute(id);
             const parent = parentOf(id);
             if (!parent) return;
@@ -259,6 +260,7 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, onVisibi
                 button.setAttribute('aria-pressed', String(button.dataset.route === id));
                 button.classList.toggle('active', button.dataset.route === id);
             }
+            subnav.hidden = parent === 'overview';
             onVisibility(true, id);
             if (wasClosed) buttons.get(parent).focus({ preventScroll: true });
             const mount = api.getMount(id); mount.querySelector('.tk-panel-message')?.remove();

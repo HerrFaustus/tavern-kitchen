@@ -1,7 +1,9 @@
 import { MEMORY_COPY as copy } from './copy.js';
 import { sameMemory } from './domain.js';
+import { STORY_FIELDS, PRESENCE, BELIEFS, THREAD_STATUS, storyRecordText } from '../../story-state/records.js';
 
 const displayFields = {
+    storyRecords: Object.keys(STORY_FIELDS),
     events: ['title', 'timeLabel', 'summary', 'participants', 'causedBy', 'memoryRole'],
     facts: ['s', 'p', 'o', 'since', 'retracted', 'trend', '_isState'],
     characters: ['name'], arcs: ['name', 'trajectory', 'progress', 'moments'],
@@ -12,6 +14,7 @@ const displayFields = {
 export function memoryLabel(collection, value) {
     if (typeof value === 'string') return value;
     if (!value) return copy.collections[collection];
+    if (collection === 'storyRecords') return storyRecordText(value);
     if (collection === 'events') return value.title;
     if (collection === 'facts') return [value.s, value.p].filter(Boolean).join(' · ');
     if (collection === 'anchors') return copy.floor(value.floor + 1);
@@ -54,6 +57,9 @@ export function operationTitle(operation) {
 
 function fieldValue(field, value, eventNames) {
     if (value == null || value === '' || (Array.isArray(value) && !value.length)) return copy.notSet;
+    if (field === 'presence') return PRESENCE[value] || value;
+    if (field === 'certainty') return BELIEFS[value] || value;
+    if (field === 'status') return THREAD_STATUS[value] || value;
     if (field === 'since') return copy.floor(value + 1);
     if (field === 'retracted') return value ? copy.retracted : copy.retained;
     if (field === '_isState') return value ? copy.yes : copy.no;
@@ -72,6 +78,6 @@ export function comparisonRows(change, eventNames = {}, full = false) {
     const after = typeof change.after === 'string' ? { name: change.after } : change.after;
     return displayFields[change.collection].filter(field => (before?.[field] != null || after?.[field] != null)
         && (full || before == null || after == null || !sameMemory(before[field], after[field])))
-        .map(field => ({ field, label: copy.fields[field], before: fieldValue(field, before?.[field], eventNames),
+        .map(field => ({ field, label: copy.fields[field] || STORY_FIELDS[field], before: fieldValue(field, before?.[field], eventNames),
             after: fieldValue(field, after?.[field], eventNames) }));
 }

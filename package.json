@@ -48,6 +48,6 @@
   "overrides": {
     "ws": "8.21.0"
   },
-  "version": "0.2.3",
+  "version": "0.2.5",
   "packageManager": "pnpm@11.25.0"
 }

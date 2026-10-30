@@ -84,6 +84,10 @@ async function mountSettings() {
         }
     }, { source: import.meta.url, operation: 'save-settings' }));
     const actions = {
+        overview: async () => {
+            await requireFeatures();
+            if (kitchen.isActive('overview')) await worldArchive.open('overview');
+        },
         world: async () => {
             await requireFeatures();
             if (kitchen.isActive('world')) await worldArchive.open('world');

@@ -1,6 +1,7 @@
 import { createSummaryBaseline } from './summary-history.js';
 import { assignImportedFactIds } from './fact-identity.js';
 import { MEMORY_DATA_COPY } from './memory-copy.js';
+import { parseStoryUpdates } from '../../story-state/records.js';
 
 export const SUMMARY_MEMORY_PACKAGE = Object.freeze({ type: 'TavernKitchenStorySummaryMemory', version: 1 });
 
@@ -13,6 +14,13 @@ export function readSummaryPackageData(raw) {
             typeof fact?.[key] === 'string' && fact[key].trim()))) {
         throw Object.assign(new Error(MEMORY_DATA_COPY.unsupportedImport), { code: 'summary_import_unsupported' });
     }
+    if (data.storyRecords !== undefined) {
+        if (!Array.isArray(data.storyRecords) || data.storyRecords.length > 20000 || new Set(data.storyRecords.map(record => record.id)).size !== data.storyRecords.length) throw new Error('场景状态导入结构无效');
+        for (const record of data.storyRecords) {
+            if (record.remove) throw new Error('场景状态存档不能包含删除指令');
+            parseStoryUpdates([record]);
+        }
+    }
     return data;
 }
 
@@ -24,6 +32,7 @@ function stampImportedSummaryJson(json, boundary) {
     for (const item of (json.keywords || [])) {
         if (item && typeof item === "object") item._addedAt = boundary;
     }
+    for (const record of json.storyRecords || []) { record._addedAt = boundary; delete record._sourceStart; }
 
     for (const item of (json.events || [])) {
         if (item && typeof item === "object") item._addedAt = boundary;

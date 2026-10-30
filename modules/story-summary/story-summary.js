@@ -1,5 +1,6 @@
 import { getKitchenMount, openKitchenTab, closeKitchenWorkspace, bindKitchenFrame } from '../../core/kitchen-workspace.js';
 import { refreshFloorSummaries } from './floor-summary.js';
+import { parseStoryUpdates } from '../story-state/records.js';
 import { getRuntimeInvalidSourceFloor } from './data/memory-commit.js';
 import { handleTextApiRequest } from '../text-api/host.js';
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2420,6 +2421,7 @@ function buildFramePayload(store) {
         },
         arcs: json.arcs || [],
         facts,
+        storyRecords: !store?.summaryInvalid && store?.sourceInvalidFromFloor == null ? json.storyRecords || [] : [],
         characterAliases: normalizeCharacterAliases(json.characterAliases)
             .map(({ from, to, evidence }) => ({ from, to, evidence })),
         lastSummarizedMesId: store?.lastSummarizedMesId ?? -1,
@@ -2583,6 +2585,7 @@ function cloneSummaryJsonForPortability(json) {
         facts: Array.isArray(src.facts)
             ? src.facts.map(normalizeInternalFact).filter((item) => item.s && item.p && item.o)
             : [],
+        ...(src.storyRecords ? { storyRecords: src.storyRecords.map(record => parseStoryUpdates([record])[0]) } : {}),
     };
 }
 

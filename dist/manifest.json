@@ -1,5 +1,5 @@
 {
-  "buildId": "cb1e8bbbdb04cf9444b3",
+  "buildId": "14708a5322b75ae2bf20",
   "entries": {
     "apps/debug-panel": {
       "file": "apps/debug-panel-D8bR9Oy2.js",
@@ -12,7 +12,7 @@
       ]
     },
     "apps/story-summary": {
-      "file": "apps/story-summary-qqQ_-H1q.js",
+      "file": "apps/story-summary-BH10iZpo.js",
       "css": [
         "assets/settings-ui-Bp9D6kSf.css"
       ]
@@ -71,12 +71,12 @@
         "assets/settings-ui-Bp9D6kSf.css"
       ]
     },
-    "apps/story-summary-qqQ_-H1q.js": {
+    "apps/story-summary-BH10iZpo.js": {
       "imports": [
         "shared/rolldown-runtime-CRqgUL4m.js",
         "shared/settings-ui-Drn0jf9w.js",
-        "shared/generation-rules-D-qvqRBZ.js",
-        "shared/sha256-BpS5FeAr.js",
+        "shared/domain-CX5NRyUA.js",
+        "shared/generation-rules-BZzGRotO.js",
         "shared/error-guidance-Cpmi65bN.js"
       ],
       "dynamicImports": [],
@@ -104,11 +104,11 @@
     },
     "host/plugin.js": {
       "imports": [
-        "shared/kitchen-workspace-Cag3v_BC.js",
+        "shared/kitchen-workspace-BS77AkRn.js",
         "shared/preload-helper-Ddh_c1lL.js"
       ],
       "dynamicImports": [
-        "shared/kitchen-runtime-B3GlYVwj.js"
+        "shared/kitchen-runtime-CCUgYA57.js"
       ],
       "css": []
     },
@@ -304,17 +304,24 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/ena-planner-CAi4RpDN.js": {
+    "shared/domain-CX5NRyUA.js": {
+      "imports": [
+        "shared/rolldown-runtime-CRqgUL4m.js"
+      ],
+      "dynamicImports": [],
+      "css": []
+    },
+    "shared/ena-planner-CLSDE7e1.js": {
       "imports": [
         "shared/constants-CF4HAj3B.js",
         "shared/async-errors-DrD0vbna.js",
-        "shared/kitchen-workspace-Cag3v_BC.js",
+        "shared/kitchen-workspace-BS77AkRn.js",
         "shared/profiles-BofESfFv.js",
         "shared/runtime-oQhijZuy.js",
         "shared/abort-utils-C76zWFGO.js",
-        "shared/kitchen-runtime-B3GlYVwj.js",
+        "shared/kitchen-runtime-CCUgYA57.js",
         "shared/server-storage-BS1GhFn9.js",
-        "shared/host-D_O0d4v9.js",
+        "shared/host-D-q_yEm9.js",
         "shared/js-yaml-UjIS-zUH.js"
       ],
       "dynamicImports": [],
@@ -351,22 +358,23 @@
       ],
       "css": []
     },
-    "shared/generation-rules-D-qvqRBZ.js": {
+    "shared/generation-rules-BZzGRotO.js": {
       "imports": [
-        "shared/sha256-BpS5FeAr.js"
+        "shared/domain-CX5NRyUA.js"
       ],
       "dynamicImports": [],
       "css": []
     },
-    "shared/host-CQjR7tGB.js": {
+    "shared/host-B0ptCizj.js": {
       "imports": [
         "shared/profiles-BofESfFv.js",
-        "shared/kitchen-runtime-B3GlYVwj.js"
+        "shared/domain-CX5NRyUA.js",
+        "shared/kitchen-runtime-CCUgYA57.js"
       ],
       "dynamicImports": [],
       "css": []
     },
-    "shared/host-D_O0d4v9.js": {
+    "shared/host-D-q_yEm9.js": {
       "imports": [
         "shared/preload-helper-Ddh_c1lL.js",
         "shared/profiles-BofESfFv.js",
@@ -374,7 +382,7 @@
         "shared/runtime-oQhijZuy.js"
       ],
       "dynamicImports": [
-        "shared/streaming-generation-DWwHqRoJ.js"
+        "shared/streaming-generation-BxfdYUXa.js"
       ],
       "css": []
     },
@@ -388,16 +396,16 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/kitchen-runtime-B3GlYVwj.js": {
+    "shared/kitchen-runtime-CCUgYA57.js": {
       "imports": [
         "shared/rolldown-runtime-CRqgUL4m.js",
         "shared/constants-CF4HAj3B.js",
         "shared/async-errors-DrD0vbna.js",
-        "shared/kitchen-workspace-Cag3v_BC.js",
+        "shared/kitchen-workspace-BS77AkRn.js",
         "shared/preload-helper-Ddh_c1lL.js",
         "shared/profiles-BofESfFv.js",
         "shared/openai-url-utils-DD-AOMQb.js",
-        "shared/sha256-BpS5FeAr.js",
+        "shared/domain-CX5NRyUA.js",
         "shared/descriptor-DXKR8BqN.js",
         "shared/client-HdROs3C-.js",
         "shared/semantics-DaKwiMZH.js",
@@ -410,19 +418,19 @@
       ],
       "dynamicImports": [
         "shared/gateway-BQlQ5pe0.js",
-        "shared/host-D_O0d4v9.js",
-        "shared/profile-service-DuDFdn6v.js",
-        "shared/story-summary-DqrFwyTS.js",
+        "shared/host-D-q_yEm9.js",
+        "shared/profile-service-CyBDKAcl.js",
+        "shared/story-summary-COTffFiu.js",
         "shared/var-commands-Dn982nqo.js",
         "shared/varevent-editor-CINhz1UQ.js",
         "shared/variables-core-CGQkM8FN.js",
-        "shared/variables-panel-YY1yF-Pz.js",
-        "shared/ena-planner-CAi4RpDN.js",
-        "shared/host-CQjR7tGB.js"
+        "shared/variables-panel-CdhccRBt.js",
+        "shared/ena-planner-CLSDE7e1.js",
+        "shared/host-B0ptCizj.js"
       ],
       "css": []
     },
-    "shared/kitchen-workspace-Cag3v_BC.js": {
+    "shared/kitchen-workspace-BS77AkRn.js": {
       "imports": [
         "shared/constants-CF4HAj3B.js",
         "shared/async-errors-DrD0vbna.js"
@@ -469,9 +477,9 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/profile-service-DuDFdn6v.js": {
+    "shared/profile-service-CyBDKAcl.js": {
       "imports": [
-        "shared/kitchen-runtime-B3GlYVwj.js"
+        "shared/kitchen-runtime-CCUgYA57.js"
       ],
       "dynamicImports": [],
       "css": []
@@ -563,13 +571,6 @@
         "assets/settings-ui-Bp9D6kSf.css"
       ]
     },
-    "shared/sha256-BpS5FeAr.js": {
-      "imports": [
-        "shared/rolldown-runtime-CRqgUL4m.js"
-      ],
-      "dynamicImports": [],
-      "css": []
-    },
     "shared/sheet-copy-BwN_BiNY.js": {
       "imports": [],
       "dynamicImports": [],
@@ -582,16 +583,16 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/story-summary-DqrFwyTS.js": {
+    "shared/story-summary-COTffFiu.js": {
       "imports": [
         "shared/constants-CF4HAj3B.js",
         "shared/async-errors-DrD0vbna.js",
-        "shared/kitchen-workspace-Cag3v_BC.js",
+        "shared/kitchen-workspace-BS77AkRn.js",
         "shared/preload-helper-Ddh_c1lL.js",
         "shared/profiles-BofESfFv.js",
         "shared/openai-url-utils-DD-AOMQb.js",
-        "shared/generation-rules-D-qvqRBZ.js",
-        "shared/sha256-BpS5FeAr.js",
+        "shared/domain-CX5NRyUA.js",
+        "shared/generation-rules-BZzGRotO.js",
         "shared/openai-compatible-replay-policy-Cqv7p86N.js",
         "shared/client-HdROs3C-.js",
         "shared/model-list-Dpf1Ar7F.js",
@@ -601,9 +602,9 @@
         "shared/settings-repository-COkWuVG9.js",
         "shared/runtime-oQhijZuy.js",
         "shared/abort-utils-C76zWFGO.js",
-        "shared/kitchen-runtime-B3GlYVwj.js",
+        "shared/kitchen-runtime-CCUgYA57.js",
         "shared/server-storage-BS1GhFn9.js",
-        "shared/host-D_O0d4v9.js",
+        "shared/host-D-q_yEm9.js",
         "shared/message-button-ownership-CKhaFYjS.js",
         "shared/profile-runtime-CkwVVvCe.js",
         "shared/after-ai-gate-D_oYbLoF.js",
@@ -614,12 +615,12 @@
       ],
       "css": []
     },
-    "shared/streaming-generation-DWwHqRoJ.js": {
+    "shared/streaming-generation-BxfdYUXa.js": {
       "imports": [
         "shared/async-errors-DrD0vbna.js",
         "shared/debug-core-BiaGo9yA.js",
         "shared/abort-utils-C76zWFGO.js",
-        "shared/kitchen-runtime-B3GlYVwj.js",
+        "shared/kitchen-runtime-CCUgYA57.js",
         "shared/json-candidate-CmEyWwSp.js",
         "shared/var-commands-Dn982nqo.js"
       ],
@@ -671,11 +672,11 @@
       ],
       "css": []
     },
-    "shared/variables-panel-YY1yF-Pz.js": {
+    "shared/variables-panel-CdhccRBt.js": {
       "imports": [
         "shared/constants-CF4HAj3B.js",
         "shared/async-errors-DrD0vbna.js",
-        "shared/kitchen-workspace-Cag3v_BC.js",
+        "shared/kitchen-workspace-BS77AkRn.js",
         "shared/event-manager-BErs-i52.js",
         "shared/message-button-ownership-CKhaFYjS.js"
       ],

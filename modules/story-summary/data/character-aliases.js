@@ -221,6 +221,7 @@ export function canonicalizeIncrementalSummaryData(parsed, aliases) {
         update.s = resolver.resolveName(update.s);
         update.p = canonicalizeRelationPredicate(update.p, resolver);
     }
+    for (const update of parsed.storyUpdates || []) canonicalizeStoryRecord(update, resolver);
 
     return parsed;
 }
@@ -439,6 +440,10 @@ function mergeFactsByCanonicalKey(facts, resolver) {
 
 function applyCanonicalization(json, resolver) {
     let changed = false;
+    for (const record of json.storyRecords || []) {
+        const before = JSON.stringify(record); canonicalizeStoryRecord(record, resolver);
+        if (JSON.stringify(record) !== before) changed = true;
+    }
 
     json.characters ||= {};
     json.characters.main ||= [];
@@ -473,6 +478,12 @@ function applyCanonicalization(json, resolver) {
     }
 
     return { changed };
+}
+
+function canonicalizeStoryRecord(record, resolver) {
+    if (record.name) record.name = resolver.resolveName(record.name);
+    if (record.person) record.person = resolver.resolveName(record.person);
+    if (record.participants) record.participants = canonicalizeNameList(record.participants, resolver);
 }
 
 export function applyCharacterAliasUpdates(json, updates, floor) {

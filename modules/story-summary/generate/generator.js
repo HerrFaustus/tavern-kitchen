@@ -42,6 +42,7 @@ export function formatExistingSummaryForAI(store) {
 
     const data = store.json;
     const parts = [];
+    if (data.storyRecords?.length) parts.push('【当前场景与待办记录，更新时复用 id】\n' + JSON.stringify(data.storyRecords));
 
     if (data.events?.length) {
         parts.push("【已记录事件】");
@@ -232,7 +233,7 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
     parsed.events = rebaseGeneratedEvents(parsed.events, previous.storySummary.json?.events || [], maintenance);
     // Append to the latest published memory. Incoming facts/arcs take precedence;
     // untouched maintenance edits and their receipts remain in the same snapshot.
-    const mergeResult = mergeNewData(previous.storySummary.json || {}, parsed, slice.endMesId, { returnMeta: true });
+    const mergeResult = mergeNewData(previous.storySummary.json || {}, parsed, slice.endMesId, { returnMeta: true, sourceStart: lastSummarized + 1 });
     const merged = mergeResult.json;
     const next = structuredClone(previous);
     next.storySummary.lastSummarizedMesId = slice.endMesId;

@@ -30,6 +30,7 @@ import { buildTemporalEventPackingOrder } from "./temporal-event-packing.js";
 import { packEventEvidence } from "./event-evidence-packing.js";
 import { tryConsumeWholeItem } from './token-budget.js';
 import { getHiddenThrough } from '../hide-state.js';
+import { availableStoryRecords, storyContextLines } from '../../story-state/records.js';
 
 // Metrics
 import { detectIssues, finalizeMetricsTiming } from "../vector/retrieval/metrics.js";
@@ -1056,6 +1057,10 @@ async function buildVectorPrompt(store, recallResult, allEvents, focusCharacters
     }
 
     const constraintBudget = { used: 0, max: CONSTRAINT_MAX };
+    const storyLines = [];
+    const storyBudget = { used: 0, max: 800 };
+    for (const line of storyContextLines(availableStoryRecords(store), focusCharacters)) pushWithBudget(storyLines, line, storyBudget);
+    constraintBudget.used = storyBudget.used;
     const groupedSelectedConstraints = selectConstraintsByBudgetDesc(groupedConstraints, constraintBudget);
     if (evidenceTrace) {
         for (const fact of factsInBudgetOrder(groupedSelectedConstraints)) evidenceTrace.fact('prompt', fact);
@@ -1067,7 +1072,7 @@ async function buildVectorPrompt(store, recallResult, allEvents, focusCharacters
         }
         return count;
     })();
-    const constraintLines = formatConstraintsStructured(groupedSelectedConstraints, 'asc');
+    const constraintLines = [...storyLines, ...formatConstraintsStructured(groupedSelectedConstraints, 'asc')];
 
     if (constraintLines.length) {
         assembled.constraints.lines.push(...constraintLines);

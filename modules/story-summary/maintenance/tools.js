@@ -3,6 +3,7 @@ import { SOURCE_PAGE_CHARS } from './evidence.js';
 import { EVENT_MEMORY_ROLES } from '../data/events.js';
 import { RELATION_TRENDS } from '../data/fact-predicates.js';
 import { MEMORY_COLLECTIONS } from './domain.js';
+import { STORY_FIELDS } from '../../story-state/records.js';
 import { ARC_PROGRESS_MAX } from '../generate/arc-progress.js';
 import { SUMMARY_DIAGNOSTIC_LIMIT, SUMMARY_DIAGNOSTIC_REASON_CHARS } from '../summary-diagnostics.js';
 
@@ -13,6 +14,7 @@ const collection = { type: 'string', enum: MEMORY_COLLECTIONS, description: 'Mem
 const object = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const tool = (name, description, properties, required = []) => ({ type: 'function', function: { name, description, parameters: object(properties, required) } });
 const fields = {
+    storyRecords: Object.fromEntries(Object.entries(STORY_FIELDS).map(([key, label]) => [key, { ...(key === 'participants' ? strings : string), description: label + '；按记录原有类型修订，不得改变 id/kind。' }])),
     events: {
         title: { ...string, description: 'Recognizable episode title.' }, timeLabel: { ...string, description: 'Supported date or established event-relative time.' },
         summary: { ...string, description: 'Concrete memory card ending with its (#X-Y) source-floor marker.' },

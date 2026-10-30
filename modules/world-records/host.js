@@ -2,6 +2,7 @@ import { createWorldStorage } from './storage.js';
 import { createWorldService } from './service.js';
 import { createWorldPanel } from './panel.js';
 import { createWorldOverview } from './overview.js';
+import { createStoryOverview } from '../story-state/view.js';
 import { memoryRecords } from './imports.js';
 import { readWorldSources, registerWorldSource, storyIdentityKey, subscribeWorldSources } from './sources.js';
 import { captureStoryIdentity } from '../xiaobai-os/host/story-identity.js';
@@ -13,7 +14,8 @@ export function createWorldArchive({ getContext, getAccountId = () => 'default-u
     const service = createWorldService({ storage, getIdentity: identity });
     const panel = createWorldPanel({ service, sync, getIdentity: identity });
     const overview = createWorldOverview({ navigate });
-    const views = { world: overview, 'world-management': panel };
+    const storyOverview = createStoryOverview({ getSnapshot: getMemorySnapshot, navigate });
+    const views = { overview: storyOverview, world: overview, 'world-management': panel };
     let disposed = false, scheduled = false, epoch = 0;
     async function sync() {
         const key = identity(), token = epoch; if (!key || disposed) return null;
@@ -40,7 +42,7 @@ export function createWorldArchive({ getContext, getAccountId = () => 'default-u
             await service.ensure(getContext().chatId || '当前故事');
             const state = await sync(); if (isVisible(route) && !disposed) view.show(state || await service.read());
         },
-        reset() { epoch++; service.invalidate(); panel.reset(); overview.reset(); },
-        dispose() { disposed = true; service.invalidate(); unsubscribe(); unregisterMemory(); panel.reset(); overview.reset(); storage.close().catch(error => onError(error)); },
+        reset() { epoch++; service.invalidate(); for (const view of Object.values(views)) view.reset(); },
+        dispose() { disposed = true; service.invalidate(); unsubscribe(); unregisterMemory(); for (const view of Object.values(views)) view.reset(); storage.close().catch(error => onError(error)); },
     };
 }

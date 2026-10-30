@@ -56,7 +56,7 @@
 .tk-embedded .btn-p:disabled { color: var(--txt3); }
 
 /* All retained OS pages use the same controls and live host palette. */
-:root.tk-embedded.tk-follow-host { --os-status-height: 0px; }
+:root.tk-embedded.tk-follow-host { --os-status-height: 0px; color-scheme: var(--tk-color-scheme, normal); }
 .tk-embedded.tk-follow-host .xiaobai-os-shell {
     --os-status-height: 0px;
     --xiaobai-os-screen: var(--bg); --xiaobai-os-surface: var(--bg2);

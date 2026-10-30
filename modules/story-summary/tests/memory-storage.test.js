@@ -1660,6 +1660,26 @@ test('old-server save and uncertain save never publish newly completed ranges', 
     }
 });
 
+test('scene records share actual summary persistence and return to the imported baseline on rollback', async () => {
+    const original = await importFixture();
+    const previous = mod.readSummaryMemory();
+    const next = structuredClone(previous);
+    const merged = mod.mergeNewData(next.storySummary.json, { storyUpdates: [
+        { id: 'scene', kind: 'scene', location: '渡口', situation: '等候', participants: ['夏实'], tension: '', pendingBeat: '信使返回' },
+        { id: 'p1', kind: 'plan', title: '送信', description: '', status: 'open', due: '', reason: '' },
+    ] }, 25, { returnMeta: true, sourceStart: 24 });
+    next.storySummary.json = merged.json; next.storySummary.lastSummarizedMesId = 25;
+    mod.addSummarySnapshot(next.storySummary, 23, 25, merged.undo);
+    host.context.chat.push({ mes: '次日到渡口', is_user: true }, { mes: '等待信使' });
+    await mod.commitSummaryMemory(host.context.chatId, next, { previous });
+    assert.equal(disk().storySummary.json.storyRecords[0]._sourceStart, 24);
+    host.metadata = structuredClone(host.metadata); mod.reload();
+    assert.equal((await mod.rollbackSummaryOnce(host.context.chatId)).success, true);
+    assert.deepEqual(ext().storySummary.json.storyRecords, []);
+    assert.deepEqual(ext().storySummary.json.facts, original.facts);
+    assert.deepEqual(disk(), ext());
+});
+
 test('actual import baseline: repeated maintenance is reversible but imported events/facts are not erased', async () => {
     const original = await importFixture();
     assert.equal(mod.getRollbackOnceTargetEndMesId(ext().storySummary), null);

@@ -1,4 +1,10 @@
 @import url('../agent-core/ui/settings-surface.css');
+.tk-person-state, .tk-story-situations { margin-block: 16px; overflow-wrap: anywhere; }
+.tk-person-state h4, .tk-story-situations h4 { font: inherit; font-weight: 600; margin: 16px 0 8px; }
+.tk-person-state details, .tk-story-situations details { border-bottom: 1px solid var(--SmartThemeBorderColor, var(--border)); padding-block: 8px; }
+.tk-person-state summary, .tk-story-situations summary { cursor: pointer; line-height: 1.6; }
+.tk-person-state p, .tk-story-situations p { white-space: pre-wrap; line-height: 1.6; }
+.tk-person-state .tk-record-note, .tk-story-situations .tk-record-note { color: var(--SmartThemeEmColor, var(--muted)); }
 /* The archive and its child pages share one full-area workspace. */
 .summary-workspace { display: none; position: fixed; inset: 0; z-index: 100; background: var(--bg); color: var(--txt); overflow: auto; }
 .summary-workspace.active { display: block; }

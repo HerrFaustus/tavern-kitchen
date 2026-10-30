@@ -13,6 +13,7 @@ import {
 } from "../data/config.js";
 import { generateFeatureText } from '../../text-api/host.js';
 import { tryParseJson } from '../../../shared/common/json-candidate.js';
+import { STORY_UPDATE_PROTOCOL } from '../../story-state/records.js';
 const SUMMARY_CANCELLED_CODE = 'summary_generation_cancelled';
 
 export function createSummaryGenerationCancelledError() {
@@ -80,7 +81,7 @@ function buildSummaryMessages(existingSummary, existingFacts, newHistoryText, hi
     ];
 
     const bottomMessages = [
-        { role: 'user', content: metaProtocolStartPrompt + '\n' + jsonFormat },
+        { role: 'user', content: metaProtocolStartPrompt + '\n' + jsonFormat + '\n' + STORY_UPDATE_PROTOCOL },
         { role: 'assistant', content: checkContent },
         { role: 'user', content: userConfirmPrompt },
         { role: 'user', content: userGeneratePrompt }

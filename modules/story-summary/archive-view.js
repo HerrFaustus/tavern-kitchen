@@ -20,6 +20,11 @@ export function getArchiveCharacters(data) {
     for (const relation of data.characters.relationships) { add(relation.from); add(relation.to); }
     for (const alias of data.characterAliases) add(alias.to);
     for (const event of data.events) for (const name of event.participants || []) add(name);
+    for (const record of data.storyRecords || []) {
+        if (record.kind === 'person') add(record.name);
+        if (record.kind === 'knowledge') add(record.person);
+        if (record.kind === 'scene') for (const name of record.participants) add(name);
+    }
     return [...entries.values()];
 }
 

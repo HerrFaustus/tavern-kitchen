@@ -1,4 +1,6 @@
 import { mountTextApiSettings } from '../text-api/settings-ui.js';
+import { renderPersonState, renderThreads } from '../story-state/view.js';
+import { buildAliasResolver } from './data/character-aliases.js';
 import { WORKSPACE_COPY } from './workspace-copy.js';
 import { createSummaryAgentSettings } from './maintenance/api-settings.js';
 // story-summary-ui.js
@@ -1507,6 +1509,8 @@ const UNANNOTATED_LABEL = '未标注';
                 </div>
             </div>
         `);
+        const state = renderPersonState(c, summaryData.storyRecords || [], name, buildAliasResolver(summaryData.characterAliases).resolveName);
+        c.querySelector('.prof-arc > div').after(state);
     }
 
     function renderArcs(arcs) {
@@ -2168,6 +2172,7 @@ const UNANNOTATED_LABEL = '未标注';
                         tlCurrentPage = tlLoadPage();
                     }
                     if (p.keywords) renderKeywords(p.keywords);
+                    summaryData.storyRecords = p.storyRecords || [];
                     if (p.events) renderTimeline(p.events);
                     if (p.characters) summaryData.characters = p.characters;
                     if (p.arcs) renderArcs(p.arcs);
@@ -2629,6 +2634,11 @@ const UNANNOTATED_LABEL = '未标注';
 
         const container = $('facts-list');
         if (!container) return;
+        container.parentElement.querySelector('.tk-story-situations')?.remove();
+        if (document.documentElement.dataset.kitchenView !== 'lore' && summaryData.storyRecords?.some(record => record.kind === 'situation')) {
+            const situations = document.createElement('div'); situations.className = 'tk-story-situations';
+            renderThreads(situations, summaryData.storyRecords, ['situation']); container.before(situations);
+        }
 
         archiveView.refreshIndexes();
         const stateFacts = archiveView.filteredFacts();

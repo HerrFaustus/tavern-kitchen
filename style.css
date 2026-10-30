@@ -17,7 +17,7 @@
 #tk-workspace .menu_button { width: max-content; max-width: 100%; white-space: nowrap; }
 #tk-workspace .tk-close { margin: 0; min-height: 28px; min-width: 28px; }
 #tk-workspace .tk-tabs, #tk-workspace .tk-subnav { display: flex; flex-shrink: 0; gap: 5px; padding: 0; }
-#tk-workspace .tk-tabs button { flex: 1; font: inherit; min-height: 30px; }
+#tk-workspace .tk-tabs button { flex: 1; font: inherit; min-width: 0; min-height: 30px; padding-inline: 5px; white-space: nowrap; }
 #tk-workspace .tk-subnav { flex-wrap: wrap; gap: 0 5px; }
 #tk-workspace .tk-subnav button { flex: 1 0 auto; font: inherit; font-size: .9em; white-space: nowrap; min-height: 28px; margin: 0 0 5px; }
 #tk-workspace .tk-tabs button[aria-selected="true"], #tk-workspace .tk-subnav button[aria-pressed="true"] { font-weight: 600; }
@@ -29,6 +29,9 @@
 .tk-floor-summary summary:focus-visible { outline: 2px solid var(--SmartThemeQuoteColor); }
 .tk-floor-summary p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; margin: 8px 0; }
 .tk-floor-summary .menu_button { font: inherit; font-size: .9em; margin: 4px 0 0; width: max-content; max-width: 100%; white-space: nowrap; }
+.tk-floor-changes ul { padding-inline-start: 20px; line-height: 1.6; overflow-wrap: anywhere; }
+.tk-floor-changes li { margin-block: 6px; white-space: pre-wrap; }
+.tk-floor-changes small { color: var(--SmartThemeEmColor); }
 #tk-workspace .tk-tab-panel, #tk-world-mount { height: 100%; min-height: 0; overflow: auto; }
 #tk-workspace iframe { width: 100%; height: 100%; border: 0; border-radius: 0; display: block; background: transparent; }
 #tk-workspace .tk-embedded-host { position: relative; inset: auto; display: block; padding: 0; margin: 0; width: 100%; max-width: none; height: 100%; max-height: none; border: 0; border-radius: 0; overflow: hidden; background: transparent; }
@@ -72,3 +75,7 @@
 #tk-workspace .tk-world-overview-history { padding-inline-start: 20px; }
 #tk-workspace .tk-world-overview-history li { margin: 10px 0; }
 #tk-workspace .tk-world-overview-history p { margin: 4px 0; }
+#tk-workspace .tk-story-overview p { margin-block: 7px; line-height: 1.6; white-space: pre-wrap; }
+#tk-workspace .tk-story-overview > section { padding-block-end: 10px; }
+#tk-workspace .tk-story-overview summary { line-height: 1.6; }
+#tk-workspace .tk-story-overview .menu_button { margin-inline-end: 5px; }

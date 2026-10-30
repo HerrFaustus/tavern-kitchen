@@ -4,8 +4,9 @@ import { RELATION_TRENDS, factKey } from '../data/fact-predicates.js';
 import { normalizeCharacterAliases, collectAliasGraphIssues } from '../data/character-aliases.js';
 import { MemoryMaintenanceError, requireMemory } from './errors.js';
 import { eventSourceRange } from './records.js';
+import { parseStoryUpdates, STORY_FIELDS } from '../../story-state/records.js';
 
-export const MEMORY_COLLECTIONS = Object.freeze(['events', 'facts', 'characters', 'arcs', 'keywords', 'characterAliases', 'anchors']);
+export const MEMORY_COLLECTIONS = Object.freeze(['events', 'facts', 'characters', 'arcs', 'keywords', 'characterAliases', 'anchors', 'storyRecords']);
 // Maintenance withdraws a fact by deleting it; retraction is a generation protocol.
 export const EDITABLE_FIELDS = Object.freeze({
     events: ['title', 'timeLabel', 'summary', 'participants', 'causedBy', 'memoryRole'],
@@ -15,6 +16,7 @@ export const EDITABLE_FIELDS = Object.freeze({
     keywords: ['text', 'weight'],
     characterAliases: ['from', 'to', 'evidence'],
     anchors: ['semantic', 'edges', 'where'],
+    storyRecords: Object.keys(STORY_FIELDS),
 });
 const fields = EDITABLE_FIELDS;
 // Memory is JSON: object key order is not content; array order and field presence are.
@@ -45,7 +47,7 @@ function setItems(memory, collection, items) {
 
 export function memoryKey(collection, item) {
     if (collection === 'anchors') return item.atomId;
-    if (collection === 'events' || collection === 'facts') return item.id;
+    if (collection === 'events' || collection === 'facts' || collection === 'storyRecords') return item.id;
     if (collection === 'keywords') return item.text;
     if (collection === 'characterAliases') return item.from;
     return typeof item === 'string' ? item : item.name;
@@ -78,6 +80,12 @@ export function replaceMemoryRecords(memory, records) {
 
 export function validateRecord(collection, value, cutoff) {
     requireMemory(value && typeof value === 'object' && !Array.isArray(value), 'invalid_record');
+    if (collection === 'storyRecords') {
+        let parsed;
+        try { [parsed] = parseStoryUpdates([value]); } catch { throw new MemoryMaintenanceError('invalid_record'); }
+        requireMemory(Object.keys(value).every(key => key.startsWith('_') || Object.hasOwn(parsed, key)), 'invalid_record');
+        requireMemory(value.remove !== true && Number.isInteger(value._addedAt) && value._addedAt <= cutoff, 'invalid_record');
+    }
     if (collection === 'events') {
         const ranges = [...String(value.summary || '').matchAll(/\(#(\d+)(?:-(\d+))?\)/gu)];
         requireMemory(text(value.id) && text(value.title) && text(value.summary)

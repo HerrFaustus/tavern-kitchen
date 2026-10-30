@@ -3,6 +3,7 @@ import { sanitizeCharacterAliasUpdates } from '../data/character-aliases.js';
 import { EVENT_MEMORY_ROLES } from '../data/events.js';
 import { isRelationFact, RELATION_TRENDS } from '../data/fact-predicates.js';
 import { parseModelArcProgress } from './arc-progress.js';
+import { parseStoryUpdates } from '../../story-state/records.js';
 
 const FACT_PREDICATE_ALIASES = new Map([
     ['当前位置', '位置'], ['当前所在地', '位置'], ['所在位置', '位置'],
@@ -200,5 +201,6 @@ export function prepareSummaryResult(parsed, { existingEvents = [], startFloor, 
     return {
         events, arcUpdates, factUpdates, keywords, newCharacters,
         characterAliasUpdates: sanitizeCharacterAliasUpdates(aliasUpdates),
+        ...(parsed.storyUpdates === undefined ? {} : { storyUpdates: parseStoryUpdates(parsed.storyUpdates) }),
     };
 }

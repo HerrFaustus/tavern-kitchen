@@ -2,6 +2,7 @@
 // 大总结以一份 JSON 保存 events、characters、arcs、facts 等；L3 Facts 是召回时的投影名称，不是另一份总结存储。
 
 import { getContext } from "../../../../../../extensions.js";
+import { mergeStoryRecords } from '../../story-state/records.js';
 import { chat_metadata } from "../../../../../../../script.js";
 import { EXT_ID } from "../../../core/constants.js";
 import { xbLog } from "../../../core/debug-core.js";
@@ -555,6 +556,7 @@ export function mergeNewData(oldJson, parsed, endMesId, options = {}) {
 
     // facts 与其他大总结字段参与同一次合并及撤销差量。
     merged.facts = mergeFacts(merged.facts, incoming.factUpdates || [], endMesId);
+    if (incoming.storyUpdates?.length) merged.storyRecords = mergeStoryRecords(merged.storyRecords, incoming.storyUpdates, endMesId, options.sourceStart ?? endMesId);
 
     const aliasResult = applyCharacterAliasUpdates(merged, incoming.characterAliasUpdates || [], endMesId);
     const undo = buildSummaryUndo(beforeJson, aliasResult.json, {
@@ -696,10 +698,11 @@ function hasSummaryContent(json) {
         || (json.arcs || []).length > 0
         || (json.facts || []).length > 0
         || (json.characterAliases || []).length > 0
+        || (json.storyRecords || []).length > 0
     );
     if (hasKnownContent) return true;
 
-    const knownFields = new Set(['keywords', 'events', 'characters', 'arcs', 'facts', 'characterAliases']);
+    const knownFields = new Set(['keywords', 'events', 'characters', 'arcs', 'facts', 'characterAliases', 'storyRecords']);
     if (Object.keys(json).some(field => !knownFields.has(field))) return true;
     return isPlainObject(json.characters)
         && Object.keys(json.characters).some(field => field !== 'main');

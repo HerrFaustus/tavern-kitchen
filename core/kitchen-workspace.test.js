@@ -22,7 +22,8 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     await workspace.open('memory');
     await setImmediate();
     assert.deepEqual(calls, ['memory']);
-    assert.equal(document.querySelectorAll('[role="tab"]').length, 4);
+    assert.equal(document.querySelectorAll('[role="tab"]').length, 5);
+    assert.equal(document.querySelector('[role="tab"]').textContent, '总览');
     assert.equal(document.querySelector('[aria-selected="true"]').textContent, '剧情');
     await workspace.open('memory');
     await setImmediate();
@@ -50,10 +51,10 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     await workspace.open('lore');
     assert.equal(getKitchenMount('lore'), getKitchenMount('situation'));
     assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '设定');
-    assert.equal(document.querySelector('.tk-subnav [data-route="world"]').textContent, '总览');
+    assert.equal(document.querySelector('.tk-subnav [data-route="world"]').textContent, '世界状态');
     assert.equal(document.querySelector('.tk-subnav [data-route="situation"]').textContent, '局势');
     await workspace.open('world-records');
-    assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '总览');
+    assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '世界状态');
     assert.equal(getKitchenMount('world-records'), getKitchenMount('world'));
     assert.notEqual(getKitchenMount('world-records'), getKitchenMount('memory'));
     assert.equal(document.querySelector('[aria-selected="true"]').textContent, '世界');

@@ -1,21 +1,21 @@
 {
-  "version": "0.2.3",
-  "verified_at_utc": "2026-10-30T00:22:39.233Z",
-  "build_id": "f350223c3b734489cf03",
+  "version": "0.2.5",
+  "verified_at_utc": "2026-10-30T01:34:06.7154223Z",
+  "build_id": "14708a5322b75ae2bf20",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
   "quality": "passed",
   "unit_tests": {
-    "total": 1495,
-    "passed": 1495,
+    "total": 1510,
+    "passed": 1510,
     "failed": 0
   },
   "memory_runtime": "passed",
   "removed_source_paths": 1763,
   "removed_modules_in_build": 0,
   "browser_entries": 11,
-  "chunks": 64,
+  "chunks": 65,
   "host_static_validation": {
     "version": "1.19.0",
     "commit": "06bde939fb1e9c4c8d8641d810f0a916b5bce127"
@@ -92,7 +92,7 @@
     ],
     "verified_version": "0.1.9"
   },
-  "ui_review": "passed (embedded-only host, no device/home UI, retained business tools, drafts and navigation; offline fixture only)",
+  "ui_review": "ship: independent review of eight offline story overview screenshots; no material findings; real TauriTavern and all themes not verified",
   "world_archive_fixture": {
     "version": "0.2.0",
     "desktop": [
@@ -212,7 +212,7 @@
     },
     "errors": []
   },
-  "modules": 908,
+  "modules": 917,
   "phone_removal_fixture": {
     "version": "0.2.3",
     "desktop": [
@@ -260,5 +260,44 @@
     "manifest": "docs/removed-phone-files.json",
     "removed_paths_absent_from_publication": true,
     "legacy_phone_symbols_absent_from_built_js_css": true
+  },
+  "story_overview_fixture": {
+    "version": "0.2.5",
+    "desktop": [
+      1440,
+      1000
+    ],
+    "mobile": [
+      390,
+      844
+    ],
+    "live_host": false,
+    "real_components": [
+      "workspace and frame bridge",
+      "story overview and floor changes",
+      "built story-summary page"
+    ],
+    "mocked_dependencies": [
+      "host context and control CSS/theme",
+      "chat and world snapshots",
+      "ECharts renderer",
+      "world details and planner destination"
+    ],
+    "checks": {
+      "nav": true,
+      "defaultOverview": true,
+      "scene": true,
+      "deadline": true,
+      "person": true,
+      "evidence": true,
+      "personOverflow": true,
+      "noOverflow": true,
+      "situation": true,
+      "floor": true,
+      "stale": true,
+      "empty": true
+    },
+    "errors": [],
+    "icons_verified": false
   }
 }

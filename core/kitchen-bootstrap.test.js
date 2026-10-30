@@ -13,8 +13,8 @@ test('entry is mounted before a delayed runtime and survives late native buttons
     const entry = document.getElementById('tk-topbar');
     assert.ok(entry, 'the icon exists before runtime download or settings I/O');
     await workspace.open();
-    assert.equal(workspace.isActive('world'), true);
-    assert.match(workspace.getMount('world').textContent, /正在加载/);
+    assert.equal(workspace.isActive('overview'), true);
+    assert.match(workspace.getMount('overview').textContent, /正在加载/);
     assert.equal(started, false);
     const characters = document.createElement('div'); characters.id = 'rightNavHolder';
     entry.parentElement.append(characters);
@@ -27,15 +27,15 @@ test('entry is mounted before a delayed runtime and survives late native buttons
     assert.equal(entry.parentElement, replacement);
     resolveRuntime({ startKitchen(kitchen) {
         started = true;
-        kitchen.configure({ settingsElement: document.createElement('div'), actions: { world() {
+        kitchen.configure({ settingsElement: document.createElement('div'), actions: { overview() {
             const result = document.createElement('p'); result.textContent = '总览已加载';
-            kitchen.getMount('world').append(result);
+            kitchen.getMount('overview').append(result);
         } } });
     } });
     await ready; await setImmediate();
     assert.equal(started, true);
     assert.equal(document.querySelectorAll('#tk-topbar').length, 1);
-    assert.match(workspace.getMount('world').textContent, /总览已加载/);
+    assert.match(workspace.getMount('overview').textContent, /总览已加载/);
     workspace.failStartup(new Error('fixture unavailable'));
     assert.match(workspace.getMount('settings').textContent, /重新加载/);
     assert.equal(document.querySelectorAll('#tk-topbar').length, 1, 'loading failures never remove the native entry');
