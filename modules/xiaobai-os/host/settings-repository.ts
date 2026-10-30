@@ -4,7 +4,6 @@ import { isActionCheckFrequency, isActionCheckRule } from '../apps/dice/settings
 import type { WorldSettings } from '../apps/world/types.js';
 import type { XiaobaiOsSettings as XiaobaiOsSettingsRoot } from '../types.js';
 import { jsonValuesEqual } from './json-values-equal.js';
-import { normalizeAppOrder } from '../shell/app-order.js';
 import {
     isXiaobaiOsSettings,
     LEGACY_FOURTH_WALL_SETTING_KEYS,
@@ -44,7 +43,6 @@ export interface XiaobaiOsSettingsRepository {
     prepare: () => Promise<XiaobaiOsSettings>;
     read: () => XiaobaiOsSettings | null;
     setEnabled: (enabled: boolean) => Promise<XiaobaiOsSettings>;
-    setAppOrder: (order: readonly string[]) => Promise<XiaobaiOsSettings>;
     setMapAutoMaintenance: (enabled: boolean) => Promise<XiaobaiOsSettings>;
     setMapProjection: (enabled: boolean) => Promise<XiaobaiOsSettings>;
     setDiceFeature: (feature: DiceFeature, enabled: boolean) => Promise<XiaobaiOsSettings>;
@@ -251,16 +249,6 @@ export function createSettingsRepository(adapter: XiaobaiOsSettingsAdapter): Xia
         });
     }
 
-    function setAppOrder(order: readonly string[]): Promise<XiaobaiOsSettings> {
-        const normalized = normalizeAppOrder(order);
-        if (!Array.isArray(order) || normalized.length !== order.length) {
-            return Promise.reject(new TypeError('invalid_app_order'));
-        }
-        return mutate(next => ({ ...next, appOrder: normalized }));
-    }
-
-
-
     function setDiceFeature(feature: DiceFeature, enabled: boolean): Promise<XiaobaiOsSettings> {
         if (feature !== 'actionChecksEnabled' && feature !== 'encountersEnabled') {
             throw new TypeError('invalid Dice feature');
@@ -333,7 +321,6 @@ export function createSettingsRepository(adapter: XiaobaiOsSettingsAdapter): Xia
         prepare,
         read,
         setEnabled,
-        setAppOrder,
         setMapAutoMaintenance,
         setMapProjection,
         setDiceFeature,

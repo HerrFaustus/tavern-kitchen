@@ -8,13 +8,9 @@ import type { XiaobaiOsAppDescriptor, XiaobaiOsAppRuntimeRouter } from '../types
 import type { CapturedChatBinding } from '../kernel/contracts.js';
 import { createStorageId } from '../kernel/identity.js';
 import type { AppStatus } from '../kernel/execution-scope.js';
-import { xiaobaiOsLaunchers } from '../shell/app-launchers.js';
-import { createQuickLauncher } from './quick-launcher.js';
-import { normalizeAppOrder, orderApps } from '../shell/app-order.js';
 
-const BUTTON_ID = 'tavernKitchen-os-button';
 const STYLE_ID = 'tavernKitchen-os-host-styles';
-const OVERLAY_ID = 'tavernKitchen-os-overlay';
+const HOST_ID = 'tk-tool-host';
 const IFRAME_ID = 'tavernKitchen-os-iframe';
 
 type UnknownRecord = Record<string, unknown>;
@@ -40,12 +36,8 @@ export interface XiaobaiOsLifecycleOptions {
     subscribeAppStatusChanged?: (handler: (appId: string, status: AppStatus) => void) => () => void;
     getInitSnapshot?: () => XiaobaiOsLifecycleSnapshot | null;
     getAppDescriptors?: () => readonly XiaobaiOsAppDescriptor[];
-    getAppOrder?: () => readonly string[];
-    saveAppOrder?: (order: readonly string[]) => Promise<void>;
-    subscribeAppOrderChanged?: (handler: () => void) => () => void;
     getAppStatuses?: () => Readonly<Record<string, AppStatus>>;
     captureChatBinding?: () => CapturedChatBinding | null;
-    onChatRequired?: () => void;
     isChatBindingCurrent?: (captured: CapturedChatBinding) => boolean | Promise<boolean>;
     createActivationToken?: () => string;
     appRuntime?: Partial<XiaobaiOsAppRuntimeRouter>;
@@ -73,55 +65,8 @@ function isRecord(value: unknown): value is UnknownRecord {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
-
-/** Bento launcher mark: one primary window tile plus two stacked widget tiles. */
-const LAUNCHER_ICON_TILES: readonly Readonly<Record<string, string>>[] = [
-    { x: '2.5', y: '2.5', width: '11', height: '19', rx: '3.5' },
-    { x: '15.5', y: '2.5', width: '6', height: '8.5', rx: '2.5', opacity: '.6' },
-    { x: '15.5', y: '13', width: '6', height: '8.5', rx: '2.5', opacity: '.85' },
-];
-
-function createLauncherIcon(documentTarget: Document): SVGSVGElement {
-    const icon = documentTarget.createElementNS(SVG_NAMESPACE, 'svg');
-    icon.setAttribute('viewBox', '0 0 24 24');
-    icon.setAttribute('fill', 'currentColor');
-    icon.setAttribute('aria-hidden', 'true');
-    icon.setAttribute('focusable', 'false');
-    for (const tile of LAUNCHER_ICON_TILES) {
-        const rect = documentTarget.createElementNS(SVG_NAMESPACE, 'rect');
-        for (const [name, value] of Object.entries(tile)) {
-            rect.setAttribute(name, value);
-        }
-        icon.append(rect);
-    }
-    return icon;
-}
-
-function createLauncherButton(documentTarget: Document): HTMLButtonElement {
-    const button = documentTarget.createElement('button');
-    button.id = BUTTON_ID;
-    button.type = 'button';
-    button.className = 'tavernKitchen-os-button interactable';
-    button.title = '后厨工作台';
-    button.setAttribute('aria-label', '后厨工作台');
-    button.setAttribute('aria-haspopup', 'dialog');
-    button.setAttribute('aria-controls', OVERLAY_ID);
-    button.append(createLauncherIcon(documentTarget));
-    return button;
-}
-
-function insertLauncher(documentTarget: Document, button: HTMLElement): void {
-    const sendButton = documentTarget.getElementById('send_but');
-    if (!sendButton) {
-        throw new Error('xiaobai_os_send_button_unavailable');
-    }
-    const previewButton = documentTarget.getElementById('message_preview_btn');
-    (previewButton || sendButton).before(button);
-}
-
 /**
- * Creates an isolated Xiaobai OS host lifecycle.
+ * Manages the retained tools inside the shared Kitchen workspace.
  *
  */
 export function createXiaobaiOsLifecycle({
@@ -137,9 +82,6 @@ export function createXiaobaiOsLifecycle({
     subscribeAppStatusChanged = () => () => {},
     getInitSnapshot = () => ({}),
     getAppDescriptors = () => [],
-    getAppOrder = () => [],
-    saveAppOrder,
-    subscribeAppOrderChanged = () => () => {},
     getAppStatuses = () => ({}),
     captureChatBinding = () => null,
     isChatBindingCurrent = () => true,
@@ -155,16 +97,13 @@ export function createXiaobaiOsLifecycle({
     const resolvedFrameSrc = frameSrc;
 
     let initialized = false;
-    let launcher: HTMLElement | null = null;
-    let shortcuts: ReturnType<typeof createQuickLauncher> | null = null;
     let initialAppId: string | null = null;
-    let overlay: HTMLDialogElement | null = null;
+    let container: HTMLDivElement | null = null;
     let iframe: HTMLIFrameElement | null = null;
     let bridge: XiaobaiOsHostFrameBridge | null = null;
     let unsubscribeChatChanged: (() => void) | null = null;
     let unsubscribeAppDescriptorsChanged: (() => void) | null = null;
     let unsubscribeAppStatusChanged: (() => void) | null = null;
-    let unsubscribeAppOrderChanged: (() => void) | null = null;
     let themeObserver: MutationObserver | null = null;
     let activeApp: ActiveApp | null = null;
     let pendingApp: ActiveApp | null = null;
@@ -261,7 +200,6 @@ export function createXiaobaiOsLifecycle({
 
     function handleAppDescriptorsChanged(): void {
         const apps = getAppDescriptors();
-        shortcuts?.refresh();
         const availableIds = new Set(apps.map(app => app.id));
         if (
             (activeApp && !availableIds.has(activeApp.appId))
@@ -281,13 +219,7 @@ export function createXiaobaiOsLifecycle({
         if (bridge?.isReady()) { bridge.post('os/app-state', { appId, status }); }
     }
 
-    function handleAppOrderChanged(): void {
-        shortcuts?.refresh();
-        if (bridge?.isReady()) { bridge.post('os/app-order-changed', { appOrder: getAppOrder() }); }
-    }
-
     async function closeWindow(reason = 'closed'): Promise<void> {
-        shortcuts?.hide(false);
         initialAppId = null;
         generation += 1;
         const deactivation = deactivateActiveApp(reason);
@@ -295,12 +227,10 @@ export function createXiaobaiOsLifecycle({
         bridge = null;
         windowOpenPromise = null;
         stopThemeObserver();
-        overlay?.close();
-        if (embeddedMount && reason === 'frame-close') { onEmbeddedClose?.(); }
-        overlay?.remove();
-        overlay = null;
+        if (reason === 'frame-close') { onEmbeddedClose?.(); }
+        container?.remove();
+        container = null;
         iframe = null;
-        if (reason === 'closed' || reason === 'frame-close') { launcher?.focus({ preventScroll: true }); }
         await Promise.all([
             deactivation,
             Promise.resolve().then(() => appRuntime.handleWindowClosed?.(reason)).catch(reportError),
@@ -308,7 +238,6 @@ export function createXiaobaiOsLifecycle({
     }
 
     function handleThemeChanged(): void {
-        shortcuts?.updateTheme();
         if (!bridge?.isReady()) {
             return;
         }
@@ -355,7 +284,6 @@ export function createXiaobaiOsLifecycle({
                 ...snapshot,
                 apps: appDescriptorsWithStatus(),
                 initialAppId,
-                appOrder: getAppOrder(),
             });
             initialAppId = null;
         } catch (error) {
@@ -375,27 +303,8 @@ export function createXiaobaiOsLifecycle({
             return;
         }
         const { type, requestId = '', payload = {} } = message;
-        if (type === 'os/set-app-order') {
-            const order = isRecord(payload) ? payload.appOrder : undefined;
-            if (!saveAppOrder || !Array.isArray(order) || normalizeAppOrder(order).length !== order.length) {
-                frameBridge.post('os/app-order-result', { ok: false, error: 'invalid_app_order' }, requestId);
-                return;
-            }
-            try {
-                await saveAppOrder(order);
-                if (openGeneration !== generation || frameBridge !== bridge) { return; }
-                frameBridge.post('os/app-order-result', { ok: true, appOrder: getAppOrder() }, requestId);
-            } catch (error) {
-                if (openGeneration !== generation || frameBridge !== bridge) { return; }
-                frameBridge.post('os/app-order-result', {
-                    ok: false, error: 'app_order_save_failed', message: '顺序未能保存，请重试。',
-                }, requestId);
-                reportError(error);
-            }
-            return;
-        }
         if (type === 'os/close') {
-            if (embeddedMount && onEmbeddedClose) { onEmbeddedClose(); return; }
+            if (onEmbeddedClose) { onEmbeddedClose(); return; }
             await closeWindow('frame-close');
             return;
         }
@@ -598,10 +507,9 @@ export function createXiaobaiOsLifecycle({
         if (appId && !getAppDescriptors().some(app => app.id === appId)) { return false; }
         // Embedded tools must never fall back to the legacy desktop/modal during startup.
         const mount = embeddedMount?.();
-        if (embeddedMount && (!appId || !mount?.isConnected)) { return false; }
-        shortcuts?.hide(false);
+        if (!appId || !mount?.isConnected) { return false; }
         initialAppId = appId || null;
-        if (overlay?.isConnected) {
+        if (container?.isConnected) {
             if (bridge?.isReady()) {
                 bridge.post('os/navigate', { appId: initialAppId });
                 initialAppId = null;
@@ -611,30 +519,19 @@ export function createXiaobaiOsLifecycle({
         }
         generation += 1;
         const openGeneration = generation;
-        overlay = documentTarget.createElement('dialog');
-        overlay.id = OVERLAY_ID;
-        overlay.className = 'tavernKitchen-os-overlay';
-        overlay.setAttribute('aria-label', launcher?.getAttribute('aria-label') ?? '');
-        overlay.addEventListener('cancel', event => {
-            event.preventDefault();
-            invoke(() => closeWindow());
-        });
+        container = documentTarget.createElement('div');
+        container.id = HOST_ID;
+        container.className = 'tk-embedded-host';
+        container.setAttribute('aria-label', '后厨工具');
         iframe = documentTarget.createElement('iframe');
         iframe.id = IFRAME_ID;
         iframe.className = 'tavernKitchen-os-frame';
         onFrameCreated?.(iframe);
-        iframe.src = resolvedFrameSrc + (embeddedMount ? '?embedded=1' : '');
+        iframe.src = resolvedFrameSrc;
         iframe.title = '后厨工作台';
         iframe.setAttribute('allow', 'clipboard-read; clipboard-write');
-        overlay.append(iframe);
-        if (mount) {
-            overlay.className = 'tk-embedded-host';
-            overlay.setAttribute('open', '');
-            mount.append(overlay);
-        } else {
-            documentTarget.body.append(overlay);
-            overlay.showModal();
-        }
+        container.append(iframe);
+        mount.append(container);
         bridge = bridgeFactory({
             iframe,
             windowTarget,
@@ -650,7 +547,6 @@ export function createXiaobaiOsLifecycle({
     }
 
     function handleChatChanged(): void {
-        shortcuts?.hide(false);
         invoke(async () => {
             await appRuntime.cancelAll?.('chat-changed');
             await closeWindow('chat-changed');
@@ -670,33 +566,9 @@ export function createXiaobaiOsLifecycle({
             return true;
         }
         addStylesheet();
-        if (!embeddedMount) {
-        launcher = documentTarget.getElementById(BUTTON_ID);
-        if (!launcher) {
-            launcher = createLauncherButton(documentTarget);
-            insertLauncher(documentTarget, launcher);
-        }
-        shortcuts = createQuickLauncher({
-            anchor: launcher,
-            documentTarget,
-            windowTarget,
-            getApps: () => {
-                const ids = new Set(getAppDescriptors().map(app => app.id));
-                return orderApps(xiaobaiOsLaunchers, getAppOrder()).filter(app => ids.has(app.id));
-            },
-            getTheme: () => getInitSnapshot()?.theme === 'dark' ? 'dark' : 'light',
-            canOpen,
-            launch: open,
-            onVisibilityChange: visible => {
-                if (visible) { startThemeObserver(); }
-                else if (!overlay) { stopThemeObserver(); }
-            },
-        });
-        }
         unsubscribeChatChanged = subscribeChatChanged(handleChatChanged);
         unsubscribeAppDescriptorsChanged = subscribeAppDescriptorsChanged(handleAppDescriptorsChanged);
         unsubscribeAppStatusChanged = subscribeAppStatusChanged(handleAppStatusChanged);
-        unsubscribeAppOrderChanged = subscribeAppOrderChanged(handleAppOrderChanged);
         windowTarget.addEventListener('pagehide', handlePageHide);
         invoke(() => appRuntime.startBackground?.());
         initialized = true;
@@ -704,7 +576,7 @@ export function createXiaobaiOsLifecycle({
     }
 
     async function cleanup(): Promise<void> {
-        if (!initialized && !launcher && !overlay && !documentTarget.getElementById(STYLE_ID)) {
+        if (!initialized && !container && !documentTarget.getElementById(STYLE_ID)) {
             return;
         }
         generation += 1;
@@ -718,13 +590,7 @@ export function createXiaobaiOsLifecycle({
         unsubscribeAppDescriptorsChanged = null;
         unsubscribeAppStatusChanged?.();
         unsubscribeAppStatusChanged = null;
-        unsubscribeAppOrderChanged?.();
-        unsubscribeAppOrderChanged = null;
         windowTarget.removeEventListener('pagehide', handlePageHide);
-        shortcuts?.destroy();
-        shortcuts = null;
-        launcher?.remove();
-        launcher = null;
         documentTarget.getElementById(STYLE_ID)?.remove();
         initialized = false;
         await Promise.all([cancellation, closing, stopping, ...pendingOperations].map(operation => operation.catch(reportError)));
@@ -736,6 +602,6 @@ export function createXiaobaiOsLifecycle({
         closeWindow,
         cleanup,
         isInitialized: () => initialized,
-        isOpen: () => !!overlay?.isConnected,
+        isOpen: () => !!container?.isConnected,
     });
 }

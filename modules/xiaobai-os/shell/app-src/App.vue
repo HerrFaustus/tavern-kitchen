@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, type Component } from 'vue';
 import { xiaobaiOsApps, type XiaobaiOsAppDefinition } from '../app-catalog.js';
-import XiaobaiOsDevice from './components/XiaobaiOsDevice.vue';
+import KitchenToolView from './components/KitchenToolView.vue';
 import { createFrameBridge, HostRequestError, type FrameMessage } from './frame-bridge.js';
-import { mergeVisibleAppOrder, orderApps } from '../app-order.js';
 import { observeBackgroundTask } from '../../../../shared/common/async-errors.js';
 
 
@@ -26,11 +25,7 @@ interface HostAppDescriptor {
 interface InitPayload {
     theme?: 'light' | 'dark';
     initialAppId?: string | null;
-    appOrder?: string[];
     apps?: HostAppDescriptor[];
-    chat?: {
-        characterAvatar?: string;
-    } | null;
 }
 
 interface PendingAppOpening {
@@ -38,15 +33,12 @@ interface PendingAppOpening {
     latestState?: unknown;
 }
 
-const embedded = new URLSearchParams(window.location.search).get('embedded') === '1';
 const bridge = createFrameBridge();
 const root = ref<HTMLElement | null>(null);
-const device = ref<InstanceType<typeof XiaobaiOsDevice> | null>(null);
+const device = ref<InstanceType<typeof KitchenToolView> | null>(null);
 const initialized = ref(false);
 const theme = ref<'light' | 'dark'>('light');
 const availableIds = ref<Set<string>>(new Set());
-const appOrder = ref<string[]>([]);
-const characterAvatar = ref('');
 const activeApp = ref<XiaobaiOsAppDefinition | null>(null);
 const activeComponent = shallowRef<Component | null>(null);
 const activeState = ref<unknown>(null);
@@ -64,13 +56,7 @@ let unsubscribe = () => {};
 let navigationGeneration = 0;
 let pendingAppOpening: PendingAppOpening | null = null;
 
-const availableApps = computed(() => orderApps(xiaobaiOsApps, appOrder.value).filter(app => availableIds.value.has(app.id)));
-
-async function saveAppOrder(visibleOrder: readonly string[] | null): Promise<void> {
-    const nextOrder = visibleOrder === null ? [] : mergeVisibleAppOrder(appOrder.value, visibleOrder);
-    const result = await bridge.request('os/set-app-order', { appOrder: nextOrder }) as { appOrder: string[] };
-    appOrder.value = result.appOrder;
-}
+const availableApps = computed(() => xiaobaiOsApps.filter(app => availableIds.value.has(app.id)));
 
 function applyAvailableApps(apps: readonly HostAppDescriptor[]): void {
     const nextIds = new Set(apps.map(app => String(app.id)));
@@ -92,9 +78,7 @@ function applyInit(payload: InitPayload): void {
     navigationGeneration += 1;
     pendingAppOpening = null;
     theme.value = payload.theme === 'dark' ? 'dark' : 'light';
-    appOrder.value = payload.appOrder ?? [];
     applyAvailableApps(payload.apps || []);
-    characterAvatar.value = String(payload.chat?.characterAvatar || '');
     activeApp.value = null;
     activeComponent.value = null;
     activeState.value = null;
@@ -106,15 +90,12 @@ function applyInit(payload: InitPayload): void {
 }
 
 function navigate(appId: string | null): void {
-    if (!appId) { goHome(); return; }
+    if (!appId) { return; }
     const app = availableApps.value.find(item => item.id === appId);
     if (app && activeApp.value?.id !== app.id) { observeBackgroundTask(openApp(app), { source: import.meta.url, operation: "navigate" }); }
 }
 
 function handleHostMessage(message: FrameMessage): void {
-    if (message.type === 'os/app-order-changed') {
-        appOrder.value = (message.payload as { appOrder: string[] }).appOrder;
-    }
     if (message.type === 'os/init') {
         applyInit((message.payload || {}) as InitPayload);
     }
@@ -291,61 +272,11 @@ function reloadFrame(): void {
     window.location.reload();
 }
 
-function goHome(): void {
-    if (!activeApp.value) { device.value?.finishHomeEditing(); return; }
-    navigationGeneration += 1;
-    pendingAppOpening = null;
-    bridge.post('app/deactivate', { appId: activeApp.value?.id || '' });
-    bridge.clearAppSession();
-    activeApp.value = null;
-    activeComponent.value = null;
-    activeState.value = null;
-    appLoading.value = false;
-    appFailure.value = null;
-}
-
-function goBack(): void {
-    if (!device.value?.back() && !embedded) { goHome(); }
-}
-
-function close(): void {
-    if (embedded) { bridge.post('os/close'); return; }
-    navigationGeneration += 1;
-    pendingAppOpening = null;
-    bridge.post('os/close');
-    bridge.clearAppSession();
-}
-
+function goBack(): void { device.value?.back(); }
 function handleKeydown(event: KeyboardEvent): void {
-    if (event.key === 'Escape') {
-        if (event.defaultPrevented) { return; }
-        event.preventDefault();
-        if (embedded) {
-            if (!device.value?.back()) { close(); }
-        } else if (activeApp.value) {
-            goBack();
-        } else if (!device.value?.back()) {
-            close();
-        }
-        return;
-    }
-    if (embedded || event.key !== 'Tab' || !root.value) {
-        return;
-    }
-    const focusable = Array.from(root.value.querySelectorAll<HTMLElement>('button:not(:disabled), [href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), summary, [tabindex]:not([tabindex="-1"])'))
-        .filter(element => !element.closest('[inert]') && element.getClientRects().length > 0);
-    if (focusable.length === 0) {
-        return;
-    }
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-    }
+    if (event.key !== 'Escape' || event.defaultPrevented) { return; }
+    event.preventDefault();
+    if (!device.value?.back()) { bridge.post('os/close'); }
 }
 
 onMounted(async () => {
@@ -374,20 +305,16 @@ onBeforeUnmount(() => {
         ref="root"
         class="xiaobai-os-shell"
         :class="`theme-${theme}`"
-        role="dialog"
-        :aria-modal="embedded ? undefined : true"
+        role="region"
         aria-label="后厨工作台"
         tabindex="-1"
         @keydown="handleKeydown"
-        @click.self="close"
     >
         <div v-if="errorMessage" class="xiaobai-os-error" role="alert">{{ errorMessage }}</div>
         <div v-if="!initialized" class="xiaobai-os-loading" role="status">正在启动后厨工作台</div>
-        <XiaobaiOsDevice
+        <KitchenToolView
             v-else
             ref="device"
-            :embedded="embedded"
-            :apps="availableApps"
             :active-app="activeApp"
             :active-component="activeComponent"
             :active-state="activeState"
@@ -395,12 +322,7 @@ onBeforeUnmount(() => {
             :app-loading="appLoading"
             :app-render-key="appRenderKey"
             :bridge="bridge"
-            :character-avatar="characterAvatar"
-            :save-app-order="saveAppOrder"
-            @open-app="openApp"
             @back="goBack"
-            @home="goHome"
-            @close="close"
             @render-failed="handleRenderFailure"
             @retry="retryApp"
             @reload="reloadFrame"

@@ -1,0 +1,31 @@
+{
+  "version": "0.2.3",
+  "reason": "Remove the unused standalone phone UI and its resources; keep embedded business tools.",
+  "paths": [
+    "modules/xiaobai-os/apps/agent-api/ui/icon.svg",
+    "modules/xiaobai-os/apps/dice/ui/icon.svg",
+    "modules/xiaobai-os/apps/map/ui/icon.svg",
+    "modules/xiaobai-os/apps/world/ui/icon.svg",
+    "modules/xiaobai-os/brand/mascot/README.md",
+    "modules/xiaobai-os/brand/mascot/assets.ts",
+    "modules/xiaobai-os/brand/mascot/build.mjs",
+    "modules/xiaobai-os/brand/mascot/design.ts",
+    "modules/xiaobai-os/brand/mascot/mark.svg",
+    "modules/xiaobai-os/brand/mascot/model.ts",
+    "modules/xiaobai-os/brand/mascot/outfit-model.ts",
+    "modules/xiaobai-os/brand/mascot/outfit.ts",
+    "modules/xiaobai-os/brand/mascot/performance.ts",
+    "modules/xiaobai-os/brand/mascot/portrait.svg",
+    "modules/xiaobai-os/brand/mascot/reactions.ts",
+    "modules/xiaobai-os/brand/mascot/svg.ts",
+    "modules/xiaobai-os/host/quick-launcher.css",
+    "modules/xiaobai-os/host/quick-launcher.ts",
+    "modules/xiaobai-os/shell/app-launchers.ts",
+    "modules/xiaobai-os/shell/app-order.ts",
+    "modules/xiaobai-os/shell/app-src/components/XiaobaiOsDevice.vue",
+    "modules/xiaobai-os/shell/app-src/components/XiaobaiOsHome.vue",
+    "modules/xiaobai-os/shell/app-src/components/XiaobaiOsNavigation.vue",
+    "modules/xiaobai-os/shell/app-src/components/XiaobaiOsSystemBar.vue",
+    "modules/xiaobai-os/shell/app-src/styles/desktop-order.css"
+  ]
+}

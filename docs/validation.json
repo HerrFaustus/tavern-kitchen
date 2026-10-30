@@ -1,7 +1,7 @@
 {
-  "version": "0.2.2",
-  "verified_at_utc": "2026-10-30T00:07:31.891Z",
-  "build_id": "feca8a68b1d1769c5ea8",
+  "version": "0.2.3",
+  "verified_at_utc": "2026-10-30T00:22:39.233Z",
+  "build_id": "f350223c3b734489cf03",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
@@ -92,7 +92,7 @@
     ],
     "verified_version": "0.1.9"
   },
-  "ui_review": "passed (delayed first paint, no embedded phone chrome or route transitions, rapid navigation and retained drafts; offline fixture only)",
+  "ui_review": "passed (embedded-only host, no device/home UI, retained business tools, drafts and navigation; offline fixture only)",
   "world_archive_fixture": {
     "version": "0.2.0",
     "desktop": [
@@ -211,5 +211,54 @@
       "reducedMotion": true
     },
     "errors": []
+  },
+  "modules": 908,
+  "phone_removal_fixture": {
+    "version": "0.2.3",
+    "desktop": [
+      1440,
+      1000
+    ],
+    "mobile": [
+      390,
+      844
+    ],
+    "live_host": false,
+    "stylesheet_delay_ms": 400,
+    "real_components": [
+      "native drawer and controls",
+      "workspace and frame bridge",
+      "built tool shell, story and planner pages",
+      "OS lifecycle and feature controllers"
+    ],
+    "mocked_dependencies": [
+      "host globals and chat data",
+      "file API and model gateways",
+      "ECharts renderer"
+    ],
+    "checks": {
+      "startupClosed": true,
+      "noStartupPhone": true,
+      "waitsForTheme": true,
+      "plainContainer": true,
+      "noStandaloneMode": true,
+      "preloadedStyles": true,
+      "noPhoneChrome": true,
+      "draftPreserved": true,
+      "noRouteAnimations": true,
+      "noFlashWhileLoading": true,
+      "rapidNavigation": true,
+      "plannerNoEntrance": true,
+      "storyNoEntrance": true,
+      "mobileOverflow": false,
+      "reducedMotion": true
+    },
+    "errors": []
+  },
+  "phone_removal": {
+    "source_files": 25,
+    "manifest": "docs/removed-phone-files.json",
+    "removed_paths_absent_from_publication": true,
+    "legacy_phone_symbols_absent_from_built_js_css": true
   }
 }

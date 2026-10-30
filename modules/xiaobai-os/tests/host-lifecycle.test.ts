@@ -8,21 +8,15 @@ import type { CapturedChatBinding } from '../kernel/contracts.js';
 
 function harness(t: TestContext, options: XiaobaiOsLifecycleOptions = {}) {
     const { document, window } = parseHTML('<html><head></head><body><button id="send_but"></button></body></html>');
-    // linkedom has no modal-dialog implementation; only lifecycle transitions are under test.
-    const createElement = document.createElement.bind(document);
-    t.mock.method(document, 'createElement', ((name: string) => {
-        const element = createElement(name);
-        if (name === 'dialog') {
-            Object.assign(element, { showModal() {}, close() {} });
-        }
-        return element;
-    }) as typeof document.createElement);
+    const mount = document.createElement('div'); document.body.append(mount);
     let frameOptions: XiaobaiOsFrameBridgeOptions | undefined;
     const bridge = { post: () => true, isReady: () => true, dispose() {} };
     const lifecycle = createXiaobaiOsLifecycle({
         documentTarget: document as unknown as Document,
         windowTarget: window as unknown as Window,
         stylesheetHref: '/host.css', frameSrc: '/os.html',
+        embeddedMount: () => mount as unknown as HTMLElement,
+        getAppDescriptors: () => [{ id: 'map', name: '地图', description: '', accent: '' }],
         captureChatBinding: () => ({
             identityKey: 'chat-a', binding: { kind: 'character', ownerLocator: 'avatar.png', chatId: 'chat-a' }, reference: null,
         }),
@@ -70,9 +64,10 @@ test('embedded workspace opens inside its mount without adding a chat launcher o
     h.lifecycle.init();
     assert.equal(h.document.getElementById('tavernKitchen-os-button'), null);
     assert.equal(h.lifecycle.open('map'), true);
+    assert.equal(h.document.querySelector('dialog'), null, 'tool host is a plain container');
     const frame = mount.querySelector('iframe');
     assert.ok(frame);
-    assert.equal(frame.getAttribute('src'), '/os.html?embedded=1');
+    assert.equal(frame.getAttribute('src'), '/os.html');
     const post = t.mock.method(h.bridge, 'post', () => true);
     assert.equal(h.lifecycle.open('world'), true);
     assert.equal(mount.querySelector('iframe'), frame);
@@ -135,7 +130,7 @@ test('window close and global cleanup report failures while completing the remai
         },
     });
     h.lifecycle.init();
-    assert.equal(h.lifecycle.open(), true);
+    assert.equal(h.lifecycle.open('map'), true);
     assert.ok(h.frameOptions());
     await h.lifecycle.closeWindow();
     assert.equal(h.lifecycle.isOpen(), false);
@@ -158,7 +153,7 @@ test('a failed window-open task is logged once and cannot publish a successful i
     });
     const post = t.mock.method(h.bridge, 'post', () => true);
     h.lifecycle.init();
-    h.lifecycle.open();
+    h.lifecycle.open('map');
     await h.frameOptions()?.onReady?.(h.bridge);
     await setImmediate();
     assert.deepEqual(failures, [error]);

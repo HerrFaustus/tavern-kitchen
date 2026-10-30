@@ -1,5 +1,5 @@
 {
-  "buildId": "feca8a68b1d1769c5ea8",
+  "buildId": "f350223c3b734489cf03",
   "entries": {
     "apps/debug-panel": {
       "file": "apps/debug-panel-D8bR9Oy2.js",
@@ -18,9 +18,9 @@
       ]
     },
     "apps/xiaobai-os": {
-      "file": "apps/xiaobai-os-Bcm_zvZz.js",
+      "file": "apps/xiaobai-os-CZr3Y7lx.js",
       "css": [
-        "assets/xiaobai-os-D4R4PS39.css"
+        "assets/xiaobai-os-BSXWZSzi.css"
       ]
     },
     "host/plugin": {
@@ -40,7 +40,7 @@
       "css": []
     },
     "runtime/map-projection": {
-      "file": "runtime/map-projection-D3XU1VTF.js",
+      "file": "runtime/map-projection-jpIsroFE.js",
       "css": [
         "assets/AppDialog-unQXjKJp.css",
         "assets/MapBrowser-BmTZpZfq.css"
@@ -88,22 +88,22 @@
         "assets/settings-ui-3BrbRAIN.css"
       ]
     },
-    "apps/xiaobai-os-Bcm_zvZz.js": {
+    "apps/xiaobai-os-CZr3Y7lx.js": {
       "imports": [
         "shared/async-errors-DrD0vbna.js",
         "shared/preload-helper-Ddh_c1lL.js",
-        "shared/app-navigation-DRvopQpQ.js",
-        "shared/app-order-BvM42fg4.js",
+        "shared/app-navigation-3vUv97vF.js",
+        "shared/descriptor-DXKR8BqN.js",
         "shared/frame-bridge-DX0IfUsH.js"
       ],
       "dynamicImports": [
-        "shared/DiceApp-DZe5qABO.js",
-        "shared/AgentApiApp-Dv0FCdQf.js",
-        "shared/MapApp-CZSX5cnI.js",
-        "shared/WorldApp-RzVmHxK2.js"
+        "shared/DiceApp-B_QmRk9N.js",
+        "shared/AgentApiApp-j7QWKejS.js",
+        "shared/MapApp-BoWbrbPV.js",
+        "shared/WorldApp-CmyW3hE0.js"
       ],
       "css": [
-        "assets/xiaobai-os-D4R4PS39.css"
+        "assets/xiaobai-os-BSXWZSzi.css"
       ]
     },
     "host/plugin.js": {
@@ -112,7 +112,7 @@
         "shared/preload-helper-Ddh_c1lL.js"
       ],
       "dynamicImports": [
-        "shared/kitchen-runtime-nFonO5Km.js"
+        "shared/kitchen-runtime-BNZl52_z.js"
       ],
       "css": []
     },
@@ -142,10 +142,10 @@
       "dynamicImports": [],
       "css": []
     },
-    "runtime/map-projection-D3XU1VTF.js": {
+    "runtime/map-projection-jpIsroFE.js": {
       "imports": [
-        "shared/app-navigation-DRvopQpQ.js",
-        "shared/MapBrowser-ByZ4X8NH.js",
+        "shared/app-navigation-3vUv97vF.js",
+        "shared/MapBrowser-Bv9mxG6l.js",
         "shared/semantics-DaKwiMZH.js"
       ],
       "dynamicImports": [],
@@ -172,33 +172,33 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/AgentApiApp-Dv0FCdQf.js": {
+    "shared/AgentApiApp-j7QWKejS.js": {
       "imports": [
         "shared/async-errors-DrD0vbna.js",
         "shared/provider-resolution-BK2eGVPk.js",
         "shared/settings-markup-Dk8VLIob.js",
         "shared/settings-panel-THl07ar_.js",
-        "shared/app-navigation-DRvopQpQ.js"
+        "shared/app-navigation-3vUv97vF.js"
       ],
       "dynamicImports": [],
       "css": [
         "assets/AgentApiApp-CgFnIxxb.css"
       ]
     },
-    "shared/AppDialog-DvRZBgOT.js": {
+    "shared/AppDialog-_Dt2TFVS.js": {
       "imports": [
-        "shared/app-navigation-DRvopQpQ.js"
+        "shared/app-navigation-3vUv97vF.js"
       ],
       "dynamicImports": [],
       "css": [
         "assets/AppDialog-unQXjKJp.css"
       ]
     },
-    "shared/DiceApp-DZe5qABO.js": {
+    "shared/DiceApp-B_QmRk9N.js": {
       "imports": [
-        "shared/app-navigation-DRvopQpQ.js",
+        "shared/app-navigation-3vUv97vF.js",
         "shared/frame-bridge-DX0IfUsH.js",
-        "shared/AppDialog-DvRZBgOT.js",
+        "shared/AppDialog-_Dt2TFVS.js",
         "shared/sheet-copy-BwN_BiNY.js"
       ],
       "dynamicImports": [],
@@ -207,12 +207,12 @@
         "assets/DiceApp-Bw5eY5-M.css"
       ]
     },
-    "shared/MapApp-CZSX5cnI.js": {
+    "shared/MapApp-BoWbrbPV.js": {
       "imports": [
-        "shared/app-navigation-DRvopQpQ.js",
-        "shared/MapBrowser-ByZ4X8NH.js",
+        "shared/app-navigation-3vUv97vF.js",
+        "shared/MapBrowser-Bv9mxG6l.js",
         "shared/semantics-DaKwiMZH.js",
-        "shared/AppDialog-DvRZBgOT.js"
+        "shared/AppDialog-_Dt2TFVS.js"
       ],
       "dynamicImports": [],
       "css": [
@@ -220,25 +220,25 @@
         "assets/MapBrowser-BmTZpZfq.css"
       ]
     },
-    "shared/MapBrowser-ByZ4X8NH.js": {
+    "shared/MapBrowser-Bv9mxG6l.js": {
       "imports": [
         "shared/preload-helper-Ddh_c1lL.js",
-        "shared/app-navigation-DRvopQpQ.js",
+        "shared/app-navigation-3vUv97vF.js",
         "shared/semantics-DaKwiMZH.js",
-        "shared/AppDialog-DvRZBgOT.js"
+        "shared/AppDialog-_Dt2TFVS.js"
       ],
       "dynamicImports": [
-        "shared/three-runtime-CxOtvxId.js"
+        "shared/three-runtime-BilX8vJK.js"
       ],
       "css": [
         "assets/AppDialog-unQXjKJp.css",
         "assets/MapBrowser-BmTZpZfq.css"
       ]
     },
-    "shared/WorldApp-RzVmHxK2.js": {
+    "shared/WorldApp-CmyW3hE0.js": {
       "imports": [
         "shared/async-errors-DrD0vbna.js",
-        "shared/app-navigation-DRvopQpQ.js",
+        "shared/app-navigation-3vUv97vF.js",
         "shared/frame-bridge-DX0IfUsH.js"
       ],
       "dynamicImports": [],
@@ -260,15 +260,10 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/app-navigation-DRvopQpQ.js": {
+    "shared/app-navigation-3vUv97vF.js": {
       "imports": [
         "shared/async-errors-DrD0vbna.js"
       ],
-      "dynamicImports": [],
-      "css": []
-    },
-    "shared/app-order-BvM42fg4.js": {
-      "imports": [],
       "dynamicImports": [],
       "css": []
     },
@@ -294,17 +289,22 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/ena-planner-DCQuXoS1.js": {
+    "shared/descriptor-DXKR8BqN.js": {
+      "imports": [],
+      "dynamicImports": [],
+      "css": []
+    },
+    "shared/ena-planner-NUeR_36V.js": {
       "imports": [
         "shared/constants-CF4HAj3B.js",
         "shared/async-errors-DrD0vbna.js",
         "shared/kitchen-workspace-Cag3v_BC.js",
         "shared/identifier-BmY7aKNz.js",
         "shared/model-DeUtakGi.js",
-        "shared/kitchen-runtime-nFonO5Km.js",
+        "shared/kitchen-runtime-BNZl52_z.js",
         "shared/abort-utils-C76zWFGO.js",
         "shared/server-storage-BS1GhFn9.js",
-        "shared/host-Cu41_MF_.js",
+        "shared/host-CD0XGOBW.js",
         "shared/js-yaml-UjIS-zUH.js"
       ],
       "dynamicImports": [],
@@ -346,15 +346,7 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/host-AspkcByG.js": {
-      "imports": [
-        "shared/identifier-BmY7aKNz.js",
-        "shared/kitchen-runtime-nFonO5Km.js"
-      ],
-      "dynamicImports": [],
-      "css": []
-    },
-    "shared/host-Cu41_MF_.js": {
+    "shared/host-CD0XGOBW.js": {
       "imports": [
         "shared/preload-helper-Ddh_c1lL.js",
         "shared/identifier-BmY7aKNz.js",
@@ -367,8 +359,16 @@
       ],
       "dynamicImports": [
         "shared/server-storage-BS1GhFn9.js",
-        "shared/streaming-generation-CKawBs_5.js"
+        "shared/streaming-generation-CL_lk7dD.js"
       ],
+      "css": []
+    },
+    "shared/host-L7cp7wUy.js": {
+      "imports": [
+        "shared/identifier-BmY7aKNz.js",
+        "shared/kitchen-runtime-BNZl52_z.js"
+      ],
+      "dynamicImports": [],
       "css": []
     },
     "shared/identifier-BmY7aKNz.js": {
@@ -386,7 +386,7 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/kitchen-runtime-nFonO5Km.js": {
+    "shared/kitchen-runtime-BNZl52_z.js": {
       "imports": [
         "shared/rolldown-runtime-CRqgUL4m.js",
         "shared/constants-CF4HAj3B.js",
@@ -395,7 +395,7 @@
         "shared/preload-helper-Ddh_c1lL.js",
         "shared/provider-resolution-BK2eGVPk.js",
         "shared/sha256-BpS5FeAr.js",
-        "shared/app-order-BvM42fg4.js",
+        "shared/descriptor-DXKR8BqN.js",
         "shared/semantics-DaKwiMZH.js",
         "shared/protocol-BAxDYuLk.js",
         "shared/debug-core-BiaGo9yA.js",
@@ -404,13 +404,13 @@
       ],
       "dynamicImports": [
         "shared/gateway-Dd13J2C-.js",
-        "shared/story-summary-ZyCF66Ip.js",
+        "shared/story-summary-BxS8Hml7.js",
         "shared/var-commands-Dn982nqo.js",
         "shared/varevent-editor-CINhz1UQ.js",
         "shared/variables-core-CGQkM8FN.js",
         "shared/variables-panel-YY1yF-Pz.js",
-        "shared/ena-planner-DCQuXoS1.js",
-        "shared/host-AspkcByG.js"
+        "shared/ena-planner-NUeR_36V.js",
+        "shared/host-L7cp7wUy.js"
       ],
       "css": []
     },
@@ -559,7 +559,7 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/story-summary-ZyCF66Ip.js": {
+    "shared/story-summary-BxS8Hml7.js": {
       "imports": [
         "shared/constants-CF4HAj3B.js",
         "shared/async-errors-DrD0vbna.js",
@@ -574,10 +574,10 @@
         "shared/protocol-BAxDYuLk.js",
         "shared/debug-core-BiaGo9yA.js",
         "shared/event-manager-BErs-i52.js",
-        "shared/kitchen-runtime-nFonO5Km.js",
+        "shared/kitchen-runtime-BNZl52_z.js",
         "shared/abort-utils-C76zWFGO.js",
         "shared/server-storage-BS1GhFn9.js",
-        "shared/host-Cu41_MF_.js",
+        "shared/host-CD0XGOBW.js",
         "shared/settings-repository-2SUYMnJN.js",
         "shared/message-button-ownership-CKhaFYjS.js",
         "shared/after-ai-gate-D_oYbLoF.js",
@@ -588,11 +588,11 @@
       ],
       "css": []
     },
-    "shared/streaming-generation-CKawBs_5.js": {
+    "shared/streaming-generation-CL_lk7dD.js": {
       "imports": [
         "shared/async-errors-DrD0vbna.js",
         "shared/debug-core-BiaGo9yA.js",
-        "shared/kitchen-runtime-nFonO5Km.js",
+        "shared/kitchen-runtime-BNZl52_z.js",
         "shared/abort-utils-C76zWFGO.js",
         "shared/json-candidate-CmEyWwSp.js",
         "shared/var-commands-Dn982nqo.js"
@@ -600,9 +600,9 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/three-runtime-CxOtvxId.js": {
+    "shared/three-runtime-BilX8vJK.js": {
       "imports": [
-        "shared/MapBrowser-ByZ4X8NH.js",
+        "shared/MapBrowser-Bv9mxG6l.js",
         "shared/semantics-DaKwiMZH.js"
       ],
       "dynamicImports": [],

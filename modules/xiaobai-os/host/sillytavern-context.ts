@@ -30,11 +30,6 @@ interface SillyTavernContext {
 
 export interface XiaobaiOsShellSnapshot {
     theme: 'light' | 'dark';
-    chat: null | {
-        identity: string;
-        characterName: string;
-        characterAvatar: string;
-    };
 }
 
 export interface XiaobaiOsChatSurface {
@@ -50,23 +45,6 @@ function getSillyTavernContext(): SillyTavernContext {
 
 function captureIdentity(context: SillyTavernContext = getSillyTavernContext()): XiaobaiOsChatIdentity | null {
     return captureStoryIdentity(context);
-}
-
-function resolveCharacterAvatar(context: SillyTavernContext): string {
-    const characterId =
-        context.characterId === null || context.characterId === undefined ? '' : String(context.characterId);
-    const character = context.characters?.[characterId];
-    const avatar = typeof character?.avatar === 'string' ? character.avatar : '';
-    if (!avatar) {
-        return '';
-    }
-    if (/^(?:data:|blob:|https?:|\/)/i.test(avatar)) {
-        return avatar;
-    }
-    return `/characters/${avatar
-        .split('/')
-        .map((segment) => encodeURIComponent(segment))
-        .join('/')}`;
 }
 
 function explicitDocumentTheme(): XiaobaiOsShellSnapshot['theme'] | null {
@@ -180,16 +158,5 @@ export function getSillyTavernChatIdentity(): XiaobaiOsChatIdentity | null {
 }
 
 export function getSillyTavernShellSnapshot(): XiaobaiOsShellSnapshot {
-    const context = getSillyTavernContext();
-    const identity = captureIdentity(context);
-    return {
-        theme: resolveDocumentTheme(),
-        chat: identity
-            ? {
-                  identity: identity.key,
-                  characterName: String(context.name2 || ''),
-                  characterAvatar: resolveCharacterAvatar(context),
-              }
-            : null,
-    };
+    return { theme: resolveDocumentTheme() };
 }

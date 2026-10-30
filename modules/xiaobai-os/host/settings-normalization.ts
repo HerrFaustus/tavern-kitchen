@@ -6,7 +6,6 @@ import { normalizeWorldSettings } from '../apps/world/settings.js';
 import type { WorldSettings } from '../apps/world/types.js';
 import type { XiaobaiOsSettings as XiaobaiOsSettingsRoot } from '../types.js';
 import { jsonValuesEqual } from './json-values-equal.js';
-import { normalizeAppOrder } from '../shell/app-order.js';
 
 type UnknownRecord = Record<string, unknown>;
 const DEFAULT_OS_ENABLED = true;
@@ -36,7 +35,6 @@ function booleanOr(value: unknown, fallback: boolean): boolean {
 export function createDefaultXiaobaiOsSettings(): XiaobaiOsSettings {
     return {
         enabled: DEFAULT_OS_ENABLED,
-        appOrder: [],
         apps: {
             map: normalizeMapSettings(undefined),
             dice: normalizeDiceSettings(undefined),
@@ -54,7 +52,6 @@ export function normalizeXiaobaiOsSettings(value: unknown): XiaobaiOsSettings {
     const apps = recordOrEmpty(root.apps);
     return {
         enabled: booleanOr(root.enabled, DEFAULT_OS_ENABLED),
-        appOrder: normalizeAppOrder(root.appOrder),
         apps: {
             map: normalizeMapSettings(apps.map),
             dice: normalizeDiceSettings(apps.dice),

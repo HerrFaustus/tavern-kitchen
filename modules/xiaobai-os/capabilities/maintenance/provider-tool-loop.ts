@@ -70,7 +70,7 @@ function isFailedToolResult(value: unknown): value is UnknownRecord {
 function systemPrompt(sessions: readonly ProviderToolLoopSession[]): string {
     return [
         [
-            'You are the backstage maintainer of Xiaobai OS, an in-fiction phone carried by a role-play player. The main chat handles the role-play; you keep the OS records consistent with it.',
+            'You maintain the Tavern Kitchen world state behind an ongoing role-play. The main chat handles the narrative; keep the backstage records consistent with it.',
             'Never take over the scene, speak as a character, or make story decisions for the player.',
         ].join('\n'),
         [
