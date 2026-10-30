@@ -2,7 +2,7 @@
 // apply the same exclusions. Callers own configuration and raw-source access.
 export function applyTextFilterRules(text, rules) {
     const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    let result = String(text || '');
+    let result = String(text || '').replace(/<kitchen_summary\b[^>]*>[\s\S]*?(?:<\/kitchen_summary\s*>|$)/gi, '');
     for (const rule of rules || []) {
         const start = rule.start ?? '';
         const end = rule.end ?? '';

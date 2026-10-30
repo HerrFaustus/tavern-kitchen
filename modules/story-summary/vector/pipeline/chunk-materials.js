@@ -1,10 +1,12 @@
-import { chunkMessage } from './chunk-text.js';
+import { chunkMessage as chunkRawMessage } from './chunk-text.js';
+import { isFloorMemoryOmitted } from '../../data/store.js';
+const chunkMessage = (floor, message) => isFloorMemoryOmitted(floor) ? [] : chunkRawMessage(floor, message);
 
 // Saved inputs own an already processed floor. Later chat additions must not
 // manufacture extra chunks. Read current prose only for an absent floor or a
 // missing material whose identity is still evidenced by an orphan vector.
 export function collectChunkMaterials(chat, storedChunks, vectorDescriptors) {
-    const materials = new Map(storedChunks.map(chunk => [chunk.chunkId, chunk]));
+    const materials = new Map(storedChunks.filter(chunk => !isFloorMemoryOmitted(chunk.floor)).map(chunk => [chunk.chunkId, chunk]));
     const storedFloors = new Set(storedChunks.map(chunk => chunk.floor));
     const orphanIds = new Set(vectorDescriptors
         .filter(record => !materials.has(record.chunkId)).map(record => record.chunkId));

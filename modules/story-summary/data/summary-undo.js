@@ -80,7 +80,7 @@ function recordCollection(
     undo[generatedField] = clone(afterItems);
 }
 
-export function buildSummaryUndo(beforeJson = {}, afterJson = {}, { aliasChanged = false } = {}) {
+export function buildSummaryUndo(beforeJson = {}, afterJson = {}, { aliasChanged = false, includeAliases = false } = {}) {
     const undo = { version: UNDO_VERSION };
     const beforeCharacters = Array.isArray(beforeJson?.characters?.main) ? beforeJson.characters.main : [];
     const afterCharacters = Array.isArray(afterJson?.characters?.main) ? afterJson.characters.main : [];
@@ -121,6 +121,10 @@ export function buildSummaryUndo(beforeJson = {}, afterJson = {}, { aliasChanged
         previousField: 'previousStoryRecords', generatedField: 'generatedStoryRecords',
         changesField: 'storyRecordChanges', getKey: eventKey, forceSnapshot: aliasChanged,
     });
+    if (includeAliases) recordCollection(undo, beforeJson.characterAliases || [], afterJson.characterAliases || [], {
+        previousField: 'previousCharacterAliases', generatedField: 'generatedCharacterAliases',
+        changesField: 'characterAliasChanges', getKey: item => normalizedName(item?.from),
+    });
 
     return undo;
 }
@@ -132,6 +136,7 @@ const SNAPSHOT_PAIRS = [
     ['previousArcs', 'generatedArcs'],
     ['previousFacts', 'generatedFacts'],
     ['previousStoryRecords', 'generatedStoryRecords'],
+    ['previousCharacterAliases', 'generatedCharacterAliases'],
 ];
 
 const CHANGE_FIELDS = [
@@ -140,12 +145,13 @@ const CHANGE_FIELDS = [
     ['arcChanges', arcKey],
     ['factChanges', factKey],
     ['storyRecordChanges', eventKey],
+    ['characterAliasChanges', item => normalizedName(item?.from)],
 ];
 
 /** Read-only projection of the generation delta; maintenance must not infer changes from creation dates. */
 export function summaryBatchChanges(undo) {
     if (!undo) return [];
-    const collections = ['keywords', 'events', 'characters', 'arcs', 'facts', 'storyRecords'];
+    const collections = ['keywords', 'events', 'characters', 'arcs', 'facts', 'storyRecords', 'characterAliases'];
     return SNAPSHOT_PAIRS.flatMap(([before, after], index) => {
         const [field] = CHANGE_FIELDS[index - 1] || [];
         const changes = field && undo[field];
@@ -273,6 +279,7 @@ function collections(json) {
         arcs: Array.isArray(json.arcs) ? json.arcs : [],
         facts: Array.isArray(json.facts) ? json.facts : [],
         storyRecords: Array.isArray(json.storyRecords) ? json.storyRecords : [],
+        characterAliases: Array.isArray(json.characterAliases) ? json.characterAliases : [],
     };
 }
 
@@ -287,6 +294,7 @@ export function applySummaryUndo(json = {}, rawUndo) {
         ['previousArcs', 'generatedArcs', 'arcs'],
         ['previousFacts', 'generatedFacts', 'facts'],
         ['previousStoryRecords', 'generatedStoryRecords', 'storyRecords'],
+        ['previousCharacterAliases', 'generatedCharacterAliases', 'characterAliases'],
     ];
     for (const [, generatedField, collection] of snapshots) {
         if (Object.hasOwn(undo, generatedField) && !sameJson(current[collection], undo[generatedField])) {
@@ -300,6 +308,7 @@ export function applySummaryUndo(json = {}, rawUndo) {
         ['arcChanges', 'arcs', arcKey],
         ['factChanges', 'facts', factKey],
         ['storyRecordChanges', 'storyRecords', eventKey],
+        ['characterAliasChanges', 'characterAliases', item => normalizedName(item?.from)],
     ];
     for (const [field, collection, getKey] of changeSets) {
         if (undo[field] && !changesMatch(current[collection], undo[field], getKey)) return null;

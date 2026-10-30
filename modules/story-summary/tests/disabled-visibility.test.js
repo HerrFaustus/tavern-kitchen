@@ -33,6 +33,7 @@ function fixture() {
         events: null,
         storySummaryTeardown: null,
         summaryDiagnostics: { clear() {} },
+        extension_prompts: {}, FLOOR_PROMPT_KEY: 'floor-test', removeFloorDisplayFilter: null, mainReplySummary: { reset() {} },
         messageSources: { reset() {} },
         embeddingConnection: { cancel() {} },
         serviceTests: { cancel() {} },

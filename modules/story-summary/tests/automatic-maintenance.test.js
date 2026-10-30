@@ -118,6 +118,7 @@ test('switching away and back cancels the old delay immediately, before deferred
         cancelRecallAndClearPrompt: noop, cancelActiveSummaryExecution: noop,
         cancelEmbeddingWriteTasks: noop, cancelPendingHide: noop, scheduleWithChatGuard: noop,
         activeSummaryExecution: null, activeChatId: 'fixture',
+        extension_prompts: {}, FLOOR_PROMPT_KEY: 'floor-test', mainReplySummary: { reset: noop },
     });
     f.context.chatId = 'another'; change.handleChatChange();
     f.context.chatId = 'fixture'; change.handleChatChange();
@@ -134,7 +135,7 @@ for (const reason of ['before_user', 'after_ai']) test(`a below-threshold ${reas
         isStorySummaryEnabledForCurrentChat: () => true, isStorySummaryConsumableForCurrentChat: () => true,
         isSummaryGenerating: () => false, isChatStale: () => false,
         getMemoryCommitState: () => 'unconfirmed', waitForMemoryCommit: () => assert.fail('idle probe started readback'),
-        getSummaryPanelConfig: () => ({ trigger: { enabled: true, timing: reason, interval: 10, delayFloors: 0 } }),
+        getSummaryPanelConfig: () => ({ inlineSummary: { enabled: false }, trigger: { enabled: true, timing: reason, interval: 10, delayFloors: 0 } }),
         autoRunSummaryWithRetry: () => assert.fail('idle probe started a summary'),
     });
     await automatic.maybeAutoRunSummary(reason);
@@ -149,7 +150,7 @@ test('a triggered probe recomputes its target after confirmation publishes a new
         isStorySummaryEnabledForCurrentChat: () => true, isStorySummaryConsumableForCurrentChat: () => true,
         isSummaryGenerating: () => false, isChatStale: () => false,
         getMemoryCommitState: () => 'unconfirmed', waitForMemoryCommit: async () => { recoveries++; boundary = 7; },
-        getSummaryPanelConfig: () => ({ trigger: { enabled: true, timing: 'after_ai', interval: 4, delayFloors: 0 } }),
+        getSummaryPanelConfig: () => ({ inlineSummary: { enabled: false }, trigger: { enabled: true, timing: 'after_ai', interval: 4, delayFloors: 0 } }),
         autoRunSummaryWithRetry: () => assert.fail('already covered floors were summarized again'),
     });
     await automatic.maybeAutoRunSummary('after_ai');

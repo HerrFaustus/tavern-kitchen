@@ -8,6 +8,7 @@
 import { getContext } from "../../../../../../extensions.js";
 import { xbLog } from "../../../core/debug-core.js";
 import { getPublishedSummaryStore as getSummaryStore, getFacts } from "../data/store.js";
+import { floorCoverageEnd } from '../inline/ledger.js';
 import { isRelationFact } from "../data/fact-predicates.js";
 import { getVectorConfig, getSummaryPanelConfig, getSettings, DEFAULT_MEMORY_PROMPT_TEMPLATE } from "../data/config.js";
 import {
@@ -986,17 +987,18 @@ async function buildVectorPrompt(store, recallResult, allEvents, focusCharacters
     };
 
     // 从 recallResult 解构
-    const l0Selected = recallResult?.l0Selected || [];
+    const omitted = new Set((store.summaryHistory || []).filter(batch => batch.floorEntry?.omitted).map(batch => batch.floorEntry.floor));
+    const l0Selected = (recallResult?.l0Selected || []).filter(atom => !omitted.has(atom.floor));
     const uiCfg = getSummaryPanelConfig().ui;
     const hiddenThrough = getHiddenThrough({
         enabled: uiCfg.hideSummarized,
-        summaryBoundary: store.lastSummarizedMesId ?? -1,
+        summaryBoundary: floorCoverageEnd(store),
         vectorBoundary: meta?.lastChunkFloor ?? -1,
-        useVectorBoundary: !!getVectorConfig()?.enabled && uiCfg.useVectorBoundary,
+        useVectorBoundary: !store.summaryHistory?.some(batch => batch.floorEntry) && !!getVectorConfig()?.enabled && uiCfg.useVectorBoundary,
         keepVisibleCount: uiCfg.keepVisibleCount,
         length: getContext().chat.length,
     });
-    const hiddenChunk = chunk => chunk?.floor >= 0 && chunk.floor <= hiddenThrough;
+    const hiddenChunk = chunk => chunk?.floor >= 0 && chunk.floor <= hiddenThrough && !omitted.has(chunk.floor);
     // Pair keys identify the AI turn; its USER and AI messages may straddle
     // the visibility boundary. Filter the actual chunk floors independently.
     const l1ByFloor = new Map([...(recallResult?.l1ByFloor || new Map())].map(([floor, pair]) => [floor, {
@@ -1454,7 +1456,7 @@ async function buildVectorPrompt(store, recallResult, allEvents, focusCharacters
     const recentEnd = hiddenThrough;
 
     if (recentEnd >= recentStart) {
-        const recentAllL0 = getRecentWindowL0Atoms(recentStart, recentEnd);
+        const recentAllL0 = getRecentWindowL0Atoms(recentStart, recentEnd).filter(atom => !omitted.has(atom.floor));
         const recentL0 = recentAllL0
             .filter(l0 => !usedEvidenceIds.has(l0EvidenceId(l0)))
             .filter(l0 => l0.floor >= recentStart && l0.floor <= recentEnd);

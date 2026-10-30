@@ -21,7 +21,9 @@ import {
     isRetryableEmbeddingFailure,
 } from '../llm/embedding-failure.js';
 import { xbLog } from '../../../../core/debug-core.js';
-import { chunkMessage } from './chunk-text.js';
+import { chunkMessage as chunkRawMessage } from './chunk-text.js';
+import { isFloorMemoryOmitted } from '../../data/store.js';
+const chunkMessage = (floor, message) => isFloorMemoryOmitted(floor) ? [] : chunkRawMessage(floor, message);
 import { inputDigest } from '../utils/vector-input-digest.js';
 import { createAbortError } from '../../../../shared/common/abort-utils.js';
 import { trackVectorActivity } from '../runtime/vector-activity.js';

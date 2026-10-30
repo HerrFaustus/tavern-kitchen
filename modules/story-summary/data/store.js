@@ -806,6 +806,7 @@ export async function clearSummaryData(chatId) {
     delete store.json;
     store.lastSummarizedMesId = -1;
     store.summaryHistory = [];
+    delete store.floorDrafts;
     delete store.pendingImportBoundary;
     delete store.summaryInvalid;
     delete store.sourceInvalidFromFloor;
@@ -828,6 +829,12 @@ export async function clearSummaryData(chatId) {
 export function getFacts() {
     const store = getPublishedSummaryStore();
     return (store?.json?.facts || []).filter(f => !f.retracted);
+}
+
+/** Omission is a memory policy; it does not hide the user's raw chat. */
+export function isFloorMemoryOmitted(floor) {
+    if (!chat_metadata.extensions?.[EXT_ID]?.storySummary) return false;
+    return !!getPublishedSummaryMemory().storySummary?.summaryHistory?.some(batch => batch.floorEntry?.floor === floor && batch.floorEntry.omitted);
 }
 
 export function getNewCharacters() {

@@ -4,6 +4,7 @@ import { parse } from 'acorn';
 import { observeBackgroundTask } from '../../../../shared/common/async-errors.js';
 import { MEMORY_CHAT_MESSAGES } from '../../maintenance/chat-contract.js';
 import { refreshFloorSummaries } from '../../floor-summary.js';
+import { floorCoverageEnd } from '../../inline/ledger.js';
 
 // Execute production entrypoints with explicit boundary dependencies. Never
 // assert source spelling: these tests protect observable state and stored data.
@@ -13,7 +14,10 @@ const declarations = parse(source, { sourceType: 'module', ecmaVersion: 'latest'
     .map(node => node.type === 'ExportNamedDeclaration' ? node.declaration : node)
     .filter(Boolean);
 export function entry(names, dependencies) {
-    const context = vm.createContext({ observeBackgroundTask, MEMORY_CHAT_MESSAGES, refreshFloorSummaries, ...dependencies });
+    // Existing entrypoint fixtures exercise the retained independent-summary path.
+    // Main-reply behavior is tested through its controller and actual persistence separately.
+    const context = vm.createContext({ observeBackgroundTask, MEMORY_CHAT_MESSAGES, refreshFloorSummaries, floorCoverageEnd,
+        getSummaryPanelConfig: () => ({ inlineSummary: { enabled: false } }), ...dependencies });
     vm.runInContext(declarations.filter(node => node.type === 'FunctionDeclaration' ? names.includes(node.id.name)
         : node.type === 'VariableDeclaration' && node.declarations.some(item => names.includes(item.id.name)))
         .map(node => source.slice(node.start, node.end)).join('\n')

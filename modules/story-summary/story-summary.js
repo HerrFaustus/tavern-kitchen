@@ -1,5 +1,11 @@
 import { getKitchenMount, openKitchenTab, closeKitchenWorkspace, bindKitchenFrame } from '../../core/kitchen-workspace.js';
 import { refreshFloorSummaries } from './floor-summary.js';
+import { createFloorSummaryController } from './inline/controller.js';
+import { buildFloorProtocol } from './inline/protocol.js';
+import { floorCoverageEnd, isFloorEntryCurrent } from './inline/ledger.js';
+import { installFloorDisplayFilter } from './inline/host-regex.js';
+import { mergeNewData, executeRollback } from './data/store.js';
+import { getTextFilterRules } from './data/config.js';
 import { parseStoryUpdates } from '../story-state/records.js';
 import { getRuntimeInvalidSourceFloor } from './data/memory-commit.js';
 import { handleTextApiRequest } from '../text-api/host.js';
@@ -1385,7 +1391,7 @@ async function maybeRunDelayedVectorMaintenance(scheduledChatId = null) {
         stopVectorMaintenanceAfterFailure(chatId);
         return;
     }
-    const hasL0LlmWork = stats.pending > 0;
+    const hasL0LlmWork = getSummaryPanelConfig().inlineSummary?.enabled === false && stats.pending > 0;
     const hasL0VectorWork = l0VectorStatus.success && l0VectorStatus.missing > 0;
     // L1/L2 must inspect actual records even when L0 and floor progress look
     // complete. The repair stages themselves make no API call without a gap.
@@ -1544,7 +1550,7 @@ async function maybeRunDelayedVectorMaintenance(scheduledChatId = null) {
             stopVectorMaintenanceAfterFailure(chatId, { allowEventRepair: false, allowChunkRepair: false });
             return;
         }
-        if (Number(l0Status?.incomplete || 0) > 0) {
+        if (getSummaryPanelConfig().inlineSummary?.enabled === false && Number(l0Status?.incomplete || 0) > 0) {
             if (Number(l0Status?.pending || 0) > 0) {
                 scheduleAutoL0Backfill(AUTO_L0_BACKFILL_DELAY_MS, chatId);
                 xbLog.info(MODULE_ID, `延迟向量维护完成一批，剩余 L0 楼层=${l0Status.incomplete}`);
@@ -2148,7 +2154,7 @@ async function checkVectorIntegrity({ allowEventRepair = true, allowChunkRepair 
         cacheInconsistent: cacheCheck.status === 'inconsistent',
         fingerprintMismatch,
         chunkFloorGap: cacheCheck.missingChunkFloors?.length || 0,
-        incompleteL0FloorCount: Number(anchorStats.incomplete || 0)
+        incompleteL0FloorCount: (getSummaryPanelConfig().inlineSummary?.enabled === false ? Number(anchorStats.incomplete || 0) : 0)
             + (l0VectorStatus.success ? Number(l0VectorStatus.missingFloors || 0) : 0),
         missingEventVectorCount: missingEventPairs.length,
     });
@@ -2805,7 +2811,7 @@ export function getStorySummaryCharacters(options = {}) {
 
 /** Committed source coverage remains a fact even while summarization is disabled. */
 export function getStorySummaryCommittedThrough() {
-    const through = chat_metadata?.extensions?.[EXT_ID]?.storySummary?.lastSummarizedMesId;
+    const through = floorCoverageEnd(chat_metadata?.extensions?.[EXT_ID]?.storySummary);
     return Number.isSafeInteger(through) && through >= 0 ? through : -1;
 }
 
@@ -2893,8 +2899,8 @@ const hideState = createHideStateController({
             saveChat: context.saveChat,
             managed: !!events && isStorySummaryEnabledForCurrentChat(),
             enabled: isSummarySourceValid(store, context.chat?.length || 0) && ui.hideSummarized,
-            summaryBoundary: store?.lastSummarizedMesId ?? -1,
-            useVectorBoundary: !!getVectorConfig()?.enabled && ui.useVectorBoundary,
+            summaryBoundary: floorCoverageEnd(store),
+            useVectorBoundary: !store?.summaryHistory?.some(batch => batch.floorEntry) && !!getVectorConfig()?.enabled && ui.useVectorBoundary,
             keepVisibleCount: ui.keepVisibleCount,
         };
     },
@@ -2945,6 +2951,7 @@ function scheduleLexicalWarmup(delayMs = LEXICAL_WARMUP_DEBOUNCE_MS) {
 }
 
 function scheduleAutoSummary(reason, delayMs = AUTO_SUMMARY_DELAY_MS) {
+    if (getSummaryPanelConfig().inlineSummary?.enabled !== false) return;
     const scheduledChatId = getContext().chatId || null;
     const previous = autoSummaryTimers.get(reason);
     if (previous) clearTimeout(previous);
@@ -3021,6 +3028,7 @@ function clearHideState(options) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function maybeAutoRunSummary(reason) {
+    if (getSummaryPanelConfig().inlineSummary?.enabled !== false) return;
     const { chatId, chat } = getContext();
     if (!chatId || !Array.isArray(chat)) return;
     if (!isStorySummaryEnabledForCurrentChat()) return;
@@ -3791,6 +3799,14 @@ async function handleFrameMessage(event) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function handleManualGenerate(mesId, config) {
+    if (getSummaryPanelConfig().inlineSummary?.enabled !== false) {
+        try {
+            const result = await mainReplySummary.ingest(mesId, { force: true });
+            postToFrame({ type: 'SUMMARY_STATUS', statusText: result.committed ? '本楼总结已写入。' : result.error || '主回复未附带总结，可在楼尾补写或用酒馆重新生成。' });
+        } catch (error) { postToFrame({ type: 'SUMMARY_ERROR', message: error.message }); }
+        notifySummaryState();
+        return;
+    }
     if (isSummaryGenerating()) {
         postToFrame({ type: "SUMMARY_STATUS", statusText: "上一轮总结仍在进行中..." });
         notifySummaryState();
@@ -3977,7 +3993,12 @@ async function reconcileVectorFloorsOnLoad(chatId, chatLength) {
 
 function handleMessageDeleted(chatId) { return synchronizeCurrentSources(chatId, 'delete'); }
 function handleMessageSwiped(chatId, floor) { return synchronizeCurrentSources(chatId, 'swipe', Number(floor)); }
-function handleMessageUpdated(chatId, floor) { return synchronizeCurrentSources(chatId, 'edit', Number(floor)); }
+async function handleMessageUpdated(chatId, floor) {
+    const outcome = await synchronizeCurrentSources(chatId, 'edit', Number(floor));
+    if (!isChatStale(chatId) && getSummaryStore().summaryHistory?.some(batch => batch.floorEntry)) await ensureFloorSources();
+    refreshFloorSummaries();
+    return outcome;
+}
 
 async function synchronizeCurrentSources(chatId, kind = 'observed', floor = null) {
     if (isChatStale(chatId) || !isStorySummaryEnabledForCurrentChat()) return { status: 'stale' };
@@ -4077,6 +4098,7 @@ async function handleMessageReceived(scheduledChatId, targetMesId = null) {
     initButtonsForAll();
 
     applyHideStateDebounced();
+    if (getSummaryPanelConfig().inlineSummary?.enabled !== false) await mainReplySummary.ingest(floor);
     scheduleAutoSummary("after_ai");
 
     // Refresh entity lexicon after new message (new roles may appear)
@@ -4100,6 +4122,47 @@ function handleMessageRendered(data) {
 
 function clearExtensionPrompt() {
     delete extension_prompts[EXT_PROMPT_KEY];
+}
+
+const FLOOR_PROMPT_KEY = 'tavernKitchenMainReplySummary';
+let removeFloorDisplayFilter = null;
+async function ensureFloorSources() {
+    await ensureCurrentSources(undefined, { requireSummary: false });
+    const store = getSummaryStore();
+    const invalid = store.summaryHistory?.find(batch => batch.floorEntry && !isFloorEntryCurrent(batch.floorEntry, getContext().chat));
+    if (invalid) {
+        const result = await executeRollback(getContext().chatId, store, invalid.previousEndMesId);
+        if (result.status !== 'rolled_back') throw new Error('本楼原文变化后的回退尚未完成，请稍后重试。');
+    }
+}
+const mainReplySummary = createFloorSummaryController({
+    getContext, enabled: isStorySummaryEnabledForCurrentChat,
+    getConfig: () => getSummaryPanelConfig().inlineSummary || { enabled: true, review: false },
+    getFilterRules: getTextFilterRules,
+    ensureSources: ensureFloorSources, read: readSummaryMemory, commit: commitSummaryMemory, merge: mergeNewData,
+    busy: () => isHostGenerating() || isSummaryGenerating(), refresh: refreshFloorSummaries,
+    afterCommit: async (_floor, previous, next) => {
+        const chatId = getContext().chatId;
+        cancelRecallAndClearPrompt('floor-summary-edited');
+        recallReuse.invalidate();
+        invalidateLexicalIndex();
+        replaceEventDocuments(next.storySummary.json?.events || [], chatId);
+        const changedIds = (previous.storySummary.json?.events || []).filter(event =>
+            JSON.stringify(event) !== JSON.stringify(next.storySummary.json?.events?.find(item => item.id === event.id))).map(event => event.id);
+        if (changedIds.length) await deleteEventVectorsByIds(chatId, changedIds);
+        await clearRecallRuntime(chatId);
+        postToFrame({ type: 'SUMMARY_FULL_DATA', payload: buildFramePayload(getSummaryStore()) });
+        await applyHideState();
+    },
+});
+
+async function injectMainReplySummary(_chat, _size, _abort, type) {
+    delete extension_prompts[FLOOR_PROMPT_KEY];
+    if (!usesStoryRecall(type) || !isStorySummaryEnabledForCurrentChat()
+        || getSummaryPanelConfig().inlineSummary?.enabled === false) return;
+    await ensureFloorSources();
+    extension_prompts[FLOOR_PROMPT_KEY] = { value: buildFloorProtocol(getPublishedSummaryStore()),
+        position: extension_prompt_types.IN_CHAT, depth: 0, role: extension_prompt_roles.SYSTEM };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -4582,6 +4645,8 @@ function registerAfterAiGateHandler() {
 let storySummaryTeardown = null;
 
 function handleChatChange() {
+    delete extension_prompts[FLOOR_PROMPT_KEY];
+    mainReplySummary.reset();
     vectorMaintenanceScheduler.clear();
     const reloaded = messageSources.switchChat(getContext());
     embeddingConnection.cancel();
@@ -4689,6 +4754,9 @@ async function registerEvents() {
         runStorySummaryRecallInterceptor,
         GENERATE_INTERCEPTOR_ORDER.STORY_SUMMARY,
     );
+    removeFloorDisplayFilter?.();
+    removeFloorDisplayFilter = installFloorDisplayFilter(getContext().extensionSettings);
+    registerGenerateInterceptor('story-floor-summary', injectMainReplySummary, GENERATE_INTERCEPTOR_ORDER.STORY_SUMMARY - 1);
     events.on(event_types.GENERATION_STOPPED, () => {
         const { chatId } = getContext();
         cancelActiveRecall('generation-stopped', {
@@ -4724,6 +4792,10 @@ async function unregisterEvents() {
 }
 
 async function runStorySummaryTeardown() {
+    unregisterGenerateInterceptor('story-floor-summary');
+    delete extension_prompts[FLOOR_PROMPT_KEY];
+    removeFloorDisplayFilter?.(); removeFloorDisplayFilter = null;
+    mainReplySummary.reset();
     summaryDiagnostics.clear();
     messageSources.reset();
     embeddingConnection.cancel();
@@ -5078,6 +5150,11 @@ export function openStoryWorld(route = 'world') {
     postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view: route });
 }
 export function getFloorSummarySnapshot() {
+    const store = getPublishedSummaryStore();
+    const invalid = store?.summaryHistory?.find(batch => batch.floorEntry && !isFloorEntryCurrent(batch.floorEntry, getContext().chat));
     return { enabled: isXiaobaiMasterEnabled() && isStorySummaryEnabledForCurrentChat(),
-        chat: getContext().chat, store: getPublishedSummaryStore(), invalidFrom: getRuntimeInvalidSourceFloor() };
+        chat: getContext().chat, store, invalidFrom: invalid ? Math.min(invalid.floorEntry.source.start, getRuntimeInvalidSourceFloor() ?? Infinity) : getRuntimeInvalidSourceFloor(),
+        inlineConfig: getSummaryPanelConfig().inlineSummary, getError: mainReplySummary.error };
 }
+export function updateFloorSummary(floor, change, source) { return mainReplySummary.update(floor, change, source); }
+export function extractMainReplySummary(floor) { return mainReplySummary.ingest(floor, { force: true }); }

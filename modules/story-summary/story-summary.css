@@ -2839,6 +2839,8 @@ h1 span {
     display: none;
 }
 
+#settings-modal [hidden] { display: none !important; }
+
 .tab-pane.active {
     display: block;
     animation: fadeIn .3s ease;

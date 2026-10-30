@@ -384,6 +384,7 @@ const UNANNOTATED_LABEL = '未标注';
     }
 
     function normalizeTriggerConfig() {
+        config.inlineSummary ||= { enabled: true, review: false };
         if (config.trigger.timing === 'manual') {
             config.trigger.timing = 'before_user';
             config.trigger.enabled = false;
@@ -411,7 +412,7 @@ const UNANNOTATED_LABEL = '未标注';
 
         const generateButton = $('btn-generate');
         if (generateButton) {
-            generateButton.textContent = localGenerating ? copy.stop : copy.generate;
+            generateButton.textContent = localGenerating ? copy.stop : config.inlineSummary?.enabled !== false ? '提取本楼' : copy.generate;
             generateButton.disabled = !localGenerating && !controlsEnabled;
             generateButton.title = localGenerating ? '' : !hasChat ? copy.noChat
                 : changing ? copy.changing : !effectiveEnabled ? copy.disabled : '';
@@ -467,6 +468,18 @@ const UNANNOTATED_LABEL = '未标注';
         }
     }
 
+    function syncInlineSummaryControls() {
+        const main = $('inline-summary-mode').value !== 'legacy';
+        document.querySelectorAll('[data-summary-legacy]').forEach(element => { element.hidden = main; });
+        $('inline-summary-review-row').hidden = !main;
+        $('inline-summary-hint').hidden = !main;
+        for (const id of ['summary-system-prompt', 'summary-assistant-doc-prompt', 'summary-assistant-ask-summary-prompt',
+            'summary-assistant-ask-content-prompt', 'summary-meta-protocol-start-prompt', 'summary-user-json-format-prompt',
+            'summary-assistant-check-prompt', 'summary-user-confirm-prompt', 'summary-user-generate-prompt']) {
+            const field = $(id)?.closest('.settings-field'); if (field) field.hidden = main;
+        }
+    }
+
     function syncVectorBoundaryControl(vectorEnabled = config.vector?.enabled, hideEnabled = config.ui.hideSummarized) {
         const input = $('use-vector-boundary');
         const label = $('lbl-vector-boundary');
@@ -517,6 +530,7 @@ const UNANNOTATED_LABEL = '未标注';
 
     function applyConfig(cfg) {
         if (!cfg) return;
+        config.inlineSummary = { enabled: cfg.inlineSummary?.enabled !== false, review: cfg.inlineSummary?.review === true };
         config.memoryMaintenanceEnabled = cfg.memoryMaintenanceEnabled === true;
         if (!settingsDirty) memoryMaintenancePage?.setEnabled(config.memoryMaintenanceEnabled);
         Object.assign(config.trigger, cfg.trigger || {});
@@ -950,7 +964,8 @@ const UNANNOTATED_LABEL = '未标注';
         $('assistant-page-title').hidden = false;
         $('assistant-page-title').textContent = childPage ? $(targetId).dataset.title : targetId === 'tab-agent-api' ? WORKSPACE_COPY.agentApi : assistant ? MEMORY_COPY.tab : tab.textContent;
         $('settings-close').setAttribute('aria-label', childPage || targetId === 'tab-agent-api' ? WORKSPACE_COPY.backParent : WORKSPACE_COPY.back);
-        $$('.settings-tab').forEach(item => { item.hidden = !!childPage || assistant || item.dataset.family !== tab.dataset.family; });
+        $$('.settings-tab').forEach(item => { item.hidden = !!childPage || assistant || item.dataset.family !== tab.dataset.family
+            || item.hasAttribute('data-summary-legacy') && config.inlineSummary?.enabled !== false; });
         $('settings-save').parentElement.hidden = ['tab-agent-api', 'tab-models', 'tab-appearance', 'tab-transfer', 'tab-backups', 'tab-clear'].includes(targetId);
         $('settings-cancel').hidden = targetId === 'tab-agent';
         $('settings-chat').hidden = targetId !== 'tab-agent';
@@ -981,6 +996,9 @@ const UNANNOTATED_LABEL = '未标注';
             $('assistant-page-title').textContent = MEMORY_COPY.tab;
         }
         memoryMaintenancePage.setEnabled(config.memoryMaintenanceEnabled);
+        $('inline-summary-mode').value = config.inlineSummary?.enabled !== false ? 'main' : 'legacy';
+        $('inline-summary-review').checked = config.inlineSummary?.review === true;
+        syncInlineSummaryControls();
         if ($('trigger-notify-on-complete')) {
             $('trigger-notify-on-complete').checked = !!config.trigger.notifyOnComplete;
         }
@@ -1031,6 +1049,7 @@ const UNANNOTATED_LABEL = '未标注';
     }
 
     function collectSettingsFormToConfig() {
+        config.inlineSummary = { enabled: $('inline-summary-mode').value !== 'legacy', review: $('inline-summary-review').checked };
         config.ui.hideSummarized = $('hide-summarized').checked;
         config.ui.keepVisibleCount = Number($('keep-visible-count').value);
         config.ui.useVectorBoundary = $('use-vector-boundary').checked;
@@ -2418,6 +2437,7 @@ const UNANNOTATED_LABEL = '未标注';
         };
 
         // Trigger timing
+        $('inline-summary-mode').onchange = () => { syncInlineSummaryControls(); settingsDirty = true; };
         $('trigger-timing').onchange = () => {
             syncAutoSummaryControls();
         };

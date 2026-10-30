@@ -154,7 +154,9 @@ export async function startKitchen(workspace) {
     ]) await loadBridge(entry, id);
     if (settings.storySummary?.enabled) {
         memory = await import('../modules/story-summary/story-summary.js');
-        const panels = installFloorSummaries({ getSnapshot: memory.getFloorSummarySnapshot, openMemory: floor => memory.openStoryMemory(floor) });
+        const panels = installFloorSummaries({ getSnapshot: memory.getFloorSummarySnapshot,
+            updateFloor: memory.updateFloorSummary, extractFloor: memory.extractMainReplySummary,
+            openMemory: floor => memory.openStoryMemory(floor) });
         const floorEvents = createModuleEvents('kitchen-floor-summaries');
         floorEvents.on(event_types.CHAT_CHANGED, panels.reset);
         for (const key of ['CHARACTER_MESSAGE_RENDERED', 'USER_MESSAGE_RENDERED', 'MESSAGE_SWIPED', 'MESSAGE_EDITED', 'MESSAGE_DELETED', 'MESSAGE_UPDATED', 'MORE_MESSAGES_LOADED']) {

@@ -9,6 +9,7 @@ import {
     getSummaryStore,
     mergeNewData,
     isSummaryConsumable,
+    isFloorMemoryOmitted,
 } from "../data/store.js";
 import { commitSummaryMemory, readSummaryMemory, waitForMemoryCommit, getMemoryCommitState } from '../data/memory-commit.js';
 import { memorySaveError } from '../data/memory-copy.js';
@@ -86,10 +87,11 @@ export function buildIncrementalSlice(targetMesId, lastSummarizedMesId, maxPerRu
     const slice = chat.slice(start, end + 1);
 
     const text = slice.map((m, i) => {
+        if (isFloorMemoryOmitted(start + i)) return '';
         const speaker = m.name || (m.is_user ? userLabel : charLabel);
         const filteredMessage = applyTextFilterRules(m.mes || '', filterRules);
         return `#${start + i + 1} 【${speaker}】\n${filteredMessage}`;
-    }).join('\n\n');
+    }).filter(Boolean).join('\n\n');
 
     return { text, count: slice.length, range: `${start + 1}-${end + 1}楼`, endMesId: end };
 }

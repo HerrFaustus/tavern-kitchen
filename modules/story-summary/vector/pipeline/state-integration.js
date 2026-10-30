@@ -21,7 +21,7 @@ import { assertMemoryWritable, waitForMemoryCommit, retireSummaryMemorySources }
 import { getChatIdentity } from '../../data/chat-identity.js';
 import { runVectorWriteTask, VECTOR_WRITE_SCOPES } from '../runtime/maintenance-coordinator.js';
 import { sameMemory } from '../../maintenance/domain.js';
-import { invalidateSummaryAnchors, getSummaryStore, rollbackSummaryIfNeeded } from '../../data/store.js';
+import { invalidateSummaryAnchors, getSummaryStore, rollbackSummaryIfNeeded, isFloorMemoryOmitted } from '../../data/store.js';
 import { observeBackgroundTask } from '../../../../shared/common/async-errors.js';
 import { embed } from '../llm/siliconflow.js';
 import { extractAtomsForRound } from '../llm/atom-extraction.js';
@@ -66,7 +66,7 @@ export function initStateIntegration() {
 
 export async function getAnchorStats() {
     const { chat } = getContext();
-    return summarizeL0Floors(chat, getL0Index().byFloor);
+    return summarizeL0Floors(chat, getL0Index().byFloor, isFloorMemoryOmitted);
 }
 
 // ============================================================================
@@ -145,7 +145,7 @@ async function incrementalExtractAtomsInner(chatId, chat, onProgress, options, d
 
     const tryQueueFloor = (i) => {
         const msg = chat[i];
-        if (!msg || msg.is_user || queuedFloors.has(i) || isL0FloorDeferred(chat, i)) return;
+        if (!msg || msg.is_user || isFloorMemoryOmitted(i) || queuedFloors.has(i) || isL0FloorDeferred(chat, i)) return;
 
         const st = getL0FloorStatus(i);
         // ★ 只跳过 ok 和 empty，fail 的可以重试

@@ -68,6 +68,7 @@ export function applyImportedSummaryBoundary(store, boundary) {
     stampImportedSummaryJson(store.json, boundary);
     store.lastSummarizedMesId = boundary;
     store.summaryHistory = [createSummaryBaseline(boundary)];
+    delete store.floorDrafts;
     delete store.pendingImportBoundary;
     store.updatedAt = Date.now();
     return true;
@@ -77,6 +78,7 @@ export function prepareImportedSummary(previous, json, boundary) {
     const next = structuredClone(previous);
     const store = next.storySummary;
     store.json = structuredClone(json);
+    delete store.floorDrafts;
     store.json.facts = assignImportedFactIds(store.json.facts);
     delete store.summaryInvalid;
     delete store.sourceInvalidFromFloor;

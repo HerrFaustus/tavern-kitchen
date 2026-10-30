@@ -336,6 +336,7 @@ function normalizeVectorConfig(rawVector = null) {
 
 function createDefaultSummaryPanelConfig() {
     const defaults = {
+        inlineSummary: { enabled: true, review: false },
         memoryMaintenanceEnabled: DEFAULT_MEMORY_MAINTENANCE_ENABLED,
         trigger: {
             enabled: false,
@@ -409,6 +410,7 @@ function normalizeSummaryPanelConfig(rawConfig = null) {
     const result = {
         memoryMaintenanceEnabled: rawConfig.memoryMaintenanceEnabled === true,
         trigger: { ...defaults.trigger, ...(rawConfig.trigger || {}) },
+        inlineSummary: { enabled: rawConfig.inlineSummary?.enabled !== false, review: rawConfig.inlineSummary?.review === true },
         ui: { ...defaults.ui, ...(rawConfig.ui || {}) },
         textFilterRules,
         prompts: {

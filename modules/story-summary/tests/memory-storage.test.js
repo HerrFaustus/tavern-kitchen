@@ -45,6 +45,8 @@ const shims = {
 const bundled = await build({
     stdin: { resolveDir: root, contents: [
         "export * from './modules/story-summary/data/store.js';",
+        "export * from './modules/story-summary/inline/ledger.js';",
+        "export * from './modules/story-summary/inline/controller.js';",
         "export * from './modules/story-summary/data/memory-commit.js';",
         "export * from './modules/story-summary/data/summary-import.js';",
         "export { normalizeCharacterAliases, replaceCharacterAliases } from './modules/story-summary/data/character-aliases.js';",
@@ -2519,4 +2521,115 @@ for (const version of ['1.14.0', '1.18.0']) test(`official ST ${version} saves l
     assert.deepEqual(JSON.parse(JSON.stringify(posted[0].body.chat[0].chat_metadata.extensions.TavernKitchen)), ext());
     assert.equal(host.reads, beforeReads);
     assert.deepEqual(native.errors, []);
+});
+
+
+// Main-reply summaries must share the real persistence/undo path, with no generation gateway.
+const inlinePayload = (summary, records = []) => ({ summary, updates: { storyUpdates: records } });
+function inlineController() {
+    return mod.createFloorSummaryController({ getContext: () => host.context, enabled: () => true,
+        getConfig: () => ({ enabled: true, review: false }), ensureSources: () => mod.waitForMemoryCommit(),
+        read: mod.readSummaryMemory, commit: mod.commitSummaryMemory, merge: mod.mergeNewData });
+}
+test('main reply commits once, replays a historical correction and survives actual reload and undo', async () => {
+    await importFixture();
+    const baseline = structuredClone(ext().storySummary);
+    const start = host.context.chat.length;
+    host.generate = () => assert.fail('main reply must not call independent summary API');
+    const first = inlinePayload('抵达渡口', [{ id: 'scene', kind: 'scene', location: '渡口', situation: '等船', participants: [] }]);
+    host.context.chat.push({ mes: '出发', is_user: true }, { mes: `正文<kitchen_summary>${JSON.stringify(first)}</kitchen_summary>` });
+    const controller = inlineController();
+    await controller.ingest(start + 1);
+    const writes = host.writes;
+    await controller.ingest(start + 1); assert.equal(host.writes, writes);
+    const firstId = ext().storySummary.json.events.at(-1).id;
+    const second = inlinePayload('船已开走', [{ id: 'scene', kind: 'scene', location: '码头', situation: '错过渡船', participants: [] }]);
+    host.context.chat.push({ mes: '等着', is_user: true }, { mes: `正文<kitchen_summary>${JSON.stringify(second)}</kitchen_summary>` });
+    await controller.ingest(start + 3);
+    const secondId = ext().storySummary.json.events.at(-1).id;
+    await controller.update(start + 1, { payload: inlinePayload('抵达旧渡口', first.updates.storyUpdates), reviewed: true });
+    assert.equal(ext().storySummary.json.events.find(event => event.id === firstId).summary.includes('抵达旧渡口'), true);
+    assert.equal(ext().storySummary.json.events.at(-1).id, secondId);
+    assert.equal(ext().storySummary.json.storyRecords.find(record => record.id === 'scene').location, '码头');
+    host.metadata = structuredClone(host.files.get(host.context.chatId)); mod.reload(); mod.getSummaryStore();
+    assert.equal(ext().storySummary.summaryHistory.at(-2).floorEntry.payload.summary, '抵达旧渡口');
+    assert.equal((await mod.executeRollback(host.context.chatId, mod.getSummaryStore(), baseline.lastSummarizedMesId)).status, 'rolled_back');
+    assert.deepEqual(ext().storySummary.json.facts, baseline.json.facts);
+    assert.equal(ext().storySummary.json.events.some(event => event.id === firstId || event.id === secondId), false);
+});
+test('pending review, deletion and omission use one confirmed transaction; a failed save leaves current memory intact', async () => {
+    await importFixture();
+    const floor = host.context.chat.length + 1, payload = inlinePayload('确认收到信件');
+    host.context.chat.push({ mes: '接信', is_user: true }, { mes: `正文<kitchen_summary>${JSON.stringify(payload)}</kitchen_summary>` });
+    const controller = inlineController();
+    await controller.update(floor, { payload, stage: true });
+    assert.equal(ext().storySummary.lastSummarizedMesId, host.fixture.cutoff);
+    await controller.update(floor, { reviewed: true });
+    assert.equal(disk().storySummary.summaryHistory.at(-1).floorEntry.reviewed, true);
+    await controller.update(floor, { omitted: true });
+    assert.equal(ext().storySummary.json.events.some(event => event._addedAt === floor), false);
+    await controller.update(floor, { omitted: false });
+    assert.equal(ext().storySummary.json.events.some(event => event._addedAt === floor), true);
+    const before = structuredClone(ext().storySummary);
+    host.mode = 'old';
+    await assert.rejects(controller.update(floor, { payload: inlinePayload('不应保存的修改') }));
+    assert.deepEqual(ext().storySummary, before);
+    host.mode = 'ok';
+    await controller.update(floor, { deleted: true });
+    assert.equal(ext().storySummary.summaryHistory.at(-1).floorEntry.deleted, true);
+    assert.equal(ext().storySummary.json.events.some(event => event._addedAt === floor), false);
+});
+
+test('earlier floor edits preserve later maintenance fields and replayed history remains undoable', async () => {
+    await importFixture();
+    const floor = host.context.chat.length + 1;
+    const original = { summary: '灯塔熄灭', updates: { events: [{ title: '灯塔', summary: '灯灭了', participants: [] }] } };
+    host.context.chat.push({ mes: '查看灯塔', is_user: true }, { mes: `<kitchen_summary>${JSON.stringify(original)}</kitchen_summary>` });
+    const controller = inlineController(); await controller.ingest(floor);
+    const id = ext().storySummary.json.events.at(-1).id;
+    const session = mod.createMemorySession(readMaintenanceState()); session.initial();
+    session.runTool('ReadMemory', { collection: 'events', key: id }, readMaintenanceState());
+    const editedMemory = session.runTool('EditMemory', { edits: [{ kind: 'edit', collection: 'events', key: id, patch: { title: '守望者的灯塔' } }] });
+    assert.equal(editedMemory.status, 'staged', JSON.stringify(editedMemory));
+    await saveMaintenanceSession(session);
+    const edited = structuredClone(original); edited.updates.events[0].summary = '风暴吹灭了灯火';
+    await controller.update(floor, { payload: edited });
+    const event = ext().storySummary.json.events.find(row => row.id === id);
+    assert.equal(event.title, '守望者的灯塔'); assert.match(event.summary, /风暴吹灭/);
+    host.metadata = structuredClone(host.files.get(host.context.chatId)); mod.reload();
+    assert.equal((await mod.executeRollback(host.context.chatId, mod.getSummaryStore(), host.fixture.cutoff)).status, 'rolled_back');
+    assert.equal(ext().storySummary.json.events.some(row => row.id === id), false);
+});
+
+test('removing an early event reserves its ID, restores safely, and stale source edits never overwrite memory', async () => {
+    await importFixture(); const start = host.context.chat.length;
+    const controller = inlineController();
+    for (const text of ['第一封信', '第二封信']) {
+        host.context.chat.push({ mes: '读信', is_user: true }, { mes: `<kitchen_summary>${JSON.stringify(inlinePayload(text))}</kitchen_summary>` });
+        await controller.ingest(host.context.chat.length - 1);
+    }
+    const firstId = ext().storySummary.summaryHistory.at(-2).floorEntry.eventIds[0];
+    const secondId = ext().storySummary.summaryHistory.at(-1).floorEntry.eventIds[0];
+    await controller.update(start + 1, { deleted: true });
+    host.context.chat.push({ mes: '再读', is_user: true }, { mes: `<kitchen_summary>${JSON.stringify(inlinePayload('第三封信'))}</kitchen_summary>` });
+    await controller.ingest(start + 5);
+    assert.notEqual(ext().storySummary.summaryHistory.at(-1).floorEntry.eventIds[0], firstId);
+    await controller.update(start + 1, { deleted: false });
+    assert.ok(ext().storySummary.json.events.some(row => row.id === firstId));
+    assert.ok(ext().storySummary.json.events.some(row => row.id === secondId));
+    const before = structuredClone(ext()); host.context.chat[start + 1].mes += '原文改变';
+    await assert.rejects(controller.update(start + 1, { payload: inlinePayload('不该写入') }), /原文|候选/);
+    assert.deepEqual(ext(), before);
+});
+
+test('an unsummarized earlier floor can be filled without losing a later inline summary', async () => {
+    await importFixture(); const start = host.context.chat.length; const controller = inlineController();
+    for (const text of ['先前没摘的信件', '后来已摘的信件']) host.context.chat.push({ mes: '读信', is_user: true },
+        { mes: `<kitchen_summary>${JSON.stringify(inlinePayload(text))}</kitchen_summary>` });
+    await controller.ingest(start + 3);
+    const laterId = ext().storySummary.summaryHistory.at(-1).floorEntry.eventIds[0];
+    await controller.ingest(start + 1);
+    assert.equal(ext().storySummary.summaryHistory.at(-2).floorEntry.floor, start + 1);
+    assert.equal(ext().storySummary.summaryHistory.at(-1).floorEntry.eventIds[0], laterId);
+    assert.equal(ext().storySummary.lastSummarizedMesId, start + 3);
 });
