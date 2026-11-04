@@ -73,8 +73,12 @@ test('floor panel uses two-line preview, editable grouped entries and explicit a
         updateFloor: async (...args) => calls.push(args), extractFloor: async () => ({ status: 'missing' }) });
     document.body.append(panel.node); panel.refresh(snapshot);
     assert.equal(panel.node.querySelector('.tk-fp-toggle').getAttribute('aria-expanded'), 'false');
+    assert.equal(panel.node.querySelectorAll('.tk-fp-head button').length, 1);
     panel.node.querySelector('.tk-fp-toggle').click();
     assert.equal(panel.node.querySelector('.tk-fp-toggle').getAttribute('aria-expanded'), 'true');
+    assert.match(panel.node.querySelector('.tk-fp-more').textContent, /标为番外/u);
+    assert.match(panel.node.querySelector('.tk-fp-more').textContent, /重新提取/u);
+    assert.match(panel.node.querySelector('.tk-fp-more').textContent, /查看剧情/u);
     assert.equal(panel.node.querySelectorAll('img').length, 0);
     assert.match(panel.node.querySelector('.tk-fp-group').textContent, /贝拉/);
     panel.node.querySelector('.tk-fp-summary').click();

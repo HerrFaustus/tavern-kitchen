@@ -13,11 +13,12 @@ export function createWorldOverview({ navigate }) {
     function show(next) {
         if (!root || !next) return;
         state = next; root.replaceChildren();
-        root.append(el('h3', state.title, 'standoutHeader'), el('p', '人物、地点、物品、局势与设定共同构成当前世界。', 'tk-record-note'));
-        const status = el('p', `已登记 ${state.entities.length} 个对象 · 第 ${state.version} 版`, 'tk-record-status'); status.setAttribute('role', 'status'); root.append(status);
-        const nav = el('div', undefined, 'tk-record-actions');
-        for (const [route, label] of [['people', '查看人物'], ['map', '查看地图'], ['situation', '查看局势'], ['lore', '查看设定']]) nav.append(link(label, route));
-        root.append(nav, el('h4', '对象与当前状态'));
+        const pending = state.claims.filter(c => c.status === 'pending').length;
+        root.append(el('h3', state.title, 'standoutHeader'));
+        const head = el('div', undefined, 'tk-record-actions tk-world-overview-head');
+        const status = el('p', `已登记 ${state.entities.length} 个对象 · 第 ${state.version} 版`, 'tk-record-status'); status.setAttribute('role', 'status');
+        head.append(status, link(pending ? `管理世界 · ${pending} 条待确认` : '管理世界', 'world-management'));
+        root.append(head, el('h4', '对象与当前状态'));
         if (!state.entities.length) root.append(el('p', '尚未登记世界对象。已有剧情和地图记录会在可用时汇入这里。', 'tk-record-note'));
         for (const [kind, label] of Object.entries(KINDS)) {
             const entities = state.entities.filter(e => e.kind === kind); if (!entities.length) continue;
@@ -38,8 +39,11 @@ export function createWorldOverview({ navigate }) {
             }
             root.append(group);
         }
-        const pending = state.claims.filter(c => c.status === 'pending').length;
-        if (pending) { const section = el('section'); section.append(el('h4', '待处理记录'), el('p', `${pending} 条来源记录尚未确认为世界事实。`), link('处理来源记录', 'world-management')); root.append(section); }
+        if (pending) {
+            const section = el('section');
+            section.append(el('h4', '待处理记录'), el('p', `${pending} 条来源记录尚未确认为世界事实。可在“管理世界”中处理。`, 'tk-record-note'));
+            root.append(section);
+        }
         root.append(el('h4', '近期变化'));
         const history = el('ol', undefined, 'tk-world-overview-history');
         for (const event of state.events.slice(-6).reverse()) {
@@ -48,7 +52,6 @@ export function createWorldOverview({ navigate }) {
             if (names.length) row.append(el('p', names.join('、'))); history.append(row);
         }
         if (state.events.length) root.append(history); else root.append(el('p', '还没有世界变更记录。', 'tk-record-note'));
-        const management = el('details'); management.append(el('summary', '管理与接入'), el('p', '新增、修订、交易、历史分支与备份位于设置中的世界管理。分类页的数据接管仍在逐步进行。', 'tk-record-note'), link('打开世界管理', 'world-management')); root.append(management);
     }
     return {
         mount(parent) { if (!root) { root = el('div', undefined, 'tk-world-records tk-world-overview'); root.setAttribute('aria-label', '世界总览'); } if (root.parentElement !== parent) parent.append(root); },

@@ -31,23 +31,23 @@ export function createFloorPanel({ doc, floor, updateFloor, extractFloor, openMe
     const clock = element('span', 'tk-fp-head-time'); const status = element('span', 'tk-fp-status');
     const preview = element('span', 'tk-fp-preview');
     top.append(number, clock, status); toggle.append(top, preview);
-    const omit = button('', () => run(async () => {
+    head.append(toggle);
+    const omit = button('标为番外', () => run(async () => {
         const empty = !model.payload.summary || model.entry?.empty;
         const payload = empty ? { ...EMPTY_FLOOR_PAYLOAD, summary: '（未提供摘要）' } : model.payload;
         await updateFloor(floor, { payload, omitted: !model.entry?.omitted, deleted: empty, empty }, model.source.digest);
-    }), 'tk-fp-icon', '标为番外：不计入剧情记忆');
-    omit.append(icon('wand-magic-sparkles')); omit.setAttribute('aria-label', omit.title);
+    }), 'tk-fp-more-action', '标为番外：不计入剧情记忆');
+    omit.setAttribute('aria-label', omit.title);
     const doExtract = async () => {
         const result = await extractFloor(floor);
         if (!result?.committed && !result?.unchanged) throw new Error(result?.error || '主回复未附带总结，请在下方补写或用酒馆重新生成本楼。');
     };
-    const extract = button('', () => {
+    const extract = button('重新提取', () => {
         if (model.entry && !model.entry.deleted || model.staged || editKey) {
             confirmingExtract = true; confirmingDelete = false; expanded = true; renderExtractConfirmation(); updateExpanded();
         } else run(doExtract);
-    }, 'tk-fp-icon', '重新提取主回复附带的总结（不调用 API）');
-    extract.append(icon('magnifying-glass')); extract.setAttribute('aria-label', extract.title);
-    head.append(toggle, omit, extract);
+    }, 'tk-fp-more-action', '重新提取主回复附带的总结（不调用 API）');
+    extract.setAttribute('aria-label', extract.title);
     const drawer = element('div', 'tk-fp-drawer'); const inner = element('div', 'tk-fp-drawer-inner');
     const body = element('div', 'tk-fp-body'); const notice = element('p', 'tk-fp-notice'); notice.setAttribute('role', 'status');
     const extractConfirmation = element('div', 'tk-fp-extract-confirm');
@@ -194,14 +194,16 @@ export function createFloorPanel({ doc, floor, updateFloor, extractFloor, openMe
         content.append(grid);
         const footer = element('div', 'tk-fp-footer');
         if (model.pending && model.payload.summary && !disabled) footer.append(button('确认写入', () => run(() =>
-            updateFloor(floor, { payload: model.payload, reviewed: true, deleted: false, omitted: false }, model.source.digest)), 'menu_button'));
-        if (model.entry && !disabled) {
-            if (confirmingDelete) footer.append(element('span', '', '删除此楼摘要并重新计算后续变化？'),
-                button('取消', () => { confirmingDelete = false; renderContent(); }, 'menu_button'),
-                button('确认删除', () => run(() => updateFloor(floor, { deleted: true }, model.source.digest)), 'menu_button'));
-            else if (!model.entry.deleted) footer.append(button('删除摘要', () => { confirmingDelete = true; renderContent(); }, 'tk-fp-remove'));
-        }
-        footer.append(element('span', 'tk-fp-spacer'), button('查看剧情', () => openMemory(floor), 'tk-fp-link'));
+            updateFloor(floor, { payload: model.payload, reviewed: true, deleted: false, omitted: false }, model.source.digest)), 'menu_button tk-fp-confirm'));
+        if (model.entry && !disabled && confirmingDelete) footer.append(element('span', '', '删除此楼摘要并重新计算后续变化？'),
+            button('取消', () => { confirmingDelete = false; renderContent(); }, 'menu_button'),
+            button('确认删除', () => run(() => updateFloor(floor, { deleted: true }, model.source.digest)), 'menu_button'));
+        const more = element('details', 'tk-fp-more');
+        const moreBody = element('div', 'tk-fp-more-body');
+        moreBody.append(omit, extract, button('查看剧情', () => openMemory(floor), 'tk-fp-more-action'));
+        if (model.entry && !disabled && !model.entry.deleted && !confirmingDelete) moreBody.append(button('删除摘要', () => { confirmingDelete = true; renderContent(); }, 'tk-fp-more-action tk-fp-remove'));
+        more.append(element('summary', '', '更多'), moreBody);
+        footer.append(element('span', 'tk-fp-spacer'), more);
         content.append(footer);
     }
     return { node: root, floor, refresh(snapshot) {
@@ -216,9 +218,11 @@ export function createFloorPanel({ doc, floor, updateFloor, extractFloor, openMe
         status.textContent = model.status; clock.textContent = model.payload.timeEnd || model.payload.timeStart || model.payload.date;
         preview.textContent = model.entry?.omitted ? '不计入剧情记忆' : model.payload.summary || (model.legacy ? '查看旧版区间总结' : '待总结');
         number.classList.toggle('is-pending', model.pending); root.classList.toggle('is-omit', !!model.entry?.omitted);
-        omit.classList.toggle('is-active', !!model.entry?.omitted); omit.disabled = busy || !!model.legacy;
-        omit.title = model.entry?.omitted ? '取消番外：恢复参与剧情记忆' : '标为番外：不计入剧情记忆'; omit.setAttribute('aria-label', omit.title);
-        extract.disabled = busy || !!model.legacy || !!model.entry?.omitted;
+        const omitted = !!model.entry?.omitted;
+        omit.textContent = omitted ? '取消番外' : '标为番外';
+        omit.classList.toggle('is-active', omitted); omit.disabled = busy || !!model.legacy;
+        omit.title = omitted ? '取消番外：恢复参与剧情记忆' : '标为番外：不计入剧情记忆'; omit.setAttribute('aria-label', omit.title);
+        extract.disabled = busy || !!model.legacy || omitted;
         if (signature !== nextSignature && !editKey) { signature = nextSignature; renderContent(); }
         updateNotice(); updateExpanded();
     } };

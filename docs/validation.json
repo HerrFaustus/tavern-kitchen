@@ -1,19 +1,19 @@
 {
-  "version": "0.2.9",
-  "verified_at_utc": "2026-11-04T09:19:13.5166222Z",
-  "build_id": "8a44f05a3f88a87e5430",
+  "version": "0.2.10",
+  "verified_at_utc": "2026-11-04T10:46:34.9440510Z",
+  "build_id": "9eacc0cf0bd166c0b1b7",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
   "quality": "passed",
   "unit_tests": {
-    "total": 1544,
-    "passed": 1544,
+    "total": 1546,
+    "passed": 1546,
     "failed": 0
   },
   "memory_runtime": "passed",
-  "scope": "Release maintenance only; runtime code is unchanged from 0.2.8. Version consistency, documentation, build artifact and tag-release workflow updated.",
-  "runtime_changes": false,
+  "scope": "UI simplification only; storage, protocols and module boundaries are unchanged. Navigation overflow, overview hierarchy, world management actions, floor summary actions, map settings and settings notes updated.",
+  "runtime_changes": true,
   "removed_source_paths": 1763,
   "removed_modules_in_build": 0,
   "browser_entries": 11,
@@ -94,7 +94,7 @@
     ],
     "verified_version": "0.1.9"
   },
-  "ui_review": "No new 0.2.9 UI review. Latest offline review was 0.2.5: ship for eight story overview screenshots; no material findings; real TauriTavern and all themes not verified.",
+  "ui_review": "0.2.10 offline review: workspace navigation overflow, story overview, world overview and management, floor summary, and map settings. No material findings; real TauriTavern and all themes not verified.",
   "world_archive_fixture": {
     "version": "0.2.0",
     "desktop": [
@@ -301,5 +301,40 @@
     },
     "errors": [],
     "icons_verified": false
+  },
+  "ui_simplification_fixture": {
+    "version": "0.2.10",
+    "desktop": [
+      1440,
+      1000
+    ],
+    "live_host": false,
+    "real_components": [
+      "workspace navigation",
+      "story overview",
+      "world overview and management",
+      "floor summary panel",
+      "map settings Vue component"
+    ],
+    "mocked_dependencies": [
+      "host theme and control CSS",
+      "story and world snapshots",
+      "world service and floor update endpoints",
+      "map settings bridge"
+    ],
+    "checks": {
+      "navOverflow": true,
+      "overviewSceneFirst": true,
+      "noDuplicateJumpButtons": true,
+      "worldManageAction": true,
+      "managementMoreActions": true,
+      "floorCollapsedClean": true,
+      "floorMoreActions": true,
+      "mapAdvancedCollapsed": true,
+      "mapSettingsNoMap": true,
+      "appearanceTabRemoved": true,
+      "noOverflow": true
+    },
+    "errors": []
   }
 }

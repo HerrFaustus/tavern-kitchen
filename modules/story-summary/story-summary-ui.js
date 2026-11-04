@@ -966,7 +966,7 @@ const UNANNOTATED_LABEL = '未标注';
         $('settings-close').setAttribute('aria-label', childPage || targetId === 'tab-agent-api' ? WORKSPACE_COPY.backParent : WORKSPACE_COPY.back);
         $$('.settings-tab').forEach(item => { item.hidden = !!childPage || assistant || item.dataset.family !== tab.dataset.family
             || item.hasAttribute('data-summary-legacy') && config.inlineSummary?.enabled !== false; });
-        $('settings-save').parentElement.hidden = ['tab-agent-api', 'tab-models', 'tab-appearance', 'tab-transfer', 'tab-backups', 'tab-clear'].includes(targetId);
+        $('settings-save').parentElement.hidden = ['tab-agent-api', 'tab-models', 'tab-transfer', 'tab-backups', 'tab-clear'].includes(targetId);
         $('settings-cancel').hidden = targetId === 'tab-agent';
         $('settings-chat').hidden = targetId !== 'tab-agent';
         vectorProfileEditors[targetId]?.refresh();
@@ -2394,7 +2394,6 @@ const UNANNOTATED_LABEL = '未标注';
 
         // Settings modal
         $('archive-manage-open').onclick = () => { archiveView.closeDialogs(); openSettings(); };
-        $('archive-data').onclick = () => { archiveView.closeDialogs(); openSettings({ tab: 'tab-transfer' }); };
         $('archive-assistant').textContent = MEMORY_COPY.tab;
         $('archive-assistant').onclick = () => { archiveView.closeDialogs(); openSettings({ tab: 'tab-agent' }); };
         $('settings-chat').textContent = MEMORY_CHAT_COPY.entry;

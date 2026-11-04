@@ -140,14 +140,20 @@ export function createWorldPanel({ service, sync, getIdentity }) {
     function show(next) {
         if (!root || !next) return;
         state = next; editing = false; root.replaceChildren();
-        status = el('p', `第 ${state.version} 版 · ${state.entities.length} 个对象`, 'tk-record-status'); status.setAttribute('role', 'status');
-        const toolbar = el('div', undefined, 'tk-record-actions');
-        toolbar.append(button('新增', createEntity), button('同步来源', () => run(sync)), button('登记交易', purchase), button('重新加载', () => run(() => service.read())));
+        const pending = state.claims.filter(claim => claim.status === 'pending').length;
+        status = el('p', `第 ${state.version} 版 · ${state.entities.length} 个对象${pending ? ` · ${pending} 条待确认` : ''}`, 'tk-record-status'); status.setAttribute('role', 'status');
+        const toolbar = el('div', undefined, 'tk-record-actions tk-record-primary-actions');
+        toolbar.append(button('新增对象', createEntity));
+        const more = el('details', undefined, 'tk-record-more');
+        const moreActions = el('div', undefined, 'tk-record-actions');
+        moreActions.append(button('同步来源', () => run(sync)), button('登记交易', purchase), button('重新加载', () => run(() => service.read())));
+        more.append(el('summary', '更多操作'), moreActions); toolbar.append(more);
         const search = input('search', query); search.placeholder = '搜索名称或别名'; search.setAttribute('aria-label', '搜索世界档案');
         const filter = select([['', '全部类型'], ...Object.entries(KINDS)], kind); filter.setAttribute('aria-label', '档案类型');
+        const filters = el('div', undefined, 'tk-record-filters'); filters.append(search, filter);
         results = el('div', undefined, 'tk-record-results'); content = el('section'); content.setAttribute('aria-label', '档案详情');
         search.addEventListener('input', () => { query = search.value; renderList(); }); filter.addEventListener('change', () => { kind = filter.value; renderList(); });
-        const backups = el('details'); backups.append(el('summary', '存档管理'), el('p', '档案保存在当前浏览器／应用。导出包含全部管理记录；恢复会建立新分支，原分支仍保留。', 'tk-record-note'), button('导出完整档案', download));
+        const backups = el('details'); backups.append(el('summary', '存档管理'), el('p', '档案保存在当前浏览器／应用。导出包含全部管理记录；恢复会建立新分支，原分支仍保留。管理档案中的修改暂不回写旧变量或地图；来源更新先进入待处理记录。', 'tk-record-note'), button('导出完整档案', download));
         const file = input('file'); file.accept = '.json,application/json'; file.setAttribute('aria-label', '选择世界档案备份');
         file.addEventListener('change', () => {
             const chosen = file.files?.[0]; if (!chosen) return;
@@ -167,7 +173,7 @@ export function createWorldPanel({ service, sync, getIdentity }) {
                 }
             }).catch(error => { if (token === epoch) { status.textContent = error.message; status.setAttribute('role', 'alert'); } });
         }), branchList);
-        root.append(status, el('p', '管理档案中的修改暂不回写旧变量或地图；来源更新先进入待处理记录。', 'tk-record-note'), toolbar, search, filter, results, content, backups); renderList(); renderDetail();
+        root.append(status, toolbar, filters, results, content, backups); renderList(); renderDetail();
     }
     return {
         mount(parent) { if (!root) { root = el('div', undefined, 'tk-world-records'); root.setAttribute('aria-label', '世界管理'); } if (root.parentElement !== parent) parent.append(root); },

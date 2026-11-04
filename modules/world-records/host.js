@@ -18,7 +18,7 @@ export function createWorldArchive({ getContext, getAccountId = () => 'default-u
     const unregisterAuthority = registerWorldAuthority('world-records', authority.read);
     const panel = createWorldPanel({ service, sync, getIdentity: identity });
     const overview = createWorldOverview({ navigate });
-    const storyOverview = createStoryOverview({ getSnapshot: getMemorySnapshot, navigate });
+    const storyOverview = createStoryOverview({ getSnapshot: getMemorySnapshot });
     const views = { overview: storyOverview, world: overview, 'world-management': panel };
     let disposed = false, scheduled = false, epoch = 0;
     async function sync() {
