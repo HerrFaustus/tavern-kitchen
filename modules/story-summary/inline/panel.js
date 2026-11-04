@@ -12,10 +12,10 @@ const iconNames = { 人物: 'user', 认知: 'brain', 场景: 'location-dot', 故
     场景锚点: 'bookmark',
     物品: 'box-open', 变量: 'sliders', 计划: 'list-check', 悬念: 'circle-question', 局面: 'flag', 世界: 'globe' };
 
-export function createFloorPanel({ doc, floor, updateFloor, extractFloor, openMemory, schedule }) {
+export function createFloorPanel({ doc, floor, updateFloor, extractFloor, summarizeFloor, openMemory, schedule }) {
     const root = doc.createElement('article'); root.className = 'tk-floor-summary tk-fp';
-    let model, expanded = false, editKey = null, busy = false, confirmingDelete = false, confirmingExtract = false, signature = '', error = '';
-    const run = action => observeBackgroundTask(act(action), { source: import.meta.url, operation: 'floor-edit' });
+    let model, expanded = false, editKey = null, busy = false, confirmingDelete = false, confirmingExtract = false, confirmingSummarize = false, working = '', signature = '', error = '';
+    const run = (action, workingText = '') => observeBackgroundTask(act(action, workingText), { source: import.meta.url, operation: 'floor-edit' });
     function element(tag, cls, text) {
         const node = doc.createElement(tag); if (cls) node.className = cls; if (text !== undefined) node.textContent = text; return node;
     }
@@ -32,6 +32,13 @@ export function createFloorPanel({ doc, floor, updateFloor, extractFloor, openMe
     const preview = element('span', 'tk-fp-preview');
     top.append(number, clock, status); toggle.append(top, preview);
     head.append(toggle);
+    const summarize = summarizeFloor ? button('总结本楼', () => {
+        if (model.entry && !model.entry.deleted) {
+            confirmingSummarize = true; confirmingExtract = false; confirmingDelete = false; expanded = true;
+            renderSummarizeConfirmation(); updateExpanded();
+        } else run(() => summarizeFloor(floor), '正在总结本楼…');
+    }, 'tk-fp-head-action', '总结本楼') : null;
+    if (summarize) { summarize.setAttribute('aria-label', summarize.title); head.append(summarize); }
     const omit = button('标为番外', () => run(async () => {
         const empty = !model.payload.summary || model.entry?.empty;
         const payload = empty ? { ...EMPTY_FLOOR_PAYLOAD, summary: '（未提供摘要）' } : model.payload;
@@ -51,7 +58,8 @@ export function createFloorPanel({ doc, floor, updateFloor, extractFloor, openMe
     const drawer = element('div', 'tk-fp-drawer'); const inner = element('div', 'tk-fp-drawer-inner');
     const body = element('div', 'tk-fp-body'); const notice = element('p', 'tk-fp-notice'); notice.setAttribute('role', 'status');
     const extractConfirmation = element('div', 'tk-fp-extract-confirm');
-    const content = element('div', 'tk-fp-content'); body.append(notice, extractConfirmation, content); inner.append(body); drawer.append(inner); root.append(head, drawer);
+    const summarizeConfirmation = element('div', 'tk-fp-summarize-confirm');
+    const content = element('div', 'tk-fp-content'); body.append(notice, extractConfirmation, summarizeConfirmation, content); inner.append(body); drawer.append(inner); root.append(head, drawer);
     function renderExtractConfirmation() {
         extractConfirmation.replaceChildren(); extractConfirmation.hidden = !confirmingExtract;
         if (!confirmingExtract) return;
@@ -59,24 +67,31 @@ export function createFloorPanel({ doc, floor, updateFloor, extractFloor, openMe
             button('取消重新提取', () => { confirmingExtract = false; renderExtractConfirmation(); }, 'menu_button'),
             button('确认重新提取', () => run(doExtract), 'menu_button'));
     }
+    function renderSummarizeConfirmation() {
+        summarizeConfirmation.replaceChildren(); summarizeConfirmation.hidden = !confirmingSummarize;
+        if (!confirmingSummarize) return;
+        summarizeConfirmation.append(element('p', '', '重新总结会调用副 API 生成本楼摘要，并替换现有摘要与变化。继续？'),
+            button('取消重新总结', () => { confirmingSummarize = false; renderSummarizeConfirmation(); }, 'menu_button'),
+            button('确认重新总结', () => run(() => summarizeFloor(floor), '正在重新总结本楼…'), 'menu_button'));
+    }
     function updateExpanded() {
         root.classList.toggle('is-expanded', expanded); drawer.classList.toggle('is-open', expanded); drawer.inert = !expanded;
         toggle.setAttribute('aria-expanded', String(expanded));
-        if (!expanded) { editKey = null; confirmingExtract = false; renderContent(); }
-        renderExtractConfirmation();
+        if (!expanded) { editKey = null; confirmingExtract = false; confirmingSummarize = false; renderContent(); }
+        renderExtractConfirmation(); renderSummarizeConfirmation();
     }
     function updateNotice() {
-        notice.textContent = error || model?.error || (model?.entry?.omitted ? '此楼为番外，不计入剧情记忆。取消番外后恢复。'
+        notice.textContent = working || error || model?.error || (model?.entry?.omitted ? '此楼为番外，不计入剧情记忆。取消番外后恢复。'
             : model?.pending && model.payload.summary ? '以下内容尚未写入。可逐条审查、编辑，再确认写入。' : '');
         notice.hidden = !notice.textContent;
     }
-    async function act(action) {
+    async function act(action, workingText) {
         if (busy) return;
-        busy = true; error = ''; updateNotice();
+        busy = true; error = ''; working = workingText || ''; updateNotice();
         for (const node of root.querySelectorAll('button,input,textarea,select')) node.disabled = true;
-        try { await action(); editKey = null; confirmingDelete = false; confirmingExtract = false; signature = ''; }
+        try { await action(); editKey = null; confirmingDelete = false; confirmingExtract = false; confirmingSummarize = false; signature = ''; }
         catch (caught) { error = caught.message; expanded = true; }
-        finally { busy = false; for (const node of root.querySelectorAll('button,input,textarea,select')) node.disabled = false;
+        finally { busy = false; working = ''; for (const node of root.querySelectorAll('button,input,textarea,select')) node.disabled = false;
             updateNotice(); updateExpanded(); schedule(); }
     }
     function commitPayload(payload, extra = {}) {
@@ -223,6 +238,15 @@ export function createFloorPanel({ doc, floor, updateFloor, extractFloor, openMe
         omit.classList.toggle('is-active', omitted); omit.disabled = busy || !!model.legacy;
         omit.title = omitted ? '取消番外：恢复参与剧情记忆' : '标为番外：不计入剧情记忆'; omit.setAttribute('aria-label', omit.title);
         extract.disabled = busy || !!model.legacy || omitted;
+        if (summarize) {
+            const hasEntry = !!model.entry && !model.entry.deleted;
+            const hasDraftSummary = !model.entry && !!model.payload.summary;
+            summarize.hidden = !!model.legacy || omitted || (!hasEntry && hasDraftSummary);
+            summarize.textContent = hasEntry ? '重新总结' : '总结本楼';
+            summarize.title = hasEntry ? '重新总结本楼' : '总结本楼';
+            summarize.setAttribute('aria-label', summarize.title);
+            summarize.disabled = busy;
+        }
         if (signature !== nextSignature && !editKey) { signature = nextSignature; renderContent(); }
         updateNotice(); updateExpanded();
     } };

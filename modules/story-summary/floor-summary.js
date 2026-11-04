@@ -27,7 +27,7 @@ export function projectFloorChanges(store, floor, invalidFrom = null) {
     return { start: batch.previousEndMesId + 1, end: batch.endMesId, changes };
 }
 
-export function installFloorSummaries({ getSnapshot, openMemory, updateFloor, extractFloor, documentTarget = document, Observer = globalThis.MutationObserver }) {
+export function installFloorSummaries({ getSnapshot, openMemory, updateFloor, extractFloor, summarizeFloor, documentTarget = document, Observer = globalThis.MutationObserver }) {
     activePanels?.dispose();
     const doc = documentTarget;
     let timer = null, observer = null;
@@ -46,7 +46,7 @@ export function installFloorSummaries({ getSnapshot, openMemory, updateFloor, ex
             let panel = nodes.get(message);
             if (!panel?.node.isConnected || panel.floor !== floor) {
                 panel?.node.remove();
-                panel = createFloorPanel({ doc, floor, openMemory, updateFloor, extractFloor, schedule });
+                panel = createFloorPanel({ doc, floor, openMemory, updateFloor, extractFloor, summarizeFloor, schedule });
                 text.after(panel.node); nodes.set(message, panel);
             }
             panel.refresh(snapshot);

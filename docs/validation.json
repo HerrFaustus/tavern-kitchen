@@ -1,18 +1,18 @@
 {
-  "version": "0.2.10",
-  "verified_at_utc": "2026-11-04T10:46:34.9440510Z",
-  "build_id": "9eacc0cf0bd166c0b1b7",
+  "version": "0.2.11",
+  "verified_at_utc": "2026-11-04T13:56:30.6033433Z",
+  "build_id": "626a000fff04036d019d",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
   "quality": "passed",
   "unit_tests": {
-    "total": 1546,
-    "passed": 1546,
+    "total": 1549,
+    "passed": 1549,
     "failed": 0
   },
   "memory_runtime": "passed",
-  "scope": "UI simplification only; storage, protocols and module boundaries are unchanged. Navigation overflow, overview hierarchy, world management actions, floor summary actions, map settings and settings notes updated.",
+  "scope": "Manual per-floor summary through the configured summary API, a native SillyTavern extension drawer, and settings/navigation cleanup. Story settings move under Story; Settings keeps only the API profile library, feature profile selection moves into each feature section. Floor writes reuse the existing confirmation, transaction and vector maintenance paths; world authority, variables and map writes are unchanged.",
   "runtime_changes": true,
   "removed_source_paths": 1763,
   "removed_modules_in_build": 0,
@@ -94,7 +94,7 @@
     ],
     "verified_version": "0.1.9"
   },
-  "ui_review": "0.2.10 offline review: workspace navigation overflow, story overview, world overview and management, floor summary, and map settings. No material findings; real TauriTavern and all themes not verified.",
+  "ui_review": "0.2.11 offline review: floor summary one-click entry, existing-summary regeneration confirmation, the native extension drawer, story settings under Story, and the API profile library without a cross-feature binding table. No material findings; real TauriTavern, summary API calls and all themes not verified.",
   "world_archive_fixture": {
     "version": "0.2.0",
     "desktop": [
@@ -214,7 +214,7 @@
     },
     "errors": []
   },
-  "modules": 928,
+  "modules": 929,
   "phone_removal_fixture": {
     "version": "0.2.3",
     "desktop": [
@@ -303,7 +303,7 @@
     "icons_verified": false
   },
   "ui_simplification_fixture": {
-    "version": "0.2.10",
+    "version": "0.2.11",
     "desktop": [
       1440,
       1000
@@ -314,12 +314,16 @@
       "story overview",
       "world overview and management",
       "floor summary panel",
+      "native extension drawer",
+      "story settings navigation",
+      "API profile library",
       "map settings Vue component"
     ],
     "mocked_dependencies": [
       "host theme and control CSS",
       "story and world snapshots",
       "world service and floor update endpoints",
+      "summary API callback (button presence only)",
       "map settings bridge"
     ],
     "checks": {
@@ -330,6 +334,13 @@
       "managementMoreActions": true,
       "floorCollapsedClean": true,
       "floorMoreActions": true,
+      "floorOneClickSummary": true,
+      "floorRegenerateConfirmation": true,
+      "nativeExtensionDrawer": true,
+      "extensionEntryOpensWorkspace": true,
+      "storySettingsInStory": true,
+      "centralBindingsRemoved": true,
+      "featureSelectorsInModules": true,
       "mapAdvancedCollapsed": true,
       "mapSettingsNoMap": true,
       "appearanceTabRemoved": true,

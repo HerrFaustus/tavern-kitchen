@@ -7,6 +7,7 @@ import * as hostScript from '../../../../../script.js';
 import { getCurrentUserHandle } from '../../../../user.js';
 import { EXT_ID, extensionFolderPath } from './constants.js';
 import { buildEntryUrl } from './build-assets.js';
+import { createExtensionDrawer } from './extension-drawer.js';
 import { createDefaultXiaobaiOsSettings, prepareXiaobaiOsSettings, initXiaobaiOs, openXiaobaiOs, isDiceContinuationPending } from '../modules/xiaobai-os/index.js';
 import { configureL0ContinuationCheck } from '../modules/story-summary/vector/pipeline/l0-eligibility.js';
 import { observeAsyncCallback } from '../shared/common/async-errors.js';
@@ -55,16 +56,19 @@ async function loadBridge(entry, id) {
     });
 }
 
+function mountExtensionDrawer() {
+    const host = document.getElementById('extensions_settings') || document.getElementById('extensions_settings2');
+    if (!host || document.getElementById('tavern-kitchen-extension')) return;
+    host.append(createExtensionDrawer({ onOpen: () => kitchen.open('settings') }));
+}
+
 async function mountSettings() {
     const response = await fetch(`${extensionFolderPath}/settings.html`);
     if (!response.ok) throw new Error(`后厨设置页加载失败：${response.status}`);
     const fragment = document.createElement('div');
     fragment.innerHTML = DOMPurify.sanitize(await response.text());
     const root = fragment.firstElementChild;
-    const shortcut = document.createElement('button');
-    shortcut.type = 'button'; shortcut.className = 'menu_button'; shortcut.textContent = '打开酒馆后厨';
-    shortcut.addEventListener('click', () => kitchen.open('settings'));
-    document.getElementById('extensions_settings')?.append(shortcut);
+    mountExtensionDrawer();
     for (const input of root.querySelectorAll('[data-feature]')) {
         input.checked = input.dataset.feature === 'enabled' ? settings.enabled : !!settings[input.dataset.feature]?.enabled;
     }
@@ -156,6 +160,7 @@ export async function startKitchen(workspace) {
         memory = await import('../modules/story-summary/story-summary.js');
         const panels = installFloorSummaries({ getSnapshot: memory.getFloorSummarySnapshot,
             updateFloor: memory.updateFloorSummary, extractFloor: memory.extractMainReplySummary,
+            summarizeFloor: memory.summarizeFloorOnDemand,
             openMemory: floor => memory.openStoryMemory(floor) });
         const floorEvents = createModuleEvents('kitchen-floor-summaries');
         floorEvents.on(event_types.CHAT_CHANGED, panels.reset);

@@ -30,10 +30,10 @@ function syncNativeControls(target) {
 export const KITCHEN_TABS = [['overview', '总览'], ['world', '世界'], ['memory', '剧情'], ['planner', '规划'], ['settings', '设置']];
 export const KITCHEN_ROUTES = {
     overview: [['overview', '当前故事']],
-    memory: [['memory', '事件时间线']],
+    memory: [['memory', '事件时间线'], ['memory-settings', '剧情设置']],
     world: [['world', '世界状态'], ['situation', '局势'], ['lore', '设定'], ['people', '人物'], ['variables', '变量'], ['map', '地图'], ['world-engine', '后台演化']],
     planner: [['planner', '剧情规划'], ['dice', '行动判定']],
-    settings: [['settings', '功能开关'], ['memory-settings', '剧情设置'], ['agent-api', '模型接口'], ['world-management', '世界管理']],
+    settings: [['settings', '功能开关'], ['agent-api', 'API 配置'], ['world-management', '世界管理']],
 };
 const canonicalRoute = id => id === 'relations' ? 'people' : id === 'world-records' ? 'world' : id;
 const parentOf = id => KITCHEN_TABS.find(([key]) => KITCHEN_ROUTES[key].some(([route]) => route === id))?.[0];

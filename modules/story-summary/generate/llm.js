@@ -14,6 +14,7 @@ import {
 import { generateFeatureText } from '../../text-api/host.js';
 import { tryParseJson } from '../../../shared/common/json-candidate.js';
 import { STORY_UPDATE_PROTOCOL } from '../../story-state/records.js';
+import { buildFloorSummaryProtocol } from '../inline/protocol.js';
 const SUMMARY_CANCELLED_CODE = 'summary_generation_cancelled';
 
 export function createSummaryGenerationCancelledError() {
@@ -169,6 +170,23 @@ export async function generateSummary({
             messages: [...promptData.topMessages, ...promptData.bottomMessages],
             signal, timeoutMs: timeout,
         });
+        return result.text;
+    } catch (error) {
+        if (signal?.aborted) throw createSummaryGenerationCancelledError();
+        throw error;
+    }
+}
+
+/** One explicit floor summary through the configured summary profile. */
+export async function generateFloorSummary({ store, floorText, timeout = 180000, signal = null }) {
+    if (signal?.aborted) throw createSummaryGenerationCancelledError();
+    if (!floorText?.trim()) throw new Error('本楼正文为空');
+    const messages = [
+        { role: 'system', content: '你是酒馆后厨的单楼总结器。只输出一个 <kitchen_summary>JSON</kitchen_summary>，不要输出故事正文、分析或额外说明。' },
+        { role: 'user', content: `${buildFloorSummaryProtocol(store)}\n\n【本楼正文】\n${floorText}` },
+    ];
+    try {
+        const result = await generateFeatureText('summary', { messages, signal, timeoutMs: timeout });
         return result.text;
     } catch (error) {
         if (signal?.aborted) throw createSummaryGenerationCancelledError();

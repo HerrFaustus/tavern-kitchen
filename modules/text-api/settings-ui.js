@@ -159,19 +159,6 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
         if (!win.confirm(deletionMessage(settings.presets[index].name, replacement.name, affected))) return;
         await mutate({ type: 'delete', id: selected }, replacement.id);
     }
-    function renderBindings(container) {
-        for (const [consumer, label] of Object.entries(PROFILE_FEATURES)) {
-            const choices = [{ value: '', label: COPY.unset, disabled: true },
-                ...(consumer === 'summary' ? [{ value: HOST_BINDING, label: COPY.host }] : []), ...profileChoices(settings, consumer)];
-            control(label, select(choices, settings.bindings[consumer], async value => {
-                try {
-                    settings = await request('mutate', { feature: consumer, mutation: value === HOST_BINDING ? { type: 'select-host' } : { type: 'select', id: value } });
-                    feedback('调用配置已保存');
-                } catch (error) { feedback(error.message, true); }
-                render();
-            }), container);
-        }
-    }
     async function importTavern(connectionOnly) {
         if (busy) return;
         busy = true; fields.disabled = true; feedback('正在读取酒馆连接…');
@@ -194,10 +181,9 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
             control(PROFILE_FEATURES[feature] + '使用的配置', selector);
             const current = settings.presets.find(p => p.id === settings.bindings[feature]);
             if (current) fields.append(element('p', current.model || '此配置尚未选择模型', 'text-api-status'));
-            fields.append(element('p', '配置的创建、命名和编辑统一在 设置 → 模型接口 中完成。', 'text-api-status'));
+            fields.append(element('p', '配置的创建、命名和编辑统一在 设置 → API 配置 中完成。', 'text-api-status'));
             return;
         }
-        const bindingsOpen = fields.querySelector('.text-api-bindings')?.open || false;
         const parametersOpen = fields.querySelector('.text-api-parameters')?.open || false;
         fields.replaceChildren();
         const toolbar = element('fieldset', null, 'text-api-presets');
@@ -215,15 +201,11 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
             actions.append(item);
         }
         const libraryTitle = element('h2', '配置库');
-        fields.append(libraryTitle, element('p', '编辑或新建配置不会更改模块的选择。', 'text-api-status'));
+        fields.append(libraryTitle, element('p', '编辑或新建配置不会更改各板块的选择。', 'text-api-status'));
         const imports = element('div', null, 'text-api-imports');
         imports.append(button('复制酒馆主接口', () => importTavern(false)), button('只复制酒馆连接', () => importTavern(true)));
         fields.append(imports);
         toolbar.append(selector, actions); fields.append(toolbar);
-        const bindings = element('details', null, 'text-api-bindings');
-        bindings.open = bindingsOpen; bindings.append(element('summary', '模块调用配置'));
-        const bindingGrid = element('div', null, 'text-api-grid'); renderBindings(bindingGrid); bindings.append(bindingGrid);
-        fields.append(bindings);
         syncSaveButton();
         if (!draft) return;
         if (selected === HOST_BINDING) {

@@ -28,10 +28,10 @@ onBeforeUnmount(() => editor?.destroy());
         <div class="agent-api-scroll">
             <div class="agent-api-content">
                 <header class="agent-api-header">
-                    <h1>模型接口</h1>
-                    <p>集中管理有名称的 API 配置，各模块按需选用。</p>
+                    <h1>API 配置</h1>
+                    <p>集中管理 API 连接与模型配置；具体功能在对应板块中选择使用的配置。</p>
                 </header>
-                <section ref="root" class="agent-api-panel" aria-label="模型接口配置库" />
+                <section ref="root" class="agent-api-panel" aria-label="API 配置库" />
                 <WebSettings :bridge="props.bridge" />
             </div>
         </div>

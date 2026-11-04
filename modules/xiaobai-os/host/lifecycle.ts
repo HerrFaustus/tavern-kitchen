@@ -469,7 +469,7 @@ export function createXiaobaiOsLifecycle({
                 const data = isRecord(payload) ? payload : {};
                 if (!['load', 'mutate'].includes(String(data.action))) {throw new Error('未知的模型配置操作');}
                 if (data.action === 'mutate' && (!isRecord(data.mutation) || data.mutation.type !== 'select')) {
-                    throw new Error('请在模型接口页面编辑配置');
+                    throw new Error('请在 API 配置页面编辑配置');
                 }
                 const { handleProfileRequest } = await import('../../text-api/profile-service.js');
                 result = await handleProfileRequest({ ...data, feature: 'world' });

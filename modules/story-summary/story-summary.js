@@ -1,7 +1,7 @@
 import { getKitchenMount, openKitchenTab, closeKitchenWorkspace, bindKitchenFrame } from '../../core/kitchen-workspace.js';
 import { refreshFloorSummaries } from './floor-summary.js';
 import { createFloorSummaryController } from './inline/controller.js';
-import { buildFloorProtocol } from './inline/protocol.js';
+import { buildFloorProtocol, extractFloorPayload, floorSource, stripFloorProtocol } from './inline/protocol.js';
 import { floorCoverageEnd, isFloorEntryCurrent } from './inline/ledger.js';
 import { installFloorDisplayFilter } from './inline/host-regex.js';
 import { mergeNewData, executeRollback } from './data/store.js';
@@ -130,7 +130,7 @@ import { isGenerating } from '../../shared/common/sillytavern-generation-state.j
 
 // summary generation
 import { runSummaryGeneration } from "./generate/generator.js";
-import { createSummaryGenerationCancelledError, isSummaryGenerationCancelledError } from "./generate/llm.js";
+import { createSummaryGenerationCancelledError, generateFloorSummary, isSummaryGenerationCancelledError } from "./generate/llm.js";
 
 // vector service
 import { embed, getEngineFingerprint } from "./vector/utils/embedder.js";
@@ -289,6 +289,7 @@ const MESSAGE_EVENT = "message";
 const AUTO_SUMMARY_MAX_ATTEMPTS = 3;
 let chatSummaryStateChanging = false;
 let activeSummaryExecution = null;
+let floorSummaryRequest = null;
 
 function getStorySummaryEnablement() {
     const context = getContext();
@@ -5166,6 +5167,40 @@ export function getFloorSummarySnapshot() {
 }
 export function updateFloorSummary(floor, change, source) { return mainReplySummary.update(floor, change, source); }
 export function extractMainReplySummary(floor) { return mainReplySummary.ingest(floor, { force: true }); }
+
+/** One explicit model summary for a single AI floor; writes through the same floor transaction. */
+export async function summarizeFloorOnDemand(floor) {
+    if (!isStorySummaryEnabledForCurrentChat()) throw new Error('请先启用当前聊天的剧情记录。');
+    if (!Number.isInteger(floor) || floor < 0) throw new Error('楼层无效。');
+    if (floorSummaryRequest != null) throw new Error('已有楼层正在总结，请稍候。');
+    if (isHostGenerating() || isSummaryGenerating()) throw new Error('请等待当前生成完成后再总结本楼。');
+    const chat = getContext().chat || [];
+    const source = floorSource(chat, floor);
+    if (!source) throw new Error('只能总结叙事 AI 回复。');
+    const text = chat.slice(source.start, floor + 1)
+        .map(item => `${item.is_user ? '玩家' : item.name || '角色'}：${stripFloorProtocol(item.mes)}`)
+        .join('\n\n');
+    if (!text.trim()) throw new Error('本楼正文为空。');
+    floorSummaryRequest = floor;
+    const identity = getChatIdentity(getContext());
+    try {
+        await ensureFloorSources();
+        if (identity !== getChatIdentity(getContext())) throw new Error('聊天已切换，本次总结未写入。');
+        const raw = await generateFloorSummary({ store: getPublishedSummaryStore(), floorText: text });
+        if (identity !== getChatIdentity(getContext())) throw new Error('聊天已切换，本次总结未写入。');
+        let extracted = extractFloorPayload(raw);
+        if (extracted.status === 'missing') {
+            const candidate = String(raw || '').trim().replace(/^```(?:json)?\s*|\s*```$/gi, '');
+            if (candidate.startsWith('{')) extracted = extractFloorPayload(`<kitchen_summary>${candidate}</kitchen_summary>`);
+        }
+        if (extracted.status !== 'ready') throw new Error(extracted.error || '总结格式有误，未写入。');
+        return await mainReplySummary.update(floor, {
+            payload: extracted.payload, reviewed: true, deleted: false, empty: false, omitted: false,
+        }, source.digest);
+    } finally {
+        floorSummaryRequest = null;
+    }
+}
 export function invalidateWorldContext() {
     if (isStorySummaryEnabledForCurrentChat()) cancelRecallAndClearPrompt('world-state-changed');
 }

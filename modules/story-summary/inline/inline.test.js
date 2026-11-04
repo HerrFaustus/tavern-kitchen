@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { setImmediate } from 'node:timers';
 import { parseHTML } from 'linkedom';
-import { extractFloorPayload, floorSource, prepareFloorPayload, stripFloorProtocol, isNarrativeReply } from './protocol.js';
+import { buildFloorSummaryProtocol, extractFloorPayload, floorSource, prepareFloorPayload, stripFloorProtocol, isNarrativeReply } from './protocol.js';
 import { createFloorSummaryController } from './controller.js';
 import { createFloorPanel } from './panel.js';
 import { installFloorDisplayFilter } from './host-regex.js';
@@ -86,6 +86,36 @@ test('floor panel uses two-line preview, editable grouped entries and explicit a
     panel.node.querySelector('form').dispatchEvent(new document.defaultView.Event('submit', { cancelable: true }));
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(calls.length, 1); assert.equal(calls[0][1].payload.summary, '已审查的摘要'); assert.equal(calls[0][1].stage, true);
+});
+
+test('floor panel exposes one-click floor summarization when the host provides it', async () => {
+    const { document } = parseHTML('<html><body></body></html>');
+    let calls = 0;
+    const panel = createFloorPanel({ doc: document, floor: 0, schedule() {}, summarizeFloor: async () => { calls++; },
+        updateFloor: async () => {}, extractFloor: async () => ({}) });
+    document.body.append(panel.node); panel.refresh({ chat: [{ mes: '正文，尚未附带总结。' }], store: {} });
+    const button = panel.node.querySelector('.tk-fp-head-action');
+    assert.ok(button);
+    assert.match(button.getAttribute('aria-label'), /总结本楼/u);
+    button.click();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(calls, 1);
+    assert.match(buildFloorSummaryProtocol({ json: { storyRecords: [], events: [] } }), /<kitchen_summary>/u);
+});
+
+test('existing floor summary asks before model regeneration', () => {
+    const { document } = parseHTML('<html><body></body></html>');
+    const message = raw(payload);
+    const source = floorSource([{ mes: message }], 0);
+    const entry = { floor: 0, payload, source, anchorVersion: 1 };
+    const store = { lastSummarizedMesId: 0, summaryHistory: [{ kind: 'batch', previousEndMesId: -1, endMesId: 0, floorEntry: entry, undo: null }] };
+    const panel = createFloorPanel({ doc: document, floor: 0, schedule() {}, summarizeFloor: async () => {},
+        updateFloor: async () => {}, extractFloor: async () => ({}) });
+    document.body.append(panel.node); panel.refresh({ chat: [{ mes: message }], store });
+    const button = panel.node.querySelector('.tk-fp-head-action');
+    assert.equal(button.textContent, '重新总结');
+    button.click();
+    assert.match(panel.node.querySelector('.tk-fp-summarize-confirm').textContent, /替换现有摘要/u);
 });
 
 test('main mode disables both automatic summary entrypoints and injects only into story generation', async () => {

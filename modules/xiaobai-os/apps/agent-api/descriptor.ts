@@ -2,7 +2,7 @@ import type { XiaobaiOsAppDescriptor } from '../../types.js';
 
 export const AGENT_API_APP_DESCRIPTOR: Readonly<XiaobaiOsAppDescriptor> = Object.freeze({
     id: 'agent-api',
-    name: '模型接口',
-    description: 'Configure the shared model connection used by OS agents and test that connection from this APP.',
+    name: 'API 配置',
+    description: 'Manage named API connections and models; each feature chooses its own profile in its own section.',
     accent: '#00b8c5',
 });

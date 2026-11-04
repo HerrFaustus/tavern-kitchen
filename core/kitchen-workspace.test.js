@@ -65,10 +65,14 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     assert.equal(document.querySelector('[aria-selected="true"]').textContent, '设置');
     assert.notEqual(getKitchenMount('world-management'), getKitchenMount('world'));
     await workspace.open('memory-settings');
-    assert.equal(document.querySelector('[aria-selected="true"]').textContent, '设置');
+    assert.equal(document.querySelector('[aria-selected="true"]').textContent, '剧情');
     assert.equal(getKitchenMount('memory-settings'), getKitchenMount('memory'));
+    assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '剧情设置');
+    assert.equal(document.querySelector('.tk-subnav [data-route="memory"]').textContent, '事件时间线');
     await workspace.open('agent-api');
     assert.equal(document.querySelector('[aria-selected="true"]').textContent, '设置');
+    assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, 'API 配置');
+    assert.equal(document.querySelector('.tk-subnav [data-route="memory-settings"]'), null);
     await workspace.open('planner');
     await setImmediate();
     assert.match(getKitchenMount('planner').textContent, /请先启用规划/);
