@@ -1,21 +1,23 @@
 {
-  "version": "0.2.5",
-  "verified_at_utc": "2026-10-30T01:34:06.7154223Z",
-  "build_id": "14708a5322b75ae2bf20",
+  "version": "0.2.9",
+  "verified_at_utc": "2026-11-04T09:19:13.5166222Z",
+  "build_id": "8a44f05a3f88a87e5430",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
   "quality": "passed",
   "unit_tests": {
-    "total": 1510,
-    "passed": 1510,
+    "total": 1544,
+    "passed": 1544,
     "failed": 0
   },
   "memory_runtime": "passed",
+  "scope": "Release maintenance only; runtime code is unchanged from 0.2.8. Version consistency, documentation, build artifact and tag-release workflow updated.",
+  "runtime_changes": false,
   "removed_source_paths": 1763,
   "removed_modules_in_build": 0,
   "browser_entries": 11,
-  "chunks": 65,
+  "chunks": 68,
   "host_static_validation": {
     "version": "1.19.0",
     "commit": "06bde939fb1e9c4c8d8641d810f0a916b5bce127"
@@ -92,7 +94,7 @@
     ],
     "verified_version": "0.1.9"
   },
-  "ui_review": "ship: independent review of eight offline story overview screenshots; no material findings; real TauriTavern and all themes not verified",
+  "ui_review": "No new 0.2.9 UI review. Latest offline review was 0.2.5: ship for eight story overview screenshots; no material findings; real TauriTavern and all themes not verified.",
   "world_archive_fixture": {
     "version": "0.2.0",
     "desktop": [
@@ -212,7 +214,7 @@
     },
     "errors": []
   },
-  "modules": 917,
+  "modules": 928,
   "phone_removal_fixture": {
     "version": "0.2.3",
     "desktop": [

@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { root } from './build/browser-entries.mjs';
 
 for (const args of [
+    ['scripts/check-versions.mjs'],
     ['scripts/check-project.mjs'],
     ['scripts/check-garbled.js'],
     ['scripts/check-relative-imports.mjs'],

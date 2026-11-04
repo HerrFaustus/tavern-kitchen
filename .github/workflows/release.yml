@@ -1,0 +1,37 @@
+name: Kitchen release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm check
+      - run: python scripts/package.py
+      - run: node scripts/check-versions.mjs
+      - name: Publish GitHub release
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" \
+            "release/tavern-kitchen-${version}.zip" \
+            "release/tavern-kitchen-${version}.zip.sha256" \
+            "release/release-info.json" \
+            --title "酒馆后厨 ${version}" \
+            --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
