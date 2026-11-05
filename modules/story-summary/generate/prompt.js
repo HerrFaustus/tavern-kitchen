@@ -1,24 +1,23 @@
 // ═══════════════════════════════════════════════════════════════════════════
 // Story Summary - Prompt Injection
 //
-// 大总结是一份 JSON；召回把其中的 events 当作事件、facts 当作约束分别装配。
+// 当前正文入口使用原文检索与独立的剧情摘要背景。旧事件/场景装配仅供历史回放。
 // 本模块只构建注入文本，不写入 extension_prompts。
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { getContext } from "../../../../../../extensions.js";
-import { xbLog } from "../../../core/debug-core.js";
 import { getPublishedSummaryStore as getSummaryStore, getFacts } from "../data/store.js";
 import { floorCoverageEnd } from '../inline/ledger.js';
 import { isRelationFact } from "../data/fact-predicates.js";
 import { getVectorConfig, getSummaryPanelConfig, getSettings, DEFAULT_MEMORY_PROMPT_TEMPLATE } from "../data/config.js";
 import {
     hydrateDirectEvidence,
-    recallMemory,
     releaseDirectEvidenceContext,
 } from "../vector/retrieval/recall.js";
 import { getMeta } from "../vector/storage/chunk-store.js";
+import { recallRawMemory } from '../vector/retrieval/raw-recall.js';
+import { plotBackgroundItems } from './plot-background.js';
 import { getPublishedStateAtoms as getStateAtoms } from "../vector/storage/state-store.js";
-import { getEngineFingerprint } from "../vector/utils/embedder.js";
 import { buildTrustedCharacters } from "../vector/retrieval/entity-lexicon.js";
 import { filterConstraintsByRelevance } from "./constraint-filter.js";
 import {
@@ -32,12 +31,12 @@ import { packEventEvidence } from "./event-evidence-packing.js";
 import { tryConsumeWholeItem } from './token-budget.js';
 import { getHiddenThrough } from '../hide-state.js';
 import { availableStoryRecords, storyContextLines } from '../../story-state/records.js';
+import { authorityMemoryStoryStore } from '../../world-records/authority-context.js';
 
 // Metrics
 import { detectIssues, finalizeMetricsTiming } from "../vector/retrieval/metrics.js";
 import { createRecallDiagnostics } from '../recall-diagnostics.js';
 
-const MODULE_ID = "summaryPrompt";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 预算常量
@@ -1061,7 +1060,7 @@ async function buildVectorPrompt(store, recallResult, allEvents, focusCharacters
     const constraintBudget = { used: 0, max: CONSTRAINT_MAX };
     const storyLines = [];
     const storyBudget = { used: 0, max: 800 };
-    for (const line of storyContextLines(availableStoryRecords(store), focusCharacters)) pushWithBudget(storyLines, line, storyBudget);
+    for (const line of storyContextLines(availableStoryRecords(authorityMemoryStoryStore(store, getContext())), focusCharacters)) pushWithBudget(storyLines, line, storyBudget);
     constraintBudget.used = storyBudget.used;
     const groupedSelectedConstraints = selectConstraintsByBudgetDesc(groupedConstraints, constraintBudget);
     if (evidenceTrace) {
@@ -1642,121 +1641,75 @@ export async function buildVectorPromptForReplay(store, recallResult, focusChara
  * @returns {Promise<{text: string, diagnostics: object, notice: object|null}>}
  */
 export async function buildVectorPromptText(excludeLastAi = false, options = {}) {
-    const { signal = null, diagnostics = createRecallDiagnostics(getContext()?.chatId),
-        stageObserver = null, captureEvidenceTrace = false, withQueryEmbedding } = options;
-    let recallResult = null;
-    let meta = null;
-    let assembly = null;
-    const finish = (text, reason = '', notice = null) => {
-        diagnostics.reason = reason || diagnostics.reason;
+    const { signal = null, diagnostics = createRecallDiagnostics(getContext()?.chatId), captureEvidenceTrace = false, withQueryEmbedding } = options;
+    let recallResult = null, meta = null, assembly = null;
+    const finish = (text, reason = '') => {
+        diagnostics.reason = reason;
         diagnostics.finishedAt ??= performance.now();
-        return { text, notice, diagnostics,
+        return { text, notice: null, diagnostics,
             ...(captureEvidenceTrace ? { observation: { recallResult, meta, assembly } } : {}) };
     };
-
-    if (!getSettings().storySummary?.enabled) {
-        return finish('', '剧情总结未启用');
-    }
-
+    if (!getSettings().storySummary?.enabled) return finish('', '剧情总结未启用');
     const store = getSummaryStore();
-
-    if (!store?.json) {
-        return finish('', '没有已保存的总结');
-    }
-
-    const allEvents = store.json.events || [];
-
+    if (!store?.json) return finish('', '没有已保存的总结');
     const vectorCfg = getVectorConfig();
-    if (!vectorCfg?.enabled) {
-        return finish('', '向量召回未启用');
-    }
-
-    const { chatId } = getContext();
+    if (!vectorCfg?.enabled) return finish('', '原文检索未启用');
+    const { chatId, chat = [] } = getContext();
+    const cfg = getSummaryPanelConfig();
     meta = chatId ? await getMeta(chatId) : null;
-
+    let hiddenThrough = getHiddenThrough({
+        enabled: cfg.ui.hideSummarized, summaryBoundary: floorCoverageEnd(store),
+        vectorBoundary: meta?.lastChunkFloor ?? -1,
+        useVectorBoundary: !store.summaryHistory?.some(batch => batch.floorEntry) && cfg.ui.useVectorBoundary,
+        keepVisibleCount: cfg.ui.keepVisibleCount, length: chat.length,
+    });
+    if (excludeLastAi && !chat.at(-1)?.is_user) hiddenThrough = Math.min(hiddenThrough, chat.length - 2);
     try {
-        try {
-            recallResult = await recallMemory(allEvents, vectorCfg, {
-                excludeLastAi,
-                signal,
-                deferRuntimeRelease: true,
-                diagnostics,
-                stageObserver,
-                withQueryEmbedding,
-            });
-
-            recallResult = {
-                ...recallResult,
-                events: recallResult?.events || [],
-                l0Selected: recallResult?.l0Selected || [],
-                l1ByFloor: recallResult?.l1ByFloor || new Map(),
-                focusTerms: recallResult?.focusTerms || recallResult?.focusEntities || [],
-                focusEntities: recallResult?.focusTerms || recallResult?.focusEntities || [], // compat alias
-                focusCharacters: recallResult?.focusCharacters || [],
-                metrics: recallResult?.metrics || null,
-            };
-
-        } catch (e) {
-            if (signal?.aborted) {
-                return finish('', '召回已取消');
-            }
-            xbLog.error(MODULE_ID, "向量召回失败", e);
-            throw e;
-        }
-
-        if (signal?.aborted) {
-            return finish('', '召回已取消');
-        }
-
-        const hasRecallEvidence =
-            (recallResult?.events?.length || 0) > 0 ||
-            (recallResult?.l0Selected?.length || 0) > 0;
-
-        let notice = null;
-        if (!hasRecallEvidence) {
-            const noVectorsGenerated = !meta?.fingerprint || (meta?.lastChunkFloor ?? -1) < 0;
-            const fpMismatch = meta?.fingerprint && meta.fingerprint !== getEngineFingerprint(vectorCfg);
-
-            if (!diagnostics.reason && fpMismatch) {
-                notice = {
-                    issueCode: 'fingerprint_mismatch',
-                    message: '向量引擎已变更，请重新生成向量',
-                };
-            } else if (!diagnostics.reason && noVectorsGenerated) {
-                notice = {
-                    issueCode: 'vectors_not_generated',
-                    message: '没有可用向量，请在剧情总结面板中生成向量',
-                };
-            }
-            // 向量存在但本次未命中 → 静默跳过，不打扰用户
-            return finish('', diagnostics.reason || notice?.message || '检索完成，没有命中候选', notice);
-        }
-
+        recallResult = await recallRawMemory(vectorCfg, { hiddenThrough, excludeLastAi, signal, diagnostics, withQueryEmbedding });
+        if (signal?.aborted) return finish('', '召回已取消');
         diagnostics.stage = 'prompt-assembly';
-        assembly = await buildVectorPrompt(
-            store,
-            recallResult,
-            allEvents,
-            recallResult?.focusCharacters || [],
-            meta,
-            recallResult?.metrics || null,
-            { captureEvidenceTrace },
-        );
-        if (signal?.aborted) {
-            return finish('', '召回已取消');
-        }
-
-        const cfg = getSummaryPanelConfig();
-        let finalText = String(assembly.promptText || "");
-        if (cfg.trigger?.wrapperHead) finalText = cfg.trigger.wrapperHead + "\n" + finalText;
-        if (cfg.trigger?.wrapperTail) finalText = finalText + "\n" + cfg.trigger.wrapperTail;
-
+        assembly = buildRawPrompt(store, recallResult, hiddenThrough);
+        let text = assembly.promptText;
+        if (text && cfg.trigger?.wrapperHead) text = cfg.trigger.wrapperHead + '\n' + text;
+        if (text && cfg.trigger?.wrapperTail) text += '\n' + cfg.trigger.wrapperTail;
         diagnostics.stage = 'prompt-ready';
-        return finish(finalText, finalText.trim() ? '' : '已有候选，但没有内容进入最终装配', notice);
-    } finally {
-        if (recallResult?.directEvidenceContext) {
-            await releaseDirectEvidenceContext(recallResult.directEvidenceContext, recallResult.metrics);
-            recallResult.directEvidenceContext = null;
-        }
+        return finish(text, text ? '' : '没有需要补入的早期记忆');
+    } catch (error) {
+        if (signal?.aborted || error?.name === 'AbortError') return finish('', '召回已取消');
+        throw error;
     }
+}
+
+export function buildRawPrompt(store, recallResult, hiddenThrough) {
+    const { chat = [], name1 = '' } = getContext();
+    const focus = [...new Set([name1, ...(recallResult.focusCharacters || [])].filter(Boolean))];
+    const facts = filterConstraintsByRelevance(getFacts().filter(fact => !fact.retracted), focus, getKnownCharacters(store), name1);
+    const dict = buildConstraintPeopleDict(null, focus);
+    const constraints = { used: 0, max: CONSTRAINT_MAX };
+    const stateLines = [];
+    const storyBudget = { used: 0, max: 800 };
+    for (const line of storyContextLines(availableStoryRecords(authorityMemoryStoryStore(store, getContext())), focus)) pushWithBudget(stateLines, line, storyBudget);
+    constraints.used = storyBudget.used;
+    stateLines.push(...formatConstraintsStructured(selectConstraintsByBudgetDesc(groupConstraintsForDisplay(facts, dict), constraints), 'asc'));
+    for (const arc of store.json?.arcs || []) if (focus.some(name => normalize(name) === normalize(arc.name))) {
+        pushWithBudget(stateLines, formatArcLine(arc), constraints);
+    }
+    const background = [], raw = [];
+    const plotBudget = { used: 0, max: 4000 }, rawBudget = { used: 0, max: 3000 };
+    const items = plotBackgroundItems(store, chat, hiddenThrough);
+    for (const item of items) pushWithBudget(background, `[#${item.start + 1}-${item.end + 1}] ${item.text}`, plotBudget);
+    const seen = new Set();
+    const included = [];
+    for (const chunk of recallResult.chunks || []) {
+        if (seen.has(chunk.chunkId) || chunk.floor > hiddenThrough) continue;
+        seen.add(chunk.chunkId);
+        if (pushWithBudget(raw, `[#${chunk.floor + 1} · ${chunk.speaker}] ${chunk.text}`, rawBudget)) included.push(chunk);
+    }
+    const sections = [];
+    if (stateLines.length) sections.push(`[当前相关状态]\n${stateLines.join('\n')}`);
+    if (background.length) sections.push(`[早期剧情摘要]\n${background.join('\n')}`);
+    if (raw.length) sections.push(`[本轮相关的早期原文]\n${raw.join('\n')}`);
+    return { promptText: sections.length ? buildMemoryPromptText(`<剧情记忆>\n${sections.join('\n\n')}\n</剧情记忆>`) : '',
+        rawChunks: included, backgroundItems: items.length, includedBackgroundItems: background.length,
+        tokens: constraints.used + plotBudget.used + rawBudget.used };
 }

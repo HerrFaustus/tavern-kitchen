@@ -1,4 +1,6 @@
 import { FIELD_LABELS } from './domain.js';
+import { worldStoryRecords } from './world-story-state.js';
+import { storyContextLines } from '../story-state/records.js';
 
 const normalize = value => String(value || '').trim().normalize('NFKC').toLocaleLowerCase();
 const cache = new WeakMap();
@@ -45,6 +47,15 @@ export function buildAuthorityContext(state, query = '', maxChars = 4000) {
         const value = raw && typeof raw === 'object' && !Array.isArray(raw) && typeof raw.entityId === 'string'
             ? { ...raw, name: entities.get(raw.entityId)?.name || raw.entityId } : raw;
         const line = JSON.stringify({ id: entity.id, name: entity.name, field: FIELD_LABELS[field] || field, value });
+        if (used + line.length + 1 > maxChars) continue;
+        lines.push(line); used += line.length + 1;
+    }
+    const records = worldStoryRecords(state);
+    const focus = [...new Set([...state.entities.map(entity => entity.name),
+        ...records.flatMap(record => [record.name, record.person, ...(record.participants || [])])]
+        .filter(name => normalize(name) && context.includes(normalize(name))))];
+    for (const story of storyContextLines(records, focus)) {
+        const line = JSON.stringify({ story });
         if (used + line.length + 1 > maxChars) continue;
         lines.push(line); used += line.length + 1;
     }

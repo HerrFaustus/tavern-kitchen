@@ -19,3 +19,7 @@ export function collectChunkMaterials(chat, storedChunks, vectorDescriptors) {
     }
     return [...materials.values()];
 }
+
+export function collectRawChunkMaterials(chat) {
+    return chat.flatMap((message, floor) => chunkMessage(floor, message));
+}

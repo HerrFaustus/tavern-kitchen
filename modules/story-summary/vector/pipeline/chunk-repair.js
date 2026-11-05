@@ -1,5 +1,5 @@
 import { getAllChunks, getChunkVectorDescriptors, getMeta, updateMeta, saveChunks, saveChunkVectors } from '../storage/chunk-store.js';
-import { collectChunkMaterials } from './chunk-materials.js';
+import { collectChunkMaterials, collectRawChunkMaterials } from './chunk-materials.js';
 import { embed, getEngineFingerprint } from '../utils/embedder.js';
 import { getEmbeddingFailureDetails } from '../llm/embedding-failure.js';
 import { selectChunksForRepair } from './chunk-repair-policy.js';
@@ -29,11 +29,13 @@ async function repairMissingChunksInner({ chatId, chat, vectorConfig, signal, sh
         }
         const [stored, vectors] = await Promise.all([getAllChunks(chatId), getChunkVectorDescriptors(chatId)]);
         if (isCancelled()) return cancelled();
-        const materials = collectChunkMaterials(chat, stored, vectors);
-        const missing = selectChunksForRepair(materials, stored, vectors, fingerprint);
+        const verifySource = vectorConfig.retrievalMode === 'raw';
+        const materials = verifySource ? collectRawChunkMaterials(chat) : collectChunkMaterials(chat, stored, vectors);
+        const missing = selectChunksForRepair(materials, stored, vectors, fingerprint, { verifySource });
         activity.update({ total: missing.length });
         const storedIds = new Set(stored.map(chunk => chunk.chunkId));
-        const newMaterials = materials.filter(chunk => !storedIds.has(chunk.chunkId));
+        const storedTexts = new Map(stored.map(chunk => [chunk.chunkId, chunk.text]));
+        const newMaterials = materials.filter(chunk => !storedIds.has(chunk.chunkId) || verifySource && storedTexts.get(chunk.chunkId) !== chunk.text);
         if (newMaterials.length) {
             phase = 'materials';
             await commit(() => saveChunks(chatId, newMaterials));

@@ -12,6 +12,7 @@ import {
     stateVectorsTable,
 } from '../../data/db.js';
 import { xbLog } from '../../../../core/debug-core.js';
+import { searchRawRecords } from '../storage/raw-recall-store.js';
 import { createWorkerRpc } from './rpc.js';
 import {
     scoreAnchorsFromStateVectors,
@@ -593,6 +594,8 @@ function createMainBackend() {
         async call(type, payload = {}, options = {}) {
             if (terminated) throw new Error('RecallRuntime main backend terminated');
             switch (type) {
+                case 'searchRaw':
+                    return await searchRawRecords(payload.chatId, payload.documents, payload.options);
                 case 'ping':
                     return { pong: true, backend: 'main-fallback' };
                 case 'beginSession':
@@ -1026,6 +1029,13 @@ export async function getRecallRuntimeMeta(chatId, options = {}) {
     return await callRuntimePrimitive(chatId, 'getMeta', { chatId }, {
         timeoutMs: WORKER_TIMEOUT_MS,
         signal: options.signal || null,
+    });
+}
+
+export async function searchRawRecallRuntime(chatId, documents, options = {}) {
+    const { signal = null, onProgress, ...scoring } = options;
+    return await callRuntime('searchRaw', { chatId, documents, options: scoring }, {
+        timeoutMs: WORKER_TIMEOUT_MS, signal, onProgress,
     });
 }
 

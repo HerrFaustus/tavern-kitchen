@@ -60,7 +60,7 @@ test('knowledge and plan proposals preserve holders and stay outside current sto
     f.raw.proposals[0].record.evidence = ''; assert.throws(() => prepareWorldUpdate(f.raw, f.context), /获知依据/);
 });
 
-for (const mode of ['old-value', 'unknown-id', 'bad-reference', 'invalid-coins', 'invented-quote', 'outside-range', 'duplicate-field', 'wrong-version', 'unknown-receipt', 'missing-receipt']) {
+for (const mode of ['old-value', 'unknown-id', 'bad-reference', 'invalid-coins', 'invented-quote', 'outside-range', 'duplicate-field', 'wrong-version', 'unknown-receipt', 'missing-receipt', 'invalid-group', 'invalid-certainty']) {
     test(`invalid unified proposals cannot be committed: ${mode}`, async t => {
         const f = await setup(t); f.raw.proposals = [fieldProposal(f)];
         if (mode === 'old-value') f.raw.proposals[0].before.value = 12;
@@ -73,6 +73,8 @@ for (const mode of ['old-value', 'unknown-id', 'bad-reference', 'invalid-coins',
         if (mode === 'wrong-version') f.raw.basis.version++;
         if (mode === 'unknown-receipt') f.raw.acknowledgedReceipts.push('imagined');
         if (mode === 'missing-receipt') f.raw.acknowledgedReceipts = [];
+        if (mode === 'invalid-group') f.raw.proposals[0].groupId = '';
+        if (mode === 'invalid-certainty') f.raw.proposals[0].certainty = 'mostly-sure';
         assert.throws(() => prepareWorldUpdate(f.raw, f.context), /世界变化提案/);
         assert.equal((await f.service.read()).version, f.state.version);
     });

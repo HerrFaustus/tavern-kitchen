@@ -245,7 +245,7 @@ export async function getChunkVectorDescriptors(chatId) {
             assertFiniteVector(bufferToFloat32(record.vector), 'stored chunk vector', record.dims);
             valid = true;
         } catch (caughtError) { console.warn({ source: import.meta.url, operation: "getChunkVectorDescriptors" }, caughtError); }
-        descriptors.push({ chunkId: record.chunkId, fingerprint: record.fingerprint, valid });
+        descriptors.push({ chunkId: record.chunkId, fingerprint: record.fingerprint, valid, sourceHash: record.sourceHash });
     });
     return descriptors;
 }

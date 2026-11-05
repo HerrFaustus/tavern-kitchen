@@ -21,7 +21,14 @@ export function createWorldArchive({ getContext, getAccountId = () => 'default-u
     let authority, latestState = null;
     const service = createWorldService({ storage, getIdentity: identity, isSourceCurrent: turn => !!turn
         && isRangeSourceCurrent(turn.source, getContext().chat || [])
-        && getSummarySourceEnd(getContext().chat, turn.source.end) >= turn.source.end, onChanged: (state, owner) => {
+        && getSummarySourceEnd(getContext().chat, turn.source.end) >= turn.source.end,
+        isUpdateSourceCurrent: update => !!update && isRangeSourceCurrent(update.source, getContext().chat || [])
+            && getSummarySourceEnd(getContext().chat, update.source.end) >= update.source.end,
+        getReviewContext: () => {
+            const snapshot = getMemorySnapshot();
+            return { available: !!snapshot?.enabled && snapshot.invalidFrom === undefined && !snapshot.store?.summaryInvalid,
+                history: snapshot?.store?.summaryHistory || [], storyRecords: snapshot?.store?.json?.storyRecords || [] };
+        }, onChanged: (state, owner) => {
         if (owner === identity()) latestState = state;
         authority?.publish(state, owner);
         publishWorldBridgeState(sourceIdentity(), owner, state);
@@ -50,6 +57,7 @@ export function createWorldArchive({ getContext, getAccountId = () => 'default-u
                 await service.syncTurns(input.chat, { end: input.end, history: input.snapshot?.store?.summaryHistory || [],
                     memoryAvailable: !!input.snapshot?.enabled,
                     guard: () => token === epoch && key === identity() && !disposed && observationDigest(observation()) === digest });
+                await service.autoConfirm({ guard: () => token === epoch && key === identity() && !disposed && observationDigest(observation()) === digest });
             } catch (error) {
                 if (token === epoch && key === identity() && !disposed && observationDigest(observation()) !== digest) continue;
                 throw error;

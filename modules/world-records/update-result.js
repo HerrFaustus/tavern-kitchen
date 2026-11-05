@@ -8,6 +8,15 @@ const reserved = new Set(['__proto__', 'prototype', 'constructor']);
 const check = (ok, message) => { if (!ok) throw new Error(`世界变化提案：${message}`); };
 const text = (value, label, max = 2000) => { check(typeof value === 'string' && value.trim() && value.length <= max && !reserved.has(value), `${label}无效`); return value.trim(); };
 const equal = (a, b) => memoryDigest(a) === memoryDigest(b);
+function decisionMetadata(item) {
+    const value = {};
+    if (item.groupId !== undefined) value.groupId = text(item.groupId, '关联组', 100);
+    if (item.certainty !== undefined) {
+        check(['explicit', 'inferred', 'uncertain'].includes(item.certainty), '明确程度无效');
+        value.certainty = item.certainty;
+    }
+    return value;
+}
 function json(value, depth = 0) {
     check(depth < 30, '字段层级过深');
     if (value === null || typeof value === 'boolean' || typeof value === 'number' && Number.isFinite(value)) return;
@@ -69,6 +78,7 @@ export function prepareWorldUpdate(raw, context) {
             check(Array.isArray(item.aliases) && item.aliases.length <= 50, '别名无效');
             proposal = { type: 'entity', name, kind: item.kind, aliases: [...new Set(item.aliases.map(alias => text(alias, '别名', 200)))], nature: item.nature, evidence: proof };
         }
+        Object.assign(proposal, decisionMetadata(item));
         const key = item.type === 'field' ? `field:${item.entityId}/${item.field}` : item.type === 'story' ? `story:${proposal.record.id}` : `entity:${item.kind}/${item.name}`;
         check(!seen.has(key), '同批提案重复'); seen.add(key); return proposal;
     });
@@ -89,6 +99,7 @@ export function validateStoredUpdate(update) {
     for (const item of update.proposals) {
         check(item && ['field', 'entity', 'story'].includes(item.type) && natures.includes(item.nature), '保存的提案类型无效');
         evidence(item.evidence, update.source);
+        decisionMetadata(item);
         let key;
         if (item.type === 'field') {
             text(item.entityId, '保存的对象身份', 200); text(item.field, '保存的字段', 100);

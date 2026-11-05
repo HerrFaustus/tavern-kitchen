@@ -2,7 +2,8 @@ import { memoryDigest } from '../data/memory-policy.js';
 import { prepareSummaryResult } from '../generate/summary-result.js';
 import { STORY_UPDATE_PROTOCOL } from '../../story-state/records.js';
 import { validateInlineAnchors } from './anchors.js';
-import { captureRangeSource } from '../data/turn-source.js';
+import { captureRangeSource, isNarrativeReply } from '../data/turn-source.js';
+export { isNarrativeReply };
 
 export const FLOOR_TAG = 'kitchen_summary';
 export const FLOOR_PROTOCOL_LIMIT = 120_000;
@@ -14,9 +15,6 @@ const text = (value, label, required = false) => {
     if (typeof value !== 'string' || value.length > 12_000 || required && !value.trim()) fail(`${label}须为有效文本`);
     return value.trim();
 };
-
-export const isNarrativeReply = message => !!message && !message.is_user && typeof message.mes === 'string'
-    && !!message.mes.trim() && !(message.is_system && message.extra?.type);
 
 export function floorSource(chat, floor, version = 2) {
     const message = chat?.[floor];

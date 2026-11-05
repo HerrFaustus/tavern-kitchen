@@ -3,6 +3,7 @@ import { applyExactSummaryHistoryUndo, summaryBatchChanges, buildSummaryUndo } f
 import { createSummaryBatch } from '../data/summary-history.js';
 import { memoryItems, memoryKey, replaceMemoryRecords, sameMemory } from '../maintenance/domain.js';
 import { memoryPolicy, memoryDigest } from '../data/memory-policy.js';
+import { captureRangeSource } from '../data/turn-source.js';
 import { applyInlineAnchors, isInlineAnchorReceipt } from './anchors.js';
 
 const clone = value => structuredClone(value);
@@ -60,7 +61,14 @@ export function findFloorBatch(store, floor) {
 }
 
 export function isFloorEntryCurrent(entry, chat) {
-    return !!entry && floorSource(chat, entry.floor, entry.source?.version ?? 1)?.digest === entry.source?.digest;
+    if (!entry) return false;
+    const current = floorSource(chat, entry.floor, entry.source?.version ?? 1);
+    if (current && current.digest === entry.source?.digest) return true;
+    if (entry.source?.version !== 2 || !current || current.start !== entry.source.start) return false;
+    // Historical v2 floor cards can have captured a hidden AI reply as system.
+    const source = captureRangeSource(chat, current.start, entry.floor);
+    source.messages.at(-1).role = 'system';
+    return memoryDigest(source.messages.map(({ floor, ...message }) => message)) === entry.source.digest;
 }
 
 /** Highest contiguous covered floor; a new inline summary must never hide older gaps. */

@@ -2,6 +2,8 @@ import { parseMapDomain } from '../xiaobai-os/domains/map/invariants.js';
 import { assertTurnOrigin, TURN_PREFIX, turnById, validateTurnLedger, validateTurnRecord } from './turn-ledger.js';
 import { UPDATE_PREFIX } from './update-context.js';
 import { validateUpdateRecord } from './update-ledger.js';
+import { prepareProposalReview, repeatedProposalReview, validateProposalReviewHistory } from './proposal-review.js';
+import { validateWorldStoryState } from './world-story-state.js';
 
 // Host-independent world archive. Only established fields participate in commands.
 export const SCHEMA = 3;
@@ -69,8 +71,12 @@ export function validateWorld(state) {
     for (const [key, record] of Object.entries(state.sources)) if (key.startsWith(UPDATE_PREFIX)) validateUpdateRecord(key, record);
     if (state.modules !== undefined) {
         invariant(state.modules && typeof state.modules === 'object' && !Array.isArray(state.modules), '模块状态无效');
-        invariant(Object.keys(state.modules).every(key => ['map', 'variables'].includes(key)), '不支持的世界模块');
+        invariant(Object.keys(state.modules).every(key => ['map', 'story', 'variables'].includes(key)), '不支持的世界模块');
         if (state.modules.map !== undefined) { invariant(state.schema >= 2, '旧格式不能包含新版地图状态'); parseMapDomain(state.modules.map); }
+        if (state.modules.story !== undefined) {
+            validateWorldStoryState(state.modules.story); invariant(state.modules.story.revision <= state.version, '剧情状态版本超前');
+            for (const entry of [...state.modules.story.records, ...state.modules.story.candidates]) invariant(state.events.some(event => event.id === entry.eventId && event.version === entry.version), '剧情状态缺少提交历史');
+        }
         // Schema 3 backups may contain the retired module's JSON. Keep it as an
         // opaque archive for history/exports; no command can write or execute it.
         if (state.modules.variables !== undefined) invariant(state.schema === 3 && state.modules.variables && typeof state.modules.variables === 'object' && !Array.isArray(state.modules.variables), '历史模块归档无效');
@@ -101,31 +107,53 @@ export function validateWorld(state) {
             invariant(executed.id === receipt.commandId && executed.worldId === state.worldId && executed.expectedVersion === i
                 && canonical(executed) === receipt.fingerprint && canonical(executed.origin) === canonical(receipt.origin)
                 && canonical(executed.operations) === receipt.effectFingerprint, '效果命令与回执不一致');
-            const key = canonical([sourceId, effectId]); invariant(!effectKeys.has(key), '同一来源效果重复执行'); effectKeys.add(key);
-        } else invariant(!event.origin, '效果来源回执不完整');
+            invariant(canonical(receipt.origins ?? null) === canonical(executed.origins ?? null)
+                && canonical(event.origins ?? null) === canonical(receipt.origins ?? null), '同轮效果来源回执不完整');
+            if (receipt.origins) invariant(['manual', 'automatic'].includes(executed.reviewMode)
+                && receipt.origins.length === executed.operations.length && executed.operations.every(op => op.type === 'review_update' && op.action === 'accepted'), '同轮效果来源回执无效');
+            for (const origin of [receipt.origin, ...(receipt.origins || [])]) {
+                invariant(origin.sourceId === sourceId && typeof origin.effectId === 'string' && origin.effectId.trim()
+                    && origin.effectId.length <= 200, '同轮效果来源无效');
+                const key = canonical([origin.sourceId, origin.effectId]); invariant(!effectKeys.has(key), '同一来源效果重复执行'); effectKeys.add(key);
+            }
+        } else invariant(!event.origin && !event.origins && !receipt.origins, '效果来源回执不完整');
     }
-    checkGraph(state); return state;
+    validateProposalReviewHistory(state); checkGraph(state); return state;
 }
 
-export function applyCommand(previous, command) {
+export function applyCommand(previous, command, reviewContext = {}) {
     invariant(command && typeof command === 'object', '命令无效'); jsonValue(command);
     text(command.id, '命令标识', 200); text(command.title, '变更说明', 1000); text(command.at, '记录时间', 100);
     invariant(command.worldId === previous.worldId && command.branchId === previous.branchId, '世界或分支已切换，请重新打开档案');
     const fingerprint = canonical(command);
     const receipt = previous.receipts.find(r => r.commandId === command.id);
     if (receipt) { invariant(receipt.fingerprint === fingerprint, '同一命令标识不能提交不同内容'); return { state: previous, receipt, repeated: true }; }
+    const reviewed = repeatedProposalReview(previous, command);
+    if (reviewed) return { state: previous, receipt: reviewed, repeated: true };
     if (command.origin) {
         assertTurnOrigin(previous, command.origin);
-        const executed = previous.receipts.find(r => r.origin?.sourceId === command.origin.sourceId && r.origin.effectId === command.origin.effectId);
+        const executed = previous.receipts.find(r => [r.origin, ...(r.origins || [])].some(origin => origin?.sourceId === command.origin.sourceId && origin.effectId === command.origin.effectId));
         if (executed) {
             invariant(executed.effectFingerprint === canonical(command.operations), '同一来源效果编号不能提交不同内容');
             return { state: previous, receipt: executed, repeated: true };
         }
         invariant(!command.operations?.some(op => op.type === 'source'), '执行效果不能改写来源记录');
     }
+    if (command.origins) {
+        invariant(command.origin && Array.isArray(command.origins) && command.origins.length > 0, '同轮效果来源无效');
+        for (const origin of command.origins) {
+            assertTurnOrigin(previous, origin);
+            invariant(!previous.receipts.some(receipt => [receipt.origin, ...(receipt.origins || [])].some(saved =>
+                saved?.sourceId === origin.sourceId && saved.effectId === origin.effectId)), '本轮该目标已有执行回执，不能重复提交');
+        }
+    }
     invariant(command.expectedVersion === previous.version, '档案已更新，请重新加载后再保存');
     invariant(Array.isArray(command.operations) && command.operations.length > 0 && command.operations.length <= 10000, '变更数量无效');
+    const isReview = command.operations.some(op => op.type === 'review_update');
+    invariant(isReview || !command.reviewMode && !command.origins, '同轮确认只能处理世界提案');
+    const operations = isReview ? prepareProposalReview(previous, command, reviewContext) : command.operations;
     const state = structuredClone(previous); const effects = []; const version = state.version + 1;
+    if (isReview) state.schema = SCHEMA;
     const eventId = `event:${command.id}`;
     const record = (type, id, before, after) => effects.push({ type, id, before: before ?? null, after: structuredClone(after) });
     function mutate(id, update) { const entity = entityById(state, id); const before = structuredClone(entity); update(entity); entity.revision = version; record('entity', id, before, entity); }
@@ -133,10 +161,10 @@ export function applyCommand(previous, command) {
         field = safeField(field); validateReference(state, field, value);
         mutate(id, e => { e.fields[field] = { value: structuredClone(value), nature: 'established_fact', source: sourceOf(source), eventId, version }; });
     }
-    for (const op of command.operations) {
+    for (const op of operations) {
         if (op.type === 'module') {
-            invariant(op.module === 'map', '不支持的世界模块');
-            const value = parseMapDomain(op.value);
+            invariant(['map', 'story'].includes(op.module), '不支持的世界模块');
+            const value = op.module === 'map' ? parseMapDomain(op.value) : validateWorldStoryState(op.value);
             invariant(value.revision === version, '模块与世界提交版本不一致');
             state.schema = SCHEMA;
             state.modules ||= {};
@@ -164,10 +192,23 @@ export function applyCommand(previous, command) {
             invariant(['accepted', 'dismissed', 'withdrawn'].includes(op.status), '处理方式无效');
             if (op.status === 'accepted') setField(claim.entityId, claim.field, claim.value, { ...claim.source, label: `${claim.source.label}；人工确认` });
             const before = structuredClone(claim); claim.status = op.status; claim.resolvedEventId = eventId; record('claim', claim.id, before, claim);
+        } else if (op.type === 'record_review') {
+            invariant(isReview, '处理回执只能随提案确认或拒绝写入');
+            const key = `${UPDATE_PREFIX}${op.requestId}`, previous = state.sources[key];
+            invariant(previous && !previous.reviews?.some(review => review.index === op.review.index), '提案已处理');
+            const next = { ...previous, reviews: [...(previous.reviews || []), structuredClone(op.review)] };
+            validateUpdateRecord(key, next); record('review', key, null, op.review); state.sources[key] = next;
         } else if (op.type === 'source') {
             text(op.module, '来源类型', 100);
             if (op.module.startsWith(TURN_PREFIX)) validateTurnRecord(op.module, op.snapshot);
-            if (op.module.startsWith(UPDATE_PREFIX)) validateUpdateRecord(op.module, op.snapshot);
+            if (op.module.startsWith(UPDATE_PREFIX)) {
+                validateUpdateRecord(op.module, op.snapshot);
+                const previous = state.sources[op.module];
+                if (previous) {
+                    invariant(previous.fingerprint === op.snapshot.fingerprint && canonical(previous.update) === canonical(op.snapshot.update), '原提案不能被改写');
+                    invariant(isReview || canonical(previous.reviews || []) === canonical(op.snapshot.reviews || []), '提案处理记录只能通过确认或拒绝命令写入');
+                } else invariant(!op.snapshot.reviews?.length, '不能伪造提案处理记录');
+            }
             record('source', op.module, state.sources[op.module], op.snapshot); state.sources[op.module] = structuredClone(op.snapshot);
         } else if (op.type === 'purchase') {
             const buyer = entityById(state, op.buyerId), seller = entityById(state, op.sellerId), item = entityById(state, op.itemId);
@@ -182,7 +223,7 @@ export function applyCommand(previous, command) {
         } else throw new Error('不支持的世界命令');
     }
     state.version = version;
-    const origin = command.origin ? { origin: structuredClone(command.origin) } : {};
+    const origin = command.origin ? { origin: structuredClone(command.origin), ...(command.origins ? { origins: structuredClone(command.origins) } : {}) } : {};
     state.events.push({ id: eventId, commandId: command.id, title: command.title, at: command.at, version, effects, ...origin });
     const nextReceipt = { commandId: command.id, fingerprint, eventId, version, ...origin,
         ...(command.origin ? { effectFingerprint: canonical(command.operations) } : {}) };
@@ -194,9 +235,13 @@ export function forkWorld(state, version, branchId) {
     invariant(Number.isSafeInteger(version) && version >= 0 && version <= state.version, '分支起点无效');
     const next = emptyWorld(state.worldId, text(branchId), state.title);
     for (const event of state.events.slice(0, version)) for (const change of event.effects) {
-        invariant(['source', 'entity', 'claim', 'module'].includes(change.type), '历史变更类型无效');
-        if (change.type === 'module') { invariant(['map', 'variables'].includes(change.id) && canonical(next.modules[change.id] ?? null) === canonical(change.before), '模块历史不连续'); next.modules[change.id] = structuredClone(change.after); }
-        else if (change.type === 'source') { invariant(canonical(next.sources[change.id] ?? null) === canonical(change.before), '来源历史不连续'); next.sources[change.id] = structuredClone(change.after); }
+        invariant(['source', 'entity', 'claim', 'module', 'review'].includes(change.type), '历史变更类型无效');
+        if (change.type === 'module') { invariant(['map', 'story', 'variables'].includes(change.id) && canonical(next.modules[change.id] ?? null) === canonical(change.before), '模块历史不连续'); next.modules[change.id] = structuredClone(change.after); }
+        else if (change.type === 'review') {
+            const record = next.sources[change.id];
+            invariant(record?.kind === 'independent_world_update' && change.before === null && !record.reviews?.some(review => review.index === change.after.index), '提案处理历史不连续');
+            next.sources[change.id] = { ...record, reviews: [...(record.reviews || []), structuredClone(change.after)] };
+        } else if (change.type === 'source') { invariant(canonical(next.sources[change.id] ?? null) === canonical(change.before), '来源历史不连续'); next.sources[change.id] = structuredClone(change.after); }
         else { const list = change.type === 'entity' ? next.entities : next.claims; const index = list.findIndex(x => x.id === change.id); invariant(canonical(list[index] ?? null) === canonical(change.before), '对象历史不连续'); if (index < 0) list.push(structuredClone(change.after)); else list[index] = structuredClone(change.after); }
     }
     next.version = version; next.events = structuredClone(state.events.slice(0, version)); next.receipts = structuredClone(state.receipts.slice(0, version));

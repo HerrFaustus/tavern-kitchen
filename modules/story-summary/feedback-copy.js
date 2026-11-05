@@ -86,6 +86,7 @@ export const SUMMARY_FEEDBACK_COPY = Object.freeze({
         completed: ({ l0, l1, l2 }) => `延迟向量维护完成 l0=${l0} l1=${l1} l2=${l2}`,
     }),
     vectorIntegrity: Object.freeze({
+        keyword: '当前使用关键词检索；配置向量模型后可补充语义检索。',
         fingerprintMismatch: '向量引擎/模型已变更',
         cacheInconsistent: '部分向量缓存与保存的来源不一致',
         l1Gap: count => `${count} 层片段未向量化`,

@@ -13,6 +13,7 @@ import {
 } from "../data/store.js";
 import { commitSummaryMemory, readSummaryMemory, waitForMemoryCommit, getMemoryCommitState } from '../data/memory-commit.js';
 import { memorySaveError } from '../data/memory-copy.js';
+import { prepareMemoryTags } from '../data/memory-tags.js';
 import { SUMMARY_FEEDBACK_COPY } from '../feedback-copy.js';
 import { summaryFailureReason } from '../summary-failure.js';
 import { formatCharacterAliasTableForAI } from "../data/character-aliases.js";
@@ -217,11 +218,12 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
     }
 
     onProgress?.({ stage: 'structure' });
-    let parsed, worldUpdate, narrativeSummary;
+    let parsed, worldUpdate, narrativeSummary, memoryTags;
     try {
         if (preparedSources?.updateContext) {
             if (typeof decoded.summary !== 'string' || !decoded.summary.trim() || decoded.summary.length > 12000) throw new Error('统一整理须提供非空剧情摘要，最多 12000 字符');
             narrativeSummary = decoded.summary.trim();
+            memoryTags = prepareMemoryTags(decoded);
             if (decoded.storyUpdates !== undefined && (!Array.isArray(decoded.storyUpdates) || decoded.storyUpdates.length)) throw new Error('场景、认知与计划变化须进入 worldUpdate 的 story 提案，不直接改写当前状态');
             worldUpdate = prepareWorldUpdate(decoded.worldUpdate, preparedSources.updateContext);
         }
@@ -255,7 +257,7 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
     next.storySummary.updatedAt = Date.now();
     addSummarySnapshot(next.storySummary, lastSummarized, slice.endMesId, mergeResult.undo, memoryPolicy(filterRules));
     if (preparedSources) next.storySummary.summaryHistory.at(-1).sourceReceipt = structuredClone(preparedSources.receipt);
-    if (worldUpdate) Object.assign(next.storySummary.summaryHistory.at(-1), { summary: narrativeSummary, worldUpdate });
+    if (worldUpdate) Object.assign(next.storySummary.summaryHistory.at(-1), { summary: narrativeSummary, memoryTags, worldUpdate });
 
     onProgress?.({ stage: 'saving' });
     try {
@@ -277,6 +279,9 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
         try { proposalDelivery = await deliverMemorySources(preparedSources); }
         catch (error) { deliveryError = error; onError?.(`摘要与提案已保存，世界面板交付待恢复：${error.message}`); }
     }
+    const proposalReviews = proposalDelivery?.reviews || [];
+    const proposalAutoConfirmed = proposalReviews.filter(review => review.action === 'accepted' && review.mode === 'automatic').length;
+    const proposalPending = Math.max(0, (worldUpdate?.proposals.length || 0) - proposalReviews.length);
 
     onProgress?.({ stage: 'followup' });
     xbLog.info(MODULE_ID, `总结完成，已更新至 ${slice.endMesId + 1} 楼`);
@@ -296,7 +301,8 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
         endMesId: slice.endMesId,
         newEventIds,
         aliasChanged: !!mergeResult.aliasChanged,
-        ...(worldUpdate ? { proposalCount: worldUpdate.proposals.length, proposalStatus: proposalDelivery?.status || 'pending_delivery', deliveryError } : {}),
+        ...(worldUpdate ? { proposalCount: worldUpdate.proposals.length, proposalStatus: proposalDelivery?.status || 'pending_delivery',
+            proposalAutoConfirmed, proposalPending, deliveryError } : {}),
     };
     onStatus?.(`总结已保存至 ${slice.endMesId + 1} 楼，正在更新检索数据…`);
 
@@ -325,7 +331,9 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
     }
 
     onStatus?.(worldUpdate ? proposalDelivery?.status === 'stale' ? '摘要已保存；世界提案的基线已变化，请在世界管理中重新核对。'
-        : deliveryError ? '摘要与提案已保存，世界面板交付待恢复。' : `摘要与 ${worldUpdate.proposals.length} 条世界提案已保存，提案可在世界管理中核对。`
+        : deliveryError ? '摘要与提案已保存，世界面板交付待恢复。'
+        : proposalAutoConfirmed ? `摘要已保存；${proposalAutoConfirmed} 条世界变化已自动写入${proposalPending ? `，${proposalPending} 条留待人工核对。` : '。'}`
+        : `摘要与 ${worldUpdate.proposals.length} 条世界提案已保存，提案可在世界管理中核对。`
         : `总结完成，已保存至 ${slice.endMesId + 1} 楼`);
     if (config.trigger?.notifyOnComplete) {
         window.toastr?.success(SUMMARY_FEEDBACK_COPY.summaryCompleted(slice.endMesId + 1, newEventIds.length));

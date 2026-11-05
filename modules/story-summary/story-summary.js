@@ -53,12 +53,7 @@ import {
     runClearWithFeedback,
 } from './user-feedback.js';
 import { initAfterAiGate, notifyAfterAiHint, registerAfterAiHandler, waitForAfterAiReady } from "../../core/after-ai-gate.js";
-import {
-    commitIfSignalActive,
-    createAbortError,
-    mergeAbortSignals,
-    throwIfSignalAborted,
-} from "../../shared/common/abort-utils.js";
+import { commitIfSignalActive, createAbortError, throwIfSignalAborted } from "../../shared/common/abort-utils.js";
 import {
     GENERATE_INTERCEPTOR_ORDER,
     registerGenerateInterceptor,
@@ -110,8 +105,9 @@ import { projectStoryCharacters } from "./prompt-characters.js";
 import { notifyWorldSourcesChanged } from '../world-records/sources.js';
 import { prepareMemorySources, validateMemorySources } from '../world-records/turn-runtime.js';
 import { firstInvalidMemorySource } from './data/turn-source.js';
+import { authorityStoryStore } from '../world-records/authority-context.js';
 import { getAutoSummaryPlan } from './generate/summary-trigger.js';
-import { buildEventVectorText, selectMissingEventVectorPairs } from './vector/pipeline/event-vector-input.js';
+import { buildEventVectorText } from './vector/pipeline/event-vector-input.js';
 import { createHideStateController } from './hide-state.js';
 
 // prompt text builder
@@ -135,10 +131,10 @@ import { runSummaryGeneration } from "./generate/generator.js";
 import { createSummaryGenerationCancelledError, generateFloorSummary, isSummaryGenerationCancelledError } from "./generate/llm.js";
 
 // vector service
-import { embed, getEngineFingerprint } from "./vector/utils/embedder.js";
-import { testL0Service } from "./vector/llm/llm-service.js";
+import { getEngineFingerprint } from "./vector/utils/embedder.js";
+
 import { testRerankService } from "./vector/llm/reranker.js";
-import { isRetryableEmbeddingFailure } from "./vector/llm/embedding-failure.js";
+
 import { buildVectorIntegrityIssues } from "./vector/integrity-policy.js";
 import { createEmbeddingConnection } from './vector/embedding-connection.js';
 import { createServiceTests } from './vector/service-tests.js';
@@ -147,52 +143,27 @@ import { createServiceTests } from './vector/service-tests.js';
 import { preload as preloadTokenizer, injectEntities, isReady as isTokenizerReady } from "./vector/utils/tokenizer.js";
 
 // entity lexicon
-import { getEntityVocabulary } from "./vector/retrieval/entity-lexicon.js";
+import { getRawEntityVocabulary } from './vector/retrieval/raw-vocabulary.js';
+import { inspectRawVectorStatus } from './vector/pipeline/raw-vector-status.js';
 
-import {
-    getMeta,
-    updateMeta,
-    saveEventVectors as saveEventVectorsToDb,
-    getEventVectorDescriptors,
-    clearEventVectors,
-    deleteEventVectorsByIds,
-    clearAllChunks,
-    clearChatData,
-    saveChunks,
-    saveChunkVectors,
-    getStorageStats,
-} from "./vector/storage/chunk-store.js";
+import { getMeta, updateMeta, clearEventVectors, deleteEventVectorsByIds, clearAllChunks, clearChatData, getStorageStats } from "./vector/storage/chunk-store.js";
 
 import {
     getChunkBuildStatus,
     syncOnMessageDeleted,
 } from "./vector/pipeline/chunk-builder.js";
-import { runVectorMaintenance } from "./vector/pipeline/vector-workflow.js";
+
 import { isL0FloorDeferred } from './vector/pipeline/l0-eligibility.js';
 import { createVectorMaintenanceScheduler } from './vector/pipeline/maintenance-scheduler.js';
 import { repairMissingChunks } from "./vector/pipeline/chunk-repair.js";
 import { maintainChunks } from './vector/pipeline/chunk-maintenance.js';
-import {
-    incrementalExtractAtoms,
-    getL0VectorBuildStatus,
-    vectorizeMissingStateAtoms,
-    clearAllAtomsAndVectors,
-    getAnchorStats,
-} from "./vector/pipeline/state-integration.js";
-import {
-    clearStateVectors,
-    deleteStateVectorsByIds,
-    getStateAtoms,
-    getStateAtomsCount,
-    getStateVectorsCount,
-    saveStateVectors,
-    getL0Index,
-} from "./vector/storage/state-store.js";
+import { clearAllAtomsAndVectors, getAnchorStats } from "./vector/pipeline/state-integration.js";
+import { clearStateVectors, deleteStateVectorsByIds, getStateAtoms, getStateAtomsCount, getStateVectorsCount, getL0Index } from "./vector/storage/state-store.js";
 
 // vector io
-import { chunkMessage } from './vector/pipeline/chunk-text.js';
-import { buildRAggregateText } from './vector/pipeline/state-vector-input.js';
-import { inputDigest } from './vector/utils/vector-input-digest.js';
+
+
+
 import { exportVectors, importVectors, backupToServer, restoreFromServer, fetchManifest, deleteServerBackup, isDeleteUnsupportedError, getBackupFilename } from "./vector/storage/vector-io.js";
 import {
     clearRecallRuntime,
@@ -220,9 +191,9 @@ import {
     waitForVectorWrites,
 } from "./vector/runtime/maintenance-coordinator.js";
 
-import { invalidateLexicalIndex, warmupIndex, addEventDocuments, addChunkDocuments, clearChunkDocuments, removeEventDocuments, removeDocumentsByFloor, removeDocumentsFromFloor, replaceEventDocuments } from "./vector/retrieval/lexical-index.js";
-import { trackVectorActivity } from './vector/runtime/vector-activity.js';
-import { checkVectorCacheConsistency, recordVectorCacheDiagnostic } from './vector/storage/package/service.js';
+import { invalidateLexicalIndex, addEventDocuments, addChunkDocuments, clearChunkDocuments, removeEventDocuments, removeDocumentsByFloor, removeDocumentsFromFloor, replaceEventDocuments } from "./vector/retrieval/lexical-index.js";
+
+
 import { createMessageSourceTracker } from './data/message-sources.js';
 import { getChatIdentity } from './data/chat-identity.js';
 import { applySummarySectionEdit } from './data/section-edits.js';
@@ -245,7 +216,7 @@ const embeddingConnection = createEmbeddingConnection({
     onStatus: state => postToFrame({ type: 'VECTOR_ONLINE_STATUS', target: 'embedding', ...state }),
 });
 const serviceTests = createServiceTests({
-    probes: { l0: testL0Service, rerank: testRerankService },
+    probes: { rerank: testRerankService },
     onStatus: (target, state) => postToFrame({ type: 'VECTOR_ONLINE_STATUS', target, ...state }),
 });
 const summaryDiagnostics = createSummaryDiagnostics();
@@ -446,7 +417,7 @@ let lastSummaryStatus = { type: 'SUMMARY_STATUS', statusText: '', statusId: summ
 let events = null;
 let afterAiGateDispose = null;
 let activeChatId = null;
-let eventEditSyncToken = 0;
+
 
 // 用户可主动取消的写入操作。取消只作用于同名操作，不连坐其他写任务。
 const VECTOR_GENERATION_OPERATION = 'vector-generation';
@@ -495,7 +466,7 @@ let vectorIntegrityTimer = null;
 let vectorIntegrityRetryDelayMs = 0;
 const pendingVectorMaintenanceByChat = new Map();
 const autoSummaryTimers = new Map();
-const LEXICAL_WARMUP_DEBOUNCE_MS = 3000;
+
 const CHAT_CHANGE_LEXICAL_WARMUP_MS = 3000;
 const AUTO_SUMMARY_DELAY_MS = 3000;
 const AUTO_L0_BACKFILL_DELAY_MS = 5000;
@@ -596,36 +567,11 @@ let backupManagerCleanup = null;
 const EXT_PROMPT_KEY = "TavernKitchen_StorySummary";
 const MIN_INJECTION_DEPTH = 2;
 
-function formatSafeFailure(code, httpStatus = null) {
-    const safeCode = String(code || 'unknown').replace(/[^a-z0-9_:-]/gi, '').slice(0, 80) || 'unknown';
-    const status = Number(httpStatus);
-    return Number.isInteger(status) && status >= 100 && status <= 599
-        ? `${safeCode}（HTTP ${status}）`
-        : safeCode;
-}
 
-function getL0FailureAdvice(code) {
-    if (code === 'l0_config_missing') {
-        return '请先配置 L0 API Key，再点击“生成/补齐”继续；已完成楼层不会重复生成。';
-    }
-    return '请检查 L0 API、模型和网络后，再点击“生成/补齐”继续；已完成楼层不会重复生成。';
-}
 
-function getVectorFailureAdvice(code) {
-    if (code === 'fingerprint_mismatch') {
-        return '向量配置已经变化，请点击“完整重建”重新生成全部向量。';
-    }
-    if (code === 'embedding_config_missing') {
-        return '请先配置 Embedding API Key，再点击“补齐缺漏”继续。';
-    }
-    if (code === 'embedding_url_invalid') {
-        return '请检查 Embedding API URL，应为完整的 http:// 或 https:// 地址。';
-    }
-    if (['chunk_read_failed', 'state_vector_read_failed', 'state_vector_write_failed', 'chunk_write_failed', 'vector_write_failed', 'metadata_write_failed'].includes(code)) {
-        return '请确认浏览器存储可用且空间充足，刷新页面后再点击“补齐缺漏”继续。';
-    }
-    return '请检查 Embedding API、Key、额度和网络后，再点击“补齐缺漏”继续。';
-}
+
+
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 分词器预热（依赖 tokenizer.js 内部状态机，支持失败重试）
@@ -871,83 +817,11 @@ async function sendAnchorStatsToFrame() {
     postToFrame({ type: "ANCHOR_STATS", stats: { ...stats, atomsCount } });
 }
 
-async function handleAnchorGenerateNow(targetChatId, writeSession) {
-    const isCancelled = () => getContext()?.chatId !== targetChatId || !isVectorWriteSessionCurrent(writeSession);
-    if (isCancelled()) return;
-    try {
-        const vectorCfg = getVectorConfig();
-        if (!vectorCfg?.enabled) {
-            await executeSlashCommand("/echo severity=warning 请先启用向量检索");
-            return;
-        }
-        const { chat } = getContext();
-        if (!chat?.length) return;
-        const stats = await getAnchorStats();
-        if (isCancelled()) return;
-        if (stats.incomplete <= 0) {
-            await executeSlashCommand('/echo severity=info 记忆锚点已完整');
-            return;
-        }
-        if (!vectorCfg.l0Api?.key) {
-            await executeSlashCommand('/echo severity=error 请配置 L0 API Key 后再生成锚点');
-            return;
-        }
-        const result = await incrementalExtractAtoms(
-            targetChatId,
-            [...chat],
-            (message, current, total) => postToFrame({ type: "ANCHOR_GEN_PROGRESS", current, total, message }),
-            {
-                signal: writeSession.signal,
-                commit: writeSession.commit,
-                shouldCancel: isCancelled,
-                retryFailedFloors: true,
-                persistence: 'confirmed',
-            },
-        );
-        if (isCancelled() || result.cancelled) return;
-        if (result.llmFailed > 0) {
-            const failure = formatSafeFailure(result.failureCode, result.httpStatus);
-            await executeSlashCommand(`/echo severity=error 已保存成功提取的锚点；${result.llmFailed} 个楼层未完成（${failure}）。${getL0FailureAdvice(result.failureCode)}`);
-        } else {
-            await executeSlashCommand('/echo severity=info 锚点生成完成，可在“向量数据”中补齐缺漏');
-        }
-    } catch (error) {
-        if (error?.name === 'AbortError' || isCancelled()) return;
-        xbLog.error(MODULE_ID, '记忆锚点生成失败', error);
-        if (!shouldNotifyMemoryFailure(error)) return;
-        toastr.error(memorySaveError(error, 'anchors'), SUMMARY_FEEDBACK_COPY.title);
-    } finally {
-        await sendAnchorStatsToFrame();
-    }
+async function handleAnchorGenerateNow() {
+    await executeSlashCommand('/echo severity=info 场景信息已并入每轮独立整理；旧锚点仅供历史查看，不再单独生成。');
 }
 async function handleAnchorGenerate() {
-    if (guard.isAnyRunning('anchor', 'vector')) {
-        postToFrame({ type: "ANCHOR_GEN_PROGRESS", current: -1, total: 0 });
-        await executeSlashCommand('/echo severity=info 向量或锚点任务正在运行，请稍后再试');
-        return;
-    }
-    const release = guard.acquire('anchor');
-    if (!release) return;
-    const targetChatId = getContext()?.chatId || '';
-    try {
-        const ready = ensureCurrentSources(null, { requireSummary: false });
-        return await runVectorGenerationTask(
-            {
-                chatId: targetChatId,
-                kind: 'manual-anchor-generation',
-                scope: VECTOR_WRITE_SCOPES.EMBEDDING,
-                operationId: ANCHOR_GENERATION_OPERATION,
-                ready,
-            },
-            (writeSession) => handleAnchorGenerateNow(targetChatId, writeSession),
-        );
-    } catch (error) {
-        if (!isChatStale(targetChatId)) reportMemorySaveFailure(error);
-        xbLog.error(MODULE_ID, 'Anchor source synchronization failed', error);
-    } finally {
-        release();
-        postToFrame({ type: "ANCHOR_GEN_PROGRESS", current: -1, total: 0 });
-    }
+    return handleAnchorGenerateNow();
 }
 
 async function handleAnchorClear() {
@@ -979,6 +853,7 @@ function handleAnchorCancel() {
 }
 
 async function handleTestOnlineService(config, target = "embedding") {
+    if (target === "l0") return;
     const chatId = getContext()?.chatId;
     try {
         if (target === 'embedding') {
@@ -998,291 +873,46 @@ async function handleTestOnlineService(config, target = "embedding") {
 }
 
 async function generateVectorsNow(vectorCfg, targetChatId, writeSession) {
-    if (getContext()?.chatId !== targetChatId || !isVectorWriteSessionCurrent(writeSession)) return;
-    try {
-        if (!vectorCfg?.enabled) {
-            return;
-        }
-
-        const { chatId, chat } = getContext();
-        if (!chatId || !chat?.length) return;
-        const chatSnapshot = [...chat];
-        const atoms = structuredClone(getStateAtoms());
-        const sourceEvents = structuredClone(getSummaryStore()?.json?.events || []);
-        const isTargetActive = () => getContext()?.chatId === targetChatId && activeChatId === targetChatId;
-
-        if (!vectorCfg.embeddingApi?.key) {
-            postToFrame({ type: "VECTOR_ONLINE_STATUS", status: "error", message: "请配置 Embedding API Key" });
-            return;
-        }
-
-        const operationSignal = writeSession.signal;
-        const isCancelled = () => (
-            operationSignal?.aborted
-            || !isVectorWriteSessionCurrent(writeSession)
-        );
-
-        const fingerprint = getEngineFingerprint(vectorCfg);
-        const batchSize = 20;
-
-        await recordVectorCacheDiagnostic('before-rebuild', { targetChatId, signal: operationSignal });
-        if (isCancelled() || !isTargetActive()) return;
-        await writeSession.commit(async () => {
-            await clearAllChunks(chatId);
-            clearChunkDocuments(chatId);
-            await clearEventVectors(chatId);
-            await clearStateVectors(chatId);
-            await updateMeta(chatId, { lastChunkFloor: -1, fingerprint });
-        });
-        if (isCancelled()) return;
-
-        // Helper to embed with retry
-        const embedWithRetry = (texts, phase, currentBatchIdx, totalItems) => trackVectorActivity({
-            chatId, phase: `rebuild-${phase.toLowerCase()}`, api: vectorCfg.embeddingApi,
-            unit: phase === 'L0' ? 'atoms' : phase === 'L1' ? 'chunks' : 'events',
-        }, async activity => {
-            const batchUnits = phase === 'L0' ? texts.length / 2 : texts.length;
-            activity.update({ total: totalItems, completed: currentBatchIdx });
-            for (let attempt = 1; attempt <= 3; attempt++) {
-                if (isCancelled() || !isTargetActive()) return null;
-                try {
-                    activity.update({ state: 'embedding', activeUnits: batchUnits });
-                    const vectors = await embed(texts, vectorCfg, { signal: operationSignal });
-                    if (
-                        !Array.isArray(vectors)
-                        || vectors.length < texts.length
-                        || vectors.slice(0, texts.length).some(vector => !vector?.length)
-                    ) {
-                        throw new Error(`Embedding 响应数量不匹配: expect>=${texts.length}, got=${vectors?.length || 0}`);
-                    }
-                    activity.update({ completed: currentBatchIdx + batchUnits, activeUnits: 0 });
-                    return vectors;
-                } catch (e) {
-                    if (e?.name === "AbortError" || isCancelled() || !isTargetActive()) return null;
-                    xbLog.error(MODULE_ID, `${phase} 向量化单次失败`, e);
-                    if (attempt === 3 || !isRetryableEmbeddingFailure(e)) throw e;
-
-                    // 等待 60 秒重试
-                    activity.update({ state: 'retry-wait', activeUnits: 0 });
-                    const waitSec = 60;
-                    for (let s = waitSec; s > 0; s--) {
-                        if (isCancelled() || !isTargetActive()) return null;
-                        postToFrame({
-                            type: "VECTOR_GEN_PROGRESS",
-                            phase,
-                            current: currentBatchIdx,
-                            total: totalItems,
-                            message: `触发限流，${s}s 后重试...`
-                        });
-                        await new Promise(r => setTimeout(r, 1000));
-                    }
-                    postToFrame({ type: "VECTOR_GEN_PROGRESS", phase, current: currentBatchIdx, total: totalItems, message: "正在重试..." });
-                }
-            }
-            return null;
-        });
-
-        if (!atoms.length) {
-            postToFrame({ type: "VECTOR_GEN_PROGRESS", phase: "L0", current: 0, total: 0, message: "L0 为空，跳过" });
-        } else {
-            postToFrame({ type: "VECTOR_GEN_PROGRESS", phase: "L0", current: 0, total: atoms.length, message: "L0 向量化..." });
-
-            let l0Completed = 0;
-            for (let i = 0; i < atoms.length; i += batchSize) {
-                if (isCancelled()) break;
-
-                const batch = atoms.slice(i, i + batchSize);
-                const semTexts = batch.map(a => a.semantic);
-                const rTexts = batch.map(a => buildRAggregateText(a));
-
-                const vectors = await embedWithRetry(semTexts.concat(rTexts), "L0", l0Completed, atoms.length);
-                if (!vectors) break; // cancelled
-                if (isCancelled() || !isTargetActive()) return;
-
-                const split = semTexts.length;
-                if (!Array.isArray(vectors) || vectors.length < split * 2) {
-                    xbLog.error(MODULE_ID, `embed长度不匹配: expect>=${split * 2}, got=${vectors?.length || 0}`);
-                    continue;
-                }
-                const semVectors = vectors.slice(0, split);
-                const rVectors = vectors.slice(split, split + split);
-                const items = batch.map((a, j) => ({
-                    atomId: a.atomId,
-                    floor: a.floor,
-                    vector: semVectors[j],
-                    rVector: rVectors[j] || semVectors[j],
-                    sourceHash: inputDigest('state', semTexts[j]),
-                    relationHash: inputDigest('relation', rTexts[j]),
-                }));
-                if (isCancelled()) return;
-                await writeSession.commit(() => saveStateVectors(chatId, items, fingerprint));
-                l0Completed += batch.length;
-                postToFrame({ type: "VECTOR_GEN_PROGRESS", phase: "L0", current: l0Completed, total: atoms.length });
-            }
-        }
-
-        if (isCancelled() || !isTargetActive()) return;
-
-        const allChunks = [];
-        for (let floor = 0; floor < chatSnapshot.length; floor++) {
-            if (isCancelled()) break;
-
-            const message = chatSnapshot[floor];
-            if (!message) continue;
-
-            const chunks = chunkMessage(floor, message);
-            if (!chunks.length) continue;
-
-            allChunks.push(...chunks);
-        }
-
-        let l1Vectors = [];
-        if (!allChunks.length) {
-            postToFrame({ type: "VECTOR_GEN_PROGRESS", phase: "L1", current: 0, total: 0, message: "L1 为空，跳过" });
-        } else {
-            postToFrame({ type: "VECTOR_GEN_PROGRESS", phase: "L1", current: 0, total: allChunks.length, message: "L1 向量化..." });
-            if (isCancelled() || !isTargetActive()) return;
-            await writeSession.commit(async () => {
-                await saveChunks(chatId, allChunks);
-                addChunkDocuments(allChunks, chatId);
-            });
-
-            let l1Completed = 0;
-            for (let i = 0; i < allChunks.length; i += batchSize) {
-                if (isCancelled()) break;
-
-                const batch = allChunks.slice(i, i + batchSize);
-                const texts = batch.map(c => c.text);
-
-                const vectors = await embedWithRetry(texts, "L1", l1Completed, allChunks.length);
-                if (!vectors) break; // cancelled
-                if (isCancelled() || !isTargetActive()) return;
-
-                const items = batch.map((c, j) => ({
-                    chunkId: c.chunkId,
-                    vector: vectors[j],
-                    sourceHash: inputDigest('chunk', texts[j]),
-                }));
-                if (isCancelled()) return;
-                await writeSession.commit(() => saveChunkVectors(chatId, items, fingerprint));
-                l1Vectors = l1Vectors.concat(items);
-                l1Completed += batch.length;
-                postToFrame({ type: "VECTOR_GEN_PROGRESS", phase: "L1", current: l1Completed, total: allChunks.length });
-            }
-        }
-
-        if (isCancelled() || !isTargetActive()) return;
-
-        const l2Pairs = sourceEvents
-            .map((e) => ({ id: e.id, text: buildEventVectorText(e) }))
-            .filter((p) => p.text);
-
-        if (!l2Pairs.length) {
-            postToFrame({ type: "VECTOR_GEN_PROGRESS", phase: "L2", current: 0, total: 0, message: "L2 为空，跳过" });
-        } else {
-            postToFrame({ type: "VECTOR_GEN_PROGRESS", phase: "L2", current: 0, total: l2Pairs.length, message: "L2 向量化..." });
-
-            let l2Completed = 0;
-            for (let i = 0; i < l2Pairs.length; i += batchSize) {
-                if (isCancelled()) break;
-
-                const batch = l2Pairs.slice(i, i + batchSize);
-                const texts = batch.map(p => p.text);
-
-                const vectors = await embedWithRetry(texts, "L2", l2Completed, l2Pairs.length);
-                if (!vectors) break; // cancelled
-                if (isCancelled() || !isTargetActive()) return;
-
-                const items = batch.map((p, idx) => ({
-                    eventId: p.id,
-                    vector: vectors[idx],
-                    sourceHash: inputDigest('event', texts[idx]),
-                }));
-                if (isCancelled()) return;
-                await writeSession.commit(() => saveEventVectorsToDb(chatId, items, fingerprint));
-                l2Completed += batch.length;
-                postToFrame({ type: "VECTOR_GEN_PROGRESS", phase: "L2", current: l2Completed, total: l2Pairs.length });
-            }
-        }
-
-        // Full rebuild completed: vector boundary should match latest floor.
-        if (isCancelled() || !isTargetActive()) return;
-        await writeSession.commit(() => updateMeta(chatId, { lastChunkFloor: chatSnapshot.length - 1 }));
-        await recordVectorCacheDiagnostic('after-rebuild', { targetChatId, signal: operationSignal });
-
-        await sendVectorStatsToFrame();
-
-        xbLog.info(MODULE_ID, `向量生成完成: L0=${atoms.length}, L1=${l1Vectors.length}, L2=${l2Pairs.length}`);
-    } catch (e) {
-        if (e?.name === 'AbortError' || !isVectorWriteSessionCurrent(writeSession)) return;
-        xbLog.error(MODULE_ID, '向量生成失败', e);
-        await sendVectorStatsToFrame();
+    const isCancelled = () => getContext()?.chatId !== targetChatId || !isVectorWriteSessionCurrent(writeSession);
+    if (isCancelled() || !vectorCfg?.enabled) return;
+    if (!vectorCfg.embeddingApi?.key) {
+        postToFrame({ type: 'VECTOR_ONLINE_STATUS', status: 'error', message: '请配置 Embedding API Key；关键词检索仍可使用。' });
+        return;
     }
+    const chatSnapshot = [...(getContext()?.chat || [])];
+    if (!chatSnapshot.length) return;
+    await writeSession.commit(async () => {
+        await clearAllChunks(targetChatId);
+        clearChunkDocuments(targetChatId);
+        await updateMeta(targetChatId, { lastChunkFloor: -1, fingerprint: getEngineFingerprint(vectorCfg) });
+    });
+    if (isCancelled()) return;
+    const result = await maintainChunks({
+        vectorConfig: vectorCfg, targetChatId, chatSnapshot, signal: writeSession.signal,
+        commit: writeSession.commit, shouldCancel: isCancelled,
+    });
+    if (isCancelled() || result.cancelled) return;
+    if (!result.success) {
+        if (shouldNotifyMemoryFailure(result.error ?? result)) await executeSlashCommand('/echo severity=warning 原文向量未全部完成，可稍后补齐缺漏。');
+    } else xbLog.info(MODULE_ID, '原文向量重建完成；历史场景和事件向量未改动');
+    await sendVectorStatsToFrame();
 }
 
 async function repairVectorsNow(vectorCfg, targetChatId, writeSession) {
     const isCancelled = () => getContext()?.chatId !== targetChatId || !isVectorWriteSessionCurrent(writeSession);
     if (isCancelled() || !vectorCfg?.enabled) return;
-    const meta = await getMeta(targetChatId);
-    if (isCancelled()) return;
-    const fingerprint = getEngineFingerprint(vectorCfg);
-    if (meta.fingerprint && meta.fingerprint !== fingerprint) {
-        await executeSlashCommand(`/echo severity=warning ${getVectorFailureAdvice('fingerprint_mismatch')}`);
+    if (!vectorCfg.embeddingApi?.key) {
+        await executeSlashCommand('/echo severity=info 当前使用关键词检索；配置向量模型后可补齐原文向量。');
         return;
     }
-    const chat = [...(getContext()?.chat || [])];
-    if (!chat.length) return;
-    const progress = phase => (current, total) => postToFrame({
-        type: 'VECTOR_GEN_PROGRESS', phase, current, total,
-        message: total ? `${phase}：${current}/${total}` : `${phase} 无缺漏`,
+    const result = await repairMissingChunks({
+        chatId: targetChatId, chat: [...(getContext()?.chat || [])], vectorConfig: vectorCfg,
+        signal: writeSession.signal, commit: writeSession.commit, shouldCancel: isCancelled,
+        onProgress: (current, total) => postToFrame({ type: 'VECTOR_GEN_PROGRESS', phase: '原文', current, total }),
     });
-    const stages = [
-        ['L1', () => repairMissingChunks({
-            chatId: targetChatId, chat, vectorConfig: vectorCfg, signal: writeSession.signal,
-            commit: writeSession.commit,
-            shouldCancel: isCancelled, onProgress: progress('L1'),
-        })],
-        ['L0', () => vectorizeMissingStateAtoms(targetChatId, progress('L0'), {
-            vectorConfig: vectorCfg, signal: writeSession.signal, shouldCancel: isCancelled,
-            commit: writeSession.commit,
-        })],
-        ['L2', () => repairMissingEventVectorsNow(targetChatId, writeSession, progress('L2'))],
-    ];
-    const failedStages = [];
-    let repaired = 0;
-    for (const [phase, run] of stages) {
-        if (isCancelled()) return;
-        postToFrame({ type: 'VECTOR_GEN_PROGRESS', phase, current: 0, total: 0, message: `检查 ${phase} 缺漏...` });
-        let result;
-        try {
-            result = await run();
-        } catch (error) {
-            if (isCancelled()) return;
-            xbLog.warn(MODULE_ID, `${phase} 向量补齐失败`, error);
-            result = {
-                success: false,
-                code: String(error?.code || 'repair_failed'),
-                error,
-                ...(Number.isInteger(Number(error?.httpStatus)) ? { httpStatus: Number(error.httpStatus) } : {}),
-            };
-        }
-        const count = Number(result.repaired ?? result.vectorized ?? 0);
-        repaired += count;
-        if (phase === 'L1' && !isChatStale(targetChatId) && result.chunks?.length) {
-            addChunkDocuments(result.chunks, targetChatId);
-            scheduleLexicalWarmup();
-        }
-        if (isCancelled() || result.cancelled) return;
-        if (!result.success) failedStages.push({ phase, result });
-    }
-    const failures = failedStages
-        .filter(({ result }) => shouldNotifyMemoryFailure(result.error ?? result))
-        .map(({ phase, result }) => `${phase}（${formatSafeFailure(result.code, result.httpStatus)}）`);
-    if (failures.length) {
-        await executeSlashCommand(`/echo severity=warning 已补齐 ${repaired} 条向量；${failures.join('、')} 未完成，请检查 API 或存储后再点“补齐缺漏”。`);
-    } else if (!failedStages.length) {
-        await executeSlashCommand(`/echo severity=info ${repaired ? `已补齐 ${repaired} 条向量` : '已有材料的向量已完整'}`);
-    }
+    if (isCancelled() || result.cancelled) return;
+    if (result.success) await executeSlashCommand('/echo severity=info 原文向量缺漏已补齐');
+    else if (shouldNotifyMemoryFailure(result.error ?? result)) await executeSlashCommand('/echo severity=warning 原文向量补齐未完成，请检查模型、API 或存储后重试。');
 }
 
 async function handleGenerateVectors(mode = 'rebuild') {
@@ -1336,10 +966,8 @@ async function handleClearVectors() {
             async () => {
                 if (getContext()?.chatId !== targetChatId) return false;
                 await changeRecallData(targetChatId, async () => {
-                    await clearEventVectors(targetChatId);
                     await clearAllChunks(targetChatId);
                     clearChunkDocuments(targetChatId);
-                    await clearStateVectors(targetChatId);
                     // Reset boundary and fingerprint together for the next incremental build.
                     await updateMeta(targetChatId, { lastChunkFloor: -1, fingerprint: null });
                 });
@@ -1360,235 +988,56 @@ function refreshEntityLexiconAndWarmup() {
     if (!vectorCfg?.enabled) return;
 
     const store = getPublishedSummaryStore();
-    const { lexicon, displayMap, blockedTerms } = getEntityVocabulary(store, getContext());
-    if (injectEntities(lexicon, displayMap, blockedTerms)) scheduleLexicalWarmup();
+    const { lexicon, displayMap, blockedTerms } = getRawEntityVocabulary(store, getContext());
+    injectEntities(lexicon, displayMap, blockedTerms);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 延迟向量维护：AI 后只调度，5 秒后统一维护 L0/L1/L2，避免影响宿主收尾。
+// 延迟向量维护：AI 后只调度，宿主收尾后仅维护原文块向量。
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function maybeRunDelayedVectorMaintenance(scheduledChatId = null) {
     if (!isStorySummaryEnabledForCurrentChat()) return;
     const { chatId, chat } = getContext();
-    const targetChatId = scheduledChatId || chatId;
-    if (!targetChatId || !chatId || targetChatId !== chatId || !chat?.length) return;
+    if (!chatId || scheduledChatId && scheduledChatId !== chatId || !chat?.length) return;
     if (isL0FloorDeferred(chat)) return;
-
     if (isHostGenerating() || guard.isAnyRunning('summary', 'anchor', 'vector')) {
-        scheduleAutoL0Backfill(AUTO_L0_BACKFILL_DELAY_MS, targetChatId);
-        return;
-    }
-
-    const pendingEntry = pendingVectorMaintenanceByChat.get(chatId);
-
-    let stats;
-    let l0VectorStatus;
-    try {
-        await ensureCurrentSources(null, { requireSummary: false, recover: false });
-        stats = await getAnchorStats();
-        l0VectorStatus = await getL0VectorBuildStatus(chatId);
-    } catch (e) {
-        if (e?.name === 'AbortError') return;
-        xbLog.error(MODULE_ID, "延迟向量维护状态检查失败", e);
-        stopVectorMaintenanceAfterFailure(chatId);
-        return;
-    }
-    const hasL0LlmWork = stats.pending > 0;
-    const hasL0VectorWork = l0VectorStatus.success && l0VectorStatus.missing > 0;
-    // L1/L2 must inspect actual records even when L0 and floor progress look
-    // complete. The repair stages themselves make no API call without a gap.
-
-    if (!pendingEntry && (hasL0LlmWork || hasL0VectorWork)) {
-        rememberVectorMaintenance(chatId, null, 'backfill');
-    }
-
-    const release = guard.acquire('anchor');
-    if (!release) {
         scheduleAutoL0Backfill(AUTO_L0_BACKFILL_DELAY_MS, chatId);
         return;
     }
-
-    let eventRepairAttempted = false;
-    let chunkRepairAttempted = false;
+    if (!getVectorConfig()?.enabled || !getVectorConfig()?.embeddingApi?.key) { clearVectorMaintenance(chatId); return; }
+    const release = guard.acquire('vector');
+    if (!release) { scheduleAutoL0Backfill(AUTO_L0_BACKFILL_DELAY_MS, chatId); return; }
     try {
-        const floorsText = pendingEntry?.floors?.size ? [...pendingEntry.floors].sort((a, b) => a - b).join(',') : '-';
-        xbLog.info(MODULE_ID, SUMMARY_FEEDBACK_COPY.vectorMaintenance.started({ chatId, floorsText, l0Pending: stats.pending, l0VectorMissing: l0VectorStatus.missing || 0 }));
-
-        const writeResult = await runVectorGenerationTask({
-            chatId,
-            kind: 'delayed-maintenance',
-            scope: VECTOR_WRITE_SCOPES.EMBEDDING,
-        }, async (writeSession) => {
-            const vectorCfg = getVectorConfig();
-            const currentChat = getContext()?.chat;
-            const chatSnapshot = Array.isArray(currentChat) ? [...currentChat] : [];
-            if (!vectorCfg?.enabled) {
-                return {
-                    chunkResult: { success: true, status: 'disabled', built: 0 },
-                    l0Result: null,
-                    l0VectorResult: null,
-                    deferred: false,
-                    stale: false,
-                    cancelled: false,
-                    disabled: true,
-                };
-            }
-            if (isChatStale(chatId)) {
-                return {
-                    chunkResult: { success: false, status: 'failed', code: 'stale_chat', built: 0 },
-                    l0Result: null,
-                    l0VectorResult: null,
-                    deferred: false,
-                    stale: true,
-                    cancelled: false,
-                };
-            }
-            if (!isVectorWriteSessionCurrent(writeSession)) {
-                return { chunkResult: null, l0Result: null, l0VectorResult: null, deferred: false, stale: false, cancelled: true };
-            }
-            if (isHostGenerating() || isChatStale(chatId) || isL0FloorDeferred(chatSnapshot)) {
-                return {
-                    chunkResult: { success: true, status: 'up_to_date', built: 0 },
-                    l0Result: null,
-                    l0VectorResult: null,
-                    deferred: !isChatStale(chatId),
-                    stale: isChatStale(chatId),
-                    cancelled: false,
-                };
-            }
-            const preparation = await runVectorMaintenance({
-                buildChunks: async () => {
-                    chunkRepairAttempted = true;
-                    const result = await maintainChunks({
-                        vectorConfig: vectorCfg,
-                        targetChatId: chatId,
-                        chatSnapshot,
-                        signal: writeSession.signal,
-                        commit: writeSession.commit,
-                        shouldCancel: () => !isVectorWriteSessionCurrent(writeSession),
-                    });
-                    // These chunks are already committed. A later config
-                    // cancellation must not suppress their lexical update.
-                    if (!isChatStale(chatId) && result.chunks?.length) {
-                        addChunkDocuments(result.chunks, chatId);
-                        scheduleLexicalWarmup();
-                    }
-                    if (result.error) xbLog.warn(MODULE_ID, SUMMARY_FEEDBACK_COPY.vectorMaintenance.l1Failed, result.error);
-                    return result;
-                },
-                repairEvents: () => {
-                    eventRepairAttempted = true;
-                    return repairMissingEventVectorsNow(chatId, writeSession);
-                },
-                extract: async () => {
-                    if (!hasL0LlmWork) return { built: 0, failed: 0, llmFailed: 0, cancelled: false };
-                    const preferredFloors = pendingEntry?.floors ? [...pendingEntry.floors] : [];
-                    return await incrementalExtractAtoms(chatId, chatSnapshot, null, {
-                        maxFloors: 20,
-                        persistence: 'host',
-                        preferredFloors,
-                        signal: writeSession.signal,
-                        commit: writeSession.commit,
-                        shouldCancel: () => !isVectorWriteSessionCurrent(writeSession),
-                    });
-                },
-                vectorize: async (l0Result) => {
-                    if (!l0VectorStatus.success) {
-                        return { ...l0VectorStatus, success: false, status: 'failed' };
-                    }
-                    if (!hasL0VectorWork && Number(l0Result?.built || 0) <= 0) {
-                        return { success: true, status: 'up_to_date', vectorized: 0 };
-                    }
-                    return await vectorizeMissingStateAtoms(chatId, null, {
-                        persistence: 'host',
-                        vectorConfig: vectorCfg,
-                        signal: writeSession.signal,
-                        commit: writeSession.commit,
-                        shouldCancel: () => !isVectorWriteSessionCurrent(writeSession),
-                    });
-                },
-                inspect: getAnchorStats,
-                isCancelled: () => !isVectorWriteSessionCurrent(writeSession),
-            });
-            const { chunkResult, eventResult, l0Result, l0VectorResult, l0Status } = preparation;
-            if (preparation.cancelled) {
-                return { chunkResult, eventResult, l0Result, l0VectorResult, l0Status, deferred: false, stale: false, cancelled: true };
-            }
-
-            return { chunkResult, eventResult, l0Result, l0VectorResult, l0Status, deferred: false, stale: false, cancelled: false };
+        await ensureCurrentSources(null, { requireSummary: false, recover: false });
+        if (isChatStale(chatId)) return;
+        const result = await runVectorGenerationTask({ chatId, kind: 'delayed-maintenance', scope: VECTOR_WRITE_SCOPES.EMBEDDING }, async writeSession => {
+            if (!getVectorConfig()?.enabled || !getVectorConfig()?.embeddingApi?.key) return { disabled: true };
+            const isCancelled = () => isChatStale(chatId) || !isVectorWriteSessionCurrent(writeSession);
+            if (isCancelled()) return { cancelled: true };
+            if (isHostGenerating() || isL0FloorDeferred(getContext()?.chat)) return { deferred: true };
+            return maintainChunks({ vectorConfig: getVectorConfig(), targetChatId: chatId,
+                chatSnapshot: [...getContext().chat], signal: writeSession.signal,
+                commit: writeSession.commit, shouldCancel: isCancelled });
         });
-        // writeResult 为空 = 任务在出队前就被取消（配置切换 / 取消生成 / 卸载）。
-        if (!writeResult || writeResult.cancelled || writeResult.l0Result?.cancelled || writeResult.l0VectorResult?.cancelled) {
-            retryVectorMaintenanceAfterCancel(chatId);
-            return;
-        }
-        const { chunkResult, eventResult, l0Result, l0VectorResult, l0Status, deferred, stale, disabled } = writeResult;
-
-        if (disabled || stale) {
-            clearVectorMaintenance(chatId);
-            return;
-        }
-
-        if (deferred) {
-            scheduleAutoL0Backfill(AUTO_L0_BACKFILL_DELAY_MS, chatId);
-            return;
-        }
-
-        if (l0Result?.built > 0) {
-            refreshEntityLexiconAndWarmup();
-        }
-
-        const l0Failed = Number(l0Result?.llmFailed ?? l0Result?.failed ?? 0);
-        const l0VectorFailed = Boolean(l0VectorResult && !l0VectorResult.success);
-        const l2Failed = eventResult?.success === false;
-        if (chunkResult.success === false || l2Failed || l0Failed > 0 || l0VectorFailed) {
-            xbLog.warn(MODULE_ID, SUMMARY_FEEDBACK_COPY.vectorMaintenance.incomplete({ chunkResult, eventResult, l0Failed, l0VectorResult }));
-        }
-        if (chunkResult.success === false || l0Failed > 0 || l0VectorFailed) {
-            // 真取消已在上面的 cancelled 分支返回，走到这里就是实打实的失败。
-            // LLM 失败楼层与缺失 StateVector 都保留为可推导数据；本轮停止，避免后台循环扰民。
-            // L1/L2 were already attempted in this round. The immediate integrity
-            // follow-up is read-only; the next chat turn retries normally.
-            stopVectorMaintenanceAfterFailure(chatId, { allowEventRepair: false, allowChunkRepair: false });
-            return;
-        }
-        if (Number(l0Status?.incomplete || 0) > 0) {
-            if (Number(l0Status?.pending || 0) > 0) {
-                scheduleAutoL0Backfill(AUTO_L0_BACKFILL_DELAY_MS, chatId);
-                xbLog.info(MODULE_ID, `延迟向量维护完成一批，剩余 L0 楼层=${l0Status.incomplete}`);
-            } else {
-                stopVectorMaintenanceAfterFailure(chatId, { allowEventRepair: false, allowChunkRepair: false });
-                xbLog.warn(MODULE_ID, `L0 仍有 ${l0Status.incomplete} 个终态失败楼层，已停止自动重试`);
-            }
-            return;
-        }
-        // An L2 failure must not suppress the existing L0 continuation above.
-        if (l2Failed) {
+        if (!result || result.cancelled) { retryVectorMaintenanceAfterCancel(chatId); return; }
+        if (result.disabled) { clearVectorMaintenance(chatId); return; }
+        if (result.deferred) { scheduleAutoL0Backfill(AUTO_L0_BACKFILL_DELAY_MS, chatId); return; }
+        if (result.success === false) {
+            xbLog.warn(MODULE_ID, '原文向量维护未完成，保留缺口，下一轮再补', result.error || result.code);
             stopVectorMaintenanceAfterFailure(chatId, { allowEventRepair: false, allowChunkRepair: false });
             return;
         }
         finishVectorMaintenance(chatId, { allowEventRepair: false, allowChunkRepair: false });
-
-        xbLog.info(MODULE_ID, SUMMARY_FEEDBACK_COPY.vectorMaintenance.completed({ l0: l0Result?.built || 0, l1: (chunkResult.built || 0) + (chunkResult.repaired || 0), l2: eventResult?.repaired || 0 }));
-    } catch (e) {
-        if (e?.name === 'AbortError') {
-            retryVectorMaintenanceAfterCancel(chatId);
-            return;
+    } catch (error) {
+        if (error?.name === 'AbortError') retryVectorMaintenanceAfterCancel(chatId);
+        else {
+            xbLog.error(MODULE_ID, '原文向量维护失败', error);
+            stopVectorMaintenanceAfterFailure(chatId, { allowEventRepair: false, allowChunkRepair: false });
         }
-        xbLog.error(MODULE_ID, "延迟向量维护失败", e);
-        stopVectorMaintenanceAfterFailure(chatId, { allowEventRepair: !eventRepairAttempted, allowChunkRepair: !chunkRepairAttempted });
     } finally {
         release();
-        if (!isChatStale(chatId)) {
-            try {
-                await sendAnchorStatsToFrame();
-                if (!isChatStale(chatId)) await sendVectorStatsToFrame();
-            } catch (error) {
-                xbLog.warn(MODULE_ID, SUMMARY_FEEDBACK_COPY.statsRefreshFailed, error);
-                if (!isChatStale(chatId)) publishVectorIntegrity('unavailable');
-            }
-        }
+        if (!isChatStale(chatId)) await sendVectorStatsToFrame();
     }
 }
 
@@ -1687,321 +1136,35 @@ async function rebuildActiveVectorCacheAfterSummary(execution) {
     }
 }
 
-function buildEventLexicalSignature(event) {
-    const participants = Array.isArray(event?.participants) ? event.participants.join(" ") : "";
-    return `${event?.title || ""} ${participants} ${event?.summary || ""}`.trim();
-}
 
-async function collectMissingEventVectorPairs(chatId, events, fingerprint) {
-    const existingVectors = await getEventVectorDescriptors(chatId);
-    return selectMissingEventVectorPairs(events, existingVectors, fingerprint);
-}
 
-async function autoVectorizeMissingEventsNow(store, execution, writeSession) {
-    return trackVectorActivity({ chatId: execution.chatId, phase: 'l2-vectorization', api: getVectorConfig()?.embeddingApi, unit: 'events' },
-        activity => autoVectorizeMissingEventsInner(store, execution, writeSession, activity));
-}
 
-async function autoVectorizeMissingEventsInner(store, execution, writeSession, activity) {
-    assertSummaryExecutionActive(execution);
-    if (!isVectorWriteSessionCurrent(writeSession)) return;
-    const vectorCfg = getVectorConfig();
-    if (!vectorCfg?.enabled) return;
 
-    const chatId = execution.chatId;
-    const events = store?.json?.events || [];
-    const fingerprint = getEngineFingerprint(vectorCfg);
-    const meta = await getMeta(chatId);
-    assertSummaryExecutionActive(execution);
-    if (meta?.fingerprint && meta.fingerprint !== fingerprint) return;
 
-    const pairs = await collectMissingEventVectorPairs(chatId, events, fingerprint);
-    activity.update({ total: pairs.length, state: 'embedding' });
-    assertSummaryExecutionActive(execution);
 
-    if (!pairs.length) return;
 
-    try {
-        const batchSize = 20;
-        const signal = mergeAbortSignals(execution.controller.signal, writeSession.signal);
 
-        for (let i = 0; i < pairs.length; i += batchSize) {
-            const batch = pairs.slice(i, i + batchSize);
-            const texts = batch.map((p) => p.text);
-            activity.update({ activeUnits: batch.length });
+async function autoVectorizeMissingEvents() { return { success: true, repaired: 0, retired: true }; }
 
-            const vectors = await embed(texts, vectorCfg, { signal });
-            assertSummaryExecutionActive(execution);
-            if (!isVectorWriteSessionCurrent(writeSession)) return;
-            const items = batch.map((p, idx) => ({
-                eventId: p.id,
-                vector: vectors[idx],
-                sourceHash: inputDigest('event', texts[idx]),
-            }));
 
-            if (!isVectorWriteSessionCurrent(writeSession)) return;
-            await writeSession.commit(() => saveEventVectorsToDb(chatId, items, fingerprint));
-            activity.update({ completed: Math.min(i + batch.length, pairs.length), activeUnits: 0 });
-            assertSummaryExecutionActive(execution);
-        }
 
-        xbLog.info(MODULE_ID, `L2 自动增量完成: ${pairs.length} 个事件`);
-        await sendVectorStatsToFrame();
-    } catch (e) {
-        assertSummaryExecutionActive(execution);
-        if (e?.name === 'AbortError' || !isVectorWriteSessionCurrent(writeSession)) {
-            throw createSummaryGenerationCancelledError();
-        }
-        throw new Error('总结后的事件向量化失败', { cause: e });
-    }
-}
 
-async function autoVectorizeMissingEvents(store, execution) {
-    assertSummaryExecutionActive(execution);
-    return runVectorGenerationTask(
-        {
-            chatId: execution.chatId,
-            kind: 'summary-event-vectorization',
-            scope: VECTOR_WRITE_SCOPES.EMBEDDING,
-        },
-        (writeSession) => autoVectorizeMissingEventsNow(store, execution, writeSession),
-    );
-}
 
-async function repairMissingEventVectorsNow(targetChatId, writeSession, onProgress = null) {
-    return trackVectorActivity({ chatId: targetChatId, phase: 'l2-vector-repair', api: getVectorConfig()?.embeddingApi, unit: 'events' },
-        activity => repairMissingEventVectorsInner(targetChatId, writeSession, onProgress, activity));
-}
 
-async function repairMissingEventVectorsInner(targetChatId, writeSession, onProgress, activity) {
-    let repaired = 0;
-    try {
-        const vectorCfg = getVectorConfig();
-        if (!vectorCfg?.enabled) return { success: false, repaired: 0, code: 'disabled' };
-
-        const events = structuredClone(getSummaryStore()?.json?.events || []);
-        if (!events.length) return { success: true, repaired: 0 };
-
-        const fingerprint = getEngineFingerprint(vectorCfg);
-        const meta = await getMeta(targetChatId);
-        if (!isVectorWriteSessionCurrent(writeSession)) {
-            return { success: false, cancelled: true, repaired, code: 'vector_config_changed' };
-        }
-        if (meta?.fingerprint && meta.fingerprint !== fingerprint) {
-            return { success: false, repaired: 0, code: 'fingerprint_mismatch' };
-        }
-
-        const pairs = await collectMissingEventVectorPairs(targetChatId, events, fingerprint);
-        activity.update({ total: pairs.length, state: 'embedding' });
-        onProgress?.(0, pairs.length);
-        if (!pairs.length) return { success: true, repaired: 0 };
-
-        for (let i = 0; i < pairs.length; i += 20) {
-            const batch = pairs.slice(i, i + 20);
-            activity.update({ activeUnits: batch.length });
-            const vectors = await embed(batch.map(pair => pair.text), vectorCfg, { signal: writeSession.signal });
-            if (
-                getContext()?.chatId !== targetChatId
-                || !isStorySummaryEnabledForCurrentChat()
-                || !isVectorWriteSessionCurrent(writeSession)
-            ) return { success: false, repaired, code: 'vector_config_changed' };
-
-            const currentEvents = new Map((getSummaryStore()?.json?.events || [])
-                .filter(event => event?.id)
-                .map(event => [event.id, buildEventVectorText(event)]));
-            const items = batch
-                .map((pair, index) => ({ pair, vector: vectors[index] }))
-                .filter(item => currentEvents.get(item.pair.id) === item.pair.text)
-                .map(item => ({ eventId: item.pair.id, vector: item.vector, sourceHash: inputDigest('event', item.pair.text) }));
-            if (items.length > 0) {
-                if (!isVectorWriteSessionCurrent(writeSession)) {
-                    return { success: false, repaired, code: 'vector_config_changed' };
-                }
-                await writeSession.commit(() => saveEventVectorsToDb(targetChatId, items, fingerprint));
-                repaired += items.length;
-                onProgress?.(repaired, pairs.length);
-            }
-            activity.update({ completed: Math.min(i + batch.length, pairs.length), activeUnits: 0 });
-        }
-
-        if (repaired > 0) {
-            xbLog.info(MODULE_ID, `L2 自动补齐完成: ${repaired} 个事件`);
-            await sendVectorStatsToFrame();
-        }
-        return { success: true, repaired };
-    } catch (error) {
-        if (error?.name === 'AbortError' || !isVectorWriteSessionCurrent(writeSession)) {
-            return { success: false, cancelled: true, repaired, code: 'vector_config_changed' };
-        }
-        xbLog.warn(MODULE_ID, 'L2 自动补齐失败', error);
-        return { success: false, repaired, code: 'repair_failed', error };
-    }
-}
-
-async function repairMissingEventVectorsForCurrentChat() {
-    const release = guard.acquire('vector');
-    if (!release) return { success: false, repaired: 0, code: 'busy' };
-
-    const targetChatId = getContext()?.chatId || null;
-    try {
-        if (!targetChatId) return { success: false, repaired: 0, code: 'disabled' };
-        const result = await runVectorGenerationTask(
-            {
-                chatId: targetChatId,
-                kind: 'event-vector-repair',
-                scope: VECTOR_WRITE_SCOPES.EMBEDDING,
-            },
-            (writeSession) => repairMissingEventVectorsNow(targetChatId, writeSession),
-        );
-        return result || { success: false, repaired: 0, code: 'vector_config_changed' };
-    } catch (error) {
-        xbLog.warn(MODULE_ID, 'L2 自动补齐失败', error);
-        return { success: false, repaired: 0, code: 'repair_failed', error };
-    } finally {
-        release();
-    }
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // L2 跟随编辑同步（用户编辑 events 时调用）
 // ═══════════════════════════════════════════════════════════════════════════
 
-function syncEventVectorsOnEdit(oldEvents, newEvents) {
-    const targetChatId = getContext()?.chatId || '';
-    if (!targetChatId) return;
-    const oldById = new Map((oldEvents || []).map(event => [event.id, event]));
-    const newIds = new Set((newEvents || []).map(event => event.id));
-    const deletedIds = [...oldById.keys()].filter(id => !newIds.has(id));
-    // Lexical changes follow each saved edit immediately, independently of the
-    // vector write queue. The index owns batching, tokenization and publication.
-    removeEventDocuments(deletedIds, targetChatId);
-    addEventDocuments((newEvents || []).filter(event => (
-        buildEventLexicalSignature(oldById.get(event.id)) !== buildEventLexicalSignature(event)
-    )), targetChatId);
-    refreshEntityLexiconAndWarmup();
-
-    const vectorChangedIds = [...deletedIds, ...(newEvents || [])
-        .filter(event => buildEventVectorText(oldById.get(event.id)) !== buildEventVectorText(event))
-        .map(event => event.id)];
-    // Ordinary edits never cancel earlier deltas. Only an explicit clear or
-    // rollback changes this token. Queue identities, not obsolete event bodies.
-    return syncEventVectorsOnEditNow(vectorChangedIds, eventEditSyncToken, targetChatId);
-}
+function syncEventVectorsOnEdit() { return { retired: true }; }
 
 function cancelPendingEventEditSync() {
-    eventEditSyncToken += 1;
+    return { retired: true };
 }
 
-async function syncEventVectorsOnEditWrite(changedIds, syncToken, targetChatId, writeSession) {
-    try {
-        const vectorCfg = getVectorConfig();
-        const { chatId } = getContext();
-        if (!chatId || chatId !== targetChatId || !vectorCfg?.enabled || !isStorySummaryConsumableForCurrentChat()) return;
-        if (
-            syncToken !== eventEditSyncToken
-            || isChatStale(chatId)
-            || !isVectorWriteSessionCurrent(writeSession)
-        ) return;
 
-        // Resolve only this edit's affected IDs against the current source.
-        // Later edits of other events retain their own place in the write queue.
-        const currentById = new Map((getSummaryStore()?.json?.events || []).map(event => [event.id, event]));
-        const changes = changedIds.map(id => ({ id, text: buildEventVectorText(currentById.get(id)) }));
-        const deletedIds = changes.filter(item => !item.text).map(item => item.id);
-        const pairs = changes.filter(item => item.text);
-        if (syncToken !== eventEditSyncToken || isChatStale(chatId)) return;
 
-        if (deletedIds.length > 0) {
-            if (!isVectorWriteSessionCurrent(writeSession)) return;
-            await writeSession.commit(() => deleteEventVectorsByIds(chatId, deletedIds));
-            xbLog.info(MODULE_ID, `L2 同步删除: ${deletedIds.length} 个事件向量`);
-        }
 
-        if (pairs.length > 0) {
-            const fingerprint = getEngineFingerprint(vectorCfg);
-            const batchSize = 20;
-
-            for (let i = 0; i < pairs.length; i += batchSize) {
-                if (
-                    syncToken !== eventEditSyncToken
-                    || isChatStale(chatId)
-                    || !isVectorWriteSessionCurrent(writeSession)
-                ) return;
-                const batch = pairs.slice(i, i + batchSize);
-                try {
-                    const vectors = await embed(batch.map((p) => p.text), vectorCfg, { signal: writeSession.signal });
-                    if (
-                        !Array.isArray(vectors)
-                        || vectors.length < batch.length
-                        || vectors.slice(0, batch.length).some(vector => !vector?.length)
-                    ) {
-                        throw new Error(`Embedding 响应数量不匹配: expect>=${batch.length}, got=${vectors?.length || 0}`);
-                    }
-                    if (
-                        syncToken !== eventEditSyncToken
-                        || isChatStale(chatId)
-                        || !isVectorWriteSessionCurrent(writeSession)
-                    ) return;
-                    const currentEventTexts = new Map((getSummaryStore()?.json?.events || [])
-                        .filter(event => event?.id)
-                        .map(event => [event.id, buildEventVectorText(event)]));
-                    const items = batch
-                        .map((pair, index) => ({ pair, vector: vectors[index] }))
-                        .filter(item => currentEventTexts.get(item.pair.id) === item.pair.text)
-                        .map(item => ({ eventId: item.pair.id, vector: item.vector, sourceHash: inputDigest('event', item.pair.text) }));
-                    if (items.length > 0) {
-                        if (!isVectorWriteSessionCurrent(writeSession)) return;
-                        await writeSession.commit(() => saveEventVectorsToDb(chatId, items, fingerprint));
-                    }
-                    if (items.length !== batch.length) scheduleVectorIntegrityCheck(0);
-                } catch (error) {
-                    if (error?.name === 'AbortError' || !isVectorWriteSessionCurrent(writeSession)) return;
-                    if (syncToken === eventEditSyncToken && !isChatStale(chatId)) {
-                        const failedExistingIds = batch.map(pair => pair.id);
-                        if (failedExistingIds.length > 0) {
-                            try {
-                                await writeSession.commit(() => deleteEventVectorsByIds(chatId, failedExistingIds));
-                            } catch (cleanupError) {
-                                xbLog.warn(MODULE_ID, 'L2 编辑失败后的旧向量清理失败', cleanupError);
-                            }
-                        }
-                        scheduleVectorIntegrityCheck(0);
-                    }
-                    throw error;
-                }
-            }
-        }
-
-        if (pairs.length > 0) {
-            xbLog.info(MODULE_ID, `L2 向量同步刷新: ${pairs.length} 个事件`);
-        }
-
-        if (deletedIds.length > 0 || pairs.length > 0) {
-            await sendVectorStatsToFrame();
-        }
-    } catch (e) {
-        if (e?.name === 'AbortError' || !isVectorWriteSessionCurrent(writeSession)) return;
-        xbLog.error(MODULE_ID, "L2 编辑同步失败", e);
-        if (getContext()?.chatId === targetChatId) scheduleVectorIntegrityCheck(0);
-    }
-}
-
-async function syncEventVectorsOnEditNow(changedIds, syncToken, targetChatId) {
-    if (!targetChatId || !changedIds.length) return;
-    return runVectorGenerationTask(
-        {
-            chatId: targetChatId,
-            kind: 'event-edit-sync',
-            scope: VECTOR_WRITE_SCOPES.EMBEDDING,
-        },
-        (writeSession) => syncEventVectorsOnEditWrite(
-            changedIds,
-            syncToken,
-            targetChatId,
-            writeSession,
-        ),
-    );
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 向量完整性检测与派生数据自动修复
@@ -2058,121 +1221,39 @@ async function refreshVectorIntegrity() {
     }
 }
 
-async function checkVectorIntegrity({ allowEventRepair = true, allowChunkRepair = true, readOnly = false, requestCurrent = () => true } = {}) {
+async function checkVectorIntegrity({ allowChunkRepair = true, readOnly = false, requestCurrent = () => true } = {}) {
     if (!requestCurrent()) return;
     const vectorCfg = getVectorConfig();
     const { chat, chatId } = getContext();
-    if (!vectorCfg?.enabled || !chatId || !chat?.length) {
-        publishVectorIntegrity('idle');
-        return;
-    }
+    if (!vectorCfg?.enabled || !chatId || !chat?.length) { publishVectorIntegrity('idle'); return; }
+    if (!vectorCfg.embeddingApi?.key) { publishVectorIntegrity('keyword'); return; }
     const reschedule = () => {
-        if (!requestCurrent() || getContext()?.chatId !== chatId) return;
+        if (!requestCurrent() || isChatStale(chatId)) return;
         publishVectorIntegrity('pending');
-        if (!readOnly && isBackgroundWorkLive(chatId)) {
-            scheduleVectorIntegrityCheck(BACKGROUND_VISIBLE_GRACE_MS, { allowEventRepair, allowChunkRepair });
-        }
+        if (!readOnly && isBackgroundWorkLive(chatId)) scheduleVectorIntegrityCheck(BACKGROUND_VISIBLE_GRACE_MS, { allowEventRepair: false, allowChunkRepair });
     };
-    if (guard.isAnyRunning('summary', 'vector', 'anchor')) {
-        reschedule();
-        return;
-    }
+    if (guard.isAnyRunning('summary', 'vector', 'anchor')) { reschedule(); return; }
     if (!readOnly) {
         if (getMemoryCommitState() === 'unconfirmed') { reschedule(); return; }
         await ensureCurrentSources(null, { requireSummary: false, recover: false });
-        if (getContext()?.chatId !== chatId) return;
+        if (isChatStale(chatId)) return;
     }
-    if (readOnly ? pendingVectorMaintenanceByChat.has(chatId) : deferVectorIntegrityUntilMaintenance(chatId)) {
-        publishVectorIntegrity('pending');
-        return;
-    }
-
+    if (readOnly ? pendingVectorMaintenanceByChat.has(chatId) : deferVectorIntegrityUntilMaintenance(chatId)) { publishVectorIntegrity('pending'); return; }
     const snapshot = captureMaintenanceSnapshot(chatId);
-    if (!snapshot) {
-        reschedule();
-        return;
-    }
-
-    const isCurrent = () => requestCurrent() && getContext()?.chatId === chatId
-        && isMaintenanceSnapshotCurrent(snapshot);
+    if (!snapshot) { reschedule(); return; }
+    const isCurrent = () => requestCurrent() && !isChatStale(chatId) && isMaintenanceSnapshotCurrent(snapshot);
     publishVectorIntegrity('checking');
-    const store = getSummaryStore();
-    const anchorStats = await getAnchorStats();
-    const sourceEvents = (store?.json?.events || []).map(event => ({
-        id: event?.id,
-        title: event?.title,
-        summary: event?.summary,
-    }));
-
-    const meta = await getMeta(chatId);
-    const fingerprint = getEngineFingerprint(vectorCfg);
-    if (!isCurrent()) {
-        reschedule();
-        return;
-    }
-
-    const fingerprintMismatch = Boolean(meta.fingerprint && meta.fingerprint !== fingerprint);
-
-    const l0VectorStatus = await getL0VectorBuildStatus(chatId, { vectorConfig: vectorCfg });
-    if (!isCurrent()) {
-        reschedule();
-        return;
-    }
-    let missingEventPairs = [];
-    if (!meta.fingerprint || meta.fingerprint === fingerprint) {
-        missingEventPairs = await collectMissingEventVectorPairs(chatId, sourceEvents, fingerprint);
-    }
-    if (!isCurrent()) {
-        reschedule();
-        return;
-    }
-    if (allowEventRepair && missingEventPairs.length > 0) {
-        await repairMissingEventVectorsForCurrentChat();
-        if (getContext()?.chatId !== chatId) return;
-        await checkVectorIntegrity({ allowEventRepair: false, allowChunkRepair });
-        return;
-    }
-
-    // Diagnostics must not gate the existing L2 repair path above. Only this
-    // additional read-only scan waits for generation to be idle.
-    const cacheCheck = await checkVectorCacheConsistency({
-        targetChatId: chatId,
-        isCurrent: () => !isHostGenerating() && isBackgroundWorkLive(chatId) && isCurrent(),
-    });
-    if (cacheCheck.status === 'deferred') {
-        reschedule();
-        return;
-    }
-    if (allowChunkRepair && !fingerprintMismatch && cacheCheck.status === 'incomplete') {
+    const status = await inspectRawVectorStatus(chatId, [...chat], vectorCfg);
+    if (!isCurrent()) { reschedule(); return; }
+    if (!readOnly && allowChunkRepair && !status.fingerprintMismatch && status.missing > 0 && vectorCfg.embeddingApi?.key) {
         const result = await repairMissingChunksForCurrentChat(chatId);
-        if (getContext()?.chatId !== chatId) return;
-        if (result.cancelled) {
-            reschedule();
-            return;
-        }
-        await checkVectorIntegrity({ allowEventRepair, allowChunkRepair: false });
+        if (isChatStale(chatId)) return;
+        if (result.cancelled) { reschedule(); return; }
+        await checkVectorIntegrity({ allowChunkRepair: false });
         return;
     }
-    const issues = buildVectorIntegrityIssues({
-        cacheInconsistent: cacheCheck.status === 'inconsistent',
-        fingerprintMismatch,
-        chunkFloorGap: cacheCheck.missingChunkFloors?.length || 0,
-        incompleteL0FloorCount: Number(anchorStats.incomplete || 0)
-            + (l0VectorStatus.success ? Number(l0VectorStatus.missingFloors || 0) : 0),
-        missingEventVectorCount: missingEventPairs.length,
-    });
-
-    if (readOnly ? pendingVectorMaintenanceByChat.has(chatId) : deferVectorIntegrityUntilMaintenance(chatId)) {
-        if (requestCurrent() && getContext()?.chatId === chatId) publishVectorIntegrity('pending');
-        return;
-    }
-    if (!isCurrent()) {
-        reschedule();
-        return;
-    }
-    // Background health is a panel state, not a failed user operation. The
-    // underlying scan keeps its diagnostic receipt, including real corruption.
-    publishVectorIntegrity(issues.length ? 'issues' : 'ready', issues);
+    const issues = buildVectorIntegrityIssues({ fingerprintMismatch: status.fingerprintMismatch, chunkFloorGap: status.missingFloors });
+    if (isCurrent()) publishVectorIntegrity(issues.length ? 'issues' : 'ready', issues);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2418,7 +1499,7 @@ function sendFrameFullData(store, totalFloors) {
 }
 
 function buildFramePayload(store) {
-    const json = store?.json || {};
+    const json = authorityStoryStore(store, getContext())?.json || {};
     const facts = json.facts || [];
     return {
         chatId: getContext().chatId || '',
@@ -2806,7 +1887,7 @@ export function getStorySummaryL2EventText({
 /** Optional read-only character continuity; never exposes the underlying store. */
 export function getStorySummaryCharacters(options = {}) {
     if (!isStorySummaryEnabledForCurrentChat()) return [];
-    return projectStoryCharacters(getPublishedSummaryStore(), {
+    return projectStoryCharacters(authorityStoryStore(getPublishedSummaryStore(), getContext()), {
         ...options,
         currentMessageIndex: getContext().chat.length - 1,
     });
@@ -2938,19 +2019,10 @@ function applyHideStateDebounced() {
     hideState.schedule();
 }
 
-function scheduleLexicalWarmup(delayMs = LEXICAL_WARMUP_DEBOUNCE_MS) {
-    clearTimeout(lexicalWarmupTimer);
-    const scheduledChatId = getContext().chatId || null;
-    lexicalWarmupTimer = setTimeout(() => {
-        lexicalWarmupTimer = null;
-        if (isChatStale(scheduledChatId) || !isStorySummaryEnabledForCurrentChat()) return;
-        const quietWait = getBackgroundQuietWaitMs();
-        if (quietWait > 0) {
-            scheduleLexicalWarmup(quietWait);
-            return;
-        }
-        warmupIndex();
-    }, delayMs);
+function scheduleLexicalWarmup() {
+    // Raw recall builds a keyword pool from the current source; no parallel
+    // scene/event corpus needs warming or synchronization.
+    refreshEntityLexiconAndWarmup();
 }
 
 function scheduleAutoSummary(reason, delayMs = AUTO_SUMMARY_DELAY_MS) {
@@ -5189,4 +4261,5 @@ export async function summarizeFloorOnDemand(floor) {
 }
 export function invalidateWorldContext() {
     if (isStorySummaryEnabledForCurrentChat()) cancelRecallAndClearPrompt('world-state-changed');
+    if (frameReady) postToFrame({ type: 'SUMMARY_FULL_DATA', payload: buildFramePayload(getPublishedSummaryStore()) });
 }

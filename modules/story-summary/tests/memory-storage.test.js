@@ -47,6 +47,7 @@ const shims = {
     'modules/story-summary/vector/llm/atom-extraction.js': 'export const extractAtomsForRound=()=>{throw Error("unexpected anchor request");};',
     'shared/common/async-errors.js': 'export const observeBackgroundTask=task=>globalThis.__memoryStorageTest.background.push(Promise.resolve(task).catch(error=>{globalThis.__memoryStorageTest.backgroundErrors.push(error);}));',
     'modules/story-summary/vector/retrieval/recall.js': 'export const recallMemory=(...args)=>globalThis.__memoryStorageTest.recall(...args); export const hydrateDirectEvidence=()=>{throw Error("unexpected hydration");}; export const releaseDirectEvidenceContext=async()=>{};',
+    'modules/story-summary/vector/retrieval/raw-recall.js': 'import { getPublishedSummaryStore } from "./modules/story-summary/data/store.js"; export const recallRawMemory=()=>globalThis.__memoryStorageTest.recall(getPublishedSummaryStore()?.json?.events || []);',
 };
 const bundled = await build({
     stdin: { resolveDir: root, contents: [
@@ -712,19 +713,12 @@ for (const scenario of ['preparation', 'timeout', 'not_saved', 'followup', 'stal
         await importFixture();
         host.context.chat.push({ mes: 'new question', is_user: true }, { mes: 'new answer', is_user: false });
         const problem = new Error('fixture failure');
-        const vectorization = scenario === 'followup' ? entry(['autoVectorizeMissingEventsInner'], {
-            assertSummaryExecutionActive() {}, isVectorWriteSessionCurrent: () => true,
-            getVectorConfig: () => ({ enabled: true }), getEngineFingerprint: () => 'fixture',
-            getMeta: async () => null, collectMissingEventVectorPairs: async () => [{ id: 'fixture', text: 'fixture' }],
-            mergeAbortSignals: () => null, embed: async () => { throw problem; },
-        }) : null;
         if (scenario === 'followup') problem.cause = Object.assign(new Error('upstream throttled api_key=fixture-secret'), {
             status: 429, request: { authorization: 'request-secret' },
         });
         const run = summaryExecutionHarness({
             ...(scenario === 'preparation' ? { applyHideState: () => { throw problem; } } : {}),
-            ...(scenario === 'followup' ? { autoVectorizeMissingEvents: (store, execution) =>
-                vectorization.autoVectorizeMissingEventsInner(store, execution, {}, { update() {} }) } : {}),
+            ...(scenario === 'followup' ? { rebuildActiveVectorCacheAfterSummary: () => { throw problem; } } : {}),
         });
         host.generate = async () => {
             if (scenario === 'timeout') throw Object.assign(problem, { name: 'AbortError' });
@@ -2504,13 +2498,50 @@ test('one actual summary transaction receives the full world and saves summary p
         calls++; assert.equal(updateContext.manifest.worldComplete, true);
         assert.equal(updateContext.world.entities.find(entity => entity.id === 'distant-npc').fields['秘密'].value, '藏着一封信，主角并不知情。');
         assert.equal(updateContext.background.hierarchyAvailable, false);
-        return JSON.stringify({ events: [], factUpdates: [], summary: '主角付出五金币，从铁匠手中获得铁剑。', worldUpdate: unifiedBlock(updateContext, [updateProposal(floor)]) });
+        return JSON.stringify({ events: [], factUpdates: [], summary: '主角付出五金币，从铁匠手中获得铁剑。',
+            memoryTags: { characters: ['主角', '铁匠'], keywords: ['铁剑', '金币'] }, worldUpdate: unifiedBlock(updateContext, [updateProposal(floor)]) });
     };
     const result = await mod.runSummaryGeneration(floor, { trigger: { delayFloors: 0 } });
     assert.equal(result.success, true); assert.equal(result.proposalCount, 1); assert.equal(result.proposalStatus, 'ready'); assert.equal(calls, 1);
     const saved = disk().storySummary.summaryHistory.at(-1); assert.match(saved.summary, /铁剑/); assert.equal(saved.worldUpdate.proposals[0].value, 5);
+    assert.equal(saved.memoryTags.version, 1); assert.deepEqual(saved.memoryTags.characters, ['主角', '铁匠']);
+    assert.deepEqual(saved.memoryTags.keywords, ['铁剑', '金币']);
     const world = await f.service().read(); assert.equal(world.entities.find(entity => entity.id === 'resource-holder').fields.coins.value, 10);
     assert.equal(mod.worldUpdates(world)[0].update.requestId, saved.sourceReceipt.id);
+    host.metadata = structuredClone(host.files.get(host.context.chatId)); mod.reload();
+    assert.deepEqual(mod.getSummaryStore().summaryHistory.at(-1).memoryTags, saved.memoryTags);
+});
+
+test('one actual summary request saves metadata then automatically commits explicit world changes with accurate feedback', async t => {
+    await importFixture(); const f = sourceArchive(t), floor = appendSourceTurn();
+    host.context.chat[floor].mes = '你支付五金币，拿到了铁剑。'; await seedUpdateWorld(f);
+    let calls = 0; const statuses = [];
+    host.generate = async ({ updateContext }) => {
+        calls++;
+        return JSON.stringify({ events: [], factUpdates: [], summary: '主角付出五金币，获得铁剑。', worldUpdate: unifiedBlock(updateContext,
+            [{ ...updateProposal(floor), groupId: 'purchase', certainty: 'explicit' }]) });
+    };
+    const result = await mod.runSummaryGeneration(floor, { trigger: { delayFloors: 0 } }, { onStatus: status => statuses.push(status) });
+    assert.equal(result.success, true); assert.equal(calls, 1); assert.equal(result.proposalAutoConfirmed, 1); assert.equal(result.proposalPending, 0);
+    const state = await f.service().read(), update = mod.worldUpdates(state)[0];
+    assert.equal(state.entities.find(entity => entity.id === 'resource-holder').fields.coins.value, 5);
+    assert.equal(update.reviews[0].mode, 'automatic'); assert.equal(update.reviews[0].worldVersion, state.receipts.find(receipt => receipt.commandId === update.reviews[0].commandId).version);
+    assert.equal(disk().storySummary.summaryHistory.at(-1).worldUpdate.proposals[0].certainty, 'explicit');
+    assert.ok(statuses.some(status => status.includes('1 条世界变化已自动写入')));
+    host.metadata = structuredClone(host.files.get(host.context.chatId)); mod.reload(); await f.archive.prepare();
+    assert.equal(mod.worldUpdates(await f.service().read())[0].reviews.length, 1);
+});
+
+test('the actual prompt keeps confirmed plot background even when raw retrieval has no hit', async t => {
+    await importFixture(); const f = sourceArchive(t), floor = appendSourceTurn(); await f.archive.prepare();
+    const summary = '主角已经拿到铁剑，约定返城后再找铁匠。';
+    host.generate = async ({ updateContext }) => JSON.stringify({ events: [], factUpdates: [], summary, worldUpdate: unifiedBlock(updateContext) });
+    assert.equal((await mod.runSummaryGeneration(floor, { trigger: { delayFloors: 0 } })).success, true);
+    host.vectorConfig.enabled = true;
+    host.recall = async () => ({ chunks: [], focusCharacters: [] });
+    const result = await mod.buildVectorPromptText();
+    assert.ok(result.text.includes(summary));
+    assert.equal(result.notice, null);
 });
 
 test('the full-world basis rejects same-branch edits made while the model is running', async t => {

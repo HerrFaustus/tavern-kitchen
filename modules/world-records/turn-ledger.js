@@ -1,5 +1,5 @@
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
-import { captureRangeSource, isRangeSourceCurrent, messageCandidates, validateRangeSource, validateMemorySourceReceipt } from '../story-summary/data/turn-source.js';
+import { captureRangeSource, isRangeSourceCurrent, isNarrativeReply, messageCandidates, validateRangeSource, validateMemorySourceReceipt } from '../story-summary/data/turn-source.js';
 
 export const TURN_PREFIX = 'turn:';
 const check = (ok, message) => { if (!ok) throw new Error(message); };
@@ -33,7 +33,7 @@ function frames(chat, end) {
     const result = [];
     for (let floor = 0; floor <= end; floor++) {
         const message = chat[floor];
-        if (!message || message.is_user || message.is_system || typeof message.mes !== 'string' || !message.mes.trim()) continue;
+        if (!isNarrativeReply(message)) continue;
         let start = floor;
         while (start > 0 && chat[start - 1]?.is_user) start--;
         result.push({ source: captureRangeSource(chat, start, floor), ...messageCandidates(message) });

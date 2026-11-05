@@ -1,5 +1,6 @@
 import { availableStoryRecords, characterStoryState, PRESENCE, BELIEFS, THREAD_STATUS, STORY_KINDS, storyRecordText, relativeStoryTime } from './records.js';
 import { FIELD_LABELS } from '../world-records/domain.js';
+import { worldStoryRecords } from '../world-records/world-story-state.js';
 
 const el = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
 function source(record) {
@@ -52,7 +53,7 @@ export function createStoryOverview({ getSnapshot }) {
             root.replaceChildren(el('h3', '总览', 'standoutHeader'));
             const snapshot = getSnapshot(), store = snapshot?.enabled ? snapshot.store : null;
             const invalid = store?.summaryInvalid || snapshot?.invalidFrom != null || store?.sourceInvalidFromFloor != null;
-            const records = availableStoryRecords(store, snapshot?.invalidFrom);
+            const records = invalid || !store ? [] : worldStoryRecords(world, availableStoryRecords(store, snapshot?.invalidFrom));
             const json = !invalid && store?.json || {};
             const scene = records.find(record => record.kind === 'scene'), clock = records.find(record => record.kind === 'clock');
             const status = el('p', invalid ? '原文已变化，正在等待剧情回退；旧场景暂不显示。' : !snapshot?.enabled ? '剧情模块尚未启用；世界已确认状态仍可查看。' : store?.lastSummarizedMesId >= 0 ? `剧情已整理至第 ${store.lastSummarizedMesId + 1} 楼，之后的对话尚未纳入。` : '尚未整理剧情。生成总结后，场景和重要变化会汇入这里。', 'tk-record-note tk-overview-status'); status.setAttribute('role', 'status'); root.append(status);

@@ -16,6 +16,7 @@ import { requireMemory } from './errors.js';
 export async function inspectMaintenanceIndexes(chatId, impact) {
     const config = getVectorConfig();
     if (!config.enabled) return { status: 'disabled', events: [], atoms: [] };
+    if (config.retrievalMode === 'raw') return { status: 'ready', events: [], atoms: [], retired: true };
     const fingerprint = getEngineFingerprint(config);
     const [eventVectors, stateVectors] = await Promise.all([getAllEventVectors(chatId), getStateVectorDescriptors(chatId)]);
     requireMemory(getContext().chatId === chatId, 'conflict');

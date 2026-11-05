@@ -9,6 +9,8 @@ import { installFloorDisplayFilter } from './host-regex.js';
 import { applyTextFilterRules } from '../data/text-filter-rules.js';
 import { floorCoverageEnd, isFloorEntryCurrent } from './ledger.js';
 import { entry } from '../tests/helpers/story-summary-entry.js';
+import { captureRangeSource } from '../data/turn-source.js';
+import { memoryDigest } from '../data/memory-policy.js';
 
 const payload = { summary: '贝拉抵达渡口。', timeStart: '午后', timeEnd: '黄昏', date: '2026-10-30', location: '渡口',
     updates: { storyUpdates: [{ id: 'p1', kind: 'person', name: '贝拉', presence: 'present' }] } };
@@ -175,6 +177,18 @@ test('native system notices are not narrative floors, while hidden real replies 
     const parsed = prepareFloorPayload({ summary: '场景变化', updates: { arcUpdates: [{ name: '贝拉', trajectory: '寻找线索', progress: 30 }] } }, {}, { start: 0, floor: 0 });
     assert.equal(parsed.events[0].memoryRole, '具体经历'); assert.equal(parsed.arcUpdates[0].progress, 0.3);
     assert.equal(prepareFloorPayload({ summary: '保留楼尾文字', updates: { events: [] } }, {}, { start: 0, floor: 0 }, [], [], true).events.length, 0);
+});
+
+test('old v2 floor cards remain current across visibility changes without accepting a prose edit', () => {
+    const chat = [{ mes: '问题', is_user: true }, { mes: '旧正文', is_system: true, send_date: '2026-11-05' }];
+    const source = floorSource(chat, 1), legacy = captureRangeSource(chat, 0, 1);
+    legacy.messages.at(-1).role = 'system';
+    source.digest = memoryDigest(legacy.messages.map(({ floor, ...message }) => message));
+    const entry = { floor: 1, source };
+    assert.equal(isFloorEntryCurrent({ floor: 99 }, chat), false);
+    assert.equal(isFloorEntryCurrent(entry, chat), true);
+    chat[1].is_system = false; assert.equal(isFloorEntryCurrent(entry, chat), true);
+    chat[1].mes = '改写正文'; assert.equal(isFloorEntryCurrent(entry, chat), false);
 });
 
 test('main reply anchors reject malformed edges and never trust model IDs or provenance', () => {

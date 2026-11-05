@@ -297,7 +297,7 @@
                                 <span class="checkbox-mark"></span>
                                 <span class="checkbox-label">启用向量检索</span>
                             </label>
-                        <p class="settings-hint">需配置锚点提取、向量、重排模型。</p></div>
+                        <p class="settings-hint">原文向量与关键词共同查找记忆；重排模型可选。场景信息随每轮独立整理更新。</p></div>
 
                         <div id="vector-config-area" class="hidden">
                             <div class="settings-row">
@@ -308,10 +308,10 @@
                             </div>
 
                             <!-- Step 0: API Config -->
-                            <div class="workspace-models"><button data-workspace-page="tab-l0-api" class="workspace-model-link" type="button">锚点提取 ›</button><button data-workspace-page="tab-embedding-api" class="workspace-model-link" type="button">向量模型 ›</button><button data-workspace-page="tab-rerank-api" class="workspace-model-link" type="button">重排模型 ›</button></div>
+                            <div class="workspace-models"><button data-workspace-page="tab-embedding-api" class="workspace-model-link" type="button">向量模型 ›</button><button data-workspace-page="tab-rerank-api" class="workspace-model-link" type="button">重排模型（可选） ›</button></div>
 
 
-                        </div><section class="workspace-progress"><h3 class="settings-section-title">处理进度 · 此聊天</h3><div class="neo-card">
+                        </div><section class="workspace-progress"><h3 class="settings-section-title">处理进度 · 此聊天</h3><div class="neo-card hidden" id="legacy-anchor-card">
                                 <div class="neo-card-title">
                                     <span>记忆锚点</span>
                                 </div>
@@ -335,7 +335,7 @@
                                             <div class="vector-stat-col" id="anchor-pending-wrap" style="color: #f59e0b;">
                                                 (待提取 <strong id="anchor-pending">0</strong>)
                                             </div>
-                                            <span class="vector-stat-sep">·</span>
+                                            <span class="vector-stat-sep hidden">·</span>
                                             <div class="vector-stat-col">
                                                 <span class="vector-stat-label">锚点数:</span>
                                                 <span class="vector-stat-value"><strong id="anchor-atoms-count">0</strong></span>
@@ -370,24 +370,24 @@
                                 <div class="settings-row">
                                     <div class="settings-field full">
                                         <div class="vector-stats" id="vector-stats">
-                                            <div class="vector-stat-col">
-                                                <span class="vector-stat-label">锚点向量:</span>
+                                            <div class="vector-stat-col hidden">
+                                                <span class="vector-stat-label">历史锚点向量:</span>
                                                 <span class="vector-stat-value"><strong id="vector-atom-count">0</strong></span>
                                             </div>
-                                            <span class="vector-stat-sep">·</span>
+                                            <span class="vector-stat-sep hidden">·</span>
                                             <div class="vector-stat-col">
                                                 <span class="vector-stat-label">正文片段向量:</span>
                                                 <span class="vector-stat-value"><strong id="vector-chunk-count">0</strong></span>
                                             </div>
-                                            <span class="vector-stat-sep">·</span>
-                                            <div class="vector-stat-col">
-                                                <span class="vector-stat-label">事件向量:</span>
+                                            <span class="vector-stat-sep hidden">·</span>
+                                            <div class="vector-stat-col hidden">
+                                                <span class="vector-stat-label">历史事件向量:</span>
                                                 <span class="vector-stat-value"><strong id="vector-event-count">0</strong></span>
                                             </div>
                                         </div>
                                         <div class="settings-hint" id="vector-integrity-status" role="status"></div>
                                         <div class="vector-empty-warning hidden" id="vector-empty-l0-warning" style="font-size: 0.75rem; color: #f59e0b; margin-top: 6px;">
-                                            还没有锚点文本，请先在上方生成。
+                                            场景信息随每轮独立整理更新。
                                         </div>
                                     </div>
                                 </div>
@@ -503,7 +503,7 @@
                             <div class="settings-hint" id="summary-io-status">复制会把记忆包放进剪贴板；导入会覆盖当前聊天的总结资料，并自动清空向量与总结边界。</div>
                         </div><section class="settings-section"><h3 class="settings-section-title">向量文件<small class="workspace-scope">此聊天</small></h3><button class="btn btn-sm" id="btn-export-vectors" style="flex:1">导出向量数据</button><button class="btn btn-sm" id="btn-import-vectors" style="flex:1">导入向量数据</button><div class="settings-hint" id="vector-io-status"></div></section></section><section id="tab-backups" class="tab-pane"><section class="settings-section"><h3 class="settings-section-title">服务器备份<small class="workspace-scope">此聊天</small></h3><button class="btn btn-sm" id="btn-backup-server" style="flex:1">☁️ 备份向量到服务器</button><button class="btn btn-sm" id="btn-restore-server" style="flex:1">☁️ 从服务器恢复向量</button><button class="btn btn-sm" id="btn-manage-backups" style="width:100%">
                                                 ☁️ 管理服务器向量备份
-                                            </button><div class="settings-hint" id="server-io-status"></div></section></section><section id="tab-clear" class="tab-pane"><section class="settings-section"><h3 class="settings-section-title">回退上一次总结<small class="workspace-scope">此聊天</small></h3><p class="settings-hint">撤销最近一次总结；保留聊天记录，人工修改存在冲突时不回退。</p><button type="button" id="workspace-rollback" class="btn">回退上一次总结</button></section><section class="settings-section"><h3 class="settings-section-title">清空总结资料<small class="workspace-scope">此聊天</small></h3><p class="settings-hint">删除此聊天的总结、关键词和人物关系，不删除聊天记录。</p><button type="button" id="workspace-clear" class="btn">清空总结资料</button></section></section><section data-title="锚点提取" data-parent="tab-vector" class="tab-pane" id="tab-l0-api"><div class="settings-collapse-content"><label for="vector-l0-concurrency">语义整理并发数</label><input type="number" id="vector-l0-concurrency" min="1" max="50" step="1" value="10"><div class="settings-hint">根据接口限额调整并发数量。</div><div id="l0-profile"></div></div></section><section data-title="向量模型" data-parent="tab-vector" class="tab-pane" id="tab-embedding-api"><div class="settings-collapse-content"><div id="embedding-profile"></div></div></section><section data-title="重排模型" data-parent="tab-vector" class="tab-pane" id="tab-rerank-api"><div class="settings-collapse-content"><div id="rerank-profile"></div></div></section></div></div>
+                                            </button><div class="settings-hint" id="server-io-status"></div></section></section><section id="tab-clear" class="tab-pane"><section class="settings-section"><h3 class="settings-section-title">回退上一次总结<small class="workspace-scope">此聊天</small></h3><p class="settings-hint">撤销最近一次总结；保留聊天记录，人工修改存在冲突时不回退。</p><button type="button" id="workspace-rollback" class="btn">回退上一次总结</button></section><section class="settings-section"><h3 class="settings-section-title">清空总结资料<small class="workspace-scope">此聊天</small></h3><p class="settings-hint">删除此聊天的总结、关键词和人物关系，不删除聊天记录。</p><button type="button" id="workspace-clear" class="btn">清空总结资料</button></section></section><section data-title="锚点提取" data-parent="tab-vector" class="tab-pane hidden" id="tab-l0-api"><div class="settings-collapse-content"><label for="vector-l0-concurrency">语义整理并发数</label><input type="number" id="vector-l0-concurrency" min="1" max="50" step="1" value="10"><div class="settings-hint">根据接口限额调整并发数量。</div><div id="l0-profile"></div></div></section><section data-title="向量模型" data-parent="tab-vector" class="tab-pane" id="tab-embedding-api"><div class="settings-collapse-content"><div id="embedding-profile"></div></div></section><section data-title="重排模型" data-parent="tab-vector" class="tab-pane" id="tab-rerank-api"><div class="settings-collapse-content"><div id="rerank-profile"></div></div></section></div></div>
             <div class="modal-foot"><div id="api-connect-status" role="status"></div><button class="btn" id="settings-cancel">还原修改</button>
                 <button class="btn memory-chat-entry" id="settings-chat" hidden></button>
                 <button class="btn btn-p" id="settings-save"></button>

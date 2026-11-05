@@ -3,6 +3,7 @@ import { validateMaintenanceReceipt, upgradeMaintenanceReceipt } from '../mainte
 import { isMemoryPolicy } from './memory-policy.js';
 import { validateMemorySourceReceipt } from './turn-source.js';
 import { validateStoredUpdate } from '../../world-records/update-result.js';
+import { validateMemoryTags } from './memory-tags.js';
 
 function valid(condition) {
     if (!condition) throw Object.assign(new Error('summary_history_invalid'), { code: 'summary_history_invalid' });
@@ -53,6 +54,10 @@ export function upgradeSummaryHistory(history) {
                     && receipt.worldId === update.basis.worldId && receipt.branchId === update.basis.branchId
                     && receipt.basisVersion === update.basis.version && receipt.source.digest === update.source.digest
                     && receipt.source.start === update.source.start);
+            }
+            if (entry.memoryTags) {
+                validateMemoryTags(entry.memoryTags);
+                valid(entry.kind === 'batch' && entry.sourceReceipt && typeof entry.summary === 'string');
             }
             value.push({ ...entry, maintenance: entry.maintenance.map(upgradeMaintenanceReceipt) });
         }

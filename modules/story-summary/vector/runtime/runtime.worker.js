@@ -5,6 +5,7 @@ import {
     eventVectorsTable,
     stateVectorsTable,
 } from '../../data/db.js';
+import { searchRawRecords } from '../storage/raw-recall-store.js';
 import {
     scoreAnchorsFromStateVectors,
     scoreEventsFromEventVectors,
@@ -616,6 +617,8 @@ async function handle(type, payload = {}) {
             });
             return { selection, stats: entryStats(entry) };
         }
+        case 'searchRaw':
+            return await searchRawRecords(payload.chatId, payload.documents, payload.options);
         case 'scoreL1':
             return await scoreL1(payload.chatId, payload.floors, payload.queryVector);
         case 'diffuseL0': {

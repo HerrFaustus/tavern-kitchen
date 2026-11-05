@@ -37,6 +37,22 @@ test('durable turn IDs survive reload and repeated notifications add no events',
     assert.deepEqual(currentTurns(await fresh.syncTurns(structuredClone(chat))), currentTurns(initial));
 });
 
+test('hiding prose preserves turn identity, world version and already-executed effect receipts', async t => {
+    const f = fixture(t), chat = chatFixture(); let state = await f.service.syncTurns(chat);
+    const turn = currentTurns(state)[0], ops = [create('hidden-owner'), set('hidden-owner', 'coins', 5)];
+    const execution = await f.service.commit(f.service.effectCommand(state, turn.id, 'hidden-effect', ops, '已执行'));
+    state = execution.state;
+    for (const message of chat) message.is_system = true;
+    const hidden = await f.service.syncTurns(chat);
+    assert.equal(hidden.version, state.version);
+    assert.equal(currentTurns(hidden)[0].id, turn.id);
+    assert.deepEqual(f.service.executionReceipts(hidden, turn.id), [execution.receipt]);
+    const repeated = await f.service.commit(f.service.effectCommand(hidden, turn.id, 'hidden-effect', ops, '重复通知'));
+    assert.equal(repeated.repeated, true); assert.equal(field(repeated.state, 'hidden-owner', 'coins'), 5);
+    chat.push({ mes: '系统通知', is_system: true, extra: { type: 'comment' } });
+    assert.equal((await f.service.syncTurns(chat)).version, state.version);
+});
+
 test('reply and player edits create source revisions while preserving message and candidate identity', async t => {
     const f = fixture(t), chat = chatFixture(); let state = await f.service.syncTurns(chat);
     const first = currentTurns(state)[0]; chat[1].mes = '收下八金币。';

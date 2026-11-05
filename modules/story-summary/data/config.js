@@ -308,6 +308,7 @@ function normalizeVectorConfig(rawVector = null) {
 
     return {
         enabled: !!rawVector?.enabled,
+        retrievalMode: 'raw',
         engine: "online",
         l0Concurrency: Math.max(1, Math.min(50, Number(rawVector?.l0Concurrency) || 10)),
         recallTimeoutSec: normalizeRecallTimeoutSec(rawVector?.recallTimeoutSec),

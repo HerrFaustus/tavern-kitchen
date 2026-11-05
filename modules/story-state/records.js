@@ -83,7 +83,8 @@ export function characterStoryState(records = [], name, resolveName = value => v
     const scene = records.find(record => record.kind === 'scene');
     const person = records.filter(record => record.kind === 'person' && same(record.name)).at(-1);
     // A scene is a complete roster. An old presence observation cannot override it.
-    const newerScene = scene && (!person || (scene._addedAt ?? 0) >= (person._addedAt ?? 0));
+    const newerScene = scene && (!person || (scene._worldVersion || person._worldVersion
+        ? (scene._worldVersion || 0) >= (person._worldVersion || 0) : (scene._addedAt ?? 0) >= (person._addedAt ?? 0)));
     const presence = newerScene ? scene.participants.some(same) ? 'present' : person?.presence === 'present' ? 'away' : person?.presence || 'unknown' : person?.presence || 'unknown';
     return { presence, note: person?.note || '', knowledge: records.filter(record => record.kind === 'knowledge' && same(record.person)) };
 }

@@ -9,7 +9,7 @@ export function createAuthorityRuntime({ getIdentity, getStoryIdentity, sync, on
         publish(state, owner) {
             if (owner !== getIdentity()) return;
             if (!state) { if (snapshot) { snapshot = null; fingerprint = ''; onChange(); } return; }
-            const next = canonical([owner, state.branchId, state.entities.map(({ id, name, kind, aliases, bindings, fields }) => ({ id, name, kind, aliases, bindings, fields }))]);
+            const next = canonical([owner, state.branchId, state.entities.map(({ id, name, kind, aliases, bindings, fields }) => ({ id, name, kind, aliases, bindings, fields })), state.modules?.story || null]);
             snapshot = { owner, identity: getStoryIdentity(), state };
             if (next !== fingerprint) { fingerprint = next; onChange(); }
         },

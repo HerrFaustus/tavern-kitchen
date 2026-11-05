@@ -9,6 +9,9 @@ import { currentTurns, turnProgress } from './turn-ledger.js';
 import { storyIdentityKey, notifyWorldSourcesChanged } from './sources.js';
 import { captureStoryIdentity } from '../xiaobai-os/host/story-identity.js';
 import { registerSummarySourceBoundary } from '../story-summary/generate/source-boundary.js';
+import { prepareWorldUpdate } from './update-result.js';
+import { worldUpdates } from './update-context.js';
+import { authorityStoryStore, authorityMemoryStoryStore } from './authority-context.js';
 
 function setup(t) {
     const previousDB = globalThis.indexedDB; globalThis.indexedDB = new IDBFactory();
@@ -22,6 +25,70 @@ function setup(t) {
     return { context, archive, errors, bridge: () => getWorldBridge(storyIdentityKey(captureStoryIdentity(context))),
         setSnapshot(value) { snapshot = value; }, setAccount(value) { account = value; } };
 }
+
+test('confirmed memory delivery automatically commits clear same-turn proposals before importing summary sources', async t => {
+    const f = setup(t); f.context.chat[1].mes = '主角到达铁匠铺。主角相信信使。远方可能起火。';
+    const prepared = await prepareMemorySources(0, 1, { unified: true }), context = prepared.updateContext;
+    const update = prepareWorldUpdate({ basis: { worldId: context.basis.worldId, branchId: context.basis.branchId, version: context.basis.version }, proposals: [
+        { type: 'entity', name: '铁匠铺', kind: 'place', aliases: [], nature: 'established_fact', groupId: 'arrival', certainty: 'explicit', evidence: { floor: 1, quote: '主角到达铁匠铺' } },
+        { type: 'story', record: { id: 'belief', kind: 'knowledge', person: '主角', certainty: 'believed', content: '信使可信', evidence: '听取信使自述' },
+            before: { present: false }, nature: 'belief', groupId: 'belief', certainty: 'explicit', evidence: { floor: 1, quote: '主角相信信使' } },
+        { type: 'entity', name: '远方火场', kind: 'place', aliases: [], nature: 'unclassified', groupId: 'fire', certainty: 'uncertain', evidence: { floor: 1, quote: '远方可能起火' } },
+    ], acknowledgedReceipts: context.executionReceipts.map(item => item.commandId), conflicts: [] }, context);
+    const store = { lastSummarizedMesId: 1, json: { storyRecords: [], characters: { main: [{ name: '主角', identity: '旅人' }] } },
+        summaryHistory: [{ summary: '主角到达铁匠铺并听取信使自述。', endMesId: 1, worldUpdate: update, sourceReceipt: prepared.receipt }] };
+    f.setSnapshot({ enabled: true, store }); const delivered = await prepared.deliver();
+    assert.equal(delivered.reviews.length, 2); assert.ok(delivered.reviews.every(review => review.mode === 'automatic'));
+    assert.equal(new Set(delivered.reviews.map(review => review.commandId)).size, 1);
+    const service = f.bridge().service, state = await service.read();
+    assert.ok(state.entities.some(entity => entity.name === '主角' && entity.bindings.includes('["memory","person:主角"]')));
+    assert.ok(state.entities.some(entity => entity.name === '铁匠铺')); assert.equal(state.entities.some(entity => entity.name === '远方火场'), false);
+    assert.match(await f.archive.prepare('主角'), /信使可信/); assert.deepEqual(store.json.storyRecords, []);
+    notifyWorldSourcesChanged(); notifyWorldSourcesChanged(); await f.archive.prepare('主角'); await prepared.deliver();
+    assert.equal(worldUpdates(await service.read())[0].reviews.length, 2);
+    assert.equal((await service.read()).version, state.version);
+    const next = await prepareMemorySources(0, 1, { unified: true });
+    assert.ok(next.updateContext.executionReceipts.some(receipt => receipt.commandId === delivered.reviews[0].commandId));
+    assert.equal(next.updateContext.world.storyRecords[0].certainty, 'believed'); assert.deepEqual(f.errors, []);
+});
+
+test('real host confirmation updates subsequent narration and administrator inputs without rewriting summary JSON', async t => {
+    const f = setup(t);
+    f.context.chat[1].mes = '支付五金币。信使可能隐瞒了消息。';
+    const prepared = await prepareMemorySources(0, 1, { unified: true }), context = prepared.updateContext;
+    const update = prepareWorldUpdate({ basis: { worldId: context.basis.worldId, branchId: context.basis.branchId, version: context.basis.version },
+        proposals: [{ type: 'story', record: { id: 'belief', kind: 'knowledge', person: '主角', certainty: 'believed', content: '信使可能隐瞒消息', evidence: '听到信使解释', learnedAt: '' }, before: { present: false }, nature: 'belief', evidence: { floor: 1, quote: '信使可能隐瞒' } }],
+        acknowledgedReceipts: context.executionReceipts.map(item => item.commandId), conflicts: [] }, context);
+    const store = { lastSummarizedMesId: 1, json: { storyRecords: [] }, summaryHistory: [{ summary: '主角听到信使的消息', endMesId: 1, worldUpdate: update, sourceReceipt: prepared.receipt }] };
+    f.setSnapshot({ enabled: true, store }); await prepared.deliver();
+    const service = f.bridge().service, state = await service.read();
+    const result = await service.commit(service.proposalCommand(state, update.requestId, 0, 'accepted'));
+    assert.match(await f.archive.prepare('主角'), /信使可能隐瞒消息/); assert.deepEqual(store.json.storyRecords, []);
+    const next = await prepareMemorySources(0, 1, { unified: true });
+    assert.equal(next.updateContext.world.storyRecords[0].person, '主角');
+    assert.equal(next.updateContext.world.storyRecords[0].certainty, 'believed');
+    assert.equal(next.updateContext.world.proposalHistory[0].reviews[0].outcome, 'applied');
+    assert.ok(next.updateContext.executionReceipts.some(receipt => receipt.commandId === result.receipt.commandId));
+    assert.equal(worldUpdates(await service.read())[0].reviews.length, 1);
+    store.json.storyRecords.push({ id: 'belief', kind: 'knowledge', person: '主角', content: '旧认知', certainty: 'believed', evidence: '旧资料', learnedAt: '' });
+    assert.equal(authorityMemoryStoryStore(store, f.context).json.storyRecords.length, 0);
+    assert.equal(authorityStoryStore(store, f.context).json.storyRecords[0].content, '信使可能隐瞒消息');
+    assert.equal(store.json.storyRecords[0].content, '旧认知');
+});
+
+test('real host checks the whole incremental source when evidence belongs to an earlier turn', async t => {
+    const f = setup(t); f.context.chat.push({ mes: '稍等', is_user: true, send_date: 'u2' }, { mes: '继续交谈', send_date: 'a2' });
+    const prepared = await prepareMemorySources(0, 3, { unified: true }), context = prepared.updateContext;
+    const update = prepareWorldUpdate({ basis: { worldId: context.basis.worldId, branchId: context.basis.branchId, version: context.basis.version },
+        proposals: [{ type: 'entity', name: '铁剑', kind: 'item', aliases: [], nature: 'established_fact', evidence: { floor: 1, quote: '支付五金币' } }],
+        acknowledgedReceipts: context.executionReceipts.map(item => item.commandId), conflicts: [] }, context);
+    f.setSnapshot({ enabled: true, store: { lastSummarizedMesId: 3, json: {}, summaryHistory: [{ worldUpdate: update, sourceReceipt: prepared.receipt, summary: '买剑', endMesId: 3 }] } });
+    await prepared.deliver(); const service = f.bridge().service, state = await service.read();
+    const command = service.proposalCommand(state, update.requestId, 0, 'accepted');
+    f.context.chat[2].mes = '撤销刚才的交易';
+    await assert.rejects(service.commit(command), /正文来源已变化/);
+    assert.equal((await service.read()).entities.length, 0);
+});
 
 test('real world host pins source receipts, reconciles confirmed memory and ignores duplicate notifications', async t => {
     const f = setup(t), prepared = await prepareMemorySources(0, 1);

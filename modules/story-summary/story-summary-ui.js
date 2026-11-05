@@ -761,7 +761,7 @@ const UNANNOTATED_LABEL = '未标注';
 
         const emptyWarning = $('vector-empty-l0-warning');
         if (emptyWarning) {
-            emptyWarning.classList.toggle('hidden', extracted > 0);
+            emptyWarning.classList.add('hidden');
         }
     }
 
@@ -863,7 +863,7 @@ const UNANNOTATED_LABEL = '未标注';
 
         $('btn-clear-vectors').onclick = async () => {
             if (vectorGenerating || anchorGenerating) return;
-            if (await showConfirm('清空向量', '确定清空所有向量数据？')) {
+            if (await showConfirm('清空原文向量', '确定清空此聊天的原文向量？之后可重新生成。')) {
                 postMsg('VECTOR_CLEAR');
             }
         };

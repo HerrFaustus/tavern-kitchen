@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import 'fake-indexeddb/auto';
+import { inputDigest } from '../modules/story-summary/vector/utils/vector-input-digest.js';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const chatId = `runtime-check-${Date.now()}`;
@@ -83,8 +84,8 @@ async function main() {
         { chatId, chunkId: 'c-1-1', floor: 1, chunkIdx: 1, speaker: 'B', isUser: false, text: 'beta memory', textHash: 'b' },
     ];
     const chunkVectors = [
-        { chatId, chunkId: 'c-1-0', vector: float32ToBuffer([1, 0]), dims: 2, fingerprint: 'runtime-check' },
-        { chatId, chunkId: 'c-1-1', vector: float32ToBuffer([0, 1]), dims: 2, fingerprint: 'runtime-check' },
+        { chatId, chunkId: 'c-1-0', vector: float32ToBuffer([1, 0]), dims: 2, fingerprint: 'runtime-check', sourceHash: inputDigest('chunk', 'alpha memory') },
+        { chatId, chunkId: 'c-1-1', vector: float32ToBuffer([0, 1]), dims: 2, fingerprint: 'runtime-check', sourceHash: inputDigest('chunk', 'beta memory') },
     ];
     const eventVectors = [
         { chatId, eventId: 'evt-1', vector: float32ToBuffer([1, 0]), dims: 2, fingerprint: 'runtime-check' },
@@ -101,6 +102,7 @@ async function main() {
         stateVectorsTable.bulkPut(stateVectors),
     ]);
 
+    const raw = await runtimeModule.searchRawRecallRuntime(chatId, chunks, { queryVector: [1, 0], queryTerms: ['alpha'], fingerprint: 'runtime-check' });
     const warm = await warmRecallRuntime(chatId, { reason: 'runtime-check' });
     const warmStats = getRecallRuntimeStats().find((item) => item.chatId === chatId) || getRecallRuntimeStats()[0] || {};
     const lease = await beginRecallRuntimeSession(chatId, { reason: 'runtime-check' });
@@ -135,6 +137,7 @@ async function main() {
     const scoreClose = (a, b) => Math.abs(Number(a || 0) - Number(b || 0)) < 1e-6;
 
     const checks = [
+        ['rawRecall', raw.chunks[0]?.chunkId === 'c-1-0' && raw.stats.usableVectors === 2 && raw.stats.cacheMode === 'none'],
         ['warmSkipped', !!warm?.skipped && !warmStats.chunkVectors && !warmStats.eventVectors && !warmStats.stateVectors],
         ['sessionReady', !!lease?.ready],
         ['l1TopChunk', top?.chunkId === 'c-1-0'],
@@ -163,6 +166,7 @@ async function main() {
     const promptParity = top?.text === 'alpha memory' ? 'PASS' : 'FAIL';
 
     console.log('[story-summary-runtime]');
+    console.log(`rawRecall=${checks.find(([name]) => name === 'rawRecall')[1] ? 'PASS' : 'FAIL'}`);
     console.log(`runtime backend=${backend}`);
     console.log(`warm result=${warm?.skipped ? 'SKIPPED' : 'FAIL'} status=${warmStats.status || 'unknown'}`);
     console.log(`L0/L1/L2 cache owner=${cacheOwner}`);
