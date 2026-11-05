@@ -1,11 +1,10 @@
 // 酒馆后厨 0.1 — Based on LittleWhiteBox by biex.
 import { installFloorSummaries } from '../modules/story-summary/floor-summary.js';
 import { createModuleEvents, event_types } from './event-manager.js';
-import { DOMPurify } from '../../../../../lib.js';
 import { extension_settings, getContext } from '../../../../extensions.js';
 import * as hostScript from '../../../../../script.js';
 import { getCurrentUserHandle } from '../../../../user.js';
-import { EXT_ID, extensionFolderPath } from './constants.js';
+import { EXT_ID } from './constants.js';
 import { buildEntryUrl } from './build-assets.js';
 import { createExtensionDrawer } from './extension-drawer.js';
 import { createDefaultXiaobaiOsSettings, prepareXiaobaiOsSettings, initXiaobaiOs, openXiaobaiOs, isDiceContinuationPending } from '../modules/xiaobai-os/index.js';
@@ -36,7 +35,7 @@ const featureReady = new Promise(resolve => { readyResolve = resolve; });
 let startupError;
 async function requireFeatures() {
     await featureReady;
-    if (!settings.enabled) throw new Error('后厨已停用，请在设置中启用并保存刷新。');
+    if (!settings.enabled) throw new Error('后厨已停用，请在扩展设置中启用并刷新。');
     if (startupError) throw startupError;
 }
 
@@ -59,34 +58,47 @@ async function loadBridge(entry, id) {
 function mountExtensionDrawer() {
     const host = document.getElementById('extensions_settings') || document.getElementById('extensions_settings2');
     if (!host || document.getElementById('tavern-kitchen-extension')) return;
-    host.append(createExtensionDrawer({ onOpen: () => kitchen.open('settings') }));
+    host.append(createExtensionDrawer({
+        enabled: settings.enabled !== false,
+        onToggleEnabled(enabled) {
+            const previous = settings.enabled;
+            settings.enabled = enabled;
+            Promise.resolve(saveSettings()).then(() => location.reload()).catch(error => {
+                settings.enabled = previous;
+                showError(error);
+            });
+        },
+        onOpen: () => kitchen.open('settings'),
+    }));
 }
 
-async function mountSettings() {
-    const response = await fetch(`${extensionFolderPath}/settings.html`);
-    if (!response.ok) throw new Error(`后厨设置页加载失败：${response.status}`);
-    const fragment = document.createElement('div');
-    fragment.innerHTML = DOMPurify.sanitize(await response.text());
-    const root = fragment.firstElementChild;
-    mountExtensionDrawer();
-    for (const input of root.querySelectorAll('[data-feature]')) {
-        input.checked = input.dataset.feature === 'enabled' ? settings.enabled : !!settings[input.dataset.feature]?.enabled;
+function featureSwitch(key, label) {
+    return { key, label, checked: !!settings[key]?.enabled };
+}
+function buildFeatureSwitches() {
+    const story = featureSwitch('storySummary', '启用剧情模块');
+    const planner = featureSwitch('enaPlanner', '启用剧情规划');
+    const os = featureSwitch('xiaobaiOs', '启用地图、世界与 API');
+    return {
+        memory: [story], 'memory-settings': [story],
+        planner: [planner],
+        variables: [featureSwitch('variablesCore', '变量更新与回滚'), featureSwitch('variablesPanel', '变量查看面板')],
+        map: [os], 'world-engine': [os], dice: [os], settings: [os],
+    };
+}
+async function toggleFeature(key, enabled) {
+    const previous = !!settings[key]?.enabled;
+    try {
+        (settings[key] ??= {}).enabled = enabled;
+        await saveSettings();
+        location.reload();
+    } catch (error) {
+        (settings[key] ??= {}).enabled = previous;
+        showError(error);
     }
-    root.querySelector('[data-action="apply"]').addEventListener('click', observeAsyncCallback(async () => {
-        const previous = structuredClone(settings);
-        try {
-            for (const input of root.querySelectorAll('[data-feature]')) {
-                const key = input.dataset.feature;
-                if (key === 'enabled') settings.enabled = input.checked;
-                else (settings[key] ??= {}).enabled = input.checked;
-            }
-            await saveSettings();
-            location.reload();
-        } catch (error) {
-            Object.assign(settings, previous);
-            showError(error);
-        }
-    }, { source: import.meta.url, operation: 'save-settings' }));
+}
+function configureWorkspace() {
+    mountExtensionDrawer();
     const actions = {
         overview: async () => {
             await requireFeatures();
@@ -103,44 +115,50 @@ async function mountSettings() {
         memory: async () => {
             await requireFeatures();
             if (!kitchen.isActive('memory')) return;
-            if (!memory) throw new Error('剧情模块尚未启用，请在设置中开启并保存刷新。');
+            if (!memory) throw new Error('剧情模块尚未启用，请在剧情板块中开启并刷新。');
             memory.openStoryMemory();
         },
         'memory-settings': async () => {
             await requireFeatures();
             if (!kitchen.isActive('memory-settings')) return;
-            if (!memory) throw new Error('请先启用剧情模块并保存刷新，再配置剧情设置。');
+            if (!memory) throw new Error('请先启用剧情模块并刷新，再配置剧情设置。');
             memory.openStoryMemorySettings();
         },
         planner: async () => {
             await requireFeatures();
             if (!kitchen.isActive('planner')) return;
-            if (!planner) throw new Error('规划尚未启用，请在设置中开启并保存刷新。');
+            if (!planner) throw new Error('剧情规划尚未启用，请在规划板块中开启并刷新。');
             window.tavernKitchenEnaPlanner?.openSettings();
         },
         variables: async () => {
             await requireFeatures();
             if (!kitchen.isActive('variables')) return;
-            if (!variables) throw new Error('变量面板尚未启用，请在设置中开启并保存刷新。');
+            if (!variables) throw new Error('变量面板尚未启用，请在变量板块中开启并刷新。');
             variables.getVariablesPanelInstance()?.open();
         },
     };
     for (const id of ['situation', 'lore', 'people', 'relations']) actions[id] = async () => {
         await requireFeatures();
         if (!kitchen.isActive(id)) return;
-        if (!memory) throw new Error('请先启用记忆记录功能并保存刷新，再查看已记录的世界状态。');
+        if (!memory) throw new Error('请先启用剧情模块并刷新，再查看已记录的世界状态。');
         memory.openStoryWorld(id === 'situation' ? 'world' : id);
     };
-    for (const id of ['map', 'world-engine', 'dice', 'agent-api']) actions[id] = async () => {
+    for (const id of ['map', 'world-engine', 'dice', 'settings', 'agent-api']) actions[id] = async () => {
         await requireFeatures();
         if (!kitchen.isActive(id)) return;
-        if (!settings.xiaobaiOs?.enabled) throw new Error('世界相关板块尚未启用，请在设置中开启并保存刷新。');
-        if (!await openXiaobaiOs(id === 'world-engine' ? 'world' : id)) throw new Error('此板块尚未准备好，请重试。');
+        if (!settings.xiaobaiOs?.enabled) throw new Error('地图、世界与 API 尚未启用，请在对应板块中开启并刷新。');
+        const appId = id === 'world-engine' ? 'world' : id === 'settings' || id === 'agent-api' ? 'agent-api' : id;
+        if (!await openXiaobaiOs(appId)) throw new Error('此板块尚未准备好，请重试。');
     };
-    kitchen.configure({ actions, settingsElement: root, toggleDrawer: hostScript.doNavbarIconClick, onVisibility(visible, tab) {
-        const instance = variables?.getVariablesPanelInstance();
-        if (!visible || tab !== 'variables') instance?.stopWatcher();
-    } });
+    kitchen.configure({
+        actions, featureSwitches: buildFeatureSwitches(),
+        onToggleFeature: (key, enabled) => observeAsyncCallback(toggleFeature(key, enabled), { source: import.meta.url, operation: 'toggle-feature' }),
+        toggleDrawer: hostScript.doNavbarIconClick,
+        onVisibility(visible, tab) {
+            const instance = variables?.getVariablesPanelInstance();
+            if (!visible || tab !== 'variables') instance?.stopWatcher();
+        },
+    });
     const events = createModuleEvents('kitchen-workspace');
     events.on(event_types.CHAT_CHANGED, () => { kitchen.reset(); worldArchive?.reset(); });
 }
@@ -149,7 +167,7 @@ export async function startKitchen(workspace) {
     kitchen = workspace;
     try {
     await prepareXiaobaiOsSettings();
-    await mountSettings();
+    configureWorkspace();
     if (!settings.enabled) return;
     for (const [entry, id] of [
         ['runtime/call-generate', 'tk-call-generate'],

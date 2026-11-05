@@ -9,7 +9,7 @@ VERSION = json.loads((ROOT / 'manifest.json').read_text(encoding='utf-8'))['vers
 DIST = json.loads((ROOT / 'dist/manifest.json').read_text(encoding='utf-8'))
 DIRECTORIES = ['bridges', 'core', 'docs', 'dist', 'libs', 'modules', 'scripts', 'shared', 'widgets']
 FILES = ['README.md', 'manifest.json', 'package.json', 'pnpm-lock.yaml', 'plugin-entry.js', 'index.js',
-         'settings.html', 'style.css', 'tsconfig.json', 'vite.plugin.config.mjs', '.gitignore', '.eslintignore', '.eslintrc.cjs']
+         'style.css', 'tsconfig.json', 'vite.plugin.config.mjs', '.gitignore', '.eslintignore', '.eslintrc.cjs']
 files = [ROOT / name for name in FILES]
 for name in DIRECTORIES:
     files.extend(p for p in (ROOT / name).rglob('*') if p.is_file() and '__pycache__' not in p.parts)

@@ -9,7 +9,12 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     const settingsElement = document.createElement('div');
     const calls = [];
     const visibility = [];
-    const workspace = createKitchenWorkspace({ documentTarget: document, settingsElement, onVisibility: (...state) => visibility.push(state), actions: {
+    const toggles = [];
+    const workspace = createKitchenWorkspace({
+        documentTarget: document, settingsElement,
+        featureSwitches: { memory: [{ key: 'storySummary', label: '启用剧情模块', checked: true }] },
+        onToggleFeature: (...args) => toggles.push(args),
+        onVisibility: (...state) => visibility.push(state), actions: {
         memory: () => { calls.push('memory'); },
         planner: () => { throw new Error('请先启用规划'); },
         map: () => { calls.push('map'); },
@@ -22,6 +27,11 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     await workspace.open('memory');
     await setImmediate();
     assert.deepEqual(calls, ['memory']);
+    const switchInput = document.querySelector('.tk-feature-switch input');
+    assert.equal(switchInput.checked, true);
+    switchInput.checked = false;
+    switchInput.dispatchEvent(new document.defaultView.Event('change'));
+    assert.deepEqual(toggles[0].slice(0, 2), ['storySummary', false]);
     assert.equal(document.querySelectorAll('[role="tab"]').length, 5);
     assert.equal(document.querySelector('[role="tab"]').textContent, '总览');
     assert.equal(document.querySelector('[aria-selected="true"]').textContent, '剧情');
@@ -52,7 +62,7 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     assert.equal(getKitchenMount('lore'), getKitchenMount('situation'));
     assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '设定');
     assert.equal(document.querySelector('.tk-subnav-more summary').textContent, '更多 · 设定');
-    assert.equal(document.querySelectorAll('.tk-subnav-more [data-route]').length, 3);
+    assert.equal(document.querySelectorAll('.tk-subnav-more [data-route]').length, 4);
     assert.equal(document.querySelector('.tk-subnav [data-route="world"]').textContent, '世界状态');
     assert.equal(document.querySelector('.tk-subnav [data-route="situation"]').textContent, '局势');
     await workspace.open('world-records');
@@ -62,7 +72,8 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     assert.notEqual(getKitchenMount('world-records'), getKitchenMount('memory'));
     assert.equal(document.querySelector('[aria-selected="true"]').textContent, '世界');
     await workspace.open('world-management');
-    assert.equal(document.querySelector('[aria-selected="true"]').textContent, '设置');
+    assert.equal(document.querySelector('[aria-selected="true"]').textContent, '世界');
+    assert.equal(document.querySelector('.tk-subnav-more summary').textContent, '更多 · 世界管理');
     assert.notEqual(getKitchenMount('world-management'), getKitchenMount('world'));
     await workspace.open('memory-settings');
     assert.equal(document.querySelector('[aria-selected="true"]').textContent, '剧情');
@@ -70,8 +81,9 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '剧情设置');
     assert.equal(document.querySelector('.tk-subnav [data-route="memory"]').textContent, '事件时间线');
     await workspace.open('agent-api');
-    assert.equal(document.querySelector('[aria-selected="true"]').textContent, '设置');
-    assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, 'API 配置');
+    assert.equal(document.querySelector('[aria-selected="true"]').textContent, 'API 设置');
+    assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, 'API 设置');
+    assert.equal(document.querySelector('.tk-subnav').hidden, true);
     assert.equal(document.querySelector('.tk-subnav [data-route="memory-settings"]'), null);
     await workspace.open('planner');
     await setImmediate();

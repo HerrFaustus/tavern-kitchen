@@ -27,20 +27,20 @@ function syncNativeControls(target) {
         for (const property of properties) target.style.setProperty(`--tk-${control.dataset.control}-${property}`, style.getPropertyValue(property));
     }
 }
-export const KITCHEN_TABS = [['overview', '总览'], ['world', '世界'], ['memory', '剧情'], ['planner', '规划'], ['settings', '设置']];
+export const KITCHEN_TABS = [['overview', '总览'], ['world', '世界'], ['memory', '剧情'], ['planner', '规划'], ['settings', 'API 设置']];
 export const KITCHEN_ROUTES = {
     overview: [['overview', '当前故事']],
     memory: [['memory', '事件时间线'], ['memory-settings', '剧情设置']],
-    world: [['world', '世界状态'], ['situation', '局势'], ['lore', '设定'], ['people', '人物'], ['variables', '变量'], ['map', '地图'], ['world-engine', '后台演化']],
+    world: [['world', '世界状态'], ['situation', '局势'], ['lore', '设定'], ['people', '人物'], ['variables', '变量'], ['map', '地图'], ['world-engine', '后台演化'], ['world-management', '世界管理']],
     planner: [['planner', '剧情规划'], ['dice', '行动判定']],
-    settings: [['settings', '功能开关'], ['agent-api', 'API 配置'], ['world-management', '世界管理']],
+    settings: [['settings', 'API 设置']],
 };
-const canonicalRoute = id => id === 'relations' ? 'people' : id === 'world-records' ? 'world' : id;
+const canonicalRoute = id => id === 'relations' ? 'people' : id === 'world-records' ? 'world' : id === 'agent-api' ? 'settings' : id;
 const parentOf = id => KITCHEN_TABS.find(([key]) => KITCHEN_ROUTES[key].some(([route]) => route === id))?.[0];
-const worldTabs = new Set(['map', 'world-engine', 'dice', 'agent-api']);
+const worldTabs = new Set(['map', 'world-engine', 'dice', 'agent-api', 'settings']);
 const memoryTabs = new Set(['memory', 'situation', 'lore', 'people', 'relations', 'memory-settings']);
 // Keep current-story routes visible; reference and maintenance pages live under one overflow entry.
-const subnavOverflow = { world: new Set(['lore', 'variables', 'world-engine']) };
+const subnavOverflow = { world: new Set(['lore', 'variables', 'world-engine', 'world-management']) };
 export const getKitchenMount = id => workspace?.getMount(id) ?? null;
 export const openKitchenTab = id => workspace?.open(id);
 export const closeKitchenWorkspace = () => workspace?.close();
@@ -101,7 +101,7 @@ export function bindKitchenFrame(frame) {
     });
 }
 
-export function createKitchenWorkspace({ actions = {}, settingsElement, onVisibility = () => {}, toggleDrawer, documentTarget = document }) {
+export function createKitchenWorkspace({ actions = {}, settingsElement, featureSwitches = {}, onToggleFeature = () => {}, onVisibility = () => {}, toggleDrawer, documentTarget = document }) {
     if (workspace) return workspace;
     const doc = documentTarget;
     const panel = doc.createElement('section');
@@ -120,6 +120,7 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, onVisibi
     const tabs = doc.createElement('nav');
     tabs.className = 'tk-tabs'; tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', '后厨板块');
     const subnav = doc.createElement('nav'); subnav.className = 'tk-subnav'; subnav.setAttribute('aria-label', '板块内导航');
+    const featureBar = doc.createElement('div'); featureBar.className = 'tk-feature-switches'; featureBar.hidden = true;
     const body = doc.createElement('div'); body.className = 'tk-workspace-body'; body.id = 'tk-workspace-content'; body.setAttribute('role', 'tabpanel');
     const mounts = new Map(), buttons = new Map();
     for (const [id, label] of KITCHEN_TABS) {
@@ -141,8 +142,8 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, onVisibi
     worldMount.hidden = true; worldMount.setAttribute('role', 'region');
     body.append(worldMount);
     const memoryMount = doc.createElement('div'); memoryMount.id = 'tk-memory-mount'; memoryMount.hidden = true; body.append(memoryMount);
-    mounts.get('settings').append(settingsElement);
-    panel.append(header, tabs, subnav, body);
+    if (settingsElement) mounts.get('settings').append(settingsElement);
+    panel.append(header, tabs, subnav, featureBar, body);
     const entry = doc.createElement('div'); entry.id = 'tk-topbar'; entry.className = 'drawer';
     const trigger = doc.createElement('button');
     trigger.type = 'button'; trigger.className = 'drawer-toggle tk-topbar-toggle';
@@ -202,7 +203,7 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, onVisibi
         const text = doc.createElement('p'); text.textContent = error?.message || '暂时无法打开此板块。';
         const retry = doc.createElement('button'); retry.type = 'button'; retry.className = 'menu_button'; retry.textContent = '重试';
         retry.addEventListener('click', () => { active = null; navigate(id); });
-        const settings = doc.createElement('button'); settings.type = 'button'; settings.className = 'menu_button'; settings.textContent = '前往设置';
+        const settings = doc.createElement('button'); settings.type = 'button'; settings.className = 'menu_button'; settings.textContent = '前往 API 设置';
         settings.addEventListener('click', () => navigate('settings'));
         message.append(text, retry, settings); mount.prepend(message);
     };
@@ -226,13 +227,27 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, onVisibi
         for (const [route, label] of secondary) subnavButton(route, label, menu);
         more.append(summary, menu); subnav.append(more);
     };
+    const renderFeatureBar = id => {
+        const items = featureSwitches[id] || [];
+        featureBar.replaceChildren(); featureBar.hidden = !items.length;
+        for (const item of items) {
+            const label = doc.createElement('label'); label.className = 'tk-feature-switch';
+            const input = doc.createElement('input'); input.type = 'checkbox'; input.checked = !!item.checked;
+            input.addEventListener('change', () => onToggleFeature(item.key, input.checked, item));
+            const text = doc.createElement('span'); text.textContent = item.label;
+            label.append(input, text); featureBar.append(label);
+        }
+    };
     const api = {
         configure(options) {
             actions = options.actions;
             toggleDrawer = options.toggleDrawer;
             onVisibility = options.onVisibility || (() => {});
-            mounts.get('settings').replaceChildren(options.settingsElement);
+            if (options.featureSwitches) featureSwitches = options.featureSwitches;
+            if (options.onToggleFeature) onToggleFeature = options.onToggleFeature;
+            if (options.settingsElement) mounts.get('settings').replaceChildren(options.settingsElement);
             if (active && isOpen()) { const id = active; active = null; navigate(id); }
+            else if (active) renderFeatureBar(active);
         },
         failStartup(error) {
             for (const [id] of Object.values(KITCHEN_ROUTES).flat()) {
@@ -281,7 +296,8 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, onVisibi
                 more.classList.toggle('is-active', Boolean(activeMore));
                 more.open = false;
             }
-            subnav.hidden = parent === 'overview';
+            subnav.hidden = parent === 'overview' || parent === 'settings';
+            renderFeatureBar(id);
             onVisibility(true, id);
             if (wasClosed) buttons.get(parent).focus({ preventScroll: true });
             const mount = api.getMount(id); mount.querySelector('.tk-panel-message')?.remove();

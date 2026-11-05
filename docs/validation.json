@@ -1,7 +1,7 @@
 {
-  "version": "0.2.11",
-  "verified_at_utc": "2026-11-04T13:56:30.6033433Z",
-  "build_id": "626a000fff04036d019d",
+  "version": "0.2.12",
+  "verified_at_utc": "2026-11-05T01:24:42Z",
+  "build_id": "ab7d70ebc6c46183585a",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
@@ -12,7 +12,7 @@
     "failed": 0
   },
   "memory_runtime": "passed",
-  "scope": "Manual per-floor summary through the configured summary API, a native SillyTavern extension drawer, and settings/navigation cleanup. Story settings move under Story; Settings keeps only the API profile library, feature profile selection moves into each feature section. Floor writes reuse the existing confirmation, transaction and vector maintenance paths; world authority, variables and map writes are unchanged.",
+  "scope": "Manual per-floor summary through the configured summary API, a native SillyTavern extension drawer, and settings/navigation cleanup. Story settings move under Story; the Settings tab becomes API Settings with only the API profile library; feature enable switches move into each feature section; world management moves under World > More. Floor writes reuse the existing confirmation, transaction and vector maintenance paths; world authority, variables and map writes are unchanged.",
   "runtime_changes": true,
   "removed_source_paths": 1763,
   "removed_modules_in_build": 0,
@@ -94,7 +94,7 @@
     ],
     "verified_version": "0.1.9"
   },
-  "ui_review": "0.2.11 offline review: floor summary one-click entry, existing-summary regeneration confirmation, the native extension drawer, story settings under Story, and the API profile library without a cross-feature binding table. No material findings; real TauriTavern, summary API calls and all themes not verified.",
+  "ui_review": "0.2.12 offline review: the API Settings tab without a cross-feature binding table, feature switches in each section, world management under World > More, and the story settings view with its section switch. No material findings; real TauriTavern, summary API calls and all themes not verified.",
   "world_archive_fixture": {
     "version": "0.2.0",
     "desktop": [
@@ -303,7 +303,7 @@
     "icons_verified": false
   },
   "ui_simplification_fixture": {
-    "version": "0.2.11",
+    "version": "0.2.12",
     "desktop": [
       1440,
       1000
@@ -341,6 +341,9 @@
       "storySettingsInStory": true,
       "centralBindingsRemoved": true,
       "featureSelectorsInModules": true,
+      "featureSwitchesInSections": true,
+      "worldManagementInWorld": true,
+      "settingsIsApiOnly": true,
       "mapAdvancedCollapsed": true,
       "mapSettingsNoMap": true,
       "appearanceTabRemoved": true,
