@@ -57,10 +57,12 @@ export function floorPanelModel(snapshot, floor) {
     let payload = staged ? draft.payload : entry?.empty ? structuredClone(EMPTY_FLOOR_PAYLOAD) : entry?.payload || extracted.payload || structuredClone(EMPTY_FLOOR_PAYLOAD);
     if ((!entry || entry.anchorVersion) && payload.anchors === undefined) payload = { ...payload, anchors: inlineAnchorInputs(payload) };
     const legacy = !store?.summaryInvalid && snapshot.invalidFrom == null && !batch && store?.summaryHistory?.find(item => item.kind === 'batch' && !item.floorEntry && floor > item.previousEndMesId && floor <= item.endMesId);
+    const rangeSummary = typeof legacy?.summary === 'string' ? legacy.summary.trim() : '';
+    if (rangeSummary && !staged && !entry) payload = { ...structuredClone(EMPTY_FLOOR_PAYLOAD), summary: rangeSummary };
     const legacyEvents = legacy ? (store?.json?.events || []).filter(event => event._addedAt === legacy.endMesId) : [];
     const status = entry?.omitted ? '番外' : entry?.deleted ? '已删除' : staged ? '待审查' : entry ? '已写入'
-        : extracted.status === 'ready' ? '待审查' : extracted.status === 'incomplete' ? '输出未完成' : extracted.status === 'invalid' ? '格式有误' : legacy ? '旧区间' : '待总结';
-    return { source, payload, entry, batch, legacy, legacyEvents, status, staged, pending: staged || !entry,
+        : rangeSummary ? '已写入' : extracted.status === 'ready' ? '待审查' : extracted.status === 'incomplete' ? '输出未完成' : extracted.status === 'invalid' ? '格式有误' : legacy ? '旧区间' : '待总结';
+    return { source, payload, entry, batch, legacy, legacyEvents, status, staged, pending: staged || (!entry && !rangeSummary),
         error: snapshot.getError?.(floor) || (!staged && !entry ? extracted.error : '') || '',
         items: floorEditItems(payload, batch?.undo ? { json: { storyRecords: (batch.undo.storyRecordChanges || []).map(change => change.previous).filter(Boolean) } } : store) };
 }

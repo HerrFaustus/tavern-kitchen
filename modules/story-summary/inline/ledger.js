@@ -60,7 +60,7 @@ export function findFloorBatch(store, floor) {
 }
 
 export function isFloorEntryCurrent(entry, chat) {
-    return !!entry && floorSource(chat, entry.floor)?.digest === entry.source?.digest;
+    return !!entry && floorSource(chat, entry.floor, entry.source?.version ?? 1)?.digest === entry.source?.digest;
 }
 
 /** Highest contiguous covered floor; a new inline summary must never hide older gaps. */
@@ -129,6 +129,9 @@ export function reviseFloorMemory(previous, chat, floor, edit, merge, filterRule
             replayLegacy(memory, original); undo = buildSummaryUndo(before, memory.json);
         }
         const batch = createSummaryBatch(end, original.endMesId, undo, original.policy || memoryPolicy(filterRules));
+        if (original.sourceReceipt) batch.sourceReceipt = clone(original.sourceReceipt);
+        if (original.summary) batch.summary = original.summary;
+        if (original.worldUpdate) batch.worldUpdate = clone(original.worldUpdate);
         if (current) batch.floorEntry = current;
         const generated = current?.anchorVersion ? [applyInlineAnchors(memory, current, batch.policy)] : [];
         batch.maintenance = [...generated, ...replayMaintenance(memory, (original.maintenance || []).filter(receipt => !isInlineAnchorReceipt(receipt)))];

@@ -16,7 +16,7 @@ export function createExtensionDrawer({ doc = document, onOpen = () => {}, enabl
     content.className = 'inline-drawer-content';
     const note = doc.createElement('p');
     note.className = 'tk-extension-note';
-    note.textContent = '剧情总结、世界档案、地图与变量工具。';
+    note.textContent = '剧情总结、世界档案与地图工具。';
     content.append(note);
     if (enabled !== undefined) {
         const toggle = doc.createElement('label');

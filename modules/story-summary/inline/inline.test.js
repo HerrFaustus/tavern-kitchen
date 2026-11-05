@@ -7,9 +7,8 @@ import { createFloorSummaryController } from './controller.js';
 import { createFloorPanel } from './panel.js';
 import { installFloorDisplayFilter } from './host-regex.js';
 import { applyTextFilterRules } from '../data/text-filter-rules.js';
-import { floorCoverageEnd } from './ledger.js';
+import { floorCoverageEnd, isFloorEntryCurrent } from './ledger.js';
 import { entry } from '../tests/helpers/story-summary-entry.js';
-import { buildFloorProtocol } from './protocol.js';
 
 const payload = { summary: '贝拉抵达渡口。', timeStart: '午后', timeEnd: '黄昏', date: '2026-10-30', location: '渡口',
     updates: { storyUpdates: [{ id: 'p1', kind: 'person', name: '贝拉', presence: 'present' }] } };
@@ -37,6 +36,17 @@ test('source and event provenance are bound to the actual reply and preceding us
     assert.notEqual(floorSource(chat, 2).digest, source.digest);
     chat[2].swipe_id = 0; chat[1].mes = '不要过去';
     assert.notEqual(floorSource(chat, 2).digest, source.digest);
+});
+test('new floor records share stable candidate provenance while legacy floor records retain their digest format', () => {
+    const chat = [{ is_user: true, mes: '走吧' }, { mes: '渡口见', send_date: 'selected', swipe_id: 1,
+        swipes: ['旧回复', '渡口见'], swipe_info: [{ send_date: 'old' }, { send_date: 'selected' }] }];
+    const source = floorSource(chat, 1), entry = { floor: 1, source };
+    assert.equal(source.version, 2); assert.equal(isFloorEntryCurrent(entry, chat), true);
+    chat[1].swipes.shift(); chat[1].swipe_info.shift(); chat[1].swipe_id = 0;
+    assert.equal(isFloorEntryCurrent(entry, chat), true);
+    const legacy = { floor: 1, source: floorSource(chat, 1, 1) };
+    assert.equal(legacy.source.version, undefined); assert.equal(isFloorEntryCurrent(legacy, chat), true);
+    chat[1].mes += ' 改写'; assert.equal(isFloorEntryCurrent(entry, chat), false); assert.equal(isFloorEntryCurrent(legacy, chat), false);
 });
 test('review mode and malformed replies perform no model calls or metadata writes; chat changes cancel a queued edit', async () => {
     let context = { chatId: 'a', characterId: 1, chat: [{ is_user: true, mes: '走吧' }, { mes: raw(payload) }] };
@@ -118,21 +128,20 @@ test('existing floor summary asks before model regeneration', () => {
     assert.match(panel.node.querySelector('.tk-fp-summarize-confirm').textContent, /替换现有摘要/u);
 });
 
-test('main mode disables both automatic summary entrypoints and injects only into story generation', async () => {
-    const prompts = {}, config = { inlineSummary: { enabled: true } };
-    const mod = entry(['scheduleAutoSummary', 'maybeAutoRunSummary', 'injectMainReplySummary'], {
-        getSummaryPanelConfig: () => config, extension_prompts: prompts, FLOOR_PROMPT_KEY: 'floor',
-        AUTO_SUMMARY_DELAY_MS: 10,
-        usesStoryRecall: type => type === 'normal', isStorySummaryEnabledForCurrentChat: () => true,
-        ensureFloorSources: async () => {}, getPublishedSummaryStore: () => ({}), buildFloorProtocol,
-        extension_prompt_types: { IN_CHAT: 1 }, extension_prompt_roles: { SYSTEM: 0 },
-        getContext: () => assert.fail('main mode must not schedule an independent summary'),
+test('completed replies schedule independent updates without consuming attached main-reply summaries', async () => {
+    const reasons = [], config = { inlineSummary: { enabled: true } };
+    const mod = entry(['handleMessageReceived'], {
+        getSummaryPanelConfig: () => config,
+        isStorySummaryEnabledForCurrentChat: () => true, isChatStale: () => false,
+        getContext: () => ({ chat: [{ is_user: true }, { mes: raw(payload) }] }),
+        initButtonsForAll() {}, applyHideStateDebounced() {}, refreshEntityLexiconAndWarmup() {},
+        mainReplySummary: { ingest() { assert.fail('main-reply payload must not be automatically written'); } },
+        scheduleAutoSummary: reason => reasons.push(reason),
     });
-    mod.scheduleAutoSummary('after_ai'); await mod.maybeAutoRunSummary('before_user');
-    await mod.injectMainReplySummary([], 0, null, 'normal'); assert.match(prompts.floor.value, /<kitchen_summary>/);
-    await mod.injectMainReplySummary([], 0, null, 'quiet'); assert.equal(prompts.floor, undefined);
-    config.inlineSummary.enabled = false;
-    await mod.injectMainReplySummary([], 0, null, 'normal'); assert.equal(prompts.floor, undefined);
+    await mod.handleMessageReceived('test-chat', 1);
+    assert.deepEqual(reasons, ['after_ai']);
+    await mod.handleMessageReceived('test-chat', 0);
+    assert.deepEqual(reasons, ['after_ai']);
 });
 
 test('changing source while an editor is open blocks stale save and cancel reloads the current view', () => {

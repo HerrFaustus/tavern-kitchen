@@ -1,4 +1,4 @@
-export const DEFAULT_SUMMARY_DELAY_FLOORS = 2;
+export const DEFAULT_SUMMARY_DELAY_FLOORS = 0;
 
 export function normalizeSummaryDelayFloors(value) {
     const floors = Number.parseInt(value, 10);

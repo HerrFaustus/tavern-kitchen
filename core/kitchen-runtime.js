@@ -10,15 +10,13 @@ import { createExtensionDrawer } from './extension-drawer.js';
 import { createDefaultXiaobaiOsSettings, prepareXiaobaiOsSettings, initXiaobaiOs, openXiaobaiOs, isDiceContinuationPending } from '../modules/xiaobai-os/index.js';
 import { configureL0ContinuationCheck } from '../modules/story-summary/vector/pipeline/l0-eligibility.js';
 import { observeAsyncCallback } from '../shared/common/async-errors.js';
+import { requireTurnRuntime } from '../modules/world-records/turn-runtime.js';
 const { saveSettings } = hostScript;
 
 const settings = extension_settings[EXT_ID] ??= {
     enabled: true,
     storySummary: { enabled: true },
     enaPlanner: { enabled: false },
-    variablesCore: { enabled: true },
-    variablesPanel: { enabled: true },
-    variablesMode: '1.0',
     xiaobaiOs: createDefaultXiaobaiOsSettings(),
 };
 window.isTavernKitchenEnabled = settings.enabled;
@@ -27,7 +25,6 @@ window.registerKitchenModuleCleanup = (id, cleanup) => cleanups.set(id, cleanup)
 configureL0ContinuationCheck(isDiceContinuationPending);
 let memory;
 let planner;
-let variables;
 let worldArchive;
 let kitchen;
 let readyResolve;
@@ -82,7 +79,6 @@ function buildFeatureSwitches() {
     return {
         memory: [story], 'memory-settings': [story],
         planner: [planner],
-        variables: [featureSwitch('variablesCore', '变量更新与回滚'), featureSwitch('variablesPanel', '变量查看面板')],
         map: [os], 'world-engine': [os], dice: [os], settings: [os],
     };
 }
@@ -130,12 +126,6 @@ function configureWorkspace() {
             if (!planner) throw new Error('剧情规划尚未启用，请在规划板块中开启并刷新。');
             window.tavernKitchenEnaPlanner?.openSettings();
         },
-        variables: async () => {
-            await requireFeatures();
-            if (!kitchen.isActive('variables')) return;
-            if (!variables) throw new Error('变量面板尚未启用，请在变量板块中开启并刷新。');
-            variables.getVariablesPanelInstance()?.open();
-        },
     };
     for (const id of ['situation', 'lore', 'people', 'relations']) actions[id] = async () => {
         await requireFeatures();
@@ -154,16 +144,13 @@ function configureWorkspace() {
         actions, featureSwitches: buildFeatureSwitches(),
         onToggleFeature: (key, enabled) => observeAsyncCallback(toggleFeature(key, enabled), { source: import.meta.url, operation: 'toggle-feature' }),
         toggleDrawer: hostScript.doNavbarIconClick,
-        onVisibility(visible, tab) {
-            const instance = variables?.getVariablesPanelInstance();
-            if (!visible || tab !== 'variables') instance?.stopWatcher();
-        },
     });
     const events = createModuleEvents('kitchen-workspace');
     events.on(event_types.CHAT_CHANGED, () => { kitchen.reset(); worldArchive?.reset(); });
 }
 
 export async function startKitchen(workspace) {
+    requireTurnRuntime();
     kitchen = workspace;
     try {
     await prepareXiaobaiOsSettings();
@@ -174,6 +161,15 @@ export async function startKitchen(workspace) {
         ['runtime/worldbook', 'tk-worldbook'],
         ['runtime/context', 'tk-context'],
     ]) await loadBridge(entry, id);
+    const { createWorldArchive } = await import('../modules/world-records/host.js');
+    let removeWorldGeneration;
+    worldArchive = createWorldArchive({ getContext, getAccountId: getCurrentUserHandle, getMemorySnapshot: () => memory?.getFloorSummarySnapshot(),
+        getMount: id => kitchen.getMount(id), isVisible: id => kitchen.isActive(id), navigate: id => { kitchen.open(id).catch(showError); }, onError: showError,
+        onAuthorityChange: () => { removeWorldGeneration?.clear(); memory?.invalidateWorldContext(); } });
+    const { installWorldAuthorityGeneration } = await import('../modules/world-records/generation-host.js');
+    removeWorldGeneration = installWorldAuthorityGeneration({ getContext, prepare: worldArchive.prepare, onError: showError });
+    window.registerKitchenModuleCleanup('world-records', () => { removeWorldGeneration(); worldArchive.dispose(); });
+    
     if (settings.storySummary?.enabled) {
         memory = await import('../modules/story-summary/story-summary.js');
         const panels = installFloorSummaries({ getSnapshot: memory.getFloorSummarySnapshot,
@@ -187,29 +183,11 @@ export async function startKitchen(workspace) {
         }
         window.registerKitchenModuleCleanup('kitchen-floor-summaries', () => { panels.dispose(); floorEvents.cleanup(); });
     }
-    if (settings.variablesCore?.enabled || settings.variablesPanel?.enabled) {
-        const commands = await import('../modules/variables/var-commands.js');
-        const events = await import('../modules/variables/varevent-editor.js');
-        commands.initVarCommands();
-        events.initVareventEditor();
-        if (settings.variablesCore?.enabled) (await import('../modules/variables/variables-core.js')).initVariablesCore();
-        if (settings.variablesPanel?.enabled) {
-            variables = await import('../modules/variables/variables-panel.js');
-            await variables.initVariablesPanel();
-        }
-    }
+    
     if (settings.enaPlanner?.enabled) {
         planner = await import('../modules/ena-planner/ena-planner.js');
         await planner.initEnaPlanner();
     }
     if (settings.xiaobaiOs?.enabled) await initXiaobaiOs();
-    const { createWorldArchive } = await import('../modules/world-records/host.js');
-    let removeWorldGeneration;
-    worldArchive = createWorldArchive({ getContext, getAccountId: getCurrentUserHandle, getMemorySnapshot: () => memory?.getFloorSummarySnapshot(),
-        getMount: id => kitchen.getMount(id), isVisible: id => kitchen.isActive(id), navigate: id => { kitchen.open(id).catch(showError); }, onError: showError,
-        onAuthorityChange: () => { removeWorldGeneration?.clear(); memory?.invalidateWorldContext(); } });
-    const { installWorldAuthorityGeneration } = await import('../modules/world-records/generation-host.js');
-    removeWorldGeneration = installWorldAuthorityGeneration({ getContext, prepare: worldArchive.prepare, onError: showError });
-    window.registerKitchenModuleCleanup('world-records', () => { removeWorldGeneration(); worldArchive.dispose(); });
     } catch (error) { startupError = error; throw error; } finally { readyResolve(); }
 }

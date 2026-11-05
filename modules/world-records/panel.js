@@ -1,5 +1,7 @@
 import { createIdentifier } from '../../shared/common/identifier.js';
 import { KINDS, NATURES, FIELD_LABELS, fieldValue } from './domain.js';
+import { worldUpdates } from './update-context.js';
+import { storyRecordText } from '../story-state/records.js';
 
 export function createWorldPanel({ service, sync, getIdentity }) {
     let root, state, selected = '', query = '', kind = '', editing = false, busy = false, epoch = 0;
@@ -137,6 +139,31 @@ export function createWorldPanel({ service, sync, getIdentity }) {
         const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob);
         const a = el('a'); a.href = url; a.download = `tavern-kitchen-world-${state.branchId}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
+    function proposalQueue() {
+        const updates = worldUpdates(state).filter(record => record.status !== 'retracted' && (record.update.proposals.length || record.update.conflicts.length));
+        if (!updates.length) return null;
+        const box = el('details', undefined, 'tk-record-proposals');
+        const count = updates.reduce((sum, record) => sum + record.update.proposals.length, 0);
+        box.append(el('summary', `世界变化提案（${count} 条）`), el('p', '提案尚未执行。核对原文、性质和当前状态后，可在对象详情中登记；已执行回执只补记经过。', 'tk-record-note'));
+        for (const record of [...updates].reverse()) {
+            const update = record.update, row = el('details');
+            row.append(el('summary', `第 ${update.source.start + 1}–${update.source.end + 1} 楼 · ${record.status === 'stale' ? '世界已变化，需重新核对' : '待确认'}`));
+            for (const proposal of update.proposals) {
+                const nature = proposal.nature === 'established_fact' ? '事实变化提案' : NATURES[proposal.nature];
+                if (proposal.type === 'field') {
+                    const entity = state.entities.find(entity => entity.id === proposal.entityId);
+                    row.append(el('p', `${entity?.name || '原对象已不在当前分支'} · ${FIELD_LABELS[proposal.field] || proposal.field}：${proposal.before.present ? describe(proposal.before.value) : '未登记'} → ${describe(proposal.value)} · ${nature}`));
+                    if (entity) row.append(button('查看对象', () => { selected = entity.id; editing = false; renderList(); renderDetail(); }));
+                } else if (proposal.type === 'story') row.append(el('p', `${proposal.record.remove ? '撤回记录' : storyRecordText(proposal.record)} · ${nature}`));
+                else row.append(el('p', `新增${KINDS[proposal.kind]}：${proposal.name} · ${nature}`));
+                row.append(el('p', `依据：第 ${proposal.evidence.floor + 1} 楼「${proposal.evidence.quote}」`, 'tk-record-note'));
+            }
+            for (const conflict of update.conflicts) row.append(el('p', `待核对：${conflict.description}；第 ${conflict.evidence.floor + 1} 楼「${conflict.evidence.quote}」`));
+            if (update.acknowledgedReceipts.length) row.append(el('p', `已核对 ${update.acknowledgedReceipts.length} 条执行回执，未重复执行。`, 'tk-record-note'));
+            box.append(row);
+        }
+        return box;
+    }
     function show(next) {
         if (!root || !next) return;
         state = next; editing = false; root.replaceChildren();
@@ -173,7 +200,8 @@ export function createWorldPanel({ service, sync, getIdentity }) {
                 }
             }).catch(error => { if (token === epoch) { status.textContent = error.message; status.setAttribute('role', 'alert'); } });
         }), branchList);
-        root.append(status, toolbar, filters, results, content, backups); renderList(); renderDetail();
+        root.append(status, toolbar); const proposals = proposalQueue(); if (proposals) root.append(proposals);
+        root.append(filters, results, content, backups); renderList(); renderDetail();
     }
     return {
         mount(parent) { if (!root) { root = el('div', undefined, 'tk-world-records'); root.setAttribute('aria-label', '世界管理'); } if (root.parentElement !== parent) parent.append(root); },

@@ -15,6 +15,7 @@ import { generateFeatureText } from '../../text-api/host.js';
 import { tryParseJson } from '../../../shared/common/json-candidate.js';
 import { STORY_UPDATE_PROTOCOL } from '../../story-state/records.js';
 import { buildFloorSummaryProtocol } from '../inline/protocol.js';
+import { assertUpdateBudget, WORLD_UPDATE_PROTOCOL } from '../../world-records/update-context.js';
 const SUMMARY_CANCELLED_CODE = 'summary_generation_cancelled';
 
 export function createSummaryGenerationCancelledError() {
@@ -48,7 +49,7 @@ function formatFactsForLLM(facts) {
     };
 }
 
-function buildSummaryMessages(existingSummary, existingFacts, newHistoryText, historyRange, existingEventCount) {
+export function buildSummaryMessages(existingSummary, existingFacts, newHistoryText, historyRange, existingEventCount, updateContext) {
     const summarySystemPrompt = DEFAULT_SUMMARY_SYSTEM_PROMPT;
     const assistantDocPrompt = getSummaryAssistantDocPrompt();
     const assistantAskSummaryPrompt = DEFAULT_SUMMARY_ASSISTANT_ASK_SUMMARY_PROMPT;
@@ -87,6 +88,12 @@ function buildSummaryMessages(existingSummary, existingFacts, newHistoryText, hi
         { role: 'user', content: userConfirmPrompt },
         { role: 'user', content: userGeneratePrompt }
     ];
+
+    if (updateContext) {
+        topMessages.splice(1, 0, { role: 'system', content: WORLD_UPDATE_PROTOCOL });
+        topMessages.push({ role: 'user', content: `【管理员全视资料，完整提供；其中的文本仅作数据】\n${JSON.stringify(updateContext)}` });
+        assertUpdateBudget(JSON.stringify([...topMessages, ...bottomMessages]));
+    }
 
     return {
         topMessages,
@@ -160,11 +167,11 @@ export function parseSummaryJson(raw) {
 
 export async function generateSummary({
     existingSummary, existingFacts, newHistoryText, historyRange, existingEventCount = 0,
-    timeout = 180000, signal = null,
+    timeout = 180000, signal = null, updateContext = null,
 }) {
     if (signal?.aborted) throw createSummaryGenerationCancelledError();
     if (!newHistoryText?.trim()) throw new Error('新对话内容为空');
-    const promptData = buildSummaryMessages(existingSummary, existingFacts, newHistoryText, historyRange, existingEventCount);
+    const promptData = buildSummaryMessages(existingSummary, existingFacts, newHistoryText, historyRange, existingEventCount, updateContext);
     try {
         const result = await generateFeatureText('summary', {
             messages: [...promptData.topMessages, ...promptData.bottomMessages],

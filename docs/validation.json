@@ -1,23 +1,24 @@
 {
-  "version": "0.2.12",
-  "verified_at_utc": "2026-11-05T01:24:42Z",
-  "build_id": "ab7d70ebc6c46183585a",
+  "version": "0.2.18",
+  "verified_at_utc": "2026-11-05T09:42:14Z",
+  "build_id": "aa10f239093586885a56",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
   "quality": "passed",
   "unit_tests": {
-    "total": 1549,
-    "passed": 1549,
-    "failed": 0
+    "total": 1586,
+    "passed": 1586,
+    "failed": 0,
+    "skipped": 0
   },
   "memory_runtime": "passed",
-  "scope": "Manual per-floor summary through the configured summary API, a native SillyTavern extension drawer, and settings/navigation cleanup. Story settings move under Story; the Settings tab becomes API Settings with only the API profile library; feature enable switches move into each feature section; world management moves under World > More. Floor writes reuse the existing confirmation, transaction and vector maintenance paths; world authority, variables and map writes are unchanged.",
+  "scope": "Full administrator world snapshots and one summary request producing narrative summaries plus evidence-bound field, entity and story-state proposals. Confirm output together, reconcile world proposal projections, retain stale/retracted status and manual facts, guard world and memory baselines, and reject oversized inputs without truncation. Approval, hierarchical summaries and L0 request consolidation remain pending.",
   "runtime_changes": true,
   "removed_source_paths": 1763,
   "removed_modules_in_build": 0,
   "browser_entries": 11,
-  "chunks": 68,
+  "chunks": 61,
   "host_static_validation": {
     "version": "1.19.0",
     "commit": "06bde939fb1e9c4c8d8641d810f0a916b5bce127"
@@ -94,7 +95,78 @@
     ],
     "verified_version": "0.1.9"
   },
-  "ui_review": "0.2.12 offline review: the API Settings tab without a cross-feature binding table, feature switches in each section, world management under World > More, and the story settings view with its section switch. No material findings; real TauriTavern, summary API calls and all themes not verified.",
+  "ui_review": "0.2.18 production world-management and floor summary components pass Linkedom DOM tests: proposals show before/after values, natures, quotes, stale status and object navigation without writes or HTML execution; retracted proposals are hidden. The actual floor panel previews and expands saved batch summaries even with an empty event list. Existing host theme and overflow wrapping are reused. No layout engine or new screenshots: local browser use is disabled in Work settings. Earlier browser fixtures retain their original version scope.",
+  "local_variable_regression": {
+    "version": "0.2.15",
+    "new_tests": 24,
+    "world_records_total": 72,
+    "storage": "fake-indexeddb",
+    "real_components": [
+      "world kernel, service and storage",
+      "variable store",
+      "plot-log interpreter",
+      "State interpreter",
+      "kitchen variable commands",
+      "variable panel",
+      "production variable runtime"
+    ],
+    "mocked_dependencies": [
+      "native host context and metadata save",
+      "DOM layout metrics"
+    ],
+    "dom": "Linkedom with jQuery 3.5.1; selector feature-probe adapter; no layout engine",
+    "development_lockfile": "frozen lockfile-only check passed; only jquery@3.5.1 added",
+    "live_host": false,
+    "browser_screenshots": false,
+    "checks": [
+      "once-only migration and explicit repair",
+      "atomic values, rules, signatures and checkpoints",
+      "unchanged host view before confirmation",
+      "failure and idempotent retry",
+      "lost acknowledgement",
+      "source evidence snapshot",
+      "source edits and late tasks",
+      "branch and chat isolation",
+      "concurrent writers and map conflicts",
+      "Schema 1/2 compatibility",
+      "backup integrity",
+      "large JSON values",
+      "legacy snapshot rollback",
+      "panel recovery and preserved input",
+      "stale forms",
+      "globals stay in the host",
+      "disabled read compatibility",
+      "no-chat setup",
+      "failed variable update blocks generation"
+    ],
+    "retired_in": "0.2.16",
+    "historical_only": true
+  },
+  "world_map_regression": {
+    "version": "0.2.14",
+    "new_tests": 19,
+    "world_records_total": 50,
+    "storage": "fake-indexeddb",
+    "real_components": [
+      "world kernel",
+      "world service and storage",
+      "map service",
+      "world map store adapter"
+    ],
+    "live_host": false,
+    "checks": [
+      "legacy adoption and correction",
+      "atomic facts and geometry",
+      "idempotent retry",
+      "lost acknowledgement",
+      "concurrent adoption and writes",
+      "backup integrity",
+      "branch and chat isolation",
+      "stale editors",
+      "hidden off-map actors",
+      "legacy suggestion retirement"
+    ]
+  },
   "world_archive_fixture": {
     "version": "0.2.0",
     "desktop": [
@@ -214,7 +286,7 @@
     },
     "errors": []
   },
-  "modules": 929,
+  "modules": 927,
   "phone_removal_fixture": {
     "version": "0.2.3",
     "desktop": [
@@ -350,5 +422,81 @@
       "noOverflow": true
     },
     "errors": []
+  },
+  "full_world_update_regression": {
+    "version": "0.2.18",
+    "new_tests": 32,
+    "world_context_contract_and_persistence": 19,
+    "production_model_message_boundary": 3,
+    "production_summary_confirmation_and_recovery": 6,
+    "production_dom_and_floor_projection": 3,
+    "unavailable_world_runtime_gate": 1,
+    "targeted_suite_total": 246,
+    "world_input": "full canonical world archive and confirmed story records, including distant entities, secrets and non-factual claims",
+    "input_char_limit": 200000,
+    "silent_truncation": false,
+    "single_summary_and_proposal_request": "passed with the actual message builder and model boundary replaced in process",
+    "evidence_and_old_value_validation": "passed",
+    "known_source_executed_effect_reproposal": "rejected",
+    "world_and_memory_basis_guard": "passed",
+    "unconfirmed_metadata_projection": "withheld until read-only confirmation succeeds",
+    "failed_world_projection_retry": "passed without another model call or metadata save",
+    "concurrent_world_edit_during_host_save": "manual state preserved; proposals marked stale",
+    "source_edit_or_memory_undo": "proposal projection retracted",
+    "direct_scene_state_mutation": "rejected in unified mode; use evidence-bound story proposals",
+    "retired_archive_input": "excluded",
+    "proposal_auto_execution": false,
+    "hierarchical_background_available": false,
+    "l0_request_consolidation": false,
+    "character_view_permission_filtering": "pending P4; source-only summary constraints are prompts, not an access-control guarantee",
+    "cross_store_atomicity": false,
+    "browser_screenshots": false,
+    "live_host": false,
+    "paid_model_calls": 0,
+    "published": false
+  },
+  "turn_source_regression": {
+    "version": "0.2.17",
+    "new_tests": 36,
+    "ledger_and_world_service": 21,
+    "production_world_host": 6,
+    "summary_generation_confirmation_and_undo": 8,
+    "floor_provenance_compatibility": 1,
+    "targeted_suite_total": 225,
+    "storage": "fake-indexeddb with production world service and confirmed host metadata flow",
+    "durable_turn_sources": "passed",
+    "source_effect_idempotence": "passed",
+    "lost_confirmation_recovery": "passed without new model calls or effect replay",
+    "continuous_memory_coverage": "passed without inferring legacy provenance",
+    "source_edit_undo": "passed for new exact-source memory batches, including reload",
+    "source_effect_conflict": "blocks narration and new automatic effects; explicit historical fork remains available",
+    "manual_world_edits": "preserved independently",
+    "cross_store_atomicity": false,
+    "omniscient_unified_update": false,
+    "automatic_effect_dependency_repair": false,
+    "live_host": false,
+    "paid_model_calls": 0,
+    "published": false
+  },
+  "variable_system_removal": {
+    "version": "0.2.16",
+    "source_files": 23,
+    "manifest": "docs/removed-variable-files.json",
+    "source_gate": "passed",
+    "built_artifact_gate": "passed",
+    "retired_runtime_modules_in_build": 0,
+    "new_tests": 5,
+    "retired_tests": 81,
+    "workspace_route_test": "passed",
+    "historical_archive_replay": "passed without the retired runtime",
+    "new_legacy_module_writes": "rejected",
+    "frozen_lockfile": "passed",
+    "modules_before": 936,
+    "modules_after": 921,
+    "chunks_before": 68,
+    "chunks_after": 60,
+    "browser_screenshots": false,
+    "live_host": false,
+    "published": false
   }
 }

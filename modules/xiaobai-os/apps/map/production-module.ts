@@ -13,11 +13,15 @@ import { createMapManagement } from './management/participant.js';
 import { createMapService } from './application/service.js';
 import type { PartitionStore } from '../../kernel/contracts.js';
 import type { MapDomainV1 } from '../../domains/map/types.js';
-import type { XiaobaiOsAppModule } from '../../kernel/app-registry.js';
+import type { AppRegistrationContext, XiaobaiOsAppModule } from '../../kernel/app-registry.js';
 import { MANAGEMENT_CAPABILITY } from '../../capabilities/management/index.js';
-import { registerWorldSource, notifyWorldSourcesChanged, storyIdentityKey } from '../../../world-records/sources.js';
-import { mapRecords } from '../../../world-records/imports.js';
+import { notifyWorldSourcesChanged, storyIdentityKey } from '../../../world-records/sources.js';
 import { authorityMap } from '../../../world-records/authority-context.js';
+import { createWorldMapStore } from '../../../world-records/map-store.js';
+import { getWorldBridge } from '../../../world-records/bridge.js';
+import { prepareMapOperations, readWorldMap } from '../../../world-records/map-commands.js';
+import { createEmptyMapDomain } from '../../domains/map/state.js';
+import { createIdentifier } from '../../../../shared/common/identifier.js';
 
 export interface ProductionMapModuleDependencies {
     settings: XiaobaiOsSettingsRepository;
@@ -30,12 +34,15 @@ export interface ProductionMapModuleDependencies {
 }
 
 export function createProductionMapModule(dependencies: ProductionMapModuleDependencies): XiaobaiOsAppModule {
+    function createService(context: AppRegistrationContext) {
+        const adapter = createWorldMapStore({ legacyStore: context.partition as PartitionStore<MapDomainV1>, legacyFiles: context.files,
+            getStoryIdentity: () => storyIdentityKey(dependencies.getChatIdentity()) });
+        const map = createMapService(adapter.store, adapter.files);
+        return { ...map, dispose() { map.dispose(); adapter.dispose(); } };
+    }
     const module = createMapModule({
+        createService,
         async install({ map, maintenance, prompts, execution }) {
-            execution.addCleanup(registerWorldSource('map', () => {
-                const view = map.readCurrent();
-                return { available: view.writeState === 'ready', identity: storyIdentityKey(dependencies.getChatIdentity()), label: '世界地图', records: mapRecords(view.map) };
-            }));
             execution.addCleanup(map.subscribe(notifyWorldSourcesChanged));
             const injection = prompts.register(MAP_PROMPTS);
             execution.addCleanup(injection.dispose);
@@ -65,9 +72,14 @@ export function createProductionMapModule(dependencies: ProductionMapModuleDepen
         },
         async dispose(runtime) { await runtime.stopBackground?.(); },
     });
-    return { ...module, register(context) {
+    return { ...module, async clearData() {
+        const { service } = getWorldBridge(storyIdentityKey(dependencies.getChatIdentity()));
+        const state = await service.ensure();
+        const operations = prepareMapOperations(state, readWorldMap(state), createEmptyMapDomain(), createIdentifier);
+        await service.commit(service.command(state, operations, '清空当前地图'));
+    }, register(context) {
         const registry = context.useCapability(MANAGEMENT_CAPABILITY);
-        const map = createMapService(context.partition as PartitionStore<MapDomainV1>, context.files);
+        const map = createService(context);
         try {
             const unregister = registry.register(createMapManagement(map, () => ({ actorKey: 'player', displayName: dependencies.getPlayerDisplayName() })));
             return () => { unregister(); map.dispose(); };

@@ -11,7 +11,6 @@ import { power_user } from "../../../../power-user.js";
 import { world_info } from "../../../../world-info.js";
 import { xbLog, CacheRegistry } from "../core/debug-core.js";
 import { getTrustedOrigin } from "../core/iframe-messaging.js";
-import { replaceXbGetVarInString, replaceXbGetVarYamlInString } from "./variables/var-commands.js";
 import { throwIfSignalAborted } from '../shared/common/abort-utils.js';
 import { observeBackgroundTask } from '../shared/common/async-errors.js';
 import { tryParseJson } from '../shared/common/json-candidate.js';
@@ -411,26 +410,10 @@ class StreamingGeneration {
     async _emitPromptReady(chatArray) {
         if (!Array.isArray(chatArray)) return chatArray;
         const snapshot = this._cloneChat(chatArray);
-        const shouldAdoptMutations = this._needsPromptPostProcess(chatArray);
         try {
             await eventSource?.emit?.(event_types.CHAT_COMPLETION_PROMPT_READY, { chat: snapshot, dryRun: false });
         } catch (caughtError) { console.warn({ source: import.meta.url, operation: "_emitPromptReady" }, caughtError); }
-        return shouldAdoptMutations && Array.isArray(snapshot) ? snapshot : chatArray;
-    }
-
-    _needsPromptPostProcess(chatArray) {
-        const markers = ['<varevent', '{{xbgetvar::', '{{xbgetvar_yaml::', '{{xbgetvar_yaml_idx::'];
-        const hasMarker = (text) => typeof text === 'string' && markers.some(marker => text.includes(marker));
-        for (const msg of Array.isArray(chatArray) ? chatArray : []) {
-            if (!msg) continue;
-            if (hasMarker(msg.content) || hasMarker(msg.mes)) return true;
-            if (Array.isArray(msg.content)) {
-                for (const part of msg.content) {
-                    if (hasMarker(part?.text)) return true;
-                }
-            }
-        }
-        return false;
+        return chatArray;
     }
 
     _cloneChat(chatArray) {
@@ -899,10 +882,6 @@ class StreamingGeneration {
             .replace(/<\s*user\s*>/gi, String(ctx?.name1 || 'User'))
             .replace(/<\s*(char|character)\s*>/gi, String(ctx?.name2 || 'Assistant'))
             .replace(/<\s*persona\s*>/gi, String(f.persona || ''));
-        try {
-            out = replaceXbGetVarInString(out);
-            out = replaceXbGetVarYamlInString(out);
-        } catch (caughtError) { console.warn({ source: import.meta.url, operation: "expandInline" }, caughtError); }
         const snap = this._getLastMessagesSnapshot();
         const lastDict = {
             '{{lastmessage}}': snap.lastMessage,

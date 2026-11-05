@@ -1,7 +1,7 @@
 import { getKitchenMount, openKitchenTab, closeKitchenWorkspace, bindKitchenFrame } from '../../core/kitchen-workspace.js';
 import { refreshFloorSummaries } from './floor-summary.js';
 import { createFloorSummaryController } from './inline/controller.js';
-import { buildFloorProtocol, extractFloorPayload, floorSource, stripFloorProtocol } from './inline/protocol.js';
+import { extractFloorPayload, floorSource, stripFloorProtocol } from './inline/protocol.js';
 import { floorCoverageEnd, isFloorEntryCurrent } from './inline/ledger.js';
 import { installFloorDisplayFilter } from './inline/host-regex.js';
 import { mergeNewData, executeRollback } from './data/store.js';
@@ -108,6 +108,8 @@ import { isRelationFact, parseRelationTarget } from "./data/fact-predicates.js";
 import { formatStorySummaryL2Events } from "./prompt-events.js";
 import { projectStoryCharacters } from "./prompt-characters.js";
 import { notifyWorldSourcesChanged } from '../world-records/sources.js';
+import { prepareMemorySources, validateMemorySources } from '../world-records/turn-runtime.js';
+import { firstInvalidMemorySource } from './data/turn-source.js';
 import { getAutoSummaryPlan } from './generate/summary-trigger.js';
 import { buildEventVectorText, selectMissingEventVectorPairs } from './vector/pipeline/event-vector-input.js';
 import { createHideStateController } from './hide-state.js';
@@ -176,7 +178,6 @@ import {
     vectorizeMissingStateAtoms,
     clearAllAtomsAndVectors,
     getAnchorStats,
-    initStateIntegration,
 } from "./vector/pipeline/state-integration.js";
 import {
     clearStateVectors,
@@ -1393,7 +1394,7 @@ async function maybeRunDelayedVectorMaintenance(scheduledChatId = null) {
         stopVectorMaintenanceAfterFailure(chatId);
         return;
     }
-    const hasL0LlmWork = getSummaryPanelConfig().inlineSummary?.enabled === false && stats.pending > 0;
+    const hasL0LlmWork = stats.pending > 0;
     const hasL0VectorWork = l0VectorStatus.success && l0VectorStatus.missing > 0;
     // L1/L2 must inspect actual records even when L0 and floor progress look
     // complete. The repair stages themselves make no API call without a gap.
@@ -1552,7 +1553,7 @@ async function maybeRunDelayedVectorMaintenance(scheduledChatId = null) {
             stopVectorMaintenanceAfterFailure(chatId, { allowEventRepair: false, allowChunkRepair: false });
             return;
         }
-        if (getSummaryPanelConfig().inlineSummary?.enabled === false && Number(l0Status?.incomplete || 0) > 0) {
+        if (Number(l0Status?.incomplete || 0) > 0) {
             if (Number(l0Status?.pending || 0) > 0) {
                 scheduleAutoL0Backfill(AUTO_L0_BACKFILL_DELAY_MS, chatId);
                 xbLog.info(MODULE_ID, `延迟向量维护完成一批，剩余 L0 楼层=${l0Status.incomplete}`);
@@ -2156,7 +2157,7 @@ async function checkVectorIntegrity({ allowEventRepair = true, allowChunkRepair 
         cacheInconsistent: cacheCheck.status === 'inconsistent',
         fingerprintMismatch,
         chunkFloorGap: cacheCheck.missingChunkFloors?.length || 0,
-        incompleteL0FloorCount: (getSummaryPanelConfig().inlineSummary?.enabled === false ? Number(anchorStats.incomplete || 0) : 0)
+        incompleteL0FloorCount: Number(anchorStats.incomplete || 0)
             + (l0VectorStatus.success ? Number(l0VectorStatus.missingFloors || 0) : 0),
         missingEventVectorCount: missingEventPairs.length,
     });
@@ -2953,7 +2954,6 @@ function scheduleLexicalWarmup(delayMs = LEXICAL_WARMUP_DEBOUNCE_MS) {
 }
 
 function scheduleAutoSummary(reason, delayMs = AUTO_SUMMARY_DELAY_MS) {
-    if (getSummaryPanelConfig().inlineSummary?.enabled !== false) return;
     const scheduledChatId = getContext().chatId || null;
     const previous = autoSummaryTimers.get(reason);
     if (previous) clearTimeout(previous);
@@ -3030,7 +3030,6 @@ function clearHideState(options) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function maybeAutoRunSummary(reason) {
-    if (getSummaryPanelConfig().inlineSummary?.enabled !== false) return;
     const { chatId, chat } = getContext();
     if (!chatId || !Array.isArray(chat)) return;
     if (!isStorySummaryEnabledForCurrentChat()) return;
@@ -3801,14 +3800,6 @@ async function handleFrameMessage(event) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function handleManualGenerate(mesId, config) {
-    if (getSummaryPanelConfig().inlineSummary?.enabled !== false) {
-        try {
-            const result = await mainReplySummary.ingest(mesId, { force: true });
-            postToFrame({ type: 'SUMMARY_STATUS', statusText: result.committed ? '本楼总结已写入。' : result.error || '主回复未附带总结，可在楼尾补写或用酒馆重新生成。' });
-        } catch (error) { postToFrame({ type: 'SUMMARY_ERROR', message: error.message }); }
-        notifySummaryState();
-        return;
-    }
     if (isSummaryGenerating()) {
         postToFrame({ type: "SUMMARY_STATUS", statusText: "上一轮总结仍在进行中..." });
         notifySummaryState();
@@ -4100,7 +4091,6 @@ async function handleMessageReceived(scheduledChatId, targetMesId = null) {
     initButtonsForAll();
 
     applyHideStateDebounced();
-    if (getSummaryPanelConfig().inlineSummary?.enabled !== false) await mainReplySummary.ingest(floor);
     scheduleAutoSummary("after_ai");
 
     // Refresh entity lexicon after new message (new roles may appear)
@@ -4139,7 +4129,7 @@ async function ensureFloorSources() {
 }
 const mainReplySummary = createFloorSummaryController({
     getContext, enabled: isStorySummaryEnabledForCurrentChat,
-    getConfig: () => getSummaryPanelConfig().inlineSummary || { enabled: true, review: false },
+    getConfig: () => getSummaryPanelConfig().inlineSummary || { enabled: false, review: false },
     getFilterRules: getTextFilterRules,
     ensureSources: ensureFloorSources, read: readSummaryMemory, commit: commitSummaryMemory, merge: mergeNewData,
     busy: () => isHostGenerating() || isSummaryGenerating(), refresh: refreshFloorSummaries,
@@ -4164,15 +4154,6 @@ const mainReplySummary = createFloorSummaryController({
         await applyHideState();
     },
 });
-
-async function injectMainReplySummary(_chat, _size, _abort, type) {
-    delete extension_prompts[FLOOR_PROMPT_KEY];
-    if (!usesStoryRecall(type) || !isStorySummaryEnabledForCurrentChat()
-        || getSummaryPanelConfig().inlineSummary?.enabled === false) return;
-    await ensureFloorSources();
-    extension_prompts[FLOOR_PROMPT_KEY] = { value: buildFloorProtocol(getPublishedSummaryStore()),
-        position: extension_prompt_types.IN_CHAT, depth: 0, role: extension_prompt_roles.SYSTEM };
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Prompt 注入
@@ -4765,7 +4746,9 @@ async function registerEvents() {
     );
     removeFloorDisplayFilter?.();
     removeFloorDisplayFilter = installFloorDisplayFilter(getContext().extensionSettings);
-    registerGenerateInterceptor('story-floor-summary', injectMainReplySummary, GENERATE_INTERCEPTOR_ORDER.STORY_SUMMARY - 1);
+    // Retire a previous main-reply interceptor when reinitializing without reload.
+    unregisterGenerateInterceptor('story-floor-summary');
+    delete extension_prompts[FLOOR_PROMPT_KEY];
     events.on(event_types.GENERATION_STOPPED, () => {
         const { chatId } = getContext();
         cancelActiveRecall('generation-stopped', {
@@ -5132,7 +5115,6 @@ async function initializeStorySummary() {
     await registerEvents();
     // 注册可能等待上一次卸载；等待期间关闭开关时，不再继续初始化。
     if (!isXiaobaiMasterEnabled() || !getSettings().storySummary?.enabled) return;
-    initStateIntegration();
     maybePreloadTokenizer();
     await handleChatChanged();
 }
@@ -5161,8 +5143,10 @@ export function openStoryWorld(route = 'world') {
 export function getFloorSummarySnapshot() {
     const store = getPublishedSummaryStore();
     const invalid = store?.summaryHistory?.find(batch => batch.floorEntry && !isFloorEntryCurrent(batch.floorEntry, getContext().chat));
+    const sourceInvalid = firstInvalidMemorySource(store, getContext().chat || []);
+    const invalidFrom = Math.min(sourceInvalid ?? Infinity, invalid?.floorEntry.source.start ?? Infinity, getRuntimeInvalidSourceFloor() ?? Infinity);
     return { enabled: isXiaobaiMasterEnabled() && isStorySummaryEnabledForCurrentChat(),
-        chat: getContext().chat, store, invalidFrom: invalid ? Math.min(invalid.floorEntry.source.start, getRuntimeInvalidSourceFloor() ?? Infinity) : getRuntimeInvalidSourceFloor(),
+        chat: getContext().chat, store, invalidFrom: Number.isFinite(invalidFrom) ? invalidFrom : undefined,
         inlineConfig: getSummaryPanelConfig().inlineSummary, getError: mainReplySummary.error };
 }
 export function updateFloorSummary(floor, change, source) { return mainReplySummary.update(floor, change, source); }
@@ -5186,7 +5170,9 @@ export async function summarizeFloorOnDemand(floor) {
     try {
         await ensureFloorSources();
         if (identity !== getChatIdentity(getContext())) throw new Error('聊天已切换，本次总结未写入。');
+        const preparedSources = await prepareMemorySources(source.start, floor);
         const raw = await generateFloorSummary({ store: getPublishedSummaryStore(), floorText: text });
+        await validateMemorySources(preparedSources);
         if (identity !== getChatIdentity(getContext())) throw new Error('聊天已切换，本次总结未写入。');
         let extracted = extractFloorPayload(raw);
         if (extracted.status === 'missing') {
@@ -5196,7 +5182,7 @@ export async function summarizeFloorOnDemand(floor) {
         if (extracted.status !== 'ready') throw new Error(extracted.error || '总结格式有误，未写入。');
         return await mainReplySummary.update(floor, {
             payload: extracted.payload, reviewed: true, deleted: false, empty: false, omitted: false,
-        }, source.digest);
+        }, source.digest, preparedSources);
     } finally {
         floorSummaryRequest = null;
     }

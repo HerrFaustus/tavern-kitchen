@@ -28,6 +28,7 @@ export interface MapModuleInstallContext {
 }
 
 export interface MapModuleDependencies {
+    createService?(context: AppInstallContext): MapService;
     install(context: MapModuleInstallContext): Promise<XiaobaiOsAppRuntime>;
     dispose?(runtime: XiaobaiOsAppRuntime): Promise<void>;
 }
@@ -39,7 +40,7 @@ export function createMapModule(dependencies: MapModuleDependencies): XiaobaiOsA
         capabilities: [AGENT_CAPABILITY, MAINTENANCE_CAPABILITY, MANAGEMENT_CAPABILITY, MAP_CONTEXT_CAPABILITY, PROMPT_INJECTION_CAPABILITY],
         install(context) {
             if (!context.partition) { throw new Error('Map partition store is unavailable'); }
-            const map = createMapService(
+            const map = dependencies.createService?.(context) ?? createMapService(
                 context.partition as PartitionStore<MapDomainV1>,
                 context.files,
             );

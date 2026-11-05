@@ -7,8 +7,10 @@ import { official, referenceFor } from '../host/official.mjs';
 import { createHostInterface } from '../host/interface.mjs';
 import { localHostReference } from '../host/local-reference.mjs';
 import { hostPathForImport } from '../host/paths.mjs';
+import { checkRemovedVariables } from '../check-removed-variables.mjs';
 
 export function validateBuild(directory, hostReference) {
+    checkRemovedVariables(root, { buildDirectory: directory });
     hostReference ??= localHostReference();
     const references = hostReference ? [hostReference] : Object.keys(official.verificationVersions).map(referenceFor);
     const hosts = references.map(reference => createHostInterface(reference));

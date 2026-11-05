@@ -31,7 +31,7 @@ export const KITCHEN_TABS = [['overview', '总览'], ['world', '世界'], ['memo
 export const KITCHEN_ROUTES = {
     overview: [['overview', '当前故事']],
     memory: [['memory', '事件时间线'], ['memory-settings', '剧情设置']],
-    world: [['world', '世界状态'], ['situation', '局势'], ['lore', '设定'], ['people', '人物'], ['variables', '变量'], ['map', '地图'], ['world-engine', '后台演化'], ['world-management', '世界管理']],
+    world: [['world', '世界状态'], ['situation', '局势'], ['lore', '设定'], ['people', '人物'], ['map', '地图'], ['world-engine', '后台演化'], ['world-management', '世界管理']],
     planner: [['planner', '剧情规划'], ['dice', '行动判定']],
     settings: [['settings', 'API 设置']],
 };
@@ -40,7 +40,7 @@ const parentOf = id => KITCHEN_TABS.find(([key]) => KITCHEN_ROUTES[key].some(([r
 const worldTabs = new Set(['map', 'world-engine', 'dice', 'agent-api', 'settings']);
 const memoryTabs = new Set(['memory', 'situation', 'lore', 'people', 'relations', 'memory-settings']);
 // Keep current-story routes visible; reference and maintenance pages live under one overflow entry.
-const subnavOverflow = { world: new Set(['lore', 'variables', 'world-engine', 'world-management']) };
+const subnavOverflow = { world: new Set(['lore', 'world-engine', 'world-management']) };
 export const getKitchenMount = id => workspace?.getMount(id) ?? null;
 export const openKitchenTab = id => workspace?.open(id);
 export const closeKitchenWorkspace = () => workspace?.close();

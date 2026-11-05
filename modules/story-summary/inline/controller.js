@@ -1,24 +1,28 @@
 import { getChatIdentity } from '../data/chat-identity.js';
 import { extractFloorPayload, floorSource, validateFloorPayload } from './protocol.js';
 import { findFloorBatch, isFloorEntryCurrent, reviseFloorMemory } from './ledger.js';
+import { prepareMemorySources, assertMemorySources, validateMemorySources } from '../../world-records/turn-runtime.js';
 
 export function createFloorSummaryController({ getContext, enabled, getConfig, ensureSources, read, commit, merge,
     afterCommit = async () => {}, refresh = () => {}, busy = () => false, getFilterRules = () => [] }) {
     let queue = Promise.resolve();
     const errors = new Map();
     const key = floor => `${getChatIdentity(getContext())}/${floorSource(getContext().chat, floor)?.digest}`;
-    async function perform(floor, change, expectedSource) {
+    async function perform(floor, change, expectedSource, expectedSources) {
         const identity = getChatIdentity(getContext());
         const source = floorSource(getContext().chat, floor);
         if (!enabled() || !source) throw new Error('请先启用当前聊天的剧情记录。');
         if (busy()) throw new Error('请等待当前回复完成后再编辑或写入。');
         if (expectedSource && expectedSource !== source.digest) throw new Error('原文已变化，请重新打开本楼编辑。');
         const check = () => {
+            assertMemorySources(expectedSources);
             if (identity !== getChatIdentity(getContext()) || source.digest !== floorSource(getContext().chat, floor)?.digest) {
                 throw new Error('聊天、原文或候选回复已变化，本次修改未写入。');
             }
         };
         await ensureSources(); check();
+        const preparedSources = change.stage ? null : expectedSources || await prepareMemorySources(source.start, floor);
+        await validateMemorySources(preparedSources); check();
         const previous = read();
         const old = findFloorBatch(previous.storySummary, floor)?.floorEntry;
         const extracted = extractFloorPayload(getContext().chat[floor].mes);
@@ -36,8 +40,9 @@ export function createFloorSummaryController({ getContext, enabled, getConfig, e
                 ...(options.suppressDefaultEvent ? { suppressDefaultEvent: true } : {}) };
         } else {
             next = reviseFloorMemory(previous, getContext().chat, floor, options, merge, getFilterRules());
+            if (preparedSources) findFloorBatch(next.storySummary, floor).sourceReceipt = structuredClone(preparedSources.receipt);
         }
-        await commit(getContext().chatId, next, { previous, validate: check });
+        await commit(getContext().chatId, next, { previous, validate: () => { check(); assertMemorySources(preparedSources); } });
         check(); errors.delete(key(floor));
         if (!change.stage) {
             try { await afterCommit(floor, previous, next); }
@@ -46,13 +51,13 @@ export function createFloorSummaryController({ getContext, enabled, getConfig, e
         refresh();
         return { committed: !change.stage, staged: !!change.stage };
     }
-    function update(floor, change = {}, expectedSource) {
+    function update(floor, change = {}, expectedSource, expectedSources) {
         // Capture the owner before queuing; a late action must not switch stories.
         const owner = getChatIdentity(getContext());
         const captured = expectedSource || floorSource(getContext().chat, floor)?.digest;
         const task = queue.then(async () => {
             if (owner !== getChatIdentity(getContext())) throw new Error('聊天已切换，请重新操作。');
-            return perform(floor, change, captured);
+            return perform(floor, change, captured, expectedSources);
         });
         queue = task.then(() => undefined, error => {
             if (owner === getChatIdentity(getContext())) errors.set(key(floor), error.message);

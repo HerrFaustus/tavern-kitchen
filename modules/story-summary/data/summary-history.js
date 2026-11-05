@@ -1,6 +1,8 @@
 import { normalizeSummaryUndo } from './summary-undo.js';
 import { validateMaintenanceReceipt, upgradeMaintenanceReceipt } from '../maintenance/history.js';
 import { isMemoryPolicy } from './memory-policy.js';
+import { validateMemorySourceReceipt } from './turn-source.js';
+import { validateStoredUpdate } from '../../world-records/update-result.js';
 
 function valid(condition) {
     if (!condition) throw Object.assign(new Error('summary_history_invalid'), { code: 'summary_history_invalid' });
@@ -40,6 +42,18 @@ export function upgradeSummaryHistory(history) {
             valid(entry.format === 2 && ['baseline', 'batch'].includes(entry.kind) && Array.isArray(entry.maintenance));
             if (entry.kind === 'baseline') valid(!value.length && entry.undo == null && entry.previousEndMesId == null);
             else createSummaryBatch(entry.previousEndMesId, entry.endMesId, entry.undo, entry.policy);
+            if (entry.sourceReceipt) {
+                validateMemorySourceReceipt(entry.sourceReceipt);
+                valid(entry.kind === 'batch' && entry.sourceReceipt.source.end === entry.endMesId);
+            }
+            if (entry.worldUpdate) {
+                validateStoredUpdate(entry.worldUpdate);
+                const receipt = entry.sourceReceipt, update = entry.worldUpdate;
+                valid(receipt?.id === update.requestId && update.source.end === entry.endMesId
+                    && receipt.worldId === update.basis.worldId && receipt.branchId === update.basis.branchId
+                    && receipt.basisVersion === update.basis.version && receipt.source.digest === update.source.digest
+                    && receipt.source.start === update.source.start);
+            }
             value.push({ ...entry, maintenance: entry.maintenance.map(upgradeMaintenanceReceipt) });
         }
     }

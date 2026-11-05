@@ -7,7 +7,8 @@ import { CommonSettingStorage } from "../../../core/server-storage.js";
 import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY, writeSummaryConfigLocalCache } from './config-local-cache.js';
 import { CHARACTER_ALIAS_OUTPUT_TEMPLATE } from './character-aliases.js';
 import { EVENT_MEMORY_ROLES } from "./events.js";
-import { DEFAULT_SUMMARY_DELAY_FLOORS, normalizeSummaryDelayFloors } from './summary-delay.js';
+import { normalizeSummaryDelayFloors } from './summary-delay.js';
+import { normalizeSummaryWorkflow } from './summary-workflow.js';
 import { normalizeRecallTimeoutSec } from './recall-settings.js';
 import { DEFAULT_MEMORY_MAINTENANCE_ENABLED } from '../maintenance/settings.js';
 import {
@@ -336,14 +337,14 @@ function normalizeVectorConfig(rawVector = null) {
 
 function createDefaultSummaryPanelConfig() {
     const defaults = {
-        inlineSummary: { enabled: true, review: false },
+        ...normalizeSummaryWorkflow(),
         memoryMaintenanceEnabled: DEFAULT_MEMORY_MAINTENANCE_ENABLED,
         trigger: {
-            enabled: false,
+            enabled: true,
             notifyOnComplete: false,
-            interval: 20,
-            delayFloors: DEFAULT_SUMMARY_DELAY_FLOORS,
-            timing: "before_user",
+            interval: 1,
+            delayFloors: 0,
+            timing: "after_ai",
             role: "system",
             maxPerRun: 100,
             wrapperHead: "",
@@ -407,10 +408,12 @@ function normalizeSummaryPanelConfig(rawConfig = null) {
         ? rawConfig.prompts
         : {};
 
+    const workflow = normalizeSummaryWorkflow(rawConfig);
     const result = {
+        summaryWorkflowVersion: workflow.summaryWorkflowVersion,
         memoryMaintenanceEnabled: rawConfig.memoryMaintenanceEnabled === true,
-        trigger: { ...defaults.trigger, ...(rawConfig.trigger || {}) },
-        inlineSummary: { enabled: rawConfig.inlineSummary?.enabled !== false, review: rawConfig.inlineSummary?.review === true },
+        trigger: { ...defaults.trigger, ...workflow.trigger },
+        inlineSummary: workflow.inlineSummary,
         ui: { ...defaults.ui, ...(rawConfig.ui || {}) },
         textFilterRules,
         prompts: {

@@ -176,9 +176,10 @@ export function createFloorPanel({ doc, floor, updateFloor, extractFloor, summar
         content.replaceChildren();
         if (model.legacy) {
             const events = model.legacyEvents;
-            content.append(element('p', '', `旧版区间总结 · 第 ${model.legacy.previousEndMesId + 2}–${model.legacy.endMesId + 1} 楼`));
-            for (const event of events) content.append(element('p', 'tk-fp-summary', event.summary));
-            content.append(button('在剧情资料中编辑', () => openMemory(floor), 'menu_button')); return;
+            content.append(element('p', '', `${model.legacy.summary ? '区间摘要' : '旧版区间总结'} · 第 ${model.legacy.previousEndMesId + 2}–${model.legacy.endMesId + 1} 楼`));
+            if (model.legacy.summary) content.append(element('p', 'tk-fp-summary', model.legacy.summary));
+            else for (const event of events) content.append(element('p', 'tk-fp-summary', event.summary));
+            content.append(button(model.legacy.summary ? '查看剧情资料' : '在剧情资料中编辑', () => openMemory(floor), 'menu_button')); return;
         }
         const disabled = !!model.entry?.omitted;
         const chips = element('div', 'tk-fp-chips');
@@ -238,6 +239,7 @@ export function createFloorPanel({ doc, floor, updateFloor, extractFloor, summar
         omit.classList.toggle('is-active', omitted); omit.disabled = busy || !!model.legacy;
         omit.title = omitted ? '取消番外：恢复参与剧情记忆' : '标为番外：不计入剧情记忆'; omit.setAttribute('aria-label', omit.title);
         extract.disabled = busy || !!model.legacy || omitted;
+        extract.hidden = snapshot.inlineConfig?.enabled === false;
         if (summarize) {
             const hasEntry = !!model.entry && !model.entry.deleted;
             const hasDraftSummary = !model.entry && !!model.payload.summary;

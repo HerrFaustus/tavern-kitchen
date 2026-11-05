@@ -2,6 +2,7 @@ import { memoryDigest } from '../data/memory-policy.js';
 import { prepareSummaryResult } from '../generate/summary-result.js';
 import { STORY_UPDATE_PROTOCOL } from '../../story-state/records.js';
 import { validateInlineAnchors } from './anchors.js';
+import { captureRangeSource } from '../data/turn-source.js';
 
 export const FLOOR_TAG = 'kitchen_summary';
 export const FLOOR_PROTOCOL_LIMIT = 120_000;
@@ -17,11 +18,12 @@ const text = (value, label, required = false) => {
 export const isNarrativeReply = message => !!message && !message.is_user && typeof message.mes === 'string'
     && !!message.mes.trim() && !(message.is_system && message.extra?.type);
 
-export function floorSource(chat, floor) {
+export function floorSource(chat, floor, version = 2) {
     const message = chat?.[floor];
     if (!isNarrativeReply(message) || !Number.isInteger(floor) || floor < 0) return null;
     let start = floor;
     while (start > 0 && chat[start - 1]?.is_user) start--;
+    if (version === 2) return { version: 2, start, floor, digest: captureRangeSource(chat, start, floor).digest };
     return { start, floor, digest: memoryDigest(chat.slice(start, floor + 1).map(m => ({
         mes: m.mes, name: m.name, is_user: !!m.is_user, swipe: m.swipe_id ?? 0,
     }))) };

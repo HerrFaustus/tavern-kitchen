@@ -39,3 +39,30 @@ test('world management keeps creation and search primary while rare actions stay
     assert.ok(document.querySelector('.tk-record-filters input[type="search"]'));
     assert.equal([...document.querySelectorAll('.tk-record-results button')].map(button => button.textContent).join(','), '老渡工 · 人物');
 });
+
+test('world proposals expose values, natures and evidence as text, distinguish stale records and never apply on view', t => {
+    const { document } = parseHTML('<html><body><main></main></body></html>');
+    const original = globalThis.document; globalThis.document = document; t.after(() => { globalThis.document = original; });
+    const createElement = document.createElement.bind(document);
+    document.createElement = (tag, ...args) => {
+        const element = createElement(tag, ...args);
+        if (tag === 'select') { let value = ''; Object.defineProperty(element, 'value', { get: () => value, set: next => { value = next; } }); }
+        return element;
+    };
+    let writes = 0;
+    const panel = createWorldPanel({ service: { ...service, commit: async () => { writes++; return state; } }, sync: async () => state, getIdentity: () => 'fixture' });
+    const update = { source: { start: 2, end: 3 }, proposals: [
+        { type: 'field', entityId: entity.id, field: 'description', before: { present: true, value: '旧描述' }, value: '<img src=x onerror=alert(1)>', nature: 'rumor', evidence: { floor: 3, quote: '渡工听到了传闻' } },
+        { type: 'entity', kind: 'person', name: '信使', aliases: [], nature: 'creative_proposal', evidence: { floor: 3, quote: '有人自称信使' } },
+        { type: 'story', record: { id: 'knowledge', kind: 'knowledge', person: '老渡工', certainty: 'believed', content: '信使说的是真的', evidence: '听说', learnedAt: '' }, nature: 'belief', evidence: { floor: 3, quote: '渡工相信了' } },
+    ], conflicts: [], acknowledgedReceipts: ['already-paid'] };
+    const snapshot = { ...state, sources: { 'update:fixture': { kind: 'independent_world_update', status: 'ready', update } } };
+    panel.mount(document.querySelector('main')); panel.show(snapshot);
+    const box = document.querySelector('.tk-record-proposals');
+    assert.match(box.textContent, /世界变化提案（3 条）/); assert.match(box.textContent, /旧描述 → <img/);
+    assert.match(box.textContent, /传闻/); assert.match(box.textContent, /角色认知/); assert.match(box.textContent, /第 4 楼「渡工听到了传闻」/);
+    assert.equal(box.querySelector('img'), null); assert.match(box.textContent, /未重复执行/); assert.equal(writes, 0);
+    box.querySelector('button').click(); assert.equal(document.querySelector('[aria-label="档案详情"] h3').textContent, '老渡工'); assert.equal(writes, 0);
+    snapshot.sources['update:fixture'].status = 'stale'; panel.show(snapshot); assert.match(document.querySelector('.tk-record-proposals').textContent, /世界已变化，需重新核对/);
+    snapshot.sources['update:fixture'].status = 'retracted'; panel.show(snapshot); assert.equal(document.querySelector('.tk-record-proposals'), null);
+});

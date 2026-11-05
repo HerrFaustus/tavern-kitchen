@@ -31,6 +31,8 @@ import { rebaseGeneratedEvents } from './rebase-events.js';
 import { formatModelArcProgress } from './arc-progress.js';
 import { notifySummaryCommitted } from '../maintenance/notification.js';
 import { getChatIdentity } from '../data/chat-identity.js';
+import { prepareMemorySources, assertMemorySources, validateMemorySources, deliverMemorySources } from '../../world-records/turn-runtime.js';
+import { prepareWorldUpdate } from '../../world-records/update-result.js';
 
 const MODULE_ID = 'summaryGenerator';
 
@@ -153,8 +155,9 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
     const existingEventCount = existingEvents.length;
     const initialReceipts = new Set((store?.summaryHistory || []).flatMap(batch => batch.maintenance || []).map(receipt => receipt.id));
 
-    let raw;
+    let raw, preparedSources;
     try {
+        preparedSources = await prepareMemorySources(lastSummarized + 1, slice.endMesId, { unified: true });
         raw = await generateSummary({
             existingSummary,
             existingFacts,
@@ -162,6 +165,7 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
             historyRange: slice.range,
             existingEventCount,
             signal,
+            updateContext: preparedSources?.updateContext,
         });
         if (isSummaryRunInactive(signal, targetChatId, targetIdentity)) {
             return cancelledResult(onStatus);
@@ -170,6 +174,7 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
         // publishing its receipt, or may restore the previous snapshot on failure.
         onProgress?.({ stage: 'save_confirmation' });
         do { await waitForMemoryCommit(signal); } while (getMemoryCommitState() === 'saving');
+        await validateMemorySources(preparedSources);
     } catch (err) {
         if (isSummaryGenerationCancelledError(err) || isSummaryRunInactive(signal, targetChatId, targetIdentity)) {
             onStatus?.(SUMMARY_FEEDBACK_COPY.summaryStopped);
@@ -212,8 +217,14 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
     }
 
     onProgress?.({ stage: 'structure' });
-    let parsed;
+    let parsed, worldUpdate, narrativeSummary;
     try {
+        if (preparedSources?.updateContext) {
+            if (typeof decoded.summary !== 'string' || !decoded.summary.trim() || decoded.summary.length > 12000) throw new Error('统一整理须提供非空剧情摘要，最多 12000 字符');
+            narrativeSummary = decoded.summary.trim();
+            if (decoded.storyUpdates !== undefined && (!Array.isArray(decoded.storyUpdates) || decoded.storyUpdates.length)) throw new Error('场景、认知与计划变化须进入 worldUpdate 的 story 提案，不直接改写当前状态');
+            worldUpdate = prepareWorldUpdate(decoded.worldUpdate, preparedSources.updateContext);
+        }
         parsed = prepareSummaryResult(decoded, {
             existingEvents,
             // Source markers are one-based; endMesId is zero-based.
@@ -243,10 +254,13 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
     delete next.storySummary.pendingImportBoundary;
     next.storySummary.updatedAt = Date.now();
     addSummarySnapshot(next.storySummary, lastSummarized, slice.endMesId, mergeResult.undo, memoryPolicy(filterRules));
+    if (preparedSources) next.storySummary.summaryHistory.at(-1).sourceReceipt = structuredClone(preparedSources.receipt);
+    if (worldUpdate) Object.assign(next.storySummary.summaryHistory.at(-1), { summary: narrativeSummary, worldUpdate });
 
     onProgress?.({ stage: 'saving' });
     try {
         await commitSummaryMemory(targetChatId, next, { previous, validate: () => {
+            assertMemorySources(preparedSources);
             const latest = buildIncrementalSlice(slice.endMesId, lastSummarized, maxPerRun, delayFloors, filterRules);
             if (isSummaryRunInactive(signal, targetChatId, targetIdentity) || latest.endMesId !== slice.endMesId || latest.text !== slice.text) {
                 throw Object.assign(new Error('metadata_draft_conflict'), { code: 'metadata_draft_conflict' });
@@ -256,6 +270,12 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
         xbLog.error(MODULE_ID, '总结持久化失败', error);
         onError?.(memorySaveError(error));
         return { success: false, error };
+    }
+
+    let proposalDelivery = null, deliveryError = null;
+    if (worldUpdate) {
+        try { proposalDelivery = await deliverMemorySources(preparedSources); }
+        catch (error) { deliveryError = error; onError?.(`摘要与提案已保存，世界面板交付待恢复：${error.message}`); }
     }
 
     onProgress?.({ stage: 'followup' });
@@ -276,6 +296,7 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
         endMesId: slice.endMesId,
         newEventIds,
         aliasChanged: !!mergeResult.aliasChanged,
+        ...(worldUpdate ? { proposalCount: worldUpdate.proposals.length, proposalStatus: proposalDelivery?.status || 'pending_delivery', deliveryError } : {}),
     };
     onStatus?.(`总结已保存至 ${slice.endMesId + 1} 楼，正在更新检索数据…`);
 
@@ -303,7 +324,9 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
         return cancelledResult(onStatus, true);
     }
 
-    onStatus?.(`总结完成，已保存至 ${slice.endMesId + 1} 楼`);
+    onStatus?.(worldUpdate ? proposalDelivery?.status === 'stale' ? '摘要已保存；世界提案的基线已变化，请在世界管理中重新核对。'
+        : deliveryError ? '摘要与提案已保存，世界面板交付待恢复。' : `摘要与 ${worldUpdate.proposals.length} 条世界提案已保存，提案可在世界管理中核对。`
+        : `总结完成，已保存至 ${slice.endMesId + 1} 楼`);
     if (config.trigger?.notifyOnComplete) {
         window.toastr?.success(SUMMARY_FEEDBACK_COPY.summaryCompleted(slice.endMesId + 1, newEventIds.length));
     }

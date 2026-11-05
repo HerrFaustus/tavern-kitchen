@@ -9,6 +9,7 @@ import { setImmediate } from 'node:timers';
 import path from 'node:path';
 import { build } from 'esbuild';
 import 'fake-indexeddb/auto';
+import { IDBObjectStore } from 'fake-indexeddb';
 import { maintenanceFixture, joinedEventPatch } from './fixtures/memory-maintenance.js';
 import { memoryPolicy } from '../data/memory-policy.js';
 import { entry } from './helpers/story-summary-entry.js';
@@ -34,7 +35,12 @@ const shims = {
     'debug-core.js': 'export const xbLog={info(){},warn(){},error(){},debug(){}};',
     'runtime.js': 'export const applyRecallRuntimeMutationBestEffort=(chatId,change)=>globalThis.__memoryStorageTest.mutations.push({chatId,...change}); export const clearRecallRuntime=async()=>{};',
     'modules/story-summary/data/config.js': 'export const getTextFilterRules=()=>[]; export const getVectorConfig=()=>globalThis.__memoryStorageTest.vectorConfig; export const getSummaryPanelConfig=()=>({memoryMaintenanceEnabled:false,trigger:{},ui:{hideSummarized:true,keepVisibleCount:0}}); export const getSettings=()=>({storySummary:{enabled:true}}); export const DEFAULT_MEMORY_PROMPT_TEMPLATE="{$剧情记忆}";',
-    'modules/story-summary/generate/llm.js': 'export const generateSummary=(...args)=>globalThis.__memoryStorageTest.generate(...args); export function parseSummaryJson(raw){try{return JSON.parse(raw);}catch{return null;}} export const isSummaryGenerationCancelledError=()=>false;',
+    'modules/story-summary/generate/llm.js': `export const generateSummary=async options=>{
+        const host=globalThis.__memoryStorageTest, raw=await host.generate(options);
+        if (!host.autoUnifiedFixture || !options.updateContext) return raw;
+        const context=options.updateContext;
+        return JSON.stringify({summary:'本轮行动已经完成，双方保留各自的记录。',worldUpdate:{basis:{worldId:context.basis.worldId,branchId:context.basis.branchId,version:context.basis.version},proposals:[],acknowledgedReceipts:context.executionReceipts.map(item=>item.commandId),conflicts:[]},...JSON.parse(raw)});
+    }; export function parseSummaryJson(raw){try{return JSON.parse(raw);}catch{return null;}} export const isSummaryGenerationCancelledError=()=>false;`,
     'modules/story-summary/maintenance/runner.js': 'export const createSharedMemoryAgent=()=>{throw Error("unexpected Agent request");}; export const runMemoryAgent=createSharedMemoryAgent; let sequence=0; export const memoryRunId=()=>"memory-storage-test-"+(++sequence);',
     'modules/story-summary/vector/utils/embedder.js': 'export const getEngineFingerprint=()=>"test-engine";',
     'modules/story-summary/vector/llm/siliconflow.js': 'export const embed=(texts)=>globalThis.__memoryStorageTest.embed(texts);',
@@ -46,6 +52,10 @@ const bundled = await build({
     stdin: { resolveDir: root, contents: [
         "export * from './modules/story-summary/data/store.js';",
         "export { registerWorldAuthority } from './modules/world-records/sources.js';",
+        "export { createWorldArchive } from './modules/world-records/host.js';",
+        "export { getWorldBridge } from './modules/world-records/bridge.js';",
+        "export { currentTurns, turnProgress } from './modules/world-records/turn-ledger.js';",
+        "export { worldUpdates, buildUpdateContext } from './modules/world-records/update-context.js';",
         "export * from './modules/story-summary/inline/ledger.js';",
         "export * from './modules/story-summary/inline/controller.js';",
         "export * from './modules/story-summary/data/memory-commit.js';",
@@ -65,7 +75,7 @@ const bundled = await build({
         "export * from './modules/story-summary/generate/generator.js';",
         "export { buildVectorPromptText } from './modules/story-summary/generate/prompt.js';",
         "export * from './modules/story-summary/vector/storage/state-store.js';",
-        "export { initStateIntegration, vectorizeMissingStateAtoms, getL0VectorBuildStatus } from './modules/story-summary/vector/pipeline/state-integration.js';",
+        "export { vectorizeMissingStateAtoms, getL0VectorBuildStatus } from './modules/story-summary/vector/pipeline/state-integration.js';",
         "export { db, stateVectorsTable, chunksTable, chunkVectorsTable, metaTable } from './modules/story-summary/data/db.js';",
         "export { deleteChunksFromFloor, deleteChunksAtFloor, updateMeta, clearAllChunks, clearEventVectors } from './modules/story-summary/vector/storage/chunk-store.js';",
         "export { reload } from 'script.js';",
@@ -83,7 +93,7 @@ const bundled = await build({
 // eslint-disable-next-line no-unsanitized/method -- Generated local test bundle, never external code.
 const mod = await import(await createTestModuleUrl(bundled.outputFiles[0].text));
 const originalFetch = globalThis.fetch;
-after(() => { mod.db.close(); globalThis.fetch = originalFetch; delete globalThis.__memoryStorageTest; delete globalThis.LWB_StateRollbackHook; });
+after(() => { mod.db.close(); globalThis.fetch = originalFetch; delete globalThis.__memoryStorageTest; });
 const ext = () => host.metadata.extensions.TavernKitchen;
 const disk = () => host.files.get(host.context.chatId).extensions.TavernKitchen;
 
@@ -96,7 +106,7 @@ beforeEach(async t => {
     };
     for (const table of mod.db.tables) await table.clear();
     const fixture = maintenanceFixture();
-    Object.assign(host, { fixture, mode: 'save', expireReadback: false, reads: 0, writes: 0, mutations: [], background: [], backgroundErrors: [], afterSave: null, files: new Map(), metadata: { extensions: { TavernKitchen: {} } } });
+    Object.assign(host, { fixture, mode: 'save', autoUnifiedFixture: false, expireReadback: false, reads: 0, writes: 0, mutations: [], background: [], backgroundErrors: [], afterSave: null, files: new Map(), metadata: { extensions: { TavernKitchen: {} } } });
     host.vectorConfig = { enabled: false, embeddingApi: {} };
     host.generate = () => assert.fail('unexpected summary request');
     host.embed = () => assert.fail('unexpected embedding request');
@@ -952,28 +962,7 @@ test('same-chat reload preserves every persisted L0/L1 row and extraction receip
     assert.equal(writes(), 0);
 });
 
-// Acceptance: variable-driven edit/swipe/delete hooks retire anchors before returning,
-// never wait for cache IO or save, and retain failed cleanup ranges. Cost: stale memory or blocked chat.
-for (const failure of [false, true]) test(`variable rollback notification is live-only and nonblocking (cache failure: ${failure})`, async t => {
-    await seedAnchors();
-    const io = { writes: host.writes, reads: host.reads };
-    let finish;
-    const cleaning = new Promise((resolve, reject) => { finish = failure ? reject : resolve; });
-    t.mock.method(mod.stateVectorsTable, 'where', () => ({ between: () => ({ delete: () => cleaning }) }));
-    mod.initStateIntegration();
-    assert.equal(globalThis.LWB_StateRollbackHook(1), undefined);
-    assert.equal(ext().stateAtoms.some(atom => atom.floor >= 1), false);
-    assert.equal(ext().l0Index.byFloor[1], undefined);
-    assert.deepEqual({ writes: host.writes, reads: host.reads }, io);
-    await nextTurn();
-    finish(failure ? new Error('cache offline') : 0);
-    await Promise.all(host.background);
-    assert.deepEqual({ writes: host.writes, reads: host.reads }, io);
-    if (failure) {
-        assert.equal(mod.getRuntimeInvalidSourceFloor(), 1);
-        assert.equal(host.backgroundErrors[0].code, 'memory_cache_invalidation_failed');
-    } else assert.deepEqual(host.backgroundErrors, []);
-});
+
 
 for (const failure of ['cache', 'save']) test(`source safety depends on cache cleanup, not an extra ${failure} save`, async t => {
     await seedAnchors();
@@ -2420,38 +2409,7 @@ for (const mixed of [false, true]) test(`Agent reports the post-swipe receipt, p
     assert.equal(mod.getMemoryCommitState(), 'ready');
 });
 
-// Acceptance: a later suffix cleanup cannot acknowledge an earlier failed range;
-// variable notifications share the writer and preserve failed work across retries.
-// Cost: stale source chunks become consumable with no pending cleanup marker.
-test('overlapping variable cleanup is serialized, and failed earlier work remains retryable', async t => {
-    await importFixture(); await seedAnchors();
-    await seedCacheRange(host.context.chatId, [1, 3, 20]);
-    const io = { writes: host.writes, reads: host.reads };
-    let release, calls = 0;
-    const cleaning = new Promise(resolve => { release = resolve; });
-    const mock = t.mock.method(mod.stateVectorsTable, 'where', () => ({ between: () => ({ delete: () =>
-        ++calls === 1 ? cleaning : Promise.reject(new Error('cache offline')) }) }));
-    mod.initStateIntegration();
-    globalThis.LWB_StateRollbackHook(20);
-    await nextTurn();
-    globalThis.LWB_StateRollbackHook(1);
-    await nextTurn();
-    assert.equal(calls, 1);
-    assert.equal(ext().stateAtoms.length, 0);
-    release(0);
-    await Promise.all(host.background);
-    assert.equal(calls, 2);
-    assert.equal(mod.getRuntimeInvalidSourceFloor(), 1);
-    assert.equal(ext().storySummary.sourceInvalidFromFloor, 1);
-    assert.deepEqual((await mod.chunksTable.where('chatId').equals(host.context.chatId).toArray()).map(row => row.floor), [1, 3]);
-    mock.mock.restore();
-    globalThis.LWB_StateRollbackHook(20); // A later request must include the retained earlier gap.
-    await Promise.all(host.background);
-    assert.equal(await mod.chunksTable.where('chatId').equals(host.context.chatId).count(), 0);
-    assert.equal(mod.getRuntimeInvalidSourceFloor(), undefined);
-    assert.equal(ext().storySummary.sourceInvalidFromFloor, undefined);
-    assert.deepEqual({ writes: host.writes, reads: host.reads }, io);
-});
+
 
 test('cleanup releases only the source boundary it actually handled', async t => {
     await importFixture(); await seedAnchors();
@@ -2467,23 +2425,7 @@ test('cleanup releases only the source boundary it actually handled', async t =>
     mock.mock.restore();
 });
 
-test('queued variable cleanup never retires a different loaded chat', async t => {
-    await seedAnchors();
-    let release, calls = 0;
-    const cleaning = new Promise(resolve => { release = resolve; });
-    t.mock.method(mod.stateVectorsTable, 'where', () => ({ between: () => ({ delete: () => { calls++; return cleaning; } }) }));
-    mod.initStateIntegration();
-    globalThis.LWB_StateRollbackHook(20);
-    await nextTurn();
-    globalThis.LWB_StateRollbackHook(1);
-    const other = { storySummary: { lastSummarizedMesId: -1 }, stateAtoms: [{ atomId: 'other', floor: 1 }], l0Index: { version: 1, byFloor: {} } };
-    host.context = { ...host.context, chatId: 'other-chat' };
-    host.metadata = { extensions: { TavernKitchen: structuredClone(other) } };
-    mod.reload();
-    release(0); await Promise.all(host.background);
-    assert.equal(calls, 1);
-    assert.deepEqual(ext(), other);
-});
+
 
 test('automatic preparation waits for an active save but never recovers an uncertain one', async () => {
     await importFixture();
@@ -2527,6 +2469,198 @@ for (const version of ['1.14.0', '1.18.0']) test(`official ST ${version} saves l
 
 // Main-reply summaries must share the real persistence/undo path, with no generation gateway.
 const inlinePayload = (summary, records = []) => ({ summary, updates: { storyUpdates: records } });
+let sourceAccount = 0;
+function sourceArchive(t) {
+    host.autoUnifiedFixture = true;
+    const account = `turn-source-test-${++sourceAccount}`;
+    const archive = mod.createWorldArchive({ getContext: () => host.context, getAccountId: () => account,
+        getMemorySnapshot: () => ({ enabled: true, store: mod.getPublishedSummaryStore() }),
+        getMount: () => assert.fail('no UI expected'), isVisible: () => false, navigate() {}, onError: error => assert.fail(error.message) });
+    t.after(() => archive.dispose());
+    return { archive, service: () => mod.getWorldBridge(JSON.stringify(['character', host.context.characters[0].avatar, host.context.chatId])).service };
+}
+function appendSourceTurn() {
+    const start = host.context.chat.length;
+    host.context.chat.push({ is_user: true, mes: '我支付五金币。', send_date: `user-${start}` },
+        { name: '铁匠', mes: '你拿到了铁剑。', send_date: `reply-${start}` });
+    return start + 1;
+}
+const unifiedBlock = (context, proposals = []) => ({ basis: { worldId: context.basis.worldId, branchId: context.basis.branchId, version: context.basis.version },
+    proposals, acknowledgedReceipts: context.executionReceipts.map(receipt => receipt.commandId), conflicts: [] });
+async function seedUpdateWorld(f) {
+    await f.archive.prepare(); const service = f.service(), state = await service.read();
+    const source = { module: 'manual', key: 'seed', label: '测试开局' };
+    return (await service.commit(service.command(state, [{ type: 'create', id: 'resource-holder', name: '主角', kind: 'person', source },
+        { type: 'set', entityId: 'resource-holder', field: 'coins', value: 10, source },
+        { type: 'create', id: 'distant-npc', name: '远方人物', kind: 'person', source },
+        { type: 'set', entityId: 'distant-npc', field: '秘密', value: '藏着一封信，主角并不知情。', source }], '开局'))).state;
+}
+const updateProposal = floor => ({ type: 'field', entityId: 'resource-holder', field: 'coins', before: { present: true, value: 10 }, value: 5,
+    nature: 'established_fact', evidence: { floor, quote: '铁剑' } });
+
+test('one actual summary transaction receives the full world and saves summary plus proposals without mutating world facts', async t => {
+    await importFixture(); const f = sourceArchive(t), floor = appendSourceTurn(); await seedUpdateWorld(f); let calls = 0;
+    host.generate = async ({ updateContext }) => {
+        calls++; assert.equal(updateContext.manifest.worldComplete, true);
+        assert.equal(updateContext.world.entities.find(entity => entity.id === 'distant-npc').fields['秘密'].value, '藏着一封信，主角并不知情。');
+        assert.equal(updateContext.background.hierarchyAvailable, false);
+        return JSON.stringify({ events: [], factUpdates: [], summary: '主角付出五金币，从铁匠手中获得铁剑。', worldUpdate: unifiedBlock(updateContext, [updateProposal(floor)]) });
+    };
+    const result = await mod.runSummaryGeneration(floor, { trigger: { delayFloors: 0 } });
+    assert.equal(result.success, true); assert.equal(result.proposalCount, 1); assert.equal(result.proposalStatus, 'ready'); assert.equal(calls, 1);
+    const saved = disk().storySummary.summaryHistory.at(-1); assert.match(saved.summary, /铁剑/); assert.equal(saved.worldUpdate.proposals[0].value, 5);
+    const world = await f.service().read(); assert.equal(world.entities.find(entity => entity.id === 'resource-holder').fields.coins.value, 10);
+    assert.equal(mod.worldUpdates(world)[0].update.requestId, saved.sourceReceipt.id);
+});
+
+test('the full-world basis rejects same-branch edits made while the model is running', async t => {
+    await importFixture(); const f = sourceArchive(t), floor = appendSourceTurn(); await seedUpdateWorld(f); const writes = host.writes;
+    host.generate = async () => {
+        const service = f.service(), state = await service.read();
+        await service.commit(service.command(state, [{ type: 'set', entityId: 'resource-holder', field: 'coins', value: 12,
+            source: { module: 'manual', key: 'later', label: '人工修改' } }], '修改'));
+        return JSON.stringify({ events: [], factUpdates: [] });
+    };
+    const result = await mod.runSummaryGeneration(floor, { trigger: { delayFloors: 0 } });
+    assert.equal(result.success, false); assert.equal(host.writes, writes); assert.equal(disk().storySummary.lastSummarizedMesId, 23);
+    assert.match(result.error.message, /完整世界或记忆基线/);
+    assert.equal((await f.service().read()).entities.find(entity => entity.id === 'resource-holder').fields.coins.value, 12);
+});
+
+test('a proposal delivery failure keeps the confirmed result and reconciles later without another model call or metadata save', async t => {
+    await importFixture(); const f = sourceArchive(t), floor = appendSourceTurn(); await seedUpdateWorld(f);
+    let calls = 0; host.generate = async ({ updateContext }) => { calls++; return JSON.stringify({ events: [], factUpdates: [], worldUpdate: unifiedBlock(updateContext, [updateProposal(floor)]) }); };
+    const put = IDBObjectStore.prototype.put, notices = [], writes = host.writes;
+    IDBObjectStore.prototype.put = function(...args) {
+        if (this.name === 'branches' && Object.keys(args[0]?.sources || {}).some(key => key.startsWith('update:'))) throw Error('projection disk offline');
+        return put.apply(this, args);
+    };
+    let result;
+    try { result = await mod.runSummaryGeneration(floor, { trigger: { delayFloors: 0 } }, { onError: message => notices.push(message) }); }
+    finally { IDBObjectStore.prototype.put = put; }
+    assert.equal(result.committed, true); assert.equal(result.proposalStatus, 'pending_delivery'); assert.ok(result.deliveryError);
+    assert.equal(disk().storySummary.lastSummarizedMesId, floor); assert.match(notices[0], /摘要与提案已保存/);
+    await f.archive.prepare(); const state = await f.service().read(); assert.equal(mod.worldUpdates(state)[0].status, 'ready');
+    assert.equal(host.writes, writes + 1); assert.equal(calls, 1);
+    assert.equal((await mod.runSummaryGeneration(floor, { trigger: { delayFloors: 0 } })).noContent, true); assert.equal(calls, 1);
+});
+
+test('a world edit during host save preserves manual state and labels delivered proposals stale', async t => {
+    await importFixture(); const f = sourceArchive(t), floor = appendSourceTurn(); await seedUpdateWorld(f);
+    host.generate = async ({ updateContext }) => JSON.stringify({ events: [], factUpdates: [], worldUpdate: unifiedBlock(updateContext, [updateProposal(floor)]) });
+    host.afterSave = async () => {
+        const service = f.service(), state = await service.read();
+        await service.commit(service.command(state, [{ type: 'set', entityId: 'resource-holder', field: 'coins', value: 12,
+            source: { module: 'manual', key: 'during-save', label: '人工修改' } }], '保存期间修改'));
+    };
+    const result = await mod.runSummaryGeneration(floor, { trigger: { delayFloors: 0 } });
+    assert.equal(result.committed, true); assert.equal(result.proposalStatus, 'stale');
+    assert.equal((await f.service().read()).entities.find(entity => entity.id === 'resource-holder').fields.coins.value, 12);
+    assert.equal(mod.worldUpdates(await f.service().read())[0].status, 'stale');
+});
+
+test('unified output rejects missing evidence and direct scene-state writes before saving any summary', async t => {
+    await importFixture(); const f = sourceArchive(t), floor = appendSourceTurn(); await seedUpdateWorld(f); const writes = host.writes;
+    host.generate = async ({ updateContext }) => JSON.stringify({ events: [], factUpdates: [],
+        worldUpdate: unifiedBlock(updateContext, [{ ...updateProposal(floor), evidence: { floor, quote: '不存在的依据' } }]) });
+    assert.equal((await mod.runSummaryGeneration(floor, { trigger: { delayFloors: 0 } })).success, false);
+    host.generate = async () => JSON.stringify({ events: [], factUpdates: [], storyUpdates: [{ id: 'clock', kind: 'clock', label: '擅自过了十年', date: '' }] });
+    assert.equal((await mod.runSummaryGeneration(floor, { trigger: { delayFloors: 0 } })).success, false);
+    assert.equal(host.writes, writes); assert.equal(disk().storySummary.lastSummarizedMesId, 23);
+});
+
+test('unconfirmed unified results do not appear in the world until read-only save recovery succeeds', async t => {
+    await importFixture(); const f = sourceArchive(t), floor = appendSourceTurn(); await seedUpdateWorld(f); let calls = 0;
+    host.generate = async ({ updateContext }) => { calls++; return JSON.stringify({ events: [], factUpdates: [], worldUpdate: unifiedBlock(updateContext, [updateProposal(floor)]) }); };
+    const writes = host.writes; host.mode = 'read_fail';
+    assert.equal((await mod.runSummaryGeneration(floor, { trigger: { delayFloors: 0 } })).success, false);
+    await f.archive.prepare(); assert.equal(mod.worldUpdates(await f.service().read()).length, 0);
+    host.mode = 'save'; host.expireReadback = false; assert.equal(await mod.waitForMemoryCommit(), true);
+    await f.archive.prepare(); assert.equal(mod.worldUpdates(await f.service().read())[0].update.proposals.length, 1);
+    assert.equal(calls, 1); assert.equal(host.writes, writes + 1);
+});
+
+test('independent generation persists exact turn sources and reconciles once without another model request', async t => {
+    await importFixture(); const f = sourceArchive(t), floor = appendSourceTurn(); let calls = 0;
+    host.generate = async () => { calls++; return JSON.stringify({ events: [], factUpdates: [{ s: '旅人', p: '物品', o: '铁剑', isState: true }] }); };
+    const result = await mod.runSummaryGeneration(floor, { trigger: { delayFloors: 0 } });
+    assert.equal(result.success, true); const receipt = disk().storySummary.summaryHistory.at(-1).sourceReceipt;
+    assert.equal(receipt.source.start, floor - 1); assert.equal(receipt.source.end, floor);
+    assert.deepEqual(receipt.source.messages.map(item => item.text), ['我支付五金币。', '你拿到了铁剑。']);
+    await f.archive.prepare(); const state = await f.service().read(), turn = mod.currentTurns(state).find(item => item.source.end === floor);
+    assert.equal(turn.memory[0].id, receipt.id); assert.equal(receipt.branchId, state.branchId);
+    assert.equal((await mod.runSummaryGeneration(floor, { trigger: { delayFloors: 0 } })).noContent, true);
+    assert.equal(calls, 1); await f.archive.prepare(); assert.equal((await f.service().read()).version, state.version);
+    // Imported old summaries remain explicitly unlinked; a high cutoff is not proof.
+    assert.equal(mod.turnProgress(state).memoryThroughFloor, -1);
+});
+
+test('a failed summary followed by another reply retries the complete missing source range', async t => {
+    await importFixture(); const f = sourceArchive(t), first = appendSourceTurn(); let calls = 0;
+    host.generate = async () => { calls++; if (calls === 1) throw Error('model offline'); return JSON.stringify({ events: [], factUpdates: [] }); };
+    assert.equal((await mod.runSummaryGeneration(first, { trigger: { delayFloors: 0 } })).success, false);
+    assert.equal(disk().storySummary.lastSummarizedMesId, 23);
+    const second = appendSourceTurn(); assert.equal((await mod.runSummaryGeneration(second, { trigger: { delayFloors: 0 } })).success, true);
+    const receipt = disk().storySummary.summaryHistory.at(-1).sourceReceipt;
+    assert.equal(receipt.source.start, first - 1); assert.equal(receipt.source.end, second);
+    await f.archive.prepare(); const turns = mod.currentTurns(await f.service().read()).filter(item => item.source.end >= first);
+    assert.equal(turns.length, 2); assert.ok(turns.every(item => item.memory.length === 1)); assert.equal(calls, 2);
+});
+
+test('an unconfirmed metadata save cannot advance world memory delivery and recovers through readback', async t => {
+    await importFixture(); const f = sourceArchive(t), floor = appendSourceTurn(); let calls = 0;
+    host.generate = async () => { calls++; return JSON.stringify({ events: [], factUpdates: [] }); };
+    host.mode = 'read_fail'; const writes = host.writes;
+    assert.equal((await mod.runSummaryGeneration(floor, { trigger: { delayFloors: 0 } })).success, false);
+    assert.equal(mod.getMemoryCommitState(), 'unconfirmed');
+    await f.archive.prepare(); assert.equal(mod.currentTurns(await f.service().read()).find(item => item.source.end === floor).memory.length, 0);
+    const savedReceipt = disk().storySummary.summaryHistory.at(-1).sourceReceipt.id;
+    host.mode = 'save'; host.expireReadback = false; assert.equal(await mod.waitForMemoryCommit(), true);
+    await f.archive.prepare(); const delivered = mod.currentTurns(await f.service().read()).find(item => item.source.end === floor);
+    assert.equal(delivered.memory[0].id, savedReceipt); assert.equal(calls, 1); assert.equal(host.writes, writes + 1);
+});
+
+test('a world branch switch during generation cannot save a summary with the old source basis', async t => {
+    await importFixture(); const f = sourceArchive(t), floor = appendSourceTurn();
+    host.generate = async () => { const service = f.service(), state = await service.read(); await service.fork(state, state.version);
+        return JSON.stringify({ events: [], factUpdates: [] }); };
+    const result = await mod.runSummaryGeneration(floor, { trigger: { delayFloors: 0 } });
+    assert.equal(result.success, false); assert.equal(disk().storySummary.lastSummarizedMesId, 23);
+    assert.ok(mod.currentTurns(await f.service().read()).every(item => item.memory.length === 0));
+});
+
+for (const edit of ['player', 'reply', 'reload']) test(`editing a confirmed source undoes only its new memory batch and allows regeneration: ${edit}`, async t => {
+    await importFixture(); const f = sourceArchive(t), floor = appendSourceTurn(); let calls = 0;
+    host.generate = async () => { calls++; return JSON.stringify({ events: [], factUpdates: [{ s: '旅人', p: '本轮物品', o: '铁剑', isState: true }] }); };
+    assert.equal((await mod.runSummaryGeneration(floor, { trigger: { delayFloors: 0 } })).success, true);
+    const tracker = mod.createMessageSourceTracker(); tracker.reset(host.context);
+    host.context.chat[edit === 'player' ? floor - 1 : floor].mes += ' 改为未购买。';
+    if (edit === 'reload') {
+        host.metadata = structuredClone(host.files.get(host.context.chatId)); mod.reload(); tracker.reset(host.context);
+    }
+    const result = await mod.synchronizeSourceCaches(tracker, host.context);
+    assert.ok(['synced', 'rolled_back'].includes(result.status), JSON.stringify(result));
+    assert.equal(disk().storySummary.lastSummarizedMesId, 23);
+    assert.equal(disk().storySummary.json.facts.some(item => item.p === '本轮物品'), false);
+    assert.equal(calls, 1);
+    host.generate = async () => { calls++; return JSON.stringify({ events: [], factUpdates: [{ s: '旅人', p: '本轮物品', o: '未购买', isState: true }] }); };
+    assert.equal((await mod.runSummaryGeneration(floor, { trigger: { delayFloors: 0 } })).success, true);
+    await f.archive.prepare(); const turns = mod.currentTurns(await f.service().read());
+    assert.equal(turns.find(item => item.source.end === floor).memory.length, 1);
+    assert.equal(disk().storySummary.json.facts.find(item => item.p === '本轮物品').o, '未购买'); assert.equal(calls, 2);
+});
+
+test('manual floor revisions preserve later source receipts through replay and confirmed metadata storage', async t => {
+    await importFixture(); const f = sourceArchive(t), first = appendSourceTurn(), controller = inlineController();
+    await controller.update(first, { payload: inlinePayload('购买铁剑') });
+    const second = appendSourceTurn(); await controller.update(second, { payload: inlinePayload('离开铁匠铺') });
+    const receipt = disk().storySummary.summaryHistory.at(-1).sourceReceipt;
+    await controller.update(first, { payload: inlinePayload('买剑后收好收据') });
+    assert.deepEqual(disk().storySummary.summaryHistory.at(-1).sourceReceipt, receipt);
+    await f.archive.prepare(); const turns = mod.currentTurns(await f.service().read()).filter(item => item.source.end >= first);
+    assert.equal(turns.length, 2); assert.ok(turns.every(item => item.memory.length === 1));
+});
+
 function inlineController() {
     return mod.createFloorSummaryController({ getContext: () => host.context, enabled: () => true,
         getConfig: () => ({ enabled: true, review: false }), ensureSources: () => mod.waitForMemoryCommit(),

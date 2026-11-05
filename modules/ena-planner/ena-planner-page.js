@@ -336,7 +336,7 @@ const PARENT_ORIGIN = (() => {
       $('ep_enabled').value = String(toBool(cfg.enabled, true));
       $('ep_merge_system_msgs').value = String(toBool(cfg.mergeConsecutiveSystemMessages, false));
 
-      $('ep_keep_tags').value = arrToCsv(cfg.responseKeepTags || ['plot', 'note', 'plot-log', 'state']);
+      $('ep_keep_tags').value = arrToCsv(cfg.responseKeepTags || ['plot', 'note']);
 
       $('ep_logs_persist').value = String(toBool(cfg.logsPersist, true));
       $('ep_logs_max').value = String(toNum(cfg.logsMax, 20));

@@ -62,7 +62,10 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     assert.equal(getKitchenMount('lore'), getKitchenMount('situation'));
     assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '设定');
     assert.equal(document.querySelector('.tk-subnav-more summary').textContent, '更多 · 设定');
-    assert.equal(document.querySelectorAll('.tk-subnav-more [data-route]').length, 4);
+    assert.deepEqual([...document.querySelectorAll('.tk-subnav-more [data-route]')].map(button => button.dataset.route), ['lore', 'world-engine', 'world-management']);
+    assert.equal(getKitchenMount('variables'), null);
+    await workspace.open('variables');
+    assert.equal(workspace.isActive('lore'), true, 'a retired variable route must not open or replace the active panel');
     assert.equal(document.querySelector('.tk-subnav [data-route="world"]').textContent, '世界状态');
     assert.equal(document.querySelector('.tk-subnav [data-route="situation"]').textContent, '局势');
     await workspace.open('world-records');

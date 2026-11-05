@@ -30,6 +30,7 @@ import { readSummaryMemory, getPublishedSummaryMemory, commitSummaryMemory, getM
     publishSummaryMemory, retireSummaryMemorySources } from './memory-commit.js';
 import { invalidateMemoryAnchors, updateMaintainedAnchorIndex } from './anchor-invalidation.js';
 import { authorityMemoryFacts } from '../../world-records/authority-context.js';
+import { firstInvalidMemorySource } from './turn-source.js';
 
 const MODULE_ID = 'summaryStore';
 const loadedEventStores = new WeakSet();
@@ -584,6 +585,8 @@ export async function rollbackSummaryIfNeeded({ changedFromFloor = null, invalid
     const { chat, chatId } = getContext();
     const currentLength = Array.isArray(chat) ? chat.length : 0;
     const ownerStore = getSummaryStore();
+    const receiptFloor = firstInvalidMemorySource(ownerStore, chat || []);
+    if (receiptFloor !== null) changedFromFloor = Math.min(changedFromFloor ?? Infinity, receiptFloor);
     // Retire synchronously, including the rollback view of an in-flight manual save.
     retireSummaryMemorySources(chatId, invalidateFloors !== null && changedFromFloor === null
         ? { floors: invalidateFloors } : { fromFloor: Math.min(currentLength, invalidateFromFloor ?? changedFromFloor ?? currentLength) });
@@ -593,8 +596,8 @@ export async function rollbackSummaryIfNeeded({ changedFromFloor = null, invalid
     if (getContext().chatId !== chatId || getSummaryStore() !== ownerStore) return { status: 'stale' };
     assertMemoryWritable(chatId);
     const store = getSummaryStore();
-    // Cache cleanup failures never imply an L2 undo. Only observed deletion/swipe
-    // or an explicitly retained rollback boundary can shorten valid L2 source.
+    // Exact source receipts also detect edits made before this page loaded.
+    // Legacy prose edits keep their existing policy; cache failure alone is not undo.
     const validPrefixLength = Math.min(currentLength, changedFromFloor ?? Infinity,
         store?.sourceRollbackFromFloor ?? Infinity, getRuntimeSourceRollbackFloor() ?? Infinity);
     const pendingCacheFloor = Math.min(store?.sourceInvalidFromFloor ?? Infinity, getRuntimeInvalidSourceFloor() ?? Infinity);

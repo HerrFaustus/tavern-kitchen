@@ -6,6 +6,7 @@ for (const args of [
     ['scripts/check-project.mjs'],
     ['scripts/check-garbled.js'],
     ['scripts/check-relative-imports.mjs'],
+    ['scripts/check-removed-variables.mjs'],
     ['node_modules/eslint/bin/eslint.js', '.', '--ext', '.js,.mjs,.cjs,.ts,.mts,.cts,.vue,.html', '--max-warnings', '0'],
 ]) {
     const result = spawnSync(process.execPath, args, { cwd: root, stdio: 'inherit' });

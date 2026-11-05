@@ -118,13 +118,6 @@
 #tk-workspace #tavern-kitchen-settings { padding: 5px; max-width: 760px; }
 #tk-workspace #tavern-kitchen-settings h3 { margin: 0 0 16px; font-size: 16px; }
 #tk-workspace #tavern-kitchen-settings .checkbox_label { min-height: 36px; }
-#tk-workspace #vm-container { position: relative; top: auto; left: auto; right: auto; width: 100%; height: 100%; max-height: none; border: 0; z-index: auto; }
-#tk-workspace .vm-header { display: none; }
-#tk-workspace .vm-section-header { border-bottom-width: 1px; padding-block: 12px; }
-#tk-workspace .vm-item { opacity: 1; }
-#tk-workspace .vm-item-controls { position: static; }
-#tk-workspace #vm-container { background: transparent; }
-#tk-workspace .vm-inline-form.active { animation: none; }
 #tk-workspace :is(button, [role="button"], summary, input, select, textarea) { transition-duration: var(--animation-duration-2x, 200ms) !important; transition-timing-function: ease-in-out !important; transition-delay: 0s !important; }
 @media (max-width: 1000px) {
     #tk-workspace { top: var(--topBarBlockSize, 40px); width: 100dvw; --tk-drawer-height: calc(100dvh - var(--topBarBlockSize, 40px)); }

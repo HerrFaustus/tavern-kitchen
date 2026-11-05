@@ -43,7 +43,7 @@ function getDefaultSettings() {
         mergeConsecutiveSystemMessages: false,
 
         // Planner response tags to keep, in source order (empty = keep full response)
-        responseKeepTags: ['plot', 'note', 'plot-log', 'state'],
+        responseKeepTags: ['plot', 'note'],
 
         // Planner prompts (designer)
         promptBlocks: structuredClone(DEFAULT_PROMPT_BLOCKS),

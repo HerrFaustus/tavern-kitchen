@@ -1,0 +1,1 @@
+var u=new Set;function i(e,t,o=0){let r=Math.min(t,e.length-1-o);for(const a of u){const n=a(e);if(!Number.isSafeInteger(n)||n<-1||n>=e.length)throw new Error("summary_source_boundary_invalid");r=Math.min(r,n)}return r}export{i as t};

@@ -12,6 +12,7 @@ export function projectFloorSummary(store, floor, invalidFrom = null) {
         && floor > item.previousEndMesId && floor <= item.endMesId && (!item.floorEntry || item.floorEntry.floor === floor));
     if (!batch || batch.endMesId > store.lastSummarizedMesId
         || (invalidFrom != null && batch.endMesId >= invalidFrom)) return null;
+    if (typeof batch.summary === 'string' && batch.summary.trim()) return { start: batch.previousEndMesId + 1, end: batch.endMesId, text: batch.summary };
     const events = (store.json?.events || []).filter(event => event._addedAt === batch.endMesId && event.summary?.trim());
     if (!events.length) return null;
     return { start: batch.previousEndMesId + 1, end: batch.endMesId,

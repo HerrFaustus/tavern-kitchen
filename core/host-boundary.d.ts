@@ -91,12 +91,6 @@ declare module '*/utils.js' {
     export const getCharaFilename: HostValue;
     export const uuidv4: HostValue;
 }
-declare module '*/variables.js' {
-    export const getGlobalVariable: HostValue;
-    export const getLocalVariable: HostValue;
-    export const setGlobalVariable: HostValue;
-    export const setLocalVariable: HostValue;
-}
 declare module '*/world-info.js' {
     export const METADATA_KEY: HostValue;
     export const createNewWorldInfo: HostValue;

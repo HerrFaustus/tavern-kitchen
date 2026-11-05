@@ -43,7 +43,6 @@ function fixture({ master = true, enabled = true, localHide = false } = {}) {
             calls.push('loaded');
         },
         registerEvents: async () => { calls.push('register'); },
-        initStateIntegration: () => { calls.push('state'); },
         maybePreloadTokenizer: () => { calls.push('tokenizer'); },
         handleChatChanged: async () => { calls.push('chat'); await hide.reconcile(); },
         initChatDeletionLifecycle: () => { calls.push('deletion'); },
@@ -76,7 +75,7 @@ for (const mode of ['page-load', 'master-reenable', 'feature-reenable']) {
             f.config.resolve(serverHide);
             await starting;
             await nextTurn();
-            assert.deepEqual(f.calls, ['deletion', 'load', 'loaded', 'register', 'state', 'tokenizer', 'chat']);
+            assert.deepEqual(f.calls, ['deletion', 'load', 'loaded', 'register', 'tokenizer', 'chat']);
             assert.deepEqual(f.chat.map(message => message.is_system), [serverHide, serverHide, serverHide, false, false]);
             assert.deepEqual(f.failures, []);
             assert.deepEqual(f.warnings, []);
@@ -94,7 +93,7 @@ for (const mode of ['page-load', 'master-reenable']) {
         f.config.reject(error);
         await starting;
         await nextTurn();
-        assert.deepEqual(f.calls, ['deletion', 'load', 'register', 'state', 'tokenizer', 'chat']);
+        assert.deepEqual(f.calls, ['deletion', 'load', 'register', 'tokenizer', 'chat']);
         assert.deepEqual(f.chat.map(message => message.is_system), [true, true, true, false, false]);
         assert.equal(f.warnings.length, 1);
         assert.equal(f.warnings[0][2], error);
@@ -147,7 +146,7 @@ test('a previously initialized module uses complete initialization again after d
     f.state.hide = false;
     f.state.master = true;
     await f.toggle(true);
-    assert.deepEqual(f.calls, ['load', 'loaded', 'register', 'state', 'tokenizer', 'chat']);
+    assert.deepEqual(f.calls, ['load', 'loaded', 'register', 'tokenizer', 'chat']);
     assert.equal(f.chat[0].is_system, true);
     assert.deepEqual(f.failures, []);
 });

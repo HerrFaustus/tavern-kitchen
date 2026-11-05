@@ -9,6 +9,7 @@ import { createSummaryAgentSettings } from './maintenance/api-settings.js';
 import { ARCHIVE_COPY, createSummaryArchive, getArchiveCharacters } from './archive-view.js';
 import { EVENT_MEMORY_ROLES, projectEditedSummaryEvents } from './data/events.js';
 import { DEFAULT_SUMMARY_DELAY_FLOORS, normalizeSummaryDelayFloors } from './data/summary-delay.js';
+import { normalizeSummaryWorkflow } from './data/summary-workflow.js';
 import { DEFAULT_RECALL_TIMEOUT_SEC, MAX_RECALL_TIMEOUT_SEC, normalizeRecallTimeoutSec } from './data/recall-settings.js';
 import { RELATION_TRENDS } from './data/fact-predicates.js';
 import { createMemoryMaintenancePage } from './maintenance/ui.js';
@@ -213,8 +214,9 @@ const UNANNOTATED_LABEL = '未标注';
     // ═══════════════════════════════════════════════════════════════════════════
 
     const config = {
+        ...normalizeSummaryWorkflow(),
         memoryMaintenanceEnabled: DEFAULT_MEMORY_MAINTENANCE_ENABLED,
-        trigger: { enabled: false, interval: 20, delayFloors: DEFAULT_SUMMARY_DELAY_FLOORS, timing: 'before_user', role: 'system', maxPerRun: 100, wrapperHead: '', wrapperTail: '', forceInsertAtEnd: false },
+        trigger: { enabled: true, interval: 1, delayFloors: DEFAULT_SUMMARY_DELAY_FLOORS, timing: 'after_ai', role: 'system', maxPerRun: 100, wrapperHead: '', wrapperTail: '', forceInsertAtEnd: false },
         ui: { hideSummarized: true, keepVisibleCount: 6, useVectorBoundary: true },
         prompts: {
             memoryTemplate: '',
@@ -380,13 +382,13 @@ const UNANNOTATED_LABEL = '未标注';
     // ═══════════════════════════════════════════════════════════════════════════
 
     function normalizeTriggerTiming(value) {
-        return VALID_TRIGGER_TIMINGS.has(value) ? value : 'before_user';
+        return VALID_TRIGGER_TIMINGS.has(value) ? value : 'after_ai';
     }
 
     function normalizeTriggerConfig() {
-        config.inlineSummary ||= { enabled: true, review: false };
+        config.inlineSummary = { enabled: false, review: config.inlineSummary?.review === true };
         if (config.trigger.timing === 'manual') {
-            config.trigger.timing = 'before_user';
+            config.trigger.timing = 'after_ai';
             config.trigger.enabled = false;
         } else {
             config.trigger.timing = normalizeTriggerTiming(config.trigger.timing);
@@ -412,7 +414,7 @@ const UNANNOTATED_LABEL = '未标注';
 
         const generateButton = $('btn-generate');
         if (generateButton) {
-            generateButton.textContent = localGenerating ? copy.stop : config.inlineSummary?.enabled !== false ? '提取本楼' : copy.generate;
+            generateButton.textContent = localGenerating ? copy.stop : copy.generate;
             generateButton.disabled = !localGenerating && !controlsEnabled;
             generateButton.title = localGenerating ? '' : !hasChat ? copy.noChat
                 : changing ? copy.changing : !effectiveEnabled ? copy.disabled : '';
@@ -468,18 +470,6 @@ const UNANNOTATED_LABEL = '未标注';
         }
     }
 
-    function syncInlineSummaryControls() {
-        const main = $('inline-summary-mode').value !== 'legacy';
-        document.querySelectorAll('[data-summary-legacy]').forEach(element => { element.hidden = main; });
-        $('inline-summary-review-row').hidden = !main;
-        $('inline-summary-hint').hidden = !main;
-        for (const id of ['summary-system-prompt', 'summary-assistant-doc-prompt', 'summary-assistant-ask-summary-prompt',
-            'summary-assistant-ask-content-prompt', 'summary-meta-protocol-start-prompt', 'summary-user-json-format-prompt',
-            'summary-assistant-check-prompt', 'summary-user-confirm-prompt', 'summary-user-generate-prompt']) {
-            const field = $(id)?.closest('.settings-field'); if (field) field.hidden = main;
-        }
-    }
-
     function syncVectorBoundaryControl(vectorEnabled = config.vector?.enabled, hideEnabled = config.ui.hideSummarized) {
         const input = $('use-vector-boundary');
         const label = $('lbl-vector-boundary');
@@ -513,8 +503,11 @@ const UNANNOTATED_LABEL = '未标注';
             const s = localStorage.getItem(SUMMARY_CONFIG_LOCAL_STORAGE_KEY);
             if (s) {
                 const p = JSON.parse(s);
+                const workflow = normalizeSummaryWorkflow(p);
+                config.summaryWorkflowVersion = workflow.summaryWorkflowVersion;
+                config.inlineSummary = workflow.inlineSummary;
                 config.memoryMaintenanceEnabled = p.memoryMaintenanceEnabled === true;
-                Object.assign(config.trigger, p.trigger || {});
+                Object.assign(config.trigger, workflow.trigger);
                 Object.assign(config.ui, p.ui || {});
                 config.ui.useVectorBoundary = p.ui?.useVectorBoundary !== false;
                 config.prompts.memoryTemplate = String(p.prompts?.memoryTemplate || config.prompts.memoryTemplate || '').trim();
@@ -530,10 +523,12 @@ const UNANNOTATED_LABEL = '未标注';
 
     function applyConfig(cfg) {
         if (!cfg) return;
-        config.inlineSummary = { enabled: cfg.inlineSummary?.enabled !== false, review: cfg.inlineSummary?.review === true };
+        const workflow = normalizeSummaryWorkflow(cfg);
+        config.summaryWorkflowVersion = workflow.summaryWorkflowVersion;
+        config.inlineSummary = workflow.inlineSummary;
         config.memoryMaintenanceEnabled = cfg.memoryMaintenanceEnabled === true;
         if (!settingsDirty) memoryMaintenancePage?.setEnabled(config.memoryMaintenanceEnabled);
-        Object.assign(config.trigger, cfg.trigger || {});
+        Object.assign(config.trigger, workflow.trigger);
         Object.assign(config.ui, cfg.ui || {});
         config.ui.useVectorBoundary = cfg.ui?.useVectorBoundary !== false;
         if (!settingsDirty) $('use-vector-boundary').checked = config.ui.useVectorBoundary;
@@ -964,8 +959,7 @@ const UNANNOTATED_LABEL = '未标注';
         $('assistant-page-title').hidden = false;
         $('assistant-page-title').textContent = childPage ? $(targetId).dataset.title : targetId === 'tab-agent-api' ? WORKSPACE_COPY.agentApi : assistant ? MEMORY_COPY.tab : tab.textContent;
         $('settings-close').setAttribute('aria-label', childPage || targetId === 'tab-agent-api' ? WORKSPACE_COPY.backParent : WORKSPACE_COPY.back);
-        $$('.settings-tab').forEach(item => { item.hidden = !!childPage || assistant || item.dataset.family !== tab.dataset.family
-            || item.hasAttribute('data-summary-legacy') && config.inlineSummary?.enabled !== false; });
+        $$('.settings-tab').forEach(item => { item.hidden = !!childPage || assistant || item.dataset.family !== tab.dataset.family; });
         $('settings-save').parentElement.hidden = ['tab-agent-api', 'tab-models', 'tab-transfer', 'tab-backups', 'tab-clear'].includes(targetId);
         $('settings-cancel').hidden = targetId === 'tab-agent';
         $('settings-chat').hidden = targetId !== 'tab-agent';
@@ -996,9 +990,6 @@ const UNANNOTATED_LABEL = '未标注';
             $('assistant-page-title').textContent = MEMORY_COPY.tab;
         }
         memoryMaintenancePage.setEnabled(config.memoryMaintenanceEnabled);
-        $('inline-summary-mode').value = config.inlineSummary?.enabled !== false ? 'main' : 'legacy';
-        $('inline-summary-review').checked = config.inlineSummary?.review === true;
-        syncInlineSummaryControls();
         if ($('trigger-notify-on-complete')) {
             $('trigger-notify-on-complete').checked = !!config.trigger.notifyOnComplete;
         }
@@ -1049,7 +1040,7 @@ const UNANNOTATED_LABEL = '未标注';
     }
 
     function collectSettingsFormToConfig() {
-        config.inlineSummary = { enabled: $('inline-summary-mode').value !== 'legacy', review: $('inline-summary-review').checked };
+        config.inlineSummary.enabled = false;
         config.ui.hideSummarized = $('hide-summarized').checked;
         config.ui.keepVisibleCount = Number($('keep-visible-count').value);
         config.ui.useVectorBoundary = $('use-vector-boundary').checked;
@@ -1061,7 +1052,7 @@ const UNANNOTATED_LABEL = '未标注';
             config.trigger.notifyOnComplete = $('trigger-notify-on-complete').checked;
         }
         config.trigger.enabled = $('trigger-enabled').checked;
-        config.trigger.interval = Math.max(1, Math.min(30, parseInt($('trigger-interval').value) || 20));
+        config.trigger.interval = Math.max(1, Math.min(30, parseInt($('trigger-interval').value) || 1));
         config.trigger.delayFloors = normalizeSummaryDelayFloors($('trigger-delay-floors').value);
         config.trigger.maxPerRun = parseInt($('trigger-max-per-run').value) || 100;
         config.trigger.wrapperHead = $('trigger-wrapper-head').value;
@@ -2436,14 +2427,13 @@ const UNANNOTATED_LABEL = '未标注';
         };
 
         // Trigger timing
-        $('inline-summary-mode').onchange = () => { syncInlineSummaryControls(); settingsDirty = true; };
         $('trigger-timing').onchange = () => {
             syncAutoSummaryControls();
         };
 
         // 总结间隔范围校验
         $('trigger-interval').onchange = e => {
-            let val = parseInt(e.target.value) || 20;
+            let val = parseInt(e.target.value) || 1;
             val = Math.max(1, Math.min(30, val));
             e.target.value = val;
         };
