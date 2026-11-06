@@ -8,6 +8,7 @@ export function validateMaintenanceReceipt(receipt) {
         && Array.isArray(receipt.operations) && Array.isArray(receipt.coverage?.supplied)
         && Array.isArray(receipt.coverage?.missingAnchors), 'invalid_history');
     requireMemory(isMemoryPolicy(receipt.policy), 'invalid_history');
+    if (receipt.roundRevisionCount !== undefined) requireMemory(Number.isSafeInteger(receipt.roundRevisionCount) && receipt.roundRevisionCount > 0, 'invalid_history');
     if (receipt.outcome) requireMemory(['completed', 'partial', 'cancelled', 'failed', 'turn_limit', 'input_limit', 'interrupted'].includes(receipt.outcome.status), 'invalid_history');
     if (receipt.completion) {
         const validRange = range => Number.isInteger(range?.from) && Number.isInteger(range?.to)
@@ -67,6 +68,7 @@ function groupMaintenanceReceipts(store) {
 function projectRun(runId, receipts) {
     const latest = receipts[0], operations = [...receipts].reverse().flatMap(receipt => receipt.operations);
     const result = projectMaintenanceResult(receipts, latest.outcome || { status: 'interrupted' });
+    const revisedRounds = receipts.reduce((count, receipt) => count + (receipt.roundRevisionCount || 0), 0);
     return { ...latest, id: runId, receiptId: latest.id, receiptIds: receipts.map(receipt => receipt.id),
         // A run's report is its concluding reply, never the notes attached to edits.
         operations, summary: receipts.find(receipt => receipt.outcome)?.summary || '',
@@ -78,6 +80,7 @@ function projectRun(runId, receipts) {
             supplied: [...new Map(receipts.flatMap(receipt => receipt.coverage.supplied).map(item => [JSON.stringify(item), item])).values()],
             missingAnchors: [...new Map(receipts.flatMap(receipt => receipt.coverage.missingAnchors).map(item => [item.floor, item])).values()] },
         counts: {
+            ...(revisedRounds && { revisedRounds }),
             summary: result.operations.filter(operation => operation.kind !== 'merge' && maintenanceImpact([operation]).summary).length,
             anchors: result.operations.filter(operation => operation.changes.some(change => change.collection === 'anchors')).length,
             merges: result.operations.filter(operation => operation.kind === 'merge').length,

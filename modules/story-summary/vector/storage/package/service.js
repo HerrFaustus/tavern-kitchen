@@ -65,6 +65,9 @@ function logCacheDiagnostic(diagnostic, error = null) {
 }
 
 function inspectCache(cache, operation, action, validate = packageFromCache) {
+    // A migrated chat no longer has sources for legacy card embeddings.
+    // They must not invalidate the surviving raw-text and state caches.
+    if (!operation.snapshot.events.length) cache = { ...cache, eventVectors: [] };
     const diagnostic = {
         action, capturedAt: Date.now(), chatId: operation.chatId,
         totalFloors: operation.totalFloors,
@@ -152,6 +155,10 @@ export async function restoreVectorPackage(bytes, onProgress, options = {}) {
     onProgress?.(PACKAGE_PROGRESS.validate);
     const data = decodePackage(bytes);
     if (data.chatId !== operation.chatId) throw packageError('source_mismatch', { kind: 'chat' });
+    if (!operation.snapshot.events.length && data.events.length) {
+        data.events = [];
+        data.warningCodes.push('retired_event_vectors');
+    }
     if (!data.chunks.length && !data.states.length && !data.events.length) {
         throw packageError(data.warningCodes.length ? 'legacy_unverifiable' : 'empty_cache');
     }

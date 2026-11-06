@@ -116,3 +116,12 @@ test('real IDB publication waits for durable commit; other-tab updates are read 
     const branch = await service.fork(await service.read(), 1); assert.equal(runtime.read().state.branchId, branch.branchId);
     owner = 'b'; service.invalidate(); assert.equal(runtime.read(), null);
 });
+
+test('private fields stay in the world snapshot and cannot reappear as an older bound memory fact', () => {
+    const state = update(world(), [set('alan', '管理员私有/阵营', '银鸦会'), set('alan', '秘密身份', '密使')]);
+    const text = buildAuthorityContext(state, '阿伦 银鸦会 密使');
+    assert.match(text, /新渡口/);
+    assert.doesNotMatch(text, /银鸦会|密使|以下是资料/);
+    assert.equal(state.entities.find(person => person.id === 'alan').fields['管理员私有/阵营'].value, '银鸦会');
+    assert.deepEqual(projectAuthorityFacts([{s:'铁匠', p:'阵营', o:'旧密约'}], state), []);
+});

@@ -1,10 +1,10 @@
-import { parseStoryUpdates } from '../story-state/records.js';
+import { isPersonalAgenda, parseStoryUpdates } from '../story-state/records.js';
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
 
 const check = (ok, message) => { if (!ok) throw new Error(`世界剧情状态：${message}`); };
 export const isCurrentStoryProposal = proposal => proposal.nature === 'established_fact' || !proposal.record.remove
     && (proposal.record.kind === 'knowledge' && ['belief', 'rumor', 'hypothesis'].includes(proposal.nature)
-        || proposal.record.kind === 'plan' && proposal.nature === 'intention');
+        || isPersonalAgenda(proposal.record) && proposal.nature === 'intention');
 export function validateWorldStoryState(value) {
     check(value?.version === 1 && Number.isSafeInteger(value.revision) && value.revision >= 1
         && Array.isArray(value.records) && Array.isArray(value.candidates) && value.records.length + value.candidates.length <= 20000, '结构无效');

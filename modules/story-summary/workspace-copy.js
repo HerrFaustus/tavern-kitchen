@@ -8,7 +8,7 @@ export const WORKSPACE_COPY = Object.freeze({
     busy: '当前任务结束后可操作。',
     back: '返回首页',
     backParent: '返回上一层',
-    agentApi: '剧情助手模型',
+    agentApi: '校对模型',
     retry: '重新读取',
     loading: '正在读取',
     timeout: '请求超时，请重试',

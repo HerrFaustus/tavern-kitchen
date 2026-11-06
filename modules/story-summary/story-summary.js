@@ -72,11 +72,7 @@ import {
     loadConfigFromServer,
 } from "./data/config.js";
 import { changeSummaryConfig, synchronizeSummaryConfig } from './data/config-transitions.js';
-import {
-    getChatStorySummaryEnabled,
-    resolveStorySummaryEnabled,
-    setChatStorySummaryEnabled,
-} from "./data/chat-toggle.js";
+import { SUMMARY_BATCH_FLOORS } from './data/summary-workflow.js';
 import {
     getSummaryStore,
     invalidateSummaryAnchors,
@@ -98,16 +94,16 @@ import { memorySaveError } from './data/memory-copy.js';
 import { hasActiveAnchorHistoryFromFloor } from './data/anchor-invalidation.js';
 import { normalizeCharacterAliases, replaceCharacterAliases } from "./data/character-aliases.js";
 import { stampEditedCharacters } from "./data/character-edits.js";
-import { normalizeEventMemoryRole, projectEditedSummaryEvents } from "./data/events.js";
+import { normalizeEventMemoryRole } from "./data/events.js";
 import { isRelationFact, parseRelationTarget } from "./data/fact-predicates.js";
 import { formatStorySummaryL2Events } from "./prompt-events.js";
 import { projectStoryCharacters } from "./prompt-characters.js";
 import { notifyWorldSourcesChanged } from '../world-records/sources.js';
 import { prepareMemorySources, validateMemorySources } from '../world-records/turn-runtime.js';
 import { firstInvalidMemorySource } from './data/turn-source.js';
-import { authorityStoryStore } from '../world-records/authority-context.js';
+import { worldAuthorityForContext, authorityStoryStore } from '../world-records/authority-context.js';
 import { getAutoSummaryPlan } from './generate/summary-trigger.js';
-import { buildEventVectorText } from './vector/pipeline/event-vector-input.js';
+import { getSummarySourceEnd } from './generate/source-boundary.js';
 import { createHideStateController } from './hide-state.js';
 
 // prompt text builder
@@ -128,7 +124,7 @@ import { isGenerating } from '../../shared/common/sillytavern-generation-state.j
 
 // summary generation
 import { runSummaryGeneration } from "./generate/generator.js";
-import { createSummaryGenerationCancelledError, generateFloorSummary, isSummaryGenerationCancelledError } from "./generate/llm.js";
+import { createSummaryGenerationCancelledError, generateFloorSummary, generateReviewedLayer, isSummaryGenerationCancelledError } from "./generate/llm.js";
 
 // vector service
 import { getEngineFingerprint } from "./vector/utils/embedder.js";
@@ -146,7 +142,7 @@ import { preload as preloadTokenizer, injectEntities, isReady as isTokenizerRead
 import { getRawEntityVocabulary } from './vector/retrieval/raw-vocabulary.js';
 import { inspectRawVectorStatus } from './vector/pipeline/raw-vector-status.js';
 
-import { getMeta, updateMeta, clearEventVectors, deleteEventVectorsByIds, clearAllChunks, clearChatData, getStorageStats } from "./vector/storage/chunk-store.js";
+import { getMeta, updateMeta, clearEventVectors, clearAllChunks, clearChatData, getStorageStats } from "./vector/storage/chunk-store.js";
 
 import {
     getChunkBuildStatus,
@@ -191,10 +187,11 @@ import {
     waitForVectorWrites,
 } from "./vector/runtime/maintenance-coordinator.js";
 
-import { invalidateLexicalIndex, addEventDocuments, addChunkDocuments, clearChunkDocuments, removeEventDocuments, removeDocumentsByFloor, removeDocumentsFromFloor, replaceEventDocuments } from "./vector/retrieval/lexical-index.js";
+import { invalidateLexicalIndex, addChunkDocuments, clearChunkDocuments, removeDocumentsByFloor, removeDocumentsFromFloor } from "./vector/retrieval/lexical-index.js";
 
 
 import { createMessageSourceTracker } from './data/message-sources.js';
+import { summaryLayers, timelineRounds } from './data/summary-layers.js';
 import { getChatIdentity } from './data/chat-identity.js';
 import { applySummarySectionEdit } from './data/section-edits.js';
 import { retainSourceChange, synchronizeSourceCaches } from './data/source-sync.js';
@@ -221,15 +218,13 @@ const serviceTests = createServiceTests({
 });
 const summaryDiagnostics = createSummaryDiagnostics();
 const memoryMaintenance = createMemoryMaintenanceHost({
+    generateReviewedLayer,
     readSummaryDiagnostics: args => summaryDiagnostics.read(getChatIdentity(getContext()), args),
     isEnabled: () => isStorySummaryEnabledForCurrentChat(),
     invalidateRecall: () => {
         recallReuse.invalidate();
     },
-    refreshSummary: impact => {
-        const chatId = getContext().chatId;
-        removeEventDocuments(impact.eventIds, chatId);
-        addEventDocuments((getSummaryStore()?.json?.events || []).filter(event => impact.eventIds.includes(event.id)), chatId);
+    refreshSummary: () => {
         refreshEntityLexiconAndWarmup();
         postToFrame({ type: 'SUMMARY_FULL_DATA', payload: buildFramePayload(getSummaryStore()) });
     },
@@ -254,12 +249,10 @@ async function sendMemoryMaintenanceResults(offset = 0) {
     }
 }
 const messageButtonOwnership = createMessageButtonOwnership();
-let saveChatSummaryState = context => context.saveMetadata();
 const iframePath = `${extensionFolderPath}/modules/story-summary/story-summary.html`;
-const VALID_SECTIONS = ["keywords", "events", "characters", "arcs", "facts"];
+const VALID_SECTIONS = ["keywords", "characters", "facts"];
 const MESSAGE_EVENT = "message";
 const AUTO_SUMMARY_MAX_ATTEMPTS = 3;
-let chatSummaryStateChanging = false;
 let activeSummaryExecution = null;
 let floorSummaryRequest = null;
 
@@ -267,10 +260,9 @@ function getStorySummaryEnablement() {
     const context = getContext();
     const globalEnabled = Boolean(getSettings().storySummary?.enabled);
     const hasChat = Boolean(context?.chatId);
-    const chatEnabled = hasChat
-        ? getChatStorySummaryEnabled(chat_metadata, EXT_ID)
-        : true;
-    const effectiveEnabled = isXiaobaiMasterEnabled() && hasChat && resolveStorySummaryEnabled(globalEnabled, chatEnabled);
+    // Legacy per-chat disabled flags remain in the archive but no longer gate memory.
+    const chatEnabled = true;
+    const effectiveEnabled = isXiaobaiMasterEnabled() && hasChat && globalEnabled;
     return { context, hasChat, globalEnabled, chatEnabled, effectiveEnabled };
 }
 
@@ -282,7 +274,7 @@ export function getStorySummaryChatState() {
         globalEnabled,
         chatEnabled,
         effectiveEnabled,
-        changing: chatSummaryStateChanging,
+        changing: false,
     };
 }
 
@@ -303,58 +295,6 @@ function notifyStorySummaryChatState() {
     const state = getStorySummaryChatState();
     postToFrame({ type: "CHAT_SUMMARY_STATE", state });
     $(document).trigger("tavernKitchen:storySummary:chat-state", [state]);
-}
-
-export async function setStorySummaryEnabledForCurrentChat(enabled) {
-    if (chatSummaryStateChanging) {
-        throw new Error("Story summary chat state is already changing");
-    }
-    const context = getContext();
-    if (!context?.chatId) {
-        throw new Error("No active chat");
-    }
-
-    const targetChatId = context.chatId;
-    const targetMetadata = context.chatMetadata || chat_metadata;
-    const previousEnabled = getChatStorySummaryEnabled(targetMetadata, EXT_ID);
-    const nextEnabled = enabled !== false;
-    if (previousEnabled === nextEnabled) {
-        notifyStorySummaryChatState();
-        return getStorySummaryChatState();
-    }
-
-    // The host saves the entire metadata, including any pending memory draft.
-    assertMemoryWritable(targetChatId);
-    const wasManagingVisibility = !!events && isStorySummaryEnabledForCurrentChat();
-    chatSummaryStateChanging = true;
-    setChatStorySummaryEnabled(targetMetadata, EXT_ID, nextEnabled);
-    if (!nextEnabled) {
-        memoryMaintenance.cancel();
-        cancelActiveSummaryExecution();
-        // 元数据已经在内存中生效；必须在首次 await 前封死旧召回的提交窗口。
-        cancelRecallAndClearPrompt('chat-disabled');
-    }
-
-    try {
-        notifyStorySummaryChatState();
-        if (!nextEnabled && wasManagingVisibility) observeBackgroundTask(hideState.clear({ persist: false }), { source: import.meta.url, operation: 'setStorySummaryEnabledForCurrentChat' });
-        await saveChatSummaryState(context);
-
-        if (getContext()?.chatId === targetChatId && events) {
-            await handleChatChanged();
-        }
-    } catch (error) {
-        setChatStorySummaryEnabled(targetMetadata, EXT_ID, previousEnabled);
-        if (getContext()?.chatId === targetChatId && events) {
-            await handleChatChanged();
-        }
-        throw error;
-    } finally {
-        chatSummaryStateChanging = false;
-        notifyStorySummaryChatState();
-    }
-
-    return getStorySummaryChatState();
 }
 
 function compactRecallRuntimeStatsForLog(statsList = getRecallRuntimeStats()) {
@@ -704,26 +644,30 @@ async function prepareSummaryExecution(execution) {
     await waitForSummaryPreparation(() => applyHideState(), execution.controller.signal);
     assertSummaryExecutionActive(execution);
     const store = getPublishedSummaryStore();
-    replaceEventDocuments(store?.json?.events || [], execution.chatId);
     refreshEntityLexiconAndWarmup();
     sendFrameFullData(store, getContext().chat?.length || 0);
     await updateFrameStatsAfterSummary(store, execution);
 }
 
 async function runSummaryAttempt(execution, mesId, config, callbacks) {
-    const id = summaryDiagnostics.begin(execution.diagnosticRun);
-    try {
-        await prepareSummaryExecution(execution);
-        const result = await runSummaryGeneration(mesId, config, {
-            ...callbacks,
-            onProgress: progress => summaryDiagnostics.progress(id, progress),
-        }, { signal: execution.controller.signal, targetChatId: execution.chatId });
-        summaryDiagnostics.finish(id, result);
-        return result;
-    } catch (error) {
-        summaryDiagnostics.finish(id, { success: false, error,
-            cancelled: execution.controller.signal.aborted || isSummaryGenerationCancelledError(error) });
-        throw error;
+    let previousEnd = -1;
+    for (;;) {
+        const id = summaryDiagnostics.begin(execution.diagnosticRun);
+        try {
+            await prepareSummaryExecution(execution);
+            const result = await runSummaryGeneration(mesId, config, {
+                ...callbacks,
+                onProgress: progress => summaryDiagnostics.progress(id, progress),
+            }, { signal: execution.controller.signal, targetChatId: execution.chatId });
+            summaryDiagnostics.finish(id, result);
+            if (!result.success || !result.committed || !result.hasMore || result.cancelled || result.followupError) return result;
+            if (!Number.isSafeInteger(result.endMesId) || result.endMesId <= previousEnd) throw new Error('总结进度没有推进，已停止补记，请检查来源后重试。');
+            previousEnd = result.endMesId;
+        } catch (error) {
+            summaryDiagnostics.finish(id, { success: false, error,
+                cancelled: execution.controller.signal.aborted || isSummaryGenerationCancelledError(error) });
+            throw error;
+        }
     }
 }
 
@@ -778,8 +722,6 @@ async function sendVectorStatsToFrame() {
     const { chatId, chat } = getContext();
     if (!chatId) { publishVectorIntegrity('idle'); return; }
 
-    const store = getSummaryStore();
-    const eventCount = store?.json?.events?.length || 0;
     const stats = await getStorageStats(chatId);
     const chunkStatus = await getChunkBuildStatus();
     const totalMessages = chat?.length || 0;
@@ -789,8 +731,6 @@ async function sendVectorStatsToFrame() {
     postToFrame({
         type: "VECTOR_STATS",
         stats: {
-            eventCount,
-            eventVectors: stats.eventVectors,
             chunkCount: stats.chunkVectors,
             builtFloors: chunkStatus.builtFloors,
             totalFloors: chunkStatus.totalFloors,
@@ -1156,7 +1096,6 @@ async function autoVectorizeMissingEvents() { return { success: true, repaired: 
 // L2 跟随编辑同步（用户编辑 events 时调用）
 // ═══════════════════════════════════════════════════════════════════════════
 
-function syncEventVectorsOnEdit() { return { retired: true }; }
 
 function cancelPendingEventEditSync() {
     return { retired: true };
@@ -1364,9 +1303,8 @@ function addSummaryBtnToMessage(mesId) {
     msg.querySelector(".flex-container.flex1.alignitemscenter")?.appendChild(btn);
 }
 
-export function configureStorySummaryRuntime({ ownsMessageButtons: nextOwnership = true, saveChatState } = {}) {
+export function configureStorySummaryRuntime({ ownsMessageButtons: nextOwnership = true } = {}) {
     messageButtonOwnership.configure(nextOwnership);
-    if (saveChatState) saveChatSummaryState = saveChatState;
 }
 
 export function mountStorySummaryButton(message, mesId) {
@@ -1430,11 +1368,11 @@ function getHideUiSettings() {
     const cfg = getSummaryPanelConfig() || {};
     const ui = cfg.ui || {};
     const parsedKeep = Number.parseInt(ui.keepVisibleCount, 10);
-    const keepVisibleCount = Number.isFinite(parsedKeep) ? Math.max(0, Math.min(50, parsedKeep)) : 6;
+    const keepVisibleCount = Number.isFinite(parsedKeep) ? Math.max(0, Math.min(50, parsedKeep)) : 5;
     return {
         hideSummarized: !!ui.hideSummarized,
         keepVisibleCount,
-        useVectorBoundary: ui.useVectorBoundary !== false,
+        useVectorBoundary: ui.useVectorBoundary === true,
     };
 }
 
@@ -1449,7 +1387,7 @@ function setHideUiSettings(patch = {}) {
             keepVisibleCount: patch.keepVisibleCount !== undefined
                 ? (() => {
                     const parsedKeep = Number.parseInt(patch.keepVisibleCount, 10);
-                    return Number.isFinite(parsedKeep) ? Math.max(0, Math.min(50, parsedKeep)) : 6;
+                    return Number.isFinite(parsedKeep) ? Math.max(0, Math.min(50, parsedKeep)) : 5;
                 })()
                 : current.keepVisibleCount,
             useVectorBoundary: patch.useVectorBoundary !== undefined
@@ -1473,7 +1411,7 @@ async function sendFrameBaseData(store, totalFloors) {
         stats: {
             totalFloors,
             summarizedUpTo: lastSummarized + 1,
-            eventsCount: store?.json?.events?.length || 0,
+            roundCount: timelineRounds(store).length,
             pendingFloors: totalFloors - lastSummarized - 1,
             hiddenCount,
         },
@@ -1499,18 +1437,24 @@ function sendFrameFullData(store, totalFloors) {
 }
 
 function buildFramePayload(store) {
-    const json = authorityStoryStore(store, getContext())?.json || {};
+    const json = authorityStoryStore(store, getContext(), true)?.json || {};
     const facts = json.facts || [];
+    const entities = (worldAuthorityForContext(getContext())?.entities || []).map(({id,kind,name,aliases,fields}) => ({id,kind,name,aliases,fields}));
     return {
+        entities,
+        playerName: getContext().name1 || '',
         chatId: getContext().chatId || '',
         keywords: json.keywords || [],
-        events: json.events || [],
+        rounds: !store?.summaryInvalid && store?.sourceInvalidFromFloor == null && firstInvalidMemorySource(store, getContext().chat) == null ? timelineRounds(store) : [],
         characters: {
             main: json.characters?.main || [],
             relationships: extractRelationshipsFromFacts(facts),
         },
-        arcs: json.arcs || [],
+        legacyCharacterNames: (json.arcs || []).map(arc => arc.name),
         facts,
+        ...(store?.summaryHistory?.some(batch => batch.layers || batch.reviewLayers) && !store.summaryInvalid
+            && store.sourceInvalidFromFloor == null && firstInvalidMemorySource(store, getContext().chat) == null
+            ? { narrativeUnits: summaryLayers(store.summaryHistory).parents } : {}),
         storyRecords: !store?.summaryInvalid && store?.sourceInvalidFromFloor == null ? json.storyRecords || [] : [],
         characterAliases: normalizeCharacterAliases(json.characterAliases)
             .map(({ from, to, evidence }) => ({ from, to, evidence })),
@@ -1544,11 +1488,6 @@ async function copyTextToClipboard(text) {
     }
 }
 
-function stripFloorMarker(summary) {
-    return String(summary || "")
-        .replace(/\s*\(#\d+(?:-\d+)?\)\s*$/, "")
-        .trim();
-}
 
 function normalizeInternalFact(item) {
     const fact = item && typeof item === "object" ? item : {};
@@ -1627,7 +1566,7 @@ function cloneSummaryJsonForPortability(json) {
                 id: String(item?.id || "").trim(),
                 title: String(item?.title || "").trim(),
                 timeLabel: String(item?.timeLabel || "").trim(),
-                summary: stripFloorMarker(item?.summary),
+                summary: String(item?.summary || '').trim(),
                 participants: Array.isArray(item?.participants)
                     ? item.participants.map((name) => String(name || "").trim()).filter(Boolean)
                     : [],
@@ -1682,6 +1621,7 @@ function cloneSummaryJsonForPortability(json) {
 function extractSummaryImportJson(raw) {
     const candidate = readSummaryPackageData(raw);
     const json = cloneSummaryJsonForPortability(candidate);
+    if (candidate.rounds) json.importedRounds = structuredClone(candidate.rounds);
     json.facts = candidate.facts.map(normalizePortableFact);
     return json;
 }
@@ -1690,15 +1630,17 @@ function buildSummaryExportPackage(store) {
     const json = cloneSummaryJsonForPortability(store?.json || {});
     const data = {
         ...json,
+        rounds: timelineRounds(store),
         facts: json.facts.map(serializePortableFact),
     };
+    if (!store?.summaryInvalid || !json.events.length) delete data.events;
     return {
         ...SUMMARY_MEMORY_PACKAGE,
         exportedAt: new Date().toISOString(),
         data,
         counts: {
             keywords: json.keywords.length,
-            events: json.events.length,
+            rounds: data.rounds.length,
             characters: json.characters.main.length,
             aliases: json.characterAliases.length,
             arcs: json.arcs.length,
@@ -1717,11 +1659,6 @@ function formatSummaryCharacterName(item) {
     return String(typeof item === "string" ? item : item?.name || "").trim();
 }
 
-function formatSummaryProgress(value) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return "0%";
-    return `${Math.round(Math.max(0, Math.min(1, n)) * 100)}%`;
-}
 
 function formatStorySummaryMemoryText(store) {
     const json = cloneSummaryJsonForPortability(store?.json || {});
@@ -1736,26 +1673,7 @@ function formatStorySummaryMemoryText(store) {
         })
         .filter(Boolean));
 
-    pushSection(lines, "事件时间线", (json.events || [])
-        .map((event, index) => {
-            const title = String(event?.title || "").trim() || `事件 ${index + 1}`;
-            const timeLabel = String(event?.timeLabel || "").trim();
-            const summary = stripFloorMarker(event?.summary);
-            const participants = Array.isArray(event?.participants)
-                ? event.participants.map((name) => String(name || "").trim()).filter(Boolean)
-                : [];
-            const meta = [
-                timeLabel ? `时间：${timeLabel}` : "",
-                participants.length ? `参与者：${participants.join("、")}` : "",
-                event?.memoryRole ? `记忆作用：${event.memoryRole}` : "",
-            ].filter(Boolean).join("；");
-            return [
-                `### ${title}`,
-                meta,
-                summary,
-            ].filter(Boolean).join("\n");
-        })
-        .filter(Boolean));
+    pushSection(lines, "本轮总结", timelineRounds(store).map(round => round.timeLabel + " " + round.summary));
 
     pushSection(lines, "主要角色", (json.characters?.main || [])
         .map(formatSummaryCharacterName)
@@ -1764,22 +1682,6 @@ function formatStorySummaryMemoryText(store) {
 
     pushSection(lines, "角色别名", normalizeCharacterAliases(json.characterAliases)
         .map((alias) => `- ${alias.to}：${alias.from}${alias.evidence ? `（${alias.evidence}）` : ""}`));
-
-    pushSection(lines, "角色弧光", (json.arcs || [])
-        .map((arc) => {
-            const name = String(arc?.name || "").trim();
-            if (!name) return "";
-            const trajectory = String(arc?.trajectory || "").trim();
-            const moments = Array.isArray(arc?.moments)
-                ? arc.moments.map((moment) => String(moment?.text || "").trim()).filter(Boolean)
-                : [];
-            return [
-                `### ${name}`,
-                trajectory ? `${trajectory}（进度：${formatSummaryProgress(arc?.progress)}）` : `进度：${formatSummaryProgress(arc?.progress)}`,
-                ...moments.map((moment) => `- ${moment}`),
-            ].filter(Boolean).join("\n");
-        })
-        .filter(Boolean));
 
     pushSection(lines, "事实图谱", (json.facts || [])
         .map((fact) => {
@@ -1849,7 +1751,7 @@ async function importSummaryMemoryPackage(rawText, targetChatId = '') {
     return {
         counts: {
             keywords: importedJson.keywords.length,
-            events: importedJson.events.length,
+            rounds: importedJson.importedRounds?.length || importedJson.events.length,
             characters: importedJson.characters.main.length,
             arcs: importedJson.arcs.length,
             facts: importedJson.facts.length,
@@ -1869,16 +1771,18 @@ export function getStorySummaryMemoryText() {
 }
 
 /**
- * Returns an optional, source-bounded L2 event projection for other prompt owners.
- * This never exposes the Story Summary store or non-event memory layers.
+ * Returns source-bounded round summaries for other prompt owners.
  * @param {{ throughMessageIndex: number, maxCharacters?: number }} options
  */
-export function getStorySummaryL2EventText({
+export function getStorySummaryRoundText({
     throughMessageIndex,
     maxCharacters = 20_000,
 } = {}) {
     if (!isStorySummaryEnabledForCurrentChat()) return "";
-    return formatStorySummaryL2Events(getPublishedSummaryStore()?.json?.events, {
+    const store = getPublishedSummaryStore();
+    if (!isSummaryConsumable(store, getContext().chat.length) || firstInvalidMemorySource(store, getContext().chat) != null) return '';
+    const history = store.summaryHistory?.filter(batch => batch.endMesId <= throughMessageIndex);
+    return formatStorySummaryL2Events(timelineRounds({ summaryHistory: history }), {
         throughMessageIndex,
         maxCharacters,
     });
@@ -1985,7 +1889,7 @@ const hideState = createHideStateController({
             enabled: isSummarySourceValid(store, context.chat?.length || 0) && ui.hideSummarized,
             summaryBoundary: floorCoverageEnd(store),
             useVectorBoundary: !store?.summaryHistory?.some(batch => batch.floorEntry) && !!getVectorConfig()?.enabled && ui.useVectorBoundary,
-            keepVisibleCount: ui.keepVisibleCount,
+            keepVisibleTurns: ui.keepVisibleCount, stableEnd: getSummarySourceEnd(context.chat || [], (context.chat?.length || 0) - 1),
         };
     },
     readVectorBoundary: async chatId => (await getMeta(chatId)).lastChunkFloor,
@@ -2150,18 +2054,13 @@ async function autoRunSummaryWithRetry(targetMesId, configForRun) {
             const result = await runSummaryAttempt(execution, targetMesId, configForRun, {
                 onStatus: (text) => postSummaryExecution(execution, { type: 'SUMMARY_STATUS', statusText: SUMMARY_FEEDBACK_COPY.summaryAttempt(attempt, AUTO_SUMMARY_MAX_ATTEMPTS, text) }),
                 onError: (msg) => postSummaryExecution(execution, { type: 'SUMMARY_ERROR', message: msg }),
-                onComplete: async ({ newEventIds, aliasChanged, store }) => {
+                onComplete: async ({ store }) => {
                     assertSummaryExecutionActive(execution);
                     postToFrame({ type: "SUMMARY_FULL_DATA", payload: buildFramePayload(store) });
 
                     // Alias migration can also change existing participants.
                     // The corpus skips unchanged documents; no full rebuild.
                     refreshEntityLexiconAndWarmup();
-                    if (aliasChanged || newEventIds?.length) {
-                        const allEvents = store?.json?.events || [];
-                        const idSet = new Set(newEventIds || []);
-                        addEventDocuments(aliasChanged ? allEvents : allEvents.filter(e => idSet.has(e.id)));
-                    }
 
                     if (isStorySummaryEnabledForCurrentChat() && getHideUiSettings().hideSummarized) {
                         applyHideStateDebounced();
@@ -2304,27 +2203,17 @@ async function handleFrameMessage(event) {
             removeBackupManagerModal();
             break;
 
-        case "SET_CURRENT_CHAT_ENABLED": {
-            try {
-                await setStorySummaryEnabledForCurrentChat(data.enabled !== false);
-            } catch (error) {
-                xbLog.warn(MODULE_ID, "Failed to update current chat story summary state", error);
-                postToFrame({ type: "SUMMARY_ERROR", message: "当前聊天开关未能保存，请重试" });
-                notifyStorySummaryChatState();
-            }
-            break;
-        }
-
         case "REQUEST_GENERATE": {
             if (!isStorySummaryEnabledForCurrentChat()) {
-                postToFrame({ type: "SUMMARY_STATUS", statusText: "请先启用当前聊天的剧情总结" });
+                postToFrame({ type: "SUMMARY_STATUS", statusText: "请先打开后厨并选择一段对话" });
                 notifyStorySummaryChatState();
                 notifySummaryState();
                 break;
             }
             const ctx = getContext();
             currentMesId = (ctx.chat?.length ?? 1) - 1;
-            await handleManualGenerate(currentMesId, data.config || {});
+            await handleManualGenerate(currentMesId, { ...(data.config || {}),
+                trigger: { ...(data.config?.trigger || {}), delayFloors: 0, maxPerRun: SUMMARY_BATCH_FLOORS } });
             break;
         }
 
@@ -2423,7 +2312,7 @@ async function handleFrameMessage(event) {
                     postToFrame({
                         type: "SUMMARY_COPY_RESULT",
                         success: true,
-                        events: payload.counts.events,
+                        rounds: payload.counts.rounds,
                         facts: payload.counts.facts,
                     });
                 } catch (e) {
@@ -2707,7 +2596,6 @@ async function handleFrameMessage(event) {
             try {
                 cancelActiveSummaryExecution();
                 cancelRecallAndClearPrompt('summary-edited');
-                if (data.section === "events") cancelEmbeddingWriteTasks('Summary events edited');
                 const committed = await runVectorWriteTask({ chatId, kind: 'summary-manual-edit', scope: VECTOR_WRITE_SCOPES.CONSISTENCY }, async () => {
                     // Prepare against the state preceding writers actually published,
                     // not a snapshot captured while this edit was still queued.
@@ -2719,13 +2607,12 @@ async function handleFrameMessage(event) {
                     const next = structuredClone(previous);
                     const store = next.storySummary;
                     store.json ||= {};
-                    const oldEvents = data.section === "events" ? previous.storySummary.json?.events || [] : null;
                     const oldFacts = store.json.facts || [];
                     const edited = applySummarySectionEdit(data.section, data.previous, data.data,
                         buildFramePayload(previous.storySummary)[data.section]);
                     store.json[data.section] = data.section === "characters"
                         ? stampEditedCharacters(store.json.characters, edited, getCurrentFloorHint())
-                        : data.section === "events" ? projectEditedSummaryEvents(edited) : edited;
+                        : edited;
                     if (data.section === "facts") store.json.facts = [
                         ...oldFacts.filter(fact => fact.retracted),
                         ...mergeEditedFactsWithTimestamps(oldFacts, edited.filter(fact => !fact.retracted), getCurrentFloorHint()),
@@ -2734,20 +2621,12 @@ async function handleFrameMessage(event) {
                         store.json.facts = mergeCharacterRelationshipsIntoFacts(store.json.facts, edited.relationships, getCurrentFloorHint());
                     }
                     store.updatedAt = Date.now();
-                    await commitSummaryMemory(chatId, next, { previous, invalidate: async () => {
-                        if (oldEvents) {
-                            const nextById = new Map(store.json.events.map(event => [event.id, event]));
-                            const ids = oldEvents.filter(event => buildEventVectorText(event) !== buildEventVectorText(nextById.get(event.id))).map(event => event.id);
-                            await deleteEventVectorsByIds(chatId, ids);
-                            invalidateLexicalIndex();
-                        }
-                    } });
-                    return { oldEvents, events: store.json.events };
+                    await commitSummaryMemory(chatId, next, { previous });
+                    return true;
                 });
                 if (getChatIdentity(getContext()) !== chatIdentity) break;
                 if (!committed) throw new Error('metadata_commit_cancelled');
                 postToFrame({ type: 'SUMMARY_FULL_DATA', payload: buildFramePayload(readPublishedSummaryMemory().storySummary) });
-                if (committed.oldEvents) await syncEventVectorsOnEdit(committed.oldEvents, committed.events);
             } catch (error) {
                 if (getChatIdentity(getContext()) === chatIdentity) reportMemorySaveFailure(error);
                 else console.warn({ source: import.meta.url, operation: 'UPDATE_SECTION' }, error);
@@ -2792,7 +2671,7 @@ async function handleFrameMessage(event) {
         case "UPDATE_KEEP_VISIBLE": {
             const oldCount = getHideUiSettings().keepVisibleCount;
             const parsedCount = Number.parseInt(data.count, 10);
-            const newCount = Number.isFinite(parsedCount) ? Math.max(0, Math.min(50, parsedCount)) : 6;
+            const newCount = Number.isFinite(parsedCount) ? Math.max(0, Math.min(50, parsedCount)) : 5;
             if (newCount === oldCount) break;
 
             setHideUiSettings({ keepVisibleCount: newCount });
@@ -2891,18 +2770,13 @@ async function handleManualGenerate(mesId, config) {
         const result = await runSummaryAttempt(execution, mesId, config, {
             onStatus: (text) => postSummaryExecution(execution, { type: 'SUMMARY_STATUS', statusText: text }),
             onError: (msg) => postSummaryExecution(execution, { type: 'SUMMARY_ERROR', message: msg }),
-            onComplete: async ({ newEventIds, aliasChanged, store }) => {
+            onComplete: async ({ store }) => {
                 assertSummaryExecutionActive(execution);
                 postToFrame({ type: "SUMMARY_FULL_DATA", payload: buildFramePayload(store) });
 
                 // Alias migration can also change existing participants.
                 // The corpus skips unchanged documents; no full rebuild.
                 refreshEntityLexiconAndWarmup();
-                if (aliasChanged || newEventIds?.length) {
-                    const allEvents = store?.json?.events || [];
-                    const idSet = new Set(newEventIds || []);
-                    addEventDocuments(aliasChanged ? allEvents : allEvents.filter(e => idSet.has(e.id)));
-                }
 
                 applyHideStateDebounced();
                 await updateFrameStatsAfterSummary(store, execution);
@@ -3006,8 +2880,7 @@ async function handleChatChanged(scheduledChatId = getContext()?.chatId || '', {
 
     // Same-chat reload preserves the corpus; reconcile its L2 view without
     // throwing away unchanged chunks. Actual chat switches start a new corpus.
-    if (reload) replaceEventDocuments(getPublishedSummaryStore()?.json?.events || [], scheduledChatId);
-    else invalidateLexicalIndex();
+    if (!reload) invalidateLexicalIndex();
     scheduleLexicalWarmup(CHAT_CHANGE_LEXICAL_WARMUP_MS);
 
     // Automatic initialization uses the same saved-config/runtime/probe path as testing.
@@ -3087,9 +2960,6 @@ async function synchronizeCurrentSources(chatId, kind = 'observed', floor = null
     if (['not_needed', 'rolled_back'].includes(outcome?.result?.status)) {
         if (outcome.change.fromFloor !== null) removeDocumentsFromFloor(outcome.change.fromFloor, chatId);
         else for (const editedFloor of outcome.change.editedFloors) removeDocumentsByFloor(editedFloor, chatId);
-        if (outcome.result.status === 'rolled_back') {
-            replaceEventDocuments(getPublishedSummaryStore()?.json?.events || [], chatId);
-        }
         scheduleLexicalWarmup();
     }
     if (!outcome || outcome.status === 'stale') {
@@ -3210,10 +3080,6 @@ const mainReplySummary = createFloorSummaryController({
         cancelRecallAndClearPrompt('floor-summary-edited');
         recallReuse.invalidate();
         invalidateLexicalIndex();
-        replaceEventDocuments(next.storySummary.json?.events || [], chatId);
-        const changedIds = (previous.storySummary.json?.events || []).filter(event =>
-            JSON.stringify(event) !== JSON.stringify(next.storySummary.json?.events?.find(item => item.id === event.id))).map(event => event.id);
-        if (changedIds.length) await deleteEventVectorsByIds(chatId, changedIds);
         const changedAtoms = (previous.stateAtoms || []).filter(atom =>
             JSON.stringify(atom) !== JSON.stringify(next.stateAtoms?.find(item => item.atomId === atom.atomId))).map(atom => atom.atomId);
         if (changedAtoms.length) await deleteStateVectorsByIds(chatId, changedAtoms);
@@ -3867,10 +3733,7 @@ async function runStorySummaryTeardown() {
     memoryMaintenance.stop();
     // The master switch invokes this cleanup directly (without awaiting it).
     // Restore flags synchronously, before waiting for any background writer.
-    // Restore once at this transition even though the master/feature flag is
-    // already off. A chat disabled earlier has already released its visibility.
-    const hideCleanup = getChatStorySummaryEnabled(chat_metadata, EXT_ID)
-        ? hideState.clear() : Promise.resolve();
+    const hideCleanup = hideState.clear();
     cancelActiveSummaryExecution();
     activeSummaryExecution = null;
     cancelRecallAndClearPrompt('unregistered');
@@ -4201,10 +4064,10 @@ export function openStoryMemory(floor = Math.max(0, getContext().chat.length - 1
     openPanelForMessage(floor);
     postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view: 'memory' });
 }
-export function openStoryMemorySettings() {
-    memoryWorkspaceView = 'memory-settings';
+export function openStoryMemorySettings(view = 'settings') {
+    memoryWorkspaceView = view === 'proofreading' ? view : 'memory-settings';
     openPanelForMessage(Math.max(0, getContext().chat.length - 1));
-    postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view: 'settings' });
+    postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view });
 }
 export function openStoryWorld(route = 'world') {
     if (!['world', 'lore', 'people', 'relations'].includes(route)) return;
@@ -4219,7 +4082,7 @@ export function getFloorSummarySnapshot() {
     const invalidFrom = Math.min(sourceInvalid ?? Infinity, invalid?.floorEntry.source.start ?? Infinity, getRuntimeInvalidSourceFloor() ?? Infinity);
     return { enabled: isXiaobaiMasterEnabled() && isStorySummaryEnabledForCurrentChat(),
         chat: getContext().chat, store, invalidFrom: Number.isFinite(invalidFrom) ? invalidFrom : undefined,
-        inlineConfig: getSummaryPanelConfig().inlineSummary, getError: mainReplySummary.error };
+        keepVisibleTurns: getSummaryPanelConfig().ui?.keepVisibleCount ?? 5, inlineConfig: getSummaryPanelConfig().inlineSummary, getError: mainReplySummary.error };
 }
 export function updateFloorSummary(floor, change, source) { return mainReplySummary.update(floor, change, source); }
 export function extractMainReplySummary(floor) { return mainReplySummary.ingest(floor, { force: true }); }

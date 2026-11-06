@@ -3,7 +3,6 @@ import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { mountTextApiSettings } from '../../../../text-api/settings-ui.js';
 import type { XiaobaiOsAppProps } from '../../../shell/app-contract.js';
 import './agent-api.css';
-import WebSettings from './WebSettings.vue';
 
 const props = defineProps<XiaobaiOsAppProps>();
 const root = ref<HTMLElement | null>(null);
@@ -32,7 +31,6 @@ onBeforeUnmount(() => editor?.destroy());
                     <p>集中管理 API 连接与模型配置；具体功能在对应板块中选择使用的配置。</p>
                 </header>
                 <section ref="root" class="agent-api-panel" aria-label="API 配置库" />
-                <WebSettings :bridge="props.bridge" />
             </div>
         </div>
     </main>

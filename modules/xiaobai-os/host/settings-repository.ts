@@ -50,7 +50,8 @@ export interface XiaobaiOsSettingsRepository {
     setDiceActionCheckRule: (rule: ActionCheckRule) => Promise<XiaobaiOsSettings>;
     readLegacyDiceSheet: () => unknown;
     finishDiceSheetMigration: () => Promise<XiaobaiOsSettings>;
-    setWorldPreference: (key: keyof WorldSettings, enabled: boolean) => Promise<XiaobaiOsSettings>;
+    setEncounterFrequency: (frequency: NonNullable<WorldSettings['encounterFrequency']>) => Promise<XiaobaiOsSettings>;
+    setWorldPreference: (key: Exclude<keyof WorldSettings, 'encounterFrequency'>, enabled: boolean) => Promise<XiaobaiOsSettings>;
     subscribe: (listener: (settings: XiaobaiOsSettings) => void) => () => void;
     subscribeMutationInstalled: (listener: (settings: XiaobaiOsSettings) => void) => () => void;
     legacyKeys: readonly LegacyFourthWallSettingKey[];
@@ -250,7 +251,7 @@ export function createSettingsRepository(adapter: XiaobaiOsSettingsAdapter): Xia
     }
 
     function setDiceFeature(feature: DiceFeature, enabled: boolean): Promise<XiaobaiOsSettings> {
-        if (feature !== 'actionChecksEnabled' && feature !== 'encountersEnabled') {
+        if (feature !== 'actionChecksEnabled') {
             throw new TypeError('invalid Dice feature');
         }
         if (typeof enabled !== 'boolean') { throw new TypeError('Dice feature must be a boolean'); }
@@ -290,8 +291,8 @@ export function createSettingsRepository(adapter: XiaobaiOsSettingsAdapter): Xia
     }
 
 
-    function setWorldPreference(key: keyof WorldSettings, enabled: boolean): Promise<XiaobaiOsSettings> {
-        if (key !== 'subscribed' && key !== 'injectToStory') { throw new TypeError('invalid World preference'); }
+    function setWorldPreference(key: Exclude<keyof WorldSettings, 'encounterFrequency'>, enabled: boolean): Promise<XiaobaiOsSettings> {
+        if (key !== 'subscribed' && key !== 'injectToStory' && key !== 'peopleEvolution' && key !== 'sceneryEvolution') { throw new TypeError('invalid World preference'); }
         if (typeof enabled !== 'boolean') { throw new TypeError('World preference must be a boolean'); }
         return mutate(next => {
             next.apps.world[key] = enabled;
@@ -329,6 +330,10 @@ export function createSettingsRepository(adapter: XiaobaiOsSettingsAdapter): Xia
         readLegacyDiceSheet,
         finishDiceSheetMigration,
         setWorldPreference,
+        setEncounterFrequency: (frequency: NonNullable<WorldSettings['encounterFrequency']>) => mutate(next => {
+            next.apps.world.encounterFrequency = frequency;
+            return next;
+        }),
         subscribe,
         subscribeMutationInstalled,
         legacyKeys: LEGACY_FOURTH_WALL_SETTING_KEYS,

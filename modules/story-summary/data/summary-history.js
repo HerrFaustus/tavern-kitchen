@@ -1,7 +1,7 @@
 import { normalizeSummaryUndo } from './summary-undo.js';
 import { validateMaintenanceReceipt, upgradeMaintenanceReceipt } from '../maintenance/history.js';
 import { isMemoryPolicy } from './memory-policy.js';
-import { validateMemorySourceReceipt } from './turn-source.js';
+import { validateMemorySourceReceipt, validateRangeSource } from './turn-source.js';
 import { validateStoredUpdate } from '../../world-records/update-result.js';
 import { validateMemoryTags } from './memory-tags.js';
 
@@ -43,6 +43,17 @@ export function upgradeSummaryHistory(history) {
             valid(entry.format === 2 && ['baseline', 'batch'].includes(entry.kind) && Array.isArray(entry.maintenance));
             if (entry.kind === 'baseline') valid(!value.length && entry.undo == null && entry.previousEndMesId == null);
             else createSummaryBatch(entry.previousEndMesId, entry.endMesId, entry.undo, entry.policy);
+            if (entry.roundVersion !== undefined) valid(Number.isSafeInteger(entry.roundVersion) && entry.roundVersion >= 0);
+            if (entry.roundSource) {
+                validateRangeSource(entry.roundSource);
+                valid(entry.kind === 'batch' && entry.roundSource.end === entry.endMesId);
+            }
+            if (entry.roundRevisions) valid(Array.isArray(entry.roundRevisions) && entry.roundRevisions.every(change =>
+                change?.version === 1 && Number.isSafeInteger(change.baseVersion) && change.baseVersion >= 0 && Number.isSafeInteger(change.end) && change.end <= entry.endMesId
+                && typeof change.sourceId === 'string' && typeof change.previous === 'string'
+                && typeof change.text === 'string' && change.text.trim() && change.text.length <= 12000
+                && Number.isSafeInteger(change.evidence?.floor) && typeof change.evidence.quote === 'string' && change.evidence.quote.trim()));
+            for (const revision of entry.roundRevisions || []) if (revision.memoryTags) validateMemoryTags(revision.memoryTags);
             if (entry.sourceReceipt) {
                 validateMemorySourceReceipt(entry.sourceReceipt);
                 valid(entry.kind === 'batch' && entry.sourceReceipt.source.end === entry.endMesId);
@@ -57,7 +68,7 @@ export function upgradeSummaryHistory(history) {
             }
             if (entry.memoryTags) {
                 validateMemoryTags(entry.memoryTags);
-                valid(entry.kind === 'batch' && entry.sourceReceipt && typeof entry.summary === 'string');
+                valid(entry.kind === 'batch' && (entry.sourceReceipt || entry.roundSource) && typeof entry.summary === 'string');
             }
             value.push({ ...entry, maintenance: entry.maintenance.map(upgradeMaintenanceReceipt) });
         }

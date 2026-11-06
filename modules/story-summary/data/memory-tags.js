@@ -1,3 +1,4 @@
+import { reviewedRounds } from './summary-layers.js';
 import { isRangeSourceCurrent } from './turn-source.js';
 
 const fields = ['characters', 'locations', 'times', 'keywords'];
@@ -10,11 +11,9 @@ export function prepareMemoryTags(decoded) {
             || supplied[field].length > 24 || supplied[field].some(value => typeof value !== 'string' || value.length > 120))))) {
         throw new Error('记忆标签须为人物、地点、时间、关键词的短文本数组，每类最多 24 项');
     }
-    const events = Array.isArray(decoded.events) ? decoded.events : [];
+
     const fallback = {
-        characters: events.flatMap(event => event.participants || []),
-        locations: events.map(event => event.location),
-        times: events.map(event => event.timeLabel),
+        characters: [], locations: [], times: [],
         keywords: Array.isArray(decoded.keywords) ? decoded.keywords.map(value => typeof value === 'string' ? value : value?.text) : [],
     };
     return Object.fromEntries([['version', 1], ...fields.map(field => [field, strings([...(supplied?.[field] || []), ...fallback[field]]).map(value => value.slice(0, 120))])]);
@@ -28,8 +27,8 @@ export function validateMemoryTags(value) {
 
 export function memoryTagsByFloor(store, chat) {
     const result = new Map();
-    for (const batch of store?.summaryHistory || []) {
-        const source = batch.sourceReceipt?.source;
+    for (const batch of reviewedRounds(store?.summaryHistory)) {
+        const source = batch.sourceReceipt?.source || batch.roundSource;
         if (batch.memoryTags?.version !== 1 || !isRangeSourceCurrent(source, chat)) continue;
         const tags = strings(fields.flatMap(field => Array.isArray(batch.memoryTags[field]) ? batch.memoryTags[field] : []), 96);
         for (let floor = source.start; floor <= source.end; floor++) result.set(floor, tags);

@@ -1,3 +1,4 @@
+import { captureRangeSource, isRangeSourceCurrent } from '../data/turn-source.js';
 // Story Summary - Generator
 // 调用 LLM 生成总结
 
@@ -28,11 +29,11 @@ import { memoryPolicy } from '../data/memory-policy.js';
 import { getSummarySourceEnd } from './source-boundary.js';
 import { normalizeSummaryDelayFloors } from '../data/summary-delay.js';
 import { prepareSummaryResult } from './summary-result.js';
-import { rebaseGeneratedEvents } from './rebase-events.js';
-import { formatModelArcProgress } from './arc-progress.js';
 import { notifySummaryCommitted } from '../maintenance/notification.js';
 import { getChatIdentity } from '../data/chat-identity.js';
 import { prepareMemorySources, assertMemorySources, validateMemorySources, deliverMemorySources } from '../../world-records/turn-runtime.js';
+import { prepareInvolvement } from '../../story-state/involvement.js';
+import { prepareAmbient } from '../../story-state/ambient.js';
 import { prepareWorldUpdate } from '../../world-records/update-result.js';
 
 const MODULE_ID = 'summaryGenerator';
@@ -48,10 +49,6 @@ export function formatExistingSummaryForAI(store) {
     const parts = [];
     if (data.storyRecords?.length) parts.push('【当前场景与待办记录，更新时复用 id】\n' + JSON.stringify(data.storyRecords));
 
-    if (data.events?.length) {
-        parts.push("【已记录事件】");
-        data.events.forEach(ev => parts.push(`[${ev.id}] ${ev.timeLabel ? `[${ev.timeLabel}] ` : ''}${ev.title}：${ev.summary}`));
-    }
 
     if (data.characters?.main?.length) {
         const names = data.characters.main.map(m => typeof m === 'string' ? m : m.name);
@@ -64,10 +61,6 @@ export function formatExistingSummaryForAI(store) {
         parts.push(aliasTable);
     }
 
-    if (data.arcs?.length) {
-        parts.push("【角色弧光】");
-        data.arcs.forEach(a => parts.push(`- ${a.name}：${a.trajectory}（progress: ${formatModelArcProgress(a.progress)}）`));
-    }
 
     if (data.keywords?.length) {
         parts.push(`\n【关键词】${data.keywords.map(k => k.text).join("、")}`);
@@ -152,10 +145,8 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
 
     const existingSummary = formatExistingSummaryForAI(store);
     const existingFacts = getFacts();
-    const existingEvents = (store?.json?.events || []).map(({ id }) => ({ id }));
-    const existingEventCount = existingEvents.length;
-    const initialReceipts = new Set((store?.summaryHistory || []).flatMap(batch => batch.maintenance || []).map(receipt => receipt.id));
 
+    const roundSource = captureRangeSource(getContext().chat, lastSummarized + 1, slice.endMesId);
     let raw, preparedSources;
     try {
         preparedSources = await prepareMemorySources(lastSummarized + 1, slice.endMesId, { unified: true });
@@ -164,7 +155,6 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
             existingFacts,
             newHistoryText: slice.text,
             historyRange: slice.range,
-            existingEventCount,
             signal,
             updateContext: preparedSources?.updateContext,
         });
@@ -197,7 +187,7 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
     if (
         (store?.lastSummarizedMesId ?? -1) !== lastSummarized
         || currentSlice.endMesId !== slice.endMesId
-        || currentSlice.text !== slice.text
+        || !isRangeSourceCurrent(roundSource, getContext().chat) || currentSlice.text !== slice.text
     ) {
         return staleSourceResult(onStatus);
     }
@@ -220,19 +210,14 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
     onProgress?.({ stage: 'structure' });
     let parsed, worldUpdate, narrativeSummary, memoryTags;
     try {
+        if (typeof decoded.summary !== 'string' || !decoded.summary.trim() || decoded.summary.length > 12000) throw Object.assign(new Error('须提供非空本轮总结，最多 12000 字符'), { code: 'invalid_summary_field', path: 'summary' });
+        narrativeSummary = decoded.summary.trim();
+        memoryTags = prepareMemoryTags(decoded);
         if (preparedSources?.updateContext) {
-            if (typeof decoded.summary !== 'string' || !decoded.summary.trim() || decoded.summary.length > 12000) throw new Error('统一整理须提供非空剧情摘要，最多 12000 字符');
-            narrativeSummary = decoded.summary.trim();
-            memoryTags = prepareMemoryTags(decoded);
             if (decoded.storyUpdates !== undefined && (!Array.isArray(decoded.storyUpdates) || decoded.storyUpdates.length)) throw new Error('场景、认知与计划变化须进入 worldUpdate 的 story 提案，不直接改写当前状态');
             worldUpdate = prepareWorldUpdate(decoded.worldUpdate, preparedSources.updateContext);
         }
-        parsed = prepareSummaryResult(decoded, {
-            existingEvents,
-            // Source markers are one-based; endMesId is zero-based.
-            startFloor: slice.endMesId - slice.count + 2,
-            endFloor: slice.endMesId + 1,
-        });
+        parsed = prepareSummaryResult(decoded);
     } catch (error) {
         const failure = Object.assign(new Error(SUMMARY_FEEDBACK_COPY.summaryResultInvalid, { cause: error }), { code: 'structure' });
         const message = summaryFailureReason(failure);
@@ -243,9 +228,6 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
 
     onProgress?.({ stage: 'merge' });
     const previous = readSummaryMemory();
-    const maintenance = (previous.storySummary.summaryHistory || []).flatMap(batch => batch.maintenance || [])
-        .filter(receipt => !initialReceipts.has(receipt.id)).flatMap(receipt => receipt.operations);
-    parsed.events = rebaseGeneratedEvents(parsed.events, previous.storySummary.json?.events || [], maintenance);
     // Append to the latest published memory. Incoming facts/arcs take precedence;
     // untouched maintenance edits and their receipts remain in the same snapshot.
     const mergeResult = mergeNewData(previous.storySummary.json || {}, parsed, slice.endMesId, { returnMeta: true, sourceStart: lastSummarized + 1 });
@@ -257,12 +239,30 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
     next.storySummary.updatedAt = Date.now();
     addSummarySnapshot(next.storySummary, lastSummarized, slice.endMesId, mergeResult.undo, memoryPolicy(filterRules));
     if (preparedSources) next.storySummary.summaryHistory.at(-1).sourceReceipt = structuredClone(preparedSources.receipt);
-    if (worldUpdate) Object.assign(next.storySummary.summaryHistory.at(-1), { summary: narrativeSummary, memoryTags, worldUpdate });
+    const ambientContext = preparedSources?.updateContext;
+    const involvement = prepareInvolvement(decoded.involvement, ambientContext, worldUpdate?.proposals);
+    const control = ambientContext?.ambientControl;
+    const subjects = ambientContext?.involvementContext || [];
+    const near = new Set(subjects.filter(row => row.near).map(row => row.key));
+    const staysNear = new Set(subjects.filter(row => row.regional || row.fixed).map(row => row.key));
+    for (const change of involvement) {
+        if (change.action === 'enter') near.add(change.target);
+        if (change.action === 'leave' && !staysNear.has(change.target)) near.delete(change.target);
+    }
+    const livePreferences = preparedSources?.getAmbientPreferences?.();
+    const ambient = control && prepareAmbient(decoded.ambient, { ...control, near, messages: ambientContext.increment.messages,
+        wake: new Set(involvement.filter(change => change.action === 'wake').map(change => change.target)),
+        evolve: control.evolve && livePreferences?.sceneryEvolution === true,
+        draw: control.draw && livePreferences?.encounterFrequency !== 'off' }, slice.endMesId,
+        ambientContext.world.storyRecords.filter(record => record.kind === 'situation').map(record => record.id), ambientContext.world.entities);
+    Object.assign(next.storySummary.summaryHistory.at(-1), { ...(involvement.length && { involvement }), ...(ambient && { ambient }), summary: narrativeSummary,
+        memoryTags, ...(!preparedSources && { roundSource }), ...(worldUpdate && { worldUpdate }) });
 
     onProgress?.({ stage: 'saving' });
     try {
         await commitSummaryMemory(targetChatId, next, { previous, validate: () => {
             assertMemorySources(preparedSources);
+            if (!isRangeSourceCurrent(roundSource, getContext().chat)) throw new Error('本轮来源已变化');
             const latest = buildIncrementalSlice(slice.endMesId, lastSummarized, maxPerRun, delayFloors, filterRules);
             if (isSummaryRunInactive(signal, targetChatId, targetIdentity) || latest.endMesId !== slice.endMesId || latest.text !== slice.text) {
                 throw Object.assign(new Error('metadata_draft_conflict'), { code: 'metadata_draft_conflict' });
@@ -277,7 +277,7 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
     let proposalDelivery = null, deliveryError = null;
     if (worldUpdate) {
         try { proposalDelivery = await deliverMemorySources(preparedSources); }
-        catch (error) { deliveryError = error; onError?.(`摘要与提案已保存，世界面板交付待恢复：${error.message}`); }
+        catch (error) { deliveryError = error; onError?.(`摘要与提案已保存，世界记录同步待恢复：${error.message}`); }
     }
     const proposalReviews = proposalDelivery?.reviews || [];
     const proposalAutoConfirmed = proposalReviews.filter(review => review.action === 'accepted' && review.mode === 'automatic').length;
@@ -293,13 +293,12 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
         xbLog.info(MODULE_ID, `Facts 更新: ${parsed.factUpdates.length} 条`);
     }
 
-    const newEventIds = (parsed.events || []).map(e => e.id);
     const result = {
         success: true,
         committed: true,
         merged,
         endMesId: slice.endMesId,
-        newEventIds,
+        hasMore: slice.endMesId < getSummarySourceEnd(getContext().chat, mesId, delayFloors),
         aliasChanged: !!mergeResult.aliasChanged,
         ...(worldUpdate ? { proposalCount: worldUpdate.proposals.length, proposalStatus: proposalDelivery?.status || 'pending_delivery',
             proposalAutoConfirmed, proposalPending, deliveryError } : {}),
@@ -313,8 +312,7 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
             targetChatId,
             signal,
             endMesId: slice.endMesId,
-            newEventIds,
-            aliasChanged: !!mergeResult.aliasChanged,
+                aliasChanged: !!mergeResult.aliasChanged,
             factStats: { updated: parsed.factUpdates?.length || 0 },
         });
     } catch (error) {
@@ -330,13 +328,13 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
         return cancelledResult(onStatus, true);
     }
 
-    onStatus?.(worldUpdate ? proposalDelivery?.status === 'stale' ? '摘要已保存；世界提案的基线已变化，请在世界管理中重新核对。'
-        : deliveryError ? '摘要与提案已保存，世界面板交付待恢复。'
+    onStatus?.(worldUpdate ? proposalDelivery?.status === 'stale' ? '摘要已保存；世界提案依据的版本已变化，提案已保留。'
+        : deliveryError ? '摘要与提案已保存，世界记录同步待恢复。'
         : proposalAutoConfirmed ? `摘要已保存；${proposalAutoConfirmed} 条世界变化已自动写入${proposalPending ? `，${proposalPending} 条留待人工核对。` : '。'}`
-        : `摘要与 ${worldUpdate.proposals.length} 条世界提案已保存，提案可在世界管理中核对。`
+        : `摘要与 ${worldUpdate.proposals.length} 条世界提案已保存。`
         : `总结完成，已保存至 ${slice.endMesId + 1} 楼`);
     if (config.trigger?.notifyOnComplete) {
-        window.toastr?.success(SUMMARY_FEEDBACK_COPY.summaryCompleted(slice.endMesId + 1, newEventIds.length));
+        window.toastr?.success(SUMMARY_FEEDBACK_COPY.summaryCompleted(slice.endMesId + 1));
     }
     return result;
 }

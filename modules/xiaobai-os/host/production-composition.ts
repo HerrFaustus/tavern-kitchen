@@ -99,11 +99,7 @@ export function createProductionBootstrap(
         }),
     ];
 
-    const dice = createProductionDiceModule(settings, async identityKey => {
-        const summary = await import('../../story-summary/story-summary.js') as { isStorySummaryEnabledForCurrentChat(): boolean };
-        return { world: composition.capabilities.require(WORLD_CONTEXT_CAPABILITY).isStoryBackgroundEnabled(identityKey),
-            summary: summary.isStorySummaryEnabledForCurrentChat() };
-    }, () => false, () => upgradeDiceUserFile(composition.userTransactions!));
+    const dice = createProductionDiceModule(settings, () => upgradeDiceUserFile(composition.userTransactions!));
     const modules = [
         dice,
         createAgentApiModule(),

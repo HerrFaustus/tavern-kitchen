@@ -41,6 +41,10 @@ test('automatic progress preserves mounted receipt pages, pending page requests 
     const sent = [];
     const page = createMemoryMaintenancePage(root, (type, payload) => sent.push({ type, payload }));
     t.after(() => page.dispose());
+    page.setEnabled(false, { proofreadingInterval: 3, proofreadingPrompt: '核对证词' });
+    assert.equal(root.querySelector('.memory-proof-field input').value, '3');
+    root.querySelector('.memory-proof-field textarea').value = '仅依原文';
+    assert.deepEqual(page.getPreferences(), { proofreadingInterval: 3, proofreadingPrompt: '仅依原文' });
     const receipt = { id: 'fixture-receipt', runId: 'fixture-run', createdAt: 1, cutoff: 415, operations: [],
         counts: {}, coverage: { supplied: [], missingAnchors: [] }, summary: 'fixture report', outcome: { status: 'completed' } };
     page.render({ chatId: 'chat-a', state: { status: 'idle' }, index: { status: 'pending' },

@@ -3,7 +3,6 @@ import { computed, nextTick, ref, shallowRef, toRaw } from 'vue';
 import { useAppBack } from '../../../shell/app-src/navigation/app-navigation.js';
 import type { XiaobaiOsAppProps } from '../../../shell/app-contract.js';
 import type { WorldNews } from '../../../domains/world/types.js';
-import type { WorldSettings } from '../types.js';
 import ModelProfileBinding from '../../../shell/app-src/components/ModelProfileBinding.vue';
 import NewsArticle from './NewsArticle.vue';
 import WorldOpening from './WorldOpening.vue';
@@ -27,7 +26,7 @@ const articleUpdate = computed(() => !latest.value ? 'removed'
     : JSON.stringify(latest.value) === JSON.stringify(reading.value) ? 'same' : 'updated');
 const canRefresh = computed(() => writable.value && !refreshing.value);
 
-async function setPreference(event: Event, key: keyof WorldSettings) {
+async function setPreference(event: Event, key: 'subscribed' | 'injectToStory') {
     const input = event.target as HTMLInputElement;
     await request(key === 'subscribed' ? 'subscribe' : 'background', { enabled: input.checked });
     input.checked = state.value.settings[key];

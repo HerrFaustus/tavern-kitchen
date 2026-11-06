@@ -9,10 +9,8 @@ export function buildWorldStoryPrompt(world: WorldContent | null): string {
         ...(world.overview ? [escapePromptData(world.overview)] : []),
         ...world.news.map(item => `• ${escapePromptData(item.title)}\n${escapePromptData(item.body)}`),
     ];
-    const render = (included: string[], partial = false) => [
+    const render = (included: string[]) => [
         '<world_background>',
-        'Off-screen world background. It may remain in the background; characters learn it through the story, not automatically.',
-        ...(partial ? ['Some background items are omitted to fit the context budget.'] : []),
         ...included,
         '</world_background>',
     ].join('\n');
@@ -20,9 +18,9 @@ export function buildWorldStoryPrompt(world: WorldContent | null): string {
     if ([...full].length <= MAX_WORLD_STORY_MESSAGE_CHARS) { return full; }
     const included: string[] = [];
     for (const section of sections) {
-        if ([...render([...included, section], true)].length <= MAX_WORLD_STORY_MESSAGE_CHARS) {
+        if ([...render([...included, section])].length <= MAX_WORLD_STORY_MESSAGE_CHARS) {
             included.push(section);
         }
     }
-    return included.length ? render(included, true) : '';
+    return included.length ? render(included) : '';
 }

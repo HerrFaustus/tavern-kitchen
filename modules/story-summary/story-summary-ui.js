@@ -1,5 +1,6 @@
 import { mountTextApiSettings } from '../text-api/settings-ui.js';
-import { renderPersonState, renderThreads } from '../story-state/view.js';
+import { characterStoryState, projectPersonalAgendas } from '../story-state/records.js';
+import { renderWorldAttributes, renderPersonalAgendas, renderPersonState, renderThreads } from '../story-state/view.js';
 import { buildAliasResolver } from './data/character-aliases.js';
 import { WORKSPACE_COPY } from './workspace-copy.js';
 import { createSummaryAgentSettings } from './maintenance/api-settings.js';
@@ -7,18 +8,18 @@ import { createSummaryAgentSettings } from './maintenance/api-settings.js';
 // iframe 内 UI 逻辑
 
 import { ARCHIVE_COPY, createSummaryArchive, getArchiveCharacters } from './archive-view.js';
-import { EVENT_MEMORY_ROLES, projectEditedSummaryEvents } from './data/events.js';
-import { DEFAULT_SUMMARY_DELAY_FLOORS, normalizeSummaryDelayFloors } from './data/summary-delay.js';
-import { normalizeSummaryWorkflow } from './data/summary-workflow.js';
+import { DEFAULT_SUMMARY_DELAY_FLOORS } from './data/summary-delay.js';
+import { normalizeSummaryWorkflow, SUMMARY_BATCH_FLOORS } from './data/summary-workflow.js';
 import { DEFAULT_RECALL_TIMEOUT_SEC, MAX_RECALL_TIMEOUT_SEC, normalizeRecallTimeoutSec } from './data/recall-settings.js';
 import { RELATION_TRENDS } from './data/fact-predicates.js';
 import { createMemoryMaintenancePage } from './maintenance/ui.js';
 import { MEMORY_COPY } from './maintenance/copy.js';
 import { MEMORY_CHAT_MESSAGES } from './maintenance/chat-contract.js';
 import { MEMORY_CHAT_COPY } from './maintenance/chat-copy.js';
-import { DEFAULT_MEMORY_MAINTENANCE_ENABLED } from './maintenance/settings.js';
+import { DEFAULT_MEMORY_MAINTENANCE_ENABLED, normalizeProofreading } from './maintenance/settings.js';
 import { SUMMARY_FEEDBACK_COPY } from './feedback-copy.js';
 import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
+import { LAYER_PROMPTS } from './data/summary-layers.js';
 import { SUMMARY_EVENT_STYLE_RULES, resolveSummaryStyle, buildSummaryAssistantDocPrompt } from './data/generation-rules.js';
 
 const UNANNOTATED_LABEL = '未标注';
@@ -33,7 +34,6 @@ const UNANNOTATED_LABEL = '未标注';
     let settingsPage = 'tab-summary';
     let settingsSaving = false;
     const settingsScroll = new Map();
-    let agentSettingsParent = 'tab-agent';
     const textApiEditor = mountTextApiSettings(document.getElementById('summary-text-api'), { feature: 'summary', namespace: 'TavernKitchen-StoryFrame' });
 
     const vectorProfileEditors = Object.fromEntries(['l0', 'embedding', 'rerank'].map(feature => [
@@ -61,15 +61,6 @@ const UNANNOTATED_LABEL = '未标注';
 
     
 
-    const DEFAULT_MEMORY_PROMPT_TEMPLATE = `以上是还留在眼前的对话
-以下是脑海里的记忆：
-• [定了的事] 已确立的事实，以后续明确发生的变化为准
-• [其他人的事] 别人的经历，当前角色可能不知晓
-• 其余部分是过往经历的回忆碎片
-
-请内化这些记忆：剧情中已确立的事实与关系发展，优先于初始设定中的旧状态。
-{$剧情记忆}
-这些记忆是真实的，请自然地记住它们，并结合当前剧情理解事件距今多久。`;
 
     const EMPTY_BUILTIN_SUMMARY_PROMPTS = Object.freeze({
         summarySystemPrompt: '',
@@ -172,9 +163,10 @@ const UNANNOTATED_LABEL = '未标注';
 
         const currentProvider = String(apiCfg.provider || supported[0] || 'custom').toLowerCase();
         if (out[currentProvider]) {
-            if (apiCfg.url && !out[currentProvider].url) out[currentProvider].url = String(apiCfg.url).trim();
+            const saved = apiCfg.providers?.[currentProvider] || {};
+            if (apiCfg.url && !String(saved.url || '').trim()) out[currentProvider].url = String(apiCfg.url).trim();
             if (apiCfg.key && !out[currentProvider].key) out[currentProvider].key = String(apiCfg.key).trim();
-            if (apiCfg.model && !out[currentProvider].model) out[currentProvider].model = String(apiCfg.model).trim();
+            if (apiCfg.model && !String(saved.model || '').trim()) out[currentProvider].model = String(apiCfg.model).trim();
             if (Array.isArray(apiCfg.modelCache) && !out[currentProvider].modelCache.length) {
                 out[currentProvider].modelCache = apiCfg.modelCache.filter(Boolean);
             }
@@ -185,9 +177,7 @@ const UNANNOTATED_LABEL = '未标注';
 
     const SECTION_META = {
         keywords: { title: '编辑关键词', hint: '每行一个关键词，格式：关键词|权重（核心/重要/一般）' },
-        events: { title: '编辑事件时间线', hint: '编辑时，每个事件要素都应完整' },
         characters: { title: '编辑人物关系', hint: '编辑时，每个要素都应完整' },
-        arcs: { title: '编辑角色弧光', hint: '编辑时，每个要素都应完整' },
         facts: { title: '编辑事实图谱', hint: '每行一条：主体|谓词|值|趋势(可选)。删除用：主体|谓词|（留空值）' },
         aliases: { title: '编辑别名映射', hint: '别名与角色主名必须不同；确认依据可留空' }
     };
@@ -216,15 +206,15 @@ const UNANNOTATED_LABEL = '未标注';
     const config = {
         ...normalizeSummaryWorkflow(),
         memoryMaintenanceEnabled: DEFAULT_MEMORY_MAINTENANCE_ENABLED,
-        trigger: { enabled: true, interval: 1, delayFloors: DEFAULT_SUMMARY_DELAY_FLOORS, timing: 'after_ai', role: 'system', maxPerRun: 100, wrapperHead: '', wrapperTail: '', forceInsertAtEnd: false },
-        ui: { hideSummarized: true, keepVisibleCount: 6, useVectorBoundary: true },
+        ...normalizeProofreading(),
+        trigger: { enabled: true, interval: 1, delayFloors: DEFAULT_SUMMARY_DELAY_FLOORS, timing: 'after_ai', role: 'system', maxPerRun: 100, forceInsertAtEnd: false },
+        ui: { hideSummarized: true, keepVisibleCount: 5, windowUnit: "turn", recallEarlyOriginal: false, useVectorBoundary: false },
         prompts: {
-            memoryTemplate: '',
             summaryStyle: '',
         },
         textFilterRules: [...DEFAULT_FILTER_RULES],
         vector: {
-            enabled: false,
+            enabled: true,
             engine: 'online',
             l0Concurrency: 10,
             recallTimeoutSec: DEFAULT_RECALL_TIMEOUT_SEC,
@@ -253,7 +243,8 @@ const UNANNOTATED_LABEL = '未标注';
         }
     };
 
-    let summaryData = { keywords: [], events: [], characters: { main: [], relationships: [] }, arcs: [], facts: [], characterAliases: [] };
+    let situationFilter = '全部';
+    let summaryData = { keywords: [], rounds: [], characters: { main: [], relationships: [] }, arcs: [], facts: [], characterAliases: [] };
     let builtInSummaryPrompts = { ...EMPTY_BUILTIN_SUMMARY_PROMPTS };
     let localGenerating = false;
     let vectorGenerating = false;
@@ -281,6 +272,7 @@ const UNANNOTATED_LABEL = '未标注';
     const TL_PAGE_KEY = 'xb-tl-page';
     let tlPagingEnabled = false;
     let tlCurrentPage = -1;
+    let tlRootCount = 0;
     let settingsSaveTimeoutId = null;
     let currentChatSummaryState = { hasChat: false, chatEnabled: true, effectiveEnabled: false, changing: true };
     let summaryStatusId = 0;
@@ -339,12 +331,12 @@ const UNANNOTATED_LABEL = '未标注';
 
     function normalizeVectorConfigUI(raw = null) {
         const base = JSON.parse(JSON.stringify(config.vector));
+        base.enabled = true;
         const legacyOnline = raw?.online || {};
         const sharedKey = String(legacyOnline.key || '').trim();
         const sharedUrl = String(legacyOnline.url || '').trim();
 
         if (raw) {
-            base.enabled = !!raw.enabled;
             base.engine = 'online';
             base.l0Concurrency = Math.max(1, Math.min(50, Number(raw.l0Concurrency) || 10));
             base.recallTimeoutSec = normalizeRecallTimeoutSec(raw.recallTimeoutSec);
@@ -406,11 +398,6 @@ const UNANNOTATED_LABEL = '未标注';
         $('archive-chat-state').hidden = chatEnabled;
         const controlsEnabled = canUseCurrentChatControls();
         const copy = SUMMARY_FEEDBACK_COPY.summaryControls;
-        const toggle = $('current-chat-enabled');
-        if (toggle) {
-            toggle.checked = chatEnabled;
-            toggle.disabled = !hasChat || changing;
-        }
 
         const generateButton = $('btn-generate');
         if (generateButton) {
@@ -420,7 +407,7 @@ const UNANNOTATED_LABEL = '未标注';
                 : changing ? copy.changing : !effectiveEnabled ? copy.disabled : '';
         }
 
-        syncVectorBoundaryControl($('vector-enabled').checked, $('hide-summarized').checked);
+        syncVectorBoundaryControl(true, $('hide-summarized').checked);
         const busy = isBusyLike();
         $('workspace-rollback').disabled = busy || !cleanActionState.canRollback;
         $('workspace-rollback').title = busy ? WORKSPACE_COPY.busy : cleanActionState.canRollback ? '' : WORKSPACE_COPY.noRollback;
@@ -483,7 +470,7 @@ const UNANNOTATED_LABEL = '未标注';
         label.classList.toggle('is-disabled', !enabled);
 
         const title = !vectorEnabled
-            ? '需先启用向量功能'
+            ? '原文检索尚未准备好，请刷新后重试'
             : !hideEnabled
                 ? '需先开启“隐藏已总结”'
                 : '开：按最新向量楼层作为隐藏计算锚点\n关：按最新的大总结楼层作为隐藏计算锚点\n提示：若您的第三方模型 API 支持 Context Caching（上下文缓存），关闭此项可提高缓存命中率；开启此项则影响命中，但语义和上下文更自然';
@@ -506,11 +493,12 @@ const UNANNOTATED_LABEL = '未标注';
                 const workflow = normalizeSummaryWorkflow(p);
                 config.summaryWorkflowVersion = workflow.summaryWorkflowVersion;
                 config.inlineSummary = workflow.inlineSummary;
-                config.memoryMaintenanceEnabled = p.memoryMaintenanceEnabled === true;
+                Object.assign(config, normalizeProofreading(p));
+                config.memoryMaintenanceEnabled = p.memoryMaintenanceEnabled !== false;
                 Object.assign(config.trigger, workflow.trigger);
                 Object.assign(config.ui, p.ui || {});
-                config.ui.useVectorBoundary = p.ui?.useVectorBoundary !== false;
-                config.prompts.memoryTemplate = String(p.prompts?.memoryTemplate || config.prompts.memoryTemplate || '').trim();
+                config.ui.useVectorBoundary = p.ui?.useVectorBoundary === true;
+                for (const level of Object.keys(LAYER_PROMPTS)) config.prompts[level] = String(p.prompts?.[level] || '');
                 config.prompts.summaryStyle = String(p.prompts?.summaryStyle || '').trim();
                 config.textFilterRules = Array.isArray(p.textFilterRules)
                     ? p.textFilterRules
@@ -526,13 +514,14 @@ const UNANNOTATED_LABEL = '未标注';
         const workflow = normalizeSummaryWorkflow(cfg);
         config.summaryWorkflowVersion = workflow.summaryWorkflowVersion;
         config.inlineSummary = workflow.inlineSummary;
-        config.memoryMaintenanceEnabled = cfg.memoryMaintenanceEnabled === true;
-        if (!settingsDirty) memoryMaintenancePage?.setEnabled(config.memoryMaintenanceEnabled);
+        Object.assign(config, normalizeProofreading(cfg));
+        config.memoryMaintenanceEnabled = cfg.memoryMaintenanceEnabled !== false;
+        if (!settingsDirty) memoryMaintenancePage?.setEnabled(config.memoryMaintenanceEnabled, config);
         Object.assign(config.trigger, workflow.trigger);
         Object.assign(config.ui, cfg.ui || {});
-        config.ui.useVectorBoundary = cfg.ui?.useVectorBoundary !== false;
+        config.ui.useVectorBoundary = cfg.ui?.useVectorBoundary === true;
         if (!settingsDirty) $('use-vector-boundary').checked = config.ui.useVectorBoundary;
-        config.prompts.memoryTemplate = String(cfg.prompts?.memoryTemplate || config.prompts.memoryTemplate || '').trim();
+        for (const level of Object.keys(LAYER_PROMPTS)) config.prompts[level] = String(cfg.prompts?.[level] || '');
         config.prompts.summaryStyle = String(cfg.prompts?.summaryStyle || '').trim();
         config.textFilterRules = Array.isArray(cfg.textFilterRules)
             ? cfg.textFilterRules
@@ -562,7 +551,7 @@ const UNANNOTATED_LABEL = '未标注';
             }
             if (!config.vector) {
                 config.vector = {
-                    enabled: false,
+                    enabled: true,
                     engine: 'online',
                     l0Concurrency: 10,
                     l0Api: { provider: 'siliconflow', url: 'https://api.siliconflow.cn/v1', key: '', model: 'Qwen/Qwen3-8B', modelCache: [] },
@@ -612,7 +601,7 @@ const UNANNOTATED_LABEL = '未标注';
 
     function getVectorConfig() {
         return {
-            enabled: $('vector-enabled')?.checked || false,
+            enabled: true,
             engine: 'online',
             l0Concurrency: Math.max(1, Math.min(50, Number($('vector-l0-concurrency')?.value) || 10)),
             recallTimeoutSec: normalizeRecallTimeoutSec($('vector-recall-timeout')?.value),
@@ -624,9 +613,7 @@ const UNANNOTATED_LABEL = '未标注';
 
     function loadVectorConfig(cfg) {
         if (!cfg) return;
-        $('vector-enabled').checked = !!cfg.enabled;
-        $('vector-config-area').classList.toggle('hidden', !cfg.enabled);
-        syncVectorBoundaryControl(cfg.enabled, config.ui.hideSummarized);
+        syncVectorBoundaryControl(true, config.ui.hideSummarized);
         $('vector-l0-concurrency').value = String(Math.max(1, Math.min(50, Number(cfg.l0Concurrency) || 10)));
         $('vector-recall-timeout').max = String(MAX_RECALL_TIMEOUT_SEC);
         $('vector-recall-timeout').value = String(normalizeRecallTimeoutSec(cfg.recallTimeoutSec));
@@ -716,7 +703,6 @@ const UNANNOTATED_LABEL = '未标注';
     function updateVectorStats(stats) {
         $('vector-atom-count').textContent = stats.stateVectors || 0;
         $('vector-chunk-count').textContent = stats.chunkCount || 0;
-        $('vector-event-count').textContent = stats.eventVectors || 0;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -841,10 +827,6 @@ const UNANNOTATED_LABEL = '未标注';
     }
 
     function initVectorUI() {
-        $('vector-enabled').onchange = e => {
-            $('vector-config-area').classList.toggle('hidden', !e.target.checked);
-            syncVectorBoundaryControl(e.target.checked, config.ui.hideSummarized);
-        };
         syncVectorBoundaryControl(config.vector?.enabled, config.ui.hideSummarized);
 
         $('btn-add-filter-rule').onclick = addFilterRule;
@@ -976,10 +958,10 @@ const UNANNOTATED_LABEL = '未标注';
         $('api-connect-status').textContent = WORKSPACE_COPY.dirty;
     }
 
-    function openSettings({ preserveTab = false, tab = 'tab-summary' } = {}) {
+    function openSettings({ preserveTab = false, tab = 'tab-summary', fromWorkspace = false } = {}) {
         if (document.documentElement.classList.contains('tk-embedded')) {
             document.documentElement.dataset.kitchenView = 'settings';
-            postMsg('OPEN_KITCHEN_SETTINGS');
+            if (!preserveTab && tab !== 'tab-agent' && !fromWorkspace) postMsg('OPEN_KITCHEN_SETTINGS');
         }
         settingsDirty = false;
         settingsSnapshot = structuredClone(config);
@@ -989,25 +971,22 @@ const UNANNOTATED_LABEL = '未标注';
             $('assistant-page-title').hidden = !assistant;
             $('assistant-page-title').textContent = MEMORY_COPY.tab;
         }
-        memoryMaintenancePage.setEnabled(config.memoryMaintenanceEnabled);
+        memoryMaintenancePage.setEnabled(config.memoryMaintenanceEnabled, config);
         if ($('trigger-notify-on-complete')) {
             $('trigger-notify-on-complete').checked = !!config.trigger.notifyOnComplete;
         }
         $('trigger-enabled').checked = config.trigger.enabled;
         $('trigger-interval').value = config.trigger.interval;
-        $('trigger-delay-floors').value = normalizeSummaryDelayFloors(config.trigger.delayFloors);
         $('trigger-timing').value = config.trigger.timing;
         $('trigger-role').value = config.trigger.role || 'system';
-        $('trigger-max-per-run').value = config.trigger.maxPerRun || 100;
-        $('trigger-wrapper-head').value = config.trigger.wrapperHead || '';
-        $('trigger-wrapper-tail').value = config.trigger.wrapperTail || '';
         $('trigger-insert-at-end').checked = !!config.trigger.forceInsertAtEnd;
         fillBuiltInSummaryPromptFields();
-        $('memory-prompt-template').value = config.prompts.memoryTemplate || '';
+        for (const [level, fallback] of Object.entries(LAYER_PROMPTS)) $('prompt-' + level).value = config.prompts[level] || fallback;
         $('summary-style').value = resolveSummaryStyle(config.prompts.summaryStyle);
         $('api-connect-status').textContent = '';
         $('hide-summarized').checked = config.ui.hideSummarized;
         $('keep-visible-count').value = config.ui.keepVisibleCount;
+        $('recall-early-original').checked = !!config.ui.recallEarlyOriginal;
         $('use-vector-boundary').checked = config.ui.useVectorBoundary;
 
         syncAutoSummaryControls();
@@ -1022,10 +1001,6 @@ const UNANNOTATED_LABEL = '未标注';
         const autoSummaryOptions = $('auto-summary-options');
         if (autoSummaryOptions) {
             autoSummaryOptions.classList.toggle('hidden', !config.trigger.enabled);
-        }
-        const insertWrapperOptions = $('insert-wrapper-options');
-        if (insertWrapperOptions) {
-            insertWrapperOptions.classList.toggle('hidden', !config.trigger.forceInsertAtEnd);
         }
 
         $('settings-modal').classList.add('active');
@@ -1043,8 +1018,10 @@ const UNANNOTATED_LABEL = '未标注';
         config.inlineSummary.enabled = false;
         config.ui.hideSummarized = $('hide-summarized').checked;
         config.ui.keepVisibleCount = Number($('keep-visible-count').value);
+        config.ui.recallEarlyOriginal = $('recall-early-original').checked;
         config.ui.useVectorBoundary = $('use-vector-boundary').checked;
         config.memoryMaintenanceEnabled = memoryMaintenancePage.getEnabled();
+        Object.assign(config, memoryMaintenancePage.getPreferences());
         const timing = $('trigger-timing').value;
         config.trigger.timing = normalizeTriggerTiming(timing);
         config.trigger.role = $('trigger-role').value || 'system';
@@ -1053,12 +1030,13 @@ const UNANNOTATED_LABEL = '未标注';
         }
         config.trigger.enabled = $('trigger-enabled').checked;
         config.trigger.interval = Math.max(1, Math.min(30, parseInt($('trigger-interval').value) || 1));
-        config.trigger.delayFloors = normalizeSummaryDelayFloors($('trigger-delay-floors').value);
-        config.trigger.maxPerRun = parseInt($('trigger-max-per-run').value) || 100;
-        config.trigger.wrapperHead = $('trigger-wrapper-head').value;
-        config.trigger.wrapperTail = $('trigger-wrapper-tail').value;
+        config.trigger.delayFloors = 0;
+        config.trigger.maxPerRun = SUMMARY_BATCH_FLOORS;
         config.trigger.forceInsertAtEnd = $('trigger-insert-at-end').checked;
-        config.prompts.memoryTemplate = $('memory-prompt-template').value;
+        for (const [level, fallback] of Object.entries(LAYER_PROMPTS)) {
+            const value = $('prompt-' + level).value.trim();
+            config.prompts[level] = value === fallback ? '' : value;
+        }
         const summaryStyle = $('summary-style').value.trim();
         config.prompts.summaryStyle = summaryStyle === SUMMARY_EVENT_STYLE_RULES ? '' : summaryStyle;
         config.textFilterRules = collectFilterRules();
@@ -1119,7 +1097,7 @@ const UNANNOTATED_LABEL = '未标注';
         if (settingsSaving) return;
         const parentPage = $(settingsPage).dataset.parent;
         if (parentPage) { selectSettingsTab(parentPage); return; }
-        if (settingsPage === 'tab-agent-api') { selectSettingsTab(agentSettingsParent); return; }
+        if (settingsPage === 'tab-agent-api') { selectSettingsTab('tab-agent'); return; }
         if (settingsDirty && !await showConfirm(WORKSPACE_COPY.discardTitle, WORKSPACE_COPY.discardDetail, WORKSPACE_COPY.discard, WORKSPACE_COPY.stay)) return;
         if (settingsDirty) Object.assign(config, settingsSnapshot);
         settingsDirty = false;
@@ -1160,7 +1138,7 @@ const UNANNOTATED_LABEL = '未标注';
     }
 
     function tlTotalPages() {
-        return Math.max(1, Math.ceil(archiveView.timelineEvents().length / TL_PAGE_SIZE));
+        return Math.max(1, Math.ceil(tlRootCount / TL_PAGE_SIZE));
     }
 
     function clampTlPage(page) {
@@ -1239,7 +1217,7 @@ const UNANNOTATED_LABEL = '未标注';
     }
 
     function renderTimeline(ev, options = {}) {
-        summaryData.events = ev || [];
+        summaryData.rounds = ev || [];
         archiveView.refreshIndexes();
         const filtered = archiveView.hasTimelineFilter();
         if (filtered && tlUnfilteredPage === null) {
@@ -1250,9 +1228,10 @@ const UNANNOTATED_LABEL = '未标注';
             tlUnfilteredPage = null;
         }
         const events = archiveView.timelineEvents();
+        tlRootCount = events.length;
         const container = $('timeline-list');
         if (!events.length) {
-            setHtml(container, summaryData.events.length
+            setHtml(container, summaryData.rounds.length
                 ? `<div class="archive-empty">${ARCHIVE_COPY.noResults}</div>`
                 : `<div class="archive-empty"><h2>${ARCHIVE_COPY.noEvents}</h2><p>${ARCHIVE_COPY.noEventsHint}</p></div>`);
             updateTlPager(false);
@@ -1459,74 +1438,66 @@ const UNANNOTATED_LABEL = '未标注';
 
     function renderCharacterProfile() {
         const c = $('profile-content');
-        const arcs = summaryData.arcs || [];
+        const knownNames = new Set(getArchiveCharacters(summaryData).map(character => character.name));
+        for (const alias of summaryData.characterAliases || []) knownNames.add(alias.from);
+        const agendas = projectPersonalAgendas(summaryData.storyRecords || [], knownNames);
+        const renderUnassigned = () => {
+            const pending = agendas.filter(record => record.kind === 'plan' && !record.holders?.length);
+            if (!pending.length) return;
+            const group = document.createElement('details');
+            const label = document.createElement('summary');
+            label.textContent = '待归属的旧计划（' + pending.length + '）';
+            group.append(label);
+            renderThreads(group, pending, ['plan']);
+            c.append(group);
+        };
+
         const rels = summaryData.characters?.relationships || [];
 
         if (!currentCharacterId) {
             setHtml(c, '<div class="empty">暂无角色数据</div>');
+            renderUnassigned();
             return;
         }
 
         const character = getArchiveCharacters(summaryData).find(entry => entry.id === currentCharacterId);
-        const arc = arcs.find(a => (a.id || a.name) === currentCharacterId);
         const name = character.name;
-        const moments = (arc?.moments || arc?.beats || []).map(m => typeof m === 'string' ? m : m.text);
         const outRels = rels.filter(r => r.from === name);
         const inRels = rels.filter(r => r.to === name);
 
         setHtml(c, `
-            <div class="prof-arc">
-                <div>
-                    <div class="prof-name">${h(name)}</div>
-                    <div class="prof-traj">${h(arc?.trajectory || arc?.phase || ARCHIVE_COPY.noTrajectory)}</div>
-                </div>
-                ${arc ? `<div class="prof-prog-wrap">
-                    <div class="prof-prog-lbl">
-                        <span>弧光进度</span>
-                        <span>${Math.round((arc.progress || 0) * 100)}%</span>
-                    </div>
-                    <div class="prof-prog">
-                        <div class="prof-prog-inner" style="width:${(arc.progress || 0) * 100}%"></div>
-                    </div>
-                </div>` : ''}
-                ${moments.length ? `
-                    <div class="prof-moments">
-                        <div class="prof-moments-title">关键时刻</div>
-                        ${moments.map(m => `<div class="prof-moment">${h(m)}</div>`).join('')}
-                    </div>
-                ` : ''}
-            </div>
-            <div class="prof-rels">
-                <div class="rels-group">
-                    <div class="rels-group-title">${h(name)}对别人的羁绊：</div>
-                    ${outRels.length ? outRels.map(r => `
-                        <div class="rel-item">
-                            <span class="rel-target">对${h(r.to)}：</span>
-                            <span class="rel-label">${h(r.label || '—')}</span>
-                            ${r.trend ? `<span class="rel-trend ${TREND_CLASS[r.trend] || ''}">${h(r.trend)}</span>` : ''}
-                        </div>
-                    `).join('') : '<div class="empty" style="padding:16px">暂无关系记录</div>'}
-                </div>
-                <div class="rels-group">
-                    <div class="rels-group-title">别人对${h(name)}的羁绊：</div>
-                    ${inRels.length ? inRels.map(r => `
-                        <div class="rel-item">
-                            <span class="rel-target">${h(r.from)}：</span>
-                            <span class="rel-label">${h(r.label || '—')}</span>
-                            ${r.trend ? `<span class="rel-trend ${TREND_CLASS[r.trend] || ''}">${h(r.trend)}</span>` : ''}
-                        </div>
-                    `).join('') : '<div class="empty" style="padding:16px">暂无关系记录</div>'}
-                </div>
-            </div>
+            <div class="prof-name">${h(name)}</div>
+            ${[[outRels,'对','to'],[inRels,'来自','from']].filter(([items]) => items.length).map(([items,label,target]) => `
+                <div class="prof-rels"><div class="rels-group">
+                    <div class="rels-group-title">${label === '对' ? h(name) + '对别人的羁绊' : '别人对' + h(name) + '的羁绊'}</div>
+                    ${items.map(r => `<div class="rel-item"><span class="rel-target">${label}${h(r[target])}：</span>
+                        <span class="rel-label">${h(r.label || '—')}</span>
+                        ${r.trend ? `<span class="rel-trend ${TREND_CLASS[r.trend] || ''}">${h(r.trend)}</span>` : ''}
+                    </div>`).join('')}
+                </div></div>`).join('')}
         `);
-        const state = renderPersonState(c, summaryData.storyRecords || [], name, buildAliasResolver(summaryData.characterAliases).resolveName);
-        c.querySelector('.prof-arc > div').after(state);
-    }
-
-    function renderArcs(arcs) {
-        summaryData.arcs = arcs || [];
-        updateCharacterSelector(arcs || []);
-        renderCharacterProfile();
+        const aliases = buildAliasResolver(summaryData.characterAliases);
+        const entities = summaryData.entities || [];
+        const candidates = entities.filter(entity => ['person','subject'].includes(entity.kind)
+            && [entity.name,...(entity.aliases || [])].some(alias => aliases.resolveName(alias) === aliases.resolveName(name)));
+        const person = candidates.length === 1 ? candidates[0] : undefined;
+        const matches = new Set([name,...(person?.aliases || []),person?.name].filter(Boolean).map(aliases.resolveName));
+        const resolve = value => matches.has(aliases.resolveName(value)) ? name : aliases.resolveName(value);
+        const records = summaryData.storyRecords || [];
+        const state = renderPersonState(c, records, name, resolve);
+        renderPersonalAgendas(c, agendas, holder => resolve(holder) === name);
+        renderUnassigned();
+        const attributes = document.createElement('section');
+        renderWorldAttributes(attributes,entities,person);
+        const scene = records.find(record => record.kind === 'scene');
+        if (scene?.location && !person?.fields?.location && characterStoryState(records,name,resolve).presence === 'present') {
+            const location = document.createElement('p');
+            location.textContent = '所在场景：' + scene.location;
+            attributes.append(location);
+        }
+        const title = c.querySelector('.prof-name');
+        if (state) title.after(state);
+        if (attributes.childElementCount) title.after(attributes);
     }
 
     function renderCharacterAliases(aliases) {
@@ -1552,7 +1523,7 @@ const UNANNOTATED_LABEL = '未标注';
     function updateStats(s) {
         if (!s) return;
         $('stat-summarized').textContent = s.summarizedUpTo ?? 0;
-        $('stat-events').textContent = s.eventsCount ?? 0;
+        $('stat-events').textContent = s.roundCount ?? 0;
         const p = s.pendingFloors ?? 0;
         $('stat-pending').textContent = p;
         $('pending-warning').classList.toggle('hidden', p !== -1);
@@ -1693,50 +1664,6 @@ const UNANNOTATED_LABEL = '未标注';
     }
 
 
-    function renderArcsEditor(arcs) {
-        const list = arcs?.length ? arcs : [{ name: '', trajectory: '', progress: 0, moments: [] }];
-        const es = $('editor-struct');
-
-        setHtml(es, `
-            <div id="arc-list">
-                ${list.map((a, i) => `
-                    <div class="struct-item arc-item" data-index="${i}">
-                        <div class="struct-row"><input type="text" class="arc-name" placeholder="角色名" value="${h(a.name || '')}"></div>
-                        <div class="struct-row"><textarea class="arc-trajectory" rows="2" placeholder="当前状态描述">${h(a.trajectory || '')}</textarea></div>
-                        <div class="struct-row">
-                            <label style="font-size:.75rem;color:var(--txt3)">进度：<input type="number" class="arc-progress" min="0" max="100" value="${Math.round((a.progress || 0) * 100)}" style="width:64px;display:inline-block"> %</label>
-                        </div>
-                        <div class="struct-row"><textarea class="arc-moments" rows="3" placeholder="关键时刻，一行一个">${h((a.moments || []).map(m => typeof m === 'string' ? m : m.text).join('\n'))}</textarea></div>
-                        <div class="struct-actions"><span>角色弧光 ${i + 1}</span></div>
-                    </div>
-                `).join('')}
-            </div>
-            <div style="margin-top:8px"><button type="button" class="btn btn-sm" id="arc-add">＋ 新增角色弧光</button></div>
-        `);
-
-        es.querySelectorAll('.arc-item').forEach(addDeleteHandler);
-
-        $('arc-add').onclick = () => {
-            const listEl = $('arc-list');
-            const idx = listEl.querySelectorAll('.arc-item').length;
-            const div = document.createElement('div');
-            div.className = 'struct-item arc-item';
-            div.dataset.index = idx;
-            setHtml(div, `
-                <div class="struct-row"><input type="text" class="arc-name" placeholder="角色名"></div>
-                <div class="struct-row"><textarea class="arc-trajectory" rows="2" placeholder="当前状态描述"></textarea></div>
-                <div class="struct-row">
-                    <label style="font-size:.75rem;color:var(--txt3)">进度：<input type="number" class="arc-progress" min="0" max="100" value="0" style="width:64px;display:inline-block"> %</label>
-                </div>
-                <div class="struct-row"><textarea class="arc-moments" rows="3" placeholder="关键时刻，一行一个"></textarea></div>
-                <div class="struct-actions"><span>角色弧光 ${idx + 1}</span></div>
-            `);
-            addDeleteHandler(div);
-            listEl.appendChild(div);
-        };
-    }
-
-
     function setRecallLog(text) {
         lastRecallLogText = text || '';
         updateRecallLogDisplay();
@@ -1789,69 +1716,9 @@ const UNANNOTATED_LABEL = '未标注';
         del.onclick = () => item.remove();
     }
 
-    function memoryRoleOptions(role = '') {
-        return `<option value=""${role ? '' : ' selected'}>${UNANNOTATED_LABEL}</option>`
-            + EVENT_MEMORY_ROLES.map(value => `<option value="${h(value)}"${role === value ? ' selected' : ''}>${h(value)}</option>`).join('');
-    }
-
     function relationTrendOptions(trend = '') {
         return [{ value: '', label: UNANNOTATED_LABEL }, ...RELATION_TRENDS.map(value => ({ value, label: value }))]
             .map(({ value, label }) => `<option value="${h(value)}"${trend === value ? ' selected' : ''}>${h(label)}</option>`).join('');
-    }
-
-    function renderEventsEditor(events) {
-        const list = events?.length ? events : [{ id: 'evt-1', title: '', timeLabel: '', summary: '', participants: [], memoryRole: '' }];
-        let maxId = 0;
-        list.forEach(e => {
-            const m = e.id?.match(/evt-(\d+)/);
-            if (m) maxId = Math.max(maxId, +m[1]);
-        });
-
-        const es = $('editor-struct');
-        setHtml(es, list.map(ev => {
-            const id = ev.id || `evt-${++maxId}`;
-            return `<div class="struct-item event-item" data-id="${h(id)}">
-                <div class="struct-row">
-                    <input type="text" class="event-title" placeholder="事件标题" value="${h(ev.title || '')}">
-                    <input type="text" class="event-time" placeholder="时间标签" value="${h(ev.timeLabel || '')}">
-                </div>
-                <div class="struct-row">
-                    <textarea class="event-summary" rows="2" placeholder="一句话描述">${h(ev.summary || '')}</textarea>
-                </div>
-                <div class="struct-row">
-                    <input type="text" class="event-participants" placeholder="人物（顿号分隔）" value="${h((ev.participants || []).join('、'))}">
-                </div>
-                <div class="struct-row">
-                    <label class="event-memory-role-field">记忆作用<select class="event-memory-role">${memoryRoleOptions(ev.memoryRole)}</select></label>
-                </div>
-                <div class="struct-actions"><span>ID：${h(id)}</span></div>
-            </div>`;
-        }).join('') + '<div style="margin-top:8px"><button type="button" class="btn btn-sm" id="event-add">＋ 新增事件</button></div>');
-
-        es.querySelectorAll('.event-item').forEach(addDeleteHandler);
-
-        $('event-add').onclick = () => {
-            let nmax = maxId;
-            es.querySelectorAll('.event-item').forEach(it => {
-                const m = it.dataset.id?.match(/evt-(\d+)/);
-                if (m) nmax = Math.max(nmax, +m[1]);
-            });
-            const nid = `evt-${nmax + 1}`;
-            const div = document.createElement('div');
-            div.className = 'struct-item event-item';
-            div.dataset.id = nid;
-            setHtml(div, `
-                <div class="struct-row"><input type="text" class="event-title" placeholder="事件标题"><input type="text" class="event-time" placeholder="时间标签"></div>
-                <div class="struct-row"><textarea class="event-summary" rows="2" placeholder="一句话描述"></textarea></div>
-                <div class="struct-row"><input type="text" class="event-participants" placeholder="人物（顿号分隔）"></div>
-                <div class="struct-row">
-                    <label class="event-memory-role-field">记忆作用<select class="event-memory-role">${memoryRoleOptions()}</select></label>
-                </div>
-                <div class="struct-actions"><span>ID：${h(nid)}</span></div>
-            `);
-            addDeleteHandler(div);
-            es.insertBefore(div, $('event-add').parentElement);
-        };
     }
 
     function renderCharactersEditor(data) {
@@ -1971,9 +1838,7 @@ const UNANNOTATED_LABEL = '未标注';
         } else {
             ta.classList.add('hidden');
             es.classList.remove('hidden');
-            if (section === 'events') renderEventsEditor(summaryData.events || []);
-            else if (section === 'characters') renderCharactersEditor(summaryData.characters || { main: [], relationships: [] });
-            else if (section === 'arcs') renderArcsEditor(summaryData.arcs || []);
+            if (section === 'characters') renderCharactersEditor(summaryData.characters || { main: [], relationships: [] });
             else if (section === 'aliases') renderCharacterAliasesEditor(summaryData.characterAliases || []);
         }
 
@@ -2003,21 +1868,6 @@ const UNANNOTATED_LABEL = '未标注';
                 const [text, weight] = line.split('|').map(s => s.trim());
                 return preserveAddedAt({ text: text || '', weight: weight || '一般' }, oldMap.get(text));
             });
-        } else if (section === 'events') {
-            const oldMap = new Map(currentEditBaseline.map(e => [e.id, e]));
-            parsed = Array.from(es.querySelectorAll('.event-item')).map(it => {
-                const id = it.dataset.id;
-                return preserveAddedAt({
-                    id,
-                    title: it.querySelector('.event-title').value.trim(),
-                    timeLabel: it.querySelector('.event-time').value.trim(),
-                    summary: it.querySelector('.event-summary').value.trim(),
-                    participants: it.querySelector('.event-participants').value.trim().split(/[,、，]/).map(s => s.trim()).filter(Boolean),
-                    memoryRole: it.querySelector('.event-memory-role').value,
-                    causedBy: [...(oldMap.get(id)?.causedBy || [])],
-                }, oldMap.get(id));
-            }).filter(e => e.title || e.summary);
-            parsed = projectEditedSummaryEvents(parsed);
         } else if (section === 'characters') {
             const oldMainMap = new Map(currentEditBaseline.main.map(m => [getCharName(m), m]));
             const mainNames = Array.from(es.querySelectorAll('.char-main-name')).map(i => i.value.trim()).filter(Boolean);
@@ -2035,21 +1885,6 @@ const UNANNOTATED_LABEL = '未标注';
             }).filter(r => r.from && r.to);
 
             parsed = { main, relationships: rels };
-        } else if (section === 'arcs') {
-            const oldArcMap = new Map(currentEditBaseline.map(a => [a.name, a]));
-            parsed = Array.from(es.querySelectorAll('.arc-item')).map(it => {
-                const name = it.querySelector('.arc-name').value.trim();
-                const oldArc = oldArcMap.get(name);
-                const oldMomentMap = new Map((oldArc?.moments || []).map(m => [typeof m === 'string' ? m : m.text, m]));
-                const momentsRaw = it.querySelector('.arc-moments').value.trim();
-                const moments = momentsRaw ? momentsRaw.split('\n').map(s => s.trim()).filter(Boolean).map(t => preserveAddedAt({ text: t }, oldMomentMap.get(t))) : [];
-                return preserveAddedAt({
-                    name,
-                    trajectory: it.querySelector('.arc-trajectory').value.trim(),
-                    progress: Math.max(0, Math.min(1, (parseFloat(it.querySelector('.arc-progress').value) || 0) / 100)),
-                    moments
-                }, oldArc);
-            }).filter(a => a.name || a.trajectory || a.moments?.length);
         } else if (section === 'facts') {
             const oldMap = new Map(currentEditBaseline.map(f => [`${f.s}::${f.p}`, f]));
             parsed = ta.value
@@ -2105,9 +1940,7 @@ const UNANNOTATED_LABEL = '未标注';
         else postMsg('UPDATE_SECTION', { section, previous: currentEditBaseline, data: parsed });
 
         if (section === 'keywords') renderKeywords(parsed);
-        else if (section === 'events') { renderTimeline(parsed, { scrollMode: 'preserve' }); $('stat-events').textContent = parsed.length; }
         else if (section === 'characters') renderRelations(parsed);
-        else if (section === 'arcs') renderArcs(parsed);
         else if (section === 'facts') renderFacts(parsed);
 
         closeEditor();
@@ -2126,9 +1959,15 @@ const UNANNOTATED_LABEL = '未标注';
         switch (d.type) {
             case 'KITCHEN_MEMORY_VIEW': {
                 document.documentElement.dataset.kitchenView = d.view === 'relations' ? 'people' : d.view;
-                document.querySelector('.archive').inert = d.view === 'settings';
-                if (d.view === 'settings' && !$('settings-modal').classList.contains('active')) openSettings();
-                if (d.view !== 'settings') {
+                const settingsView = ['settings', 'proofreading'].includes(d.view);
+                document.querySelector('.archive').inert = settingsView;
+                if (settingsView) {
+                    document.documentElement.dataset.kitchenView = 'settings';
+                    const proof = d.view === 'proofreading';
+                    const tab = proof ? 'tab-agent' : 'tab-summary';
+                    if (!$('settings-modal').classList.contains('active')) openSettings({ tab, fromWorkspace: true });
+                    else if (proof !== (settingsPage === 'tab-agent' || settingsPage === 'tab-agent-api')) selectSettingsTab(tab);
+                } else {
                     const view = { memory: 'story', world: 'world', lore: 'world', people: 'people', relations: 'people' }[d.view];
                     if (view) archiveView.switchView(view, { notify: false });
                 }
@@ -2161,8 +2000,8 @@ const UNANNOTATED_LABEL = '未标注';
                     config.ui.keepVisibleCount = d.keepVisibleCount;
                     if (!settingsDirty) $('keep-visible-count').value = d.keepVisibleCount;
                 }
-                if (d.useVectorBoundary !== undefined) config.ui.useVectorBoundary = d.useVectorBoundary !== false;
-                if (d.vectorEnabled !== undefined) config.vector.enabled = d.vectorEnabled;
+                if (d.useVectorBoundary !== undefined) config.ui.useVectorBoundary = d.useVectorBoundary === true;
+                config.vector.enabled = true;
                 cleanActionState.canRollback = !!d.canRollback;
                 cleanActionState.rollbackTargetSummarizedUpTo = Number(d.rollbackTargetSummarizedUpTo || 0);
                 cleanActionState.rollbackWillResetBoundary = !!d.rollbackWillResetBoundary;
@@ -2172,6 +2011,7 @@ const UNANNOTATED_LABEL = '未标注';
             case 'SUMMARY_FULL_DATA':
                 if (d.payload) {
                     const p = d.payload;
+                    summaryData.narrativeUnits = p.narrativeUnits || [];
                     const nextChatId = typeof p.chatId === 'string' ? p.chatId : '';
                     memoryMaintenancePage.setChat(nextChatId);
                     if (nextChatId !== currentTimelineChatId) {
@@ -2183,13 +2023,15 @@ const UNANNOTATED_LABEL = '未标注';
                     }
                     if (p.keywords) renderKeywords(p.keywords);
                     summaryData.storyRecords = p.storyRecords || [];
-                    if (p.events) renderTimeline(p.events);
+                    if (p.rounds) renderTimeline(p.rounds);
                     if (p.characters) summaryData.characters = p.characters;
-                    if (p.arcs) renderArcs(p.arcs);
+                    summaryData.entities = p.entities || [];
+                    summaryData.playerName = p.playerName || '';
+                    summaryData.legacyCharacterNames = p.legacyCharacterNames || [];
                     if (p.facts) renderFacts(p.facts);
                     if (p.characterAliases) renderCharacterAliases(p.characterAliases);
                     renderRelations(summaryData.characters);
-                    $('stat-events').textContent = p.events?.length || 0;
+                    $('stat-events').textContent = p.rounds?.length || 0;
                     if (p.lastSummarizedMesId != null) $('stat-summarized').textContent = p.lastSummarizedMesId + 1;
                     if (p.stats) updateStats(p.stats);
                     updateCharacterSelector();
@@ -2218,7 +2060,7 @@ const UNANNOTATED_LABEL = '未标注';
                 $('stat-summarized').textContent = 0;
                 $('stat-pending').textContent = t;
                 $('summarized-count').textContent = 0;
-                summaryData = { keywords: [], events: [], characters: { main: [], relationships: [] }, arcs: [], facts: [], characterAliases: [] };
+                summaryData = { keywords: [], rounds: [], characters: { main: [], relationships: [] }, arcs: [], facts: [], characterAliases: [] };
                 currentTimelineChatId = '';
                 tlUnfilteredPage = null;
                 currentCharacterId = null;
@@ -2226,7 +2068,7 @@ const UNANNOTATED_LABEL = '未标注';
                 renderKeywords([]);
                 renderTimeline([]);
                 renderRelations(null);
-                renderArcs([]);
+                updateCharacterSelector();
                 renderFacts([]);
                 renderCharacterAliases([]);
                 archiveView.refresh();
@@ -2308,7 +2150,7 @@ const UNANNOTATED_LABEL = '未标注';
             case 'SUMMARY_COPY_RESULT':
                 $('btn-copy-summary').disabled = false;
                 if (d.success) {
-                    $('summary-io-status').textContent = `复制成功: ${d.events || 0} 条事件, ${d.facts || 0} 条世界状态`;
+                    $('summary-io-status').textContent = `复制成功: ${d.rounds || 0} 条本轮总结, ${d.facts || 0} 条世界状态`;
                 } else {
                     $('summary-io-status').textContent = '复制失败: ' + (d.error || '未知错误');
                 }
@@ -2318,7 +2160,7 @@ const UNANNOTATED_LABEL = '未标注';
                 $('btn-import-summary').disabled = false;
                 if (d.success) {
                     const c = d.counts || {};
-                    $('summary-io-status').textContent = `导入成功: ${c.events || 0} 条事件, ${c.facts || 0} 条世界状态。向量与锚点已清空，请先生成锚点，再补齐向量。`;
+                    $('summary-io-status').textContent = `导入成功: ${c.rounds || 0} 条本轮总结, ${c.facts || 0} 条世界状态。向量与锚点已清空，请先生成锚点，再补齐向量。`;
                     postMsg('REQUEST_VECTOR_STATS');
                     postMsg('REQUEST_ANCHOR_STATS');
                 } else {
@@ -2385,8 +2227,6 @@ const UNANNOTATED_LABEL = '未标注';
 
         // Settings modal
         $('archive-manage-open').onclick = () => { archiveView.closeDialogs(); openSettings(); };
-        $('archive-assistant').textContent = MEMORY_COPY.tab;
-        $('archive-assistant').onclick = () => { archiveView.closeDialogs(); openSettings({ tab: 'tab-agent' }); };
         $('settings-chat').textContent = MEMORY_CHAT_COPY.entry;
         $('settings-chat').onclick = () => memoryMaintenancePage.openChat();
         $('settings-close').onclick = closeSettings;
@@ -2398,7 +2238,7 @@ const UNANNOTATED_LABEL = '未标注';
         $('settings-save').onclick = saveSettings;
         $$('[data-workspace-page]').forEach(button => { button.onclick = () => selectSettingsTab(button.dataset.workspacePage); });
         $('settings-modal').addEventListener('input', event => {
-            if (event.target.closest('.text-api, #tab-agent-api') || event.target.id === 'current-chat-enabled') return;
+            if (event.target.closest('.text-api, #tab-agent-api')) return;
             markSettingsDirty();
         });
 
@@ -2412,14 +2252,17 @@ const UNANNOTATED_LABEL = '未标注';
             };
         });
 
-        $('btn-reset-memory-prompt-template').onclick = () => {
-            $('memory-prompt-template').value = DEFAULT_MEMORY_PROMPT_TEMPLATE;
-            markSettingsDirty();
-        };
 
         $('summary-style').addEventListener('input', () => {
             $('summary-assistant-doc-prompt').value = buildSummaryAssistantDocPrompt($('summary-style').value);
         });
+        for (const [level, fallback] of Object.entries(LAYER_PROMPTS)) {
+            $('reset-' + level).onclick = async () => {
+                $('prompt-' + level).value = fallback;
+                markSettingsDirty();
+                await saveSettings();
+            };
+        }
         $('btn-reset-summary-style').onclick = () => {
             $('summary-style').value = SUMMARY_EVENT_STYLE_RULES;
             $('summary-assistant-doc-prompt').value = buildSummaryAssistantDocPrompt();
@@ -2436,19 +2279,6 @@ const UNANNOTATED_LABEL = '未标注';
             let val = parseInt(e.target.value) || 1;
             val = Math.max(1, Math.min(30, val));
             e.target.value = val;
-        };
-
-        // 延迟总结楼层范围校验
-        $('trigger-delay-floors').onchange = e => {
-            e.target.value = normalizeSummaryDelayFloors(e.target.value);
-        };
-
-        // Current chat switch (saved immediately in chat metadata)
-        $('current-chat-enabled').onchange = e => {
-            const enabled = e.target.checked;
-            currentChatSummaryState = { ...currentChatSummaryState, chatEnabled: enabled, changing: true };
-            syncCurrentChatSummaryControls();
-            postMsg('SET_CURRENT_CHAT_ENABLED', { enabled });
         };
 
         // Main actions
@@ -2474,11 +2304,11 @@ const UNANNOTATED_LABEL = '未标注';
 
         // Hide summarized
         $('hide-summarized').onchange = e => {
-            syncVectorBoundaryControl($('vector-enabled').checked, e.target.checked);
+            syncVectorBoundaryControl(true, e.target.checked);
         };
         $('keep-visible-count').onchange = e => {
             const parsedCount = Number.parseInt(e.target.value, 10);
-            const c = Number.isFinite(parsedCount) ? Math.max(0, Math.min(50, parsedCount)) : 6;
+            const c = Number.isFinite(parsedCount) ? Math.max(0, Math.min(50, parsedCount)) : 5;
             e.target.value = c;
         };
 
@@ -2511,16 +2341,6 @@ const UNANNOTATED_LABEL = '未标注';
             };
         }
 
-        // Force insert sub-options toggle
-        const triggerInsertAtEnd = $('trigger-insert-at-end');
-        const insertWrapperOptions = $('insert-wrapper-options');
-        if (triggerInsertAtEnd && insertWrapperOptions) {
-            triggerInsertAtEnd.onchange = () => {
-                insertWrapperOptions.classList.toggle('hidden', !triggerInsertAtEnd.checked);
-            };
-        }
-
-
         // Timeline pager
         const tlPagingToggle = $('tl-paging-toggle');
         tlPagingToggle.setAttribute('aria-pressed', String(tlPagingEnabled));
@@ -2528,17 +2348,17 @@ const UNANNOTATED_LABEL = '未标注';
             localStorage.setItem(TL_PAGING_KEY, tlPagingEnabled ? '0' : '1');
             tlPagingEnabled = !tlPagingEnabled;
             tlPagingToggle.setAttribute('aria-pressed', String(tlPagingEnabled));
-            renderTimeline(summaryData.events);
+            renderTimeline(summaryData.rounds);
         };
-        $('tl-pg-first').onclick = () => renderTimeline(summaryData.events, { page: 0 });
-        $('tl-pg-prev').onclick = () => renderTimeline(summaryData.events, { page: tlCurrentPage - 1 });
-        $('tl-pg-next').onclick = () => renderTimeline(summaryData.events, { page: tlCurrentPage + 1 });
-        $('tl-pg-last').onclick = () => renderTimeline(summaryData.events, { page: tlTotalPages() - 1 });
+        $('tl-pg-first').onclick = () => renderTimeline(summaryData.rounds, { page: 0 });
+        $('tl-pg-prev').onclick = () => renderTimeline(summaryData.rounds, { page: tlCurrentPage - 1 });
+        $('tl-pg-next').onclick = () => renderTimeline(summaryData.rounds, { page: tlCurrentPage + 1 });
+        $('tl-pg-last').onclick = () => renderTimeline(summaryData.rounds, { page: tlTotalPages() - 1 });
         const tlPgStrip = $('tl-pg-strip');
         new ResizeObserver(revealTlCurrentPage).observe(tlPgStrip);
         tlPgStrip.addEventListener('click', (e) => {
             const btn = e.target.closest('.tl-pg-btn');
-            if (btn) renderTimeline(summaryData.events, { page: parseInt(btn.dataset.page, 10) });
+            if (btn) renderTimeline(summaryData.rounds, { page: parseInt(btn.dataset.page, 10) });
         });
         tlPgStrip.addEventListener('wheel', (e) => {
             if (tlPgStrip.scrollWidth <= tlPgStrip.clientWidth) return;
@@ -2553,7 +2373,7 @@ const UNANNOTATED_LABEL = '未标注';
                 tlPgNum.value = tlCurrentPage + 1;
                 return;
             }
-            renderTimeline(summaryData.events, { page: v - 1 });
+            renderTimeline(summaryData.rounds, { page: v - 1 });
         };
         tlPgNum.addEventListener('change', tlPgJump);
         tlPgNum.addEventListener('keydown', (e) => {
@@ -2581,7 +2401,7 @@ const UNANNOTATED_LABEL = '未标注';
             getData: () => summaryData,
             getSelectedCharacter: () => currentCharacterId,
             onSelectCharacter: selectCharacter,
-            onTimelineChange: options => renderTimeline(summaryData.events, options),
+            onTimelineChange: options => renderTimeline(summaryData.rounds, options),
             onFactsChange: () => renderFacts(summaryData.facts),
             onPeopleVisible: () => { renderRelations(summaryData.characters); relationChart?.resize(); },
             onEdit: openEditor, postMsg, setHtml, h,
@@ -2591,12 +2411,7 @@ const UNANNOTATED_LABEL = '未标注';
         agentRoot.id = 'tab-agent-api'; agentRoot.className = 'tab-pane xb-agent-settings-surface';
         $('tab-agent').parentElement.append(agentRoot);
         agentSettings = createSummaryAgentSettings(agentRoot, postMsg, setHtml);
-        const openAgentApi = parent => { agentSettingsParent = parent; selectSettingsTab('tab-agent-api'); };
-        memoryMaintenancePage = createMemoryMaintenancePage($('tab-agent'), postMsg, { openApi: () => openAgentApi('tab-agent') });
-        const agentLink = document.createElement('button');
-        agentLink.type = 'button'; agentLink.className = 'workspace-model-link'; agentLink.textContent = WORKSPACE_COPY.agentApi;
-        agentLink.onclick = () => openAgentApi('tab-models');
-        $('tab-models').append(agentLink);
+        memoryMaintenancePage = createMemoryMaintenancePage($('tab-agent'), postMsg, { openApi: () => selectSettingsTab('tab-agent-api') });
         loadConfig();
         tlPagingEnabled = localStorage.getItem(TL_PAGING_KEY) === '1';
 
@@ -2608,7 +2423,7 @@ const UNANNOTATED_LABEL = '未标注';
 
         renderKeywords([]);
         renderTimeline([]);
-        renderArcs([]);
+        updateCharacterSelector();
         renderFacts([]);
         renderCharacterAliases([]);
 
@@ -2644,9 +2459,22 @@ const UNANNOTATED_LABEL = '未标注';
         const container = $('facts-list');
         if (!container) return;
         container.parentElement.querySelector('.tk-story-situations')?.remove();
-        if (document.documentElement.dataset.kitchenView !== 'lore' && summaryData.storyRecords?.some(record => record.kind === 'situation')) {
+        const situationPage = document.documentElement.dataset.kitchenView === 'world';
+        container.hidden = situationPage && situationFilter === '风物';
+        if (situationPage || (document.documentElement.dataset.kitchenView !== 'lore' && summaryData.storyRecords?.some(record => record.kind === 'situation'))) {
             const situations = document.createElement('div'); situations.className = 'tk-story-situations';
-            renderThreads(situations, summaryData.storyRecords, ['situation']); container.before(situations);
+            const records = summaryData.storyRecords || [];
+            for (const filter of ['全部', '事态', '风物']) {
+                const button = document.createElement('button');
+                button.type = 'button'; button.textContent = filter;
+                button.setAttribute('aria-pressed', String(filter === situationFilter));
+                button.className = filter === situationFilter ? 'btn btn-sm btn-p' : 'btn btn-sm';
+                button.onclick = () => { situationFilter = filter; renderFacts(summaryData.facts); };
+                situations.append(button);
+            }
+            const filtered = records.filter(record => record.kind !== 'situation' || situationFilter === '全部'
+                || (situationFilter === '风物') === Boolean(record.flavor));
+            renderThreads(situations, filtered, ['situation']); container.before(situations);
         }
 
         archiveView.refreshIndexes();

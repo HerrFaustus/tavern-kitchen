@@ -14,14 +14,14 @@ export const SUMMARY_FEEDBACK_COPY = Object.freeze({
     }),
     summaryResultInvalid: '模型返回的总结格式不正确',
     summaryFollowupFailed: detail => `总结已保存，但后续处理失败：\n${detail}`,
-    summaryCompleted: (floor, count) => `剧情总结完成：更新至 #${floor} 楼（新增 ${count} 个事件）`,
+    summaryCompleted: floor => `本轮总结已保存至 #${floor} 楼`,
     summaryControls: Object.freeze({
         generate: '总结',
         stop: '停止',
         dismiss: '关闭提示',
         noChat: '请先打开一个聊天',
         changing: '正在同步当前聊天状态',
-        disabled: '请先启用当前聊天的剧情总结',
+        disabled: '请先打开后厨并选择一段对话',
     }),
     summaryAttempt: (attempt, total, text) => `自动总结 ${attempt}/${total}：${text}`,
     summaryRunEnded: ({ automatic, attempts, uncertain, stale, reason }) => {

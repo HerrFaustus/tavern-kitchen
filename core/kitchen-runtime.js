@@ -7,7 +7,7 @@ import { getCurrentUserHandle } from '../../../../user.js';
 import { EXT_ID } from './constants.js';
 import { buildEntryUrl } from './build-assets.js';
 import { createExtensionDrawer } from './extension-drawer.js';
-import { createDefaultXiaobaiOsSettings, prepareXiaobaiOsSettings, initXiaobaiOs, openXiaobaiOs, isDiceContinuationPending } from '../modules/xiaobai-os/index.js';
+import { createDefaultXiaobaiOsSettings, prepareXiaobaiOsSettings, initXiaobaiOs, mountWorldEvolution, openXiaobaiOs, isDiceContinuationPending } from '../modules/xiaobai-os/index.js';
 import { configureL0ContinuationCheck } from '../modules/story-summary/vector/pipeline/l0-eligibility.js';
 import { observeAsyncCallback } from '../shared/common/async-errors.js';
 import { requireTurnRuntime } from '../modules/world-records/turn-runtime.js';
@@ -19,6 +19,7 @@ const settings = extension_settings[EXT_ID] ??= {
     enaPlanner: { enabled: false },
     xiaobaiOs: createDefaultXiaobaiOsSettings(),
 };
+(settings.storySummary ??= {}).enabled = true;
 window.isTavernKitchenEnabled = settings.enabled;
 const cleanups = new Map();
 window.registerKitchenModuleCleanup = (id, cleanup) => cleanups.set(id, cleanup);
@@ -73,13 +74,11 @@ function featureSwitch(key, label) {
     return { key, label, checked: !!settings[key]?.enabled };
 }
 function buildFeatureSwitches() {
-    const story = featureSwitch('storySummary', '启用剧情模块');
     const planner = featureSwitch('enaPlanner', '启用剧情规划');
     const os = featureSwitch('xiaobaiOs', '启用地图、世界与 API');
     return {
-        memory: [story], 'memory-settings': [story],
         planner: [planner],
-        map: [os], 'world-engine': [os], dice: [os], settings: [os],
+        map: [os], dice: [os], settings: [os],
     };
 }
 async function toggleFeature(key, enabled) {
@@ -100,44 +99,47 @@ function configureWorkspace() {
             await requireFeatures();
             if (kitchen.isActive('overview')) await worldArchive.open('overview');
         },
-        world: async () => {
+        suspense: async () => {
             await requireFeatures();
-            if (kitchen.isActive('world')) await worldArchive.open('world');
-        },
-        'world-management': async () => {
-            await requireFeatures();
-            if (kitchen.isActive('world-management')) await worldArchive.open('world-management');
+            if (kitchen.isActive('suspense')) await worldArchive.open('suspense');
         },
         memory: async () => {
             await requireFeatures();
             if (!kitchen.isActive('memory')) return;
-            if (!memory) throw new Error('剧情模块尚未启用，请在剧情板块中开启并刷新。');
+            if (!memory) throw new Error('剧情记忆尚未准备好，请刷新后重试。');
             memory.openStoryMemory();
+        },
+        proofreading: async () => {
+            await requireFeatures();
+            if (!kitchen.isActive('proofreading')) return;
+            if (!memory) throw new Error('剧情记忆尚未准备好，请刷新后重试。');
+            memory.openStoryMemorySettings('proofreading');
         },
         'memory-settings': async () => {
             await requireFeatures();
             if (!kitchen.isActive('memory-settings')) return;
-            if (!memory) throw new Error('请先启用剧情模块并刷新，再配置剧情设置。');
+            if (!memory) throw new Error('剧情记忆尚未准备好，请刷新后重试。');
             memory.openStoryMemorySettings();
         },
         planner: async () => {
             await requireFeatures();
             if (!kitchen.isActive('planner')) return;
             if (!planner) throw new Error('剧情规划尚未启用，请在规划板块中开启并刷新。');
-            window.tavernKitchenEnaPlanner?.openSettings();
+            await planner.open(kitchen.getMount('planner'));
         },
     };
     for (const id of ['situation', 'lore', 'people', 'relations']) actions[id] = async () => {
         await requireFeatures();
         if (!kitchen.isActive(id)) return;
-        if (!memory) throw new Error('请先启用剧情模块并刷新，再查看已记录的世界状态。');
+        if (!memory) throw new Error('剧情记忆尚未准备好，请刷新后重试。');
         memory.openStoryWorld(id === 'situation' ? 'world' : id);
+        if (id === 'people' || id === 'situation') kitchen.showEvolution(parent => mountWorldEvolution(parent, id));
     };
-    for (const id of ['map', 'world-engine', 'dice', 'settings', 'agent-api']) actions[id] = async () => {
+    for (const id of ['map', 'dice', 'settings', 'agent-api']) actions[id] = async () => {
         await requireFeatures();
         if (!kitchen.isActive(id)) return;
         if (!settings.xiaobaiOs?.enabled) throw new Error('地图、世界与 API 尚未启用，请在对应板块中开启并刷新。');
-        const appId = id === 'world-engine' ? 'world' : id === 'settings' || id === 'agent-api' ? 'agent-api' : id;
+        const appId = id === 'settings' || id === 'agent-api' ? 'agent-api' : id;
         if (!await openXiaobaiOs(appId)) throw new Error('此板块尚未准备好，请重试。');
     };
     kitchen.configure({
@@ -163,30 +165,29 @@ export async function startKitchen(workspace) {
     ]) await loadBridge(entry, id);
     const { createWorldArchive } = await import('../modules/world-records/host.js');
     let removeWorldGeneration;
-    worldArchive = createWorldArchive({ getContext, getAccountId: getCurrentUserHandle, getMemorySnapshot: () => memory?.getFloorSummarySnapshot(),
-        getMount: id => kitchen.getMount(id), isVisible: id => kitchen.isActive(id), navigate: id => { kitchen.open(id).catch(showError); }, onError: showError,
+    worldArchive = createWorldArchive({ getContext, getAmbientPreferences: () => settings.xiaobaiOs?.enabled ? settings.xiaobaiOs.apps?.world || {} : { encounterFrequency: 'off' }, getAccountId: getCurrentUserHandle, getMemorySnapshot: () => memory?.getFloorSummarySnapshot(),
+        getMount: id => kitchen.getMount(id), isVisible: id => kitchen.isActive(id), onError: showError,
         onAuthorityChange: () => { removeWorldGeneration?.clear(); memory?.invalidateWorldContext(); } });
     const { installWorldAuthorityGeneration } = await import('../modules/world-records/generation-host.js');
     removeWorldGeneration = installWorldAuthorityGeneration({ getContext, prepare: worldArchive.prepare, onError: showError });
     window.registerKitchenModuleCleanup('world-records', () => { removeWorldGeneration(); worldArchive.dispose(); });
     
-    if (settings.storySummary?.enabled) {
-        memory = await import('../modules/story-summary/story-summary.js');
-        const panels = installFloorSummaries({ getSnapshot: memory.getFloorSummarySnapshot,
-            updateFloor: memory.updateFloorSummary, extractFloor: memory.extractMainReplySummary,
-            summarizeFloor: memory.summarizeFloorOnDemand,
-            openMemory: floor => memory.openStoryMemory(floor) });
-        const floorEvents = createModuleEvents('kitchen-floor-summaries');
-        floorEvents.on(event_types.CHAT_CHANGED, panels.reset);
-        for (const key of ['CHARACTER_MESSAGE_RENDERED', 'USER_MESSAGE_RENDERED', 'MESSAGE_SWIPED', 'MESSAGE_EDITED', 'MESSAGE_DELETED', 'MESSAGE_UPDATED', 'MORE_MESSAGES_LOADED']) {
-            if (event_types[key]) floorEvents.on(event_types[key], panels.schedule);
-        }
-        window.registerKitchenModuleCleanup('kitchen-floor-summaries', () => { panels.dispose(); floorEvents.cleanup(); });
+    memory = await import('../modules/story-summary/story-summary.js');
+    const panels = installFloorSummaries({ getSnapshot: memory.getFloorSummarySnapshot,
+        updateFloor: memory.updateFloorSummary, extractFloor: memory.extractMainReplySummary,
+        summarizeFloor: memory.summarizeFloorOnDemand,
+        openMemory: floor => memory.openStoryMemory(floor) });
+    const floorEvents = createModuleEvents('kitchen-floor-summaries');
+    floorEvents.on(event_types.CHAT_CHANGED, panels.reset);
+    for (const key of ['CHARACTER_MESSAGE_RENDERED', 'USER_MESSAGE_RENDERED', 'MESSAGE_SWIPED', 'MESSAGE_EDITED', 'MESSAGE_DELETED', 'MESSAGE_UPDATED', 'MORE_MESSAGES_LOADED']) {
+        if (event_types[key]) floorEvents.on(event_types[key], panels.schedule);
     }
+    window.registerKitchenModuleCleanup('kitchen-floor-summaries', () => { panels.dispose(); floorEvents.cleanup(); });
     
     if (settings.enaPlanner?.enabled) {
-        planner = await import('../modules/ena-planner/ena-planner.js');
-        await planner.initEnaPlanner();
+        const { installPlanner } = await import('../modules/story-planner/host.js');
+        planner = installPlanner({snapshot:worldArchive.plannerSnapshot, getContext, settings:settings.enaPlanner, saveSettings});
+        window.registerKitchenModuleCleanup('story-planner',planner.dispose);
     }
     if (settings.xiaobaiOs?.enabled) await initXiaobaiOs();
     } catch (error) { startupError = error; throw error; } finally { readyResolve(); }

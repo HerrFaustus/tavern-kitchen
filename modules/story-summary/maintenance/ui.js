@@ -21,10 +21,19 @@ export function createMemoryMaintenancePage(root, send, { openApi } = {}) {
     toggle.id = 'memory-maintenance-enabled';
     toggle.setAttribute('role', 'switch');
     label.append(element('span', 'memory-authorization-title', copy.toggle), element('small', '', copy.scope), toggle);
+    const frequency = element('label', 'memory-proof-field', '自动校对频率（每几轮正文校对一次）');
+    const interval = element('input');
+    interval.type = 'number'; interval.min = '1'; interval.max = '100'; interval.value = '5';
+    frequency.append(interval);
+    const instructions = element('label', 'memory-proof-field', '校对提示词');
+    const prompt = element('textarea');
+    prompt.rows = 3; prompt.maxLength = 4000;
+    prompt.placeholder = '例如：核对人物身份；任务有明确结果才收束阶段，保留跨阶段悬念。';
+    instructions.append(prompt);
     const api = button(copy.apiHeading, () => openApi(), 'memory-button memory-api');
     const settingsState = element('p', 'memory-settings-state');
     settingsState.setAttribute('role', 'status');
-    authorization.append(label, element('p', 'memory-hint', copy.behavior), api, settingsState);
+    authorization.append(label, element('p', 'memory-hint', copy.behavior), frequency, instructions, api, settingsState);
     const cancel = button(copy.cancel, () => send('MEMORY_MAINTENANCE_CANCEL'));
     const recordsHeading = element('div', 'memory-records-heading');
     recordsHeading.append(element('h3', '', copy.heading), cancel);
@@ -206,7 +215,7 @@ export function createMemoryMaintenancePage(root, send, { openApi } = {}) {
             meta.append(element('span', '', copy.boundary(receipt.cutoff)), time);
             const titles = element('span', 'memory-receipt-titles');
             for (const operation of receipt.operations.slice(-2)) titles.append(element('strong', '', operationTitle(operation)));
-            if (!receipt.operations.length) titles.append(element('strong', '', copy.noChanges));
+            if (!receipt.operations.length && !receipt.counts.revisedRounds) titles.append(element('strong', '', copy.noChanges));
             if (receipt.operations.length > 2) titles.append(element('span', 'memory-hint', copy.moreChanges(receipt.operations.length - 2)));
             const counts = Object.entries(receipt.counts).filter(([, count]) => count > 0).map(([key, count]) => copy.count(copy[key], count));
             summary.append(meta, titles);
@@ -261,7 +270,11 @@ export function createMemoryMaintenancePage(root, send, { openApi } = {}) {
 
     return {
         setChat,
-        setEnabled(enabled) { toggle.checked = enabled === true; updateEmpty(); },
+        setEnabled(enabled, config = {}) {
+            toggle.checked = enabled === true; interval.value = String(config.proofreadingInterval || 5);
+            prompt.value = config.proofreadingPrompt || ''; updateEmpty();
+        },
+        getPreferences: () => ({ proofreadingInterval: Math.min(100, Math.max(1, Math.trunc(Number(interval.value)) || 5)), proofreadingPrompt: prompt.value.trim() }),
         getEnabled: () => toggle.checked,
         settingsSaved(success) { settingsState.textContent = success ? copy.settingsSaved : copy.settingsFailed; },
         open() { state.textContent = copy.loading; send('MEMORY_MAINTENANCE_QUERY'); },

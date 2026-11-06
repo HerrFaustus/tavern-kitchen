@@ -51,11 +51,11 @@ function directDestination(
 
 function directLine(location: MapLocation, link: MapLink): string {
     const oneWay = link.bidirectional ? '' : '，仅可前往';
-    return `- ${escapeMapPromptText(location.name, 80)}（经由${routeLabel(link)}${oneWay}）`;
+    return `- ${escapeMapPromptText(location.name, 80)}（经由${routeLabel(link)}${oneWay}；${location.status === 'visited' ? '已到访' : '仅提及'}）`;
 }
 
 function locationOverview(location: MapLocation, locationByKey: ReadonlyMap<string, MapLocation>): string {
-    const name = escapeMapPromptText(location.name, 80);
+    const name = escapeMapPromptText(location.name, 80) + (location.status === 'visited' ? '〔已到访〕' : '〔仅提及〕');
     const parent = location.parent ? locationByKey.get(location.parent) : undefined;
     return parent ? `${name}（属于${escapeMapPromptText(parent.name, 80)}）` : name;
 }
@@ -87,7 +87,6 @@ export function buildMapPromptBlock(value: unknown): string {
     const closing = '</current_map>';
     const lines = [
         '<current_map>',
-        '以下是当前世界地图，包含尚未到访的地点；地点存在不代表人物已到访。后续剧情沿用这些地点与连接。',
         `当前位置：${current ? escapeMapPromptText(current.name, 80) : '尚未确定'}`,
     ];
     const fits = (candidateLines: readonly string[]): boolean => (

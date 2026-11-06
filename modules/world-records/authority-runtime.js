@@ -13,13 +13,13 @@ export function createAuthorityRuntime({ getIdentity, getStoryIdentity, sync, on
             snapshot = { owner, identity: getStoryIdentity(), state };
             if (next !== fingerprint) { fingerprint = next; onChange(); }
         },
-        async prepare(query = '') {
+        async prepare(query = '', playerName = '') {
             const owner = getIdentity(), token = epoch;
             if (!owner) return '';
             try { await sync(); }
             catch (error) { snapshot = null; fingerprint = ''; onChange(); throw error; }
             if (token !== epoch || owner !== getIdentity()) throw new Error('世界状态读取期间对话已切换');
-            return buildAuthorityContext(current()?.state, query);
+            return buildAuthorityContext(current()?.state, query, undefined, playerName);
         },
         reset() { epoch++; snapshot = null; fingerprint = ''; onChange(); },
     };

@@ -1,3 +1,4 @@
+import { prepareMemoryTags } from '../data/memory-tags.js';
 import { memoryDigest } from '../data/memory-policy.js';
 import { prepareSummaryResult } from '../generate/summary-result.js';
 import { STORY_UPDATE_PROTOCOL } from '../../story-state/records.js';
@@ -38,9 +39,9 @@ export function validateFloorPayload(value) {
         if (items.some(item => key === 'newCharacters' ? typeof item !== 'string' || !item.trim()
             : !item || typeof item !== 'object' || Array.isArray(item))) fail(`变化字段 ${key} 中存在无效条目`);
     }
-    return { summary: text(value.summary, '摘要', true), timeStart: text(value.timeStart, '起始时间'),
+    return { ...(value.memoryTags && { memoryTags: prepareMemoryTags(value) }), summary: text(value.summary, '本轮总结', true), timeStart: text(value.timeStart, '起始时间'),
         timeEnd: text(value.timeEnd, '结束时间'), date: text(value.date, '公历日期'),
-        location: text(value.location, '地点'), updates: clone(updates),
+        location: text(value.location, '地点'), updates: Object.fromEntries(Object.entries(clone(updates)).filter(([field]) => field !== 'events' && field !== 'arcUpdates')),
         ...(value.anchors === undefined ? {} : { anchors: validateInlineAnchors(value.anchors) }) };
 }
 
@@ -59,16 +60,9 @@ export function extractFloorPayload(raw) {
 }
 
 /** Stable event IDs survive editing an earlier floor; model-provided source markers never set provenance. */
-export function prepareFloorPayload(payload, json, source, eventIds = [], reservedIds = [], suppressDefaultEvent = false) {
-    if (!Array.isArray(eventIds) || eventIds.some(id => id != null && !/^evt-\d+$/.test(id))) fail('事件编号无效');
+export function prepareFloorPayload(payload, json) {
     const value = validateFloorPayload(payload);
-    const updates = clone(value.updates);
-    const existing = json.events || [];
-    const rawEvents = updates.events?.length ? updates.events : suppressDefaultEvent ? [] : [{ title: '本楼进展', summary: value.summary, participants: [] }];
-    const raw = { ...updates, events: rawEvents.map(event => ({ ...event,
-        memoryRole: event.memoryRole || '具体经历',
-        summary: `${text(event.summary, '事件摘要', true).replace(/[（(]\s*[#＃][^（）()]*[）)]/g, '').trim()} (#${source.start + 1}${source.start === source.floor ? '' : `-${source.floor + 1}`})`,
-    })) };
+    const raw = clone(value.updates);
     const records = clone(raw.storyUpdates || []);
     if (value.timeStart || value.timeEnd || value.date) {
         const at = records.findIndex(record => record.id === 'clock');
@@ -83,35 +77,18 @@ export function prepareFloorPayload(payload, json, source, eventIds = [], reserv
         if (at >= 0) records[at] = scene; else records.push(scene);
     }
     raw.storyUpdates = records;
-    // Reserve all previously allocated IDs even when an earlier event was removed.
-    const reserved = [...new Set([...eventIds, ...reservedIds].filter(Boolean))].map(id => ({ id }));
-    const result = prepareSummaryResult(raw, { existingEvents: [...existing, ...reserved],
-        startFloor: source.start + 1, endFloor: source.floor + 1 });
-    const mapping = new Map(result.events.map((event, i) => [event.id, eventIds[i] || event.id]));
-    result.events = result.events.map(event => ({ ...event, id: mapping.get(event.id),
-        causedBy: event.causedBy.map(id => mapping.get(id) || id) }));
-    const ids = new Set(existing.map(event => event.id));
-    for (const event of result.events) {
-        if (ids.has(event.id)) fail(`事件编号 ${event.id} 与前文冲突`);
-        ids.add(event.id);
-    }
-    for (const event of result.events) for (const id of event.causedBy) {
-        if (!ids.has(id) || id === event.id) fail(`事件前因 ${id} 不存在`);
-    }
-    return result;
+    return prepareSummaryResult(raw);
 }
 
-const FLOOR_PROTOCOL_BODY = `JSON 结构：{"summary":"本轮已经发生的简明摘要","timeStart":"剧情起始时间，可空","timeEnd":"剧情结束时间，可空","date":"明确公历 YYYY-MM-DD，可空","location":"当前地点，可空","updates":{"events":[],"factUpdates":[],"arcUpdates":[],"newCharacters":[],"keywords":[],"characterAliasUpdates":[],"storyUpdates":[]}}
-summary 必填。只记录本轮正文与紧邻玩家发言已证实的变化，不能记录尚未发生的规划。无变化的数组留空。events 可空；非空事件形如 {"title":"标题","summary":"内容","participants":["人物"],"causedBy":[]}，不用写楼号或事件 id。factUpdates 为 {"s":"对象","p":"属性","o":"值","isState":true}；撤回为 {"s":"对象","p":"属性","retracted":true}。arcUpdates 为 {"name":"人物","trajectory":"当前轨迹","progress":30,"newMoment":"本轮节点"}。keywords 为 {"text":"词","weight":"重要"}。人物别名更新为 {"to":"规范名","from":["旧称"],"evidence":"依据"}。
+const FLOOR_PROTOCOL_BODY = `JSON 结构：{"summary":"本轮已经发生的简明摘要","timeStart":"剧情起始时间，可空","timeEnd":"剧情结束时间，可空","date":"明确公历 YYYY-MM-DD，可空","location":"当前地点，可空","updates":{"factUpdates":[],"newCharacters":[],"keywords":[],"characterAliasUpdates":[],"storyUpdates":[]}}
+summary 必填。memoryTags 包含 characters、locations、times、keywords 四个短文本数组，以本轮原文为依据，空项用 []。只记录本轮正文与紧邻玩家发言已证实的变化，不能记录尚未发生的规划。无变化的数组留空。factUpdates 为 {"s":"对象","p":"属性","o":"值","isState":true}；撤回为 {"s":"对象","p":"属性","retracted":true}。keywords 为 {"text":"词","weight":"重要"}。人物别名更新为 {"to":"规范名","from":["旧称"],"evidence":"依据"}。
 ${STORY_UPDATE_PROTOCOL}
 JSON 另含 anchors 数组：每轮 0–2 张可独立理解的场景卡，结构为 {"scene":"至少15字，写明人物、实际行动、结果与必要背景","where":"地点，不明留空","edges":[{"s":"施事人物","t":"受事人物","r":"已发生的互动"}]}。每张最多三条互动边；不虚构关系，不把规划当事实，同一场景不拆碎。没有可记录内容时 anchors=[]。它与 updates 同时输出，不需要另一次请求。`;
 
 function floorProtocolContext(store) {
     const records = (store?.json?.storyRecords || []).slice(-80).map(({ _addedAt, _sourceStart, ...record }) => record);
-    const events = (store?.json?.events || []).slice(-30).map(({ id, title }) => ({ id, title }));
-    while (records.length && JSON.stringify({ records, events }).length > 24_000) records.shift();
-    while (events.length && JSON.stringify({ records, events }).length > 24_000) events.shift();
-    return JSON.stringify({ records, events });
+    while (records.length && JSON.stringify(records).length > 24_000) records.shift();
+    return JSON.stringify({ records });
 }
 
 export function buildFloorProtocol(store) {

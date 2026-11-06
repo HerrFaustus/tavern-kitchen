@@ -4,6 +4,12 @@ import { createProductionBootstrap } from './host/production-composition.js';
 import { createSettingsRepository } from './host/settings-repository.js';
 import { createSillyTavernSettingsAdapter } from './host/sillytavern-context.js';
 
+import { mountEvolutionView } from './apps/world/evolution-view.js';
+
+export function mountWorldEvolution(parent: HTMLElement, section: 'people' | 'situation') {
+    return mountEvolutionView(parent, section, settingsRepository);
+}
+
 let runtime: XiaobaiOsBootstrap | null = null;
 let initPromise: Promise<boolean> | null = null;
 let cleanupPromise: Promise<void> = Promise.resolve();

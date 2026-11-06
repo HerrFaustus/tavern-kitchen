@@ -1,13 +1,13 @@
 import type { XiaobaiOsSettingsRepository } from '../../../host/settings-repository.js';
 import type { XiaobaiOsAppActivationContext, XiaobaiOsAppRuntime } from '../../../types.js';
-import type { DiceClientState, DiceFeature } from '../types.js';
+import type { DiceClientState } from '../types.js';
 import { isActionCheckFrequency, isActionCheckRule } from '../settings.js';
 import { parseCoc7Sheet, readCoc7Sheet } from '../domain/coc7-sheet.js';
 import type { DiceSheetService } from '../application/sheet-service.js';
 
 export function createDiceController(settings: Pick<XiaobaiOsSettingsRepository, 'read' | 'subscribe' | 'setDiceFeature' | 'setDiceActionCheckFrequency' | 'setDiceActionCheckRule'>,
     getChatIdentity: () => string, ensureDisplay: () => Promise<void>,
-    cancel: (feature: DiceFeature) => void, sheets: DiceSheetService): XiaobaiOsAppRuntime & { disable(): Promise<void> } {
+    cancel: () => void, sheets: DiceSheetService): XiaobaiOsAppRuntime & { disable(): Promise<void> } {
     let activation: XiaobaiOsAppActivationContext | null = null;
     const state = (): DiceClientState => {
         const preferences = settings.read()!.apps.dice;
@@ -25,8 +25,8 @@ export function createDiceController(settings: Pick<XiaobaiOsSettingsRepository,
         }
     }
 
-    async function setEnabled(feature: DiceFeature, enabled: boolean, guard = () => true): Promise<void> {
-        if (enabled && feature === 'actionChecksEnabled') {
+    async function setEnabled(enabled: boolean, guard = () => true): Promise<void> {
+        if (enabled) {
             try { await ensureDisplay(); }
             catch (error) {
                 console.error('[TavernKitchen] Dice display setup failed', error);
@@ -34,9 +34,9 @@ export function createDiceController(settings: Pick<XiaobaiOsSettingsRepository,
             }
         }
         if (!guard()) { throw new Error('聊天或页面已切换。'); }
-        await savePreference(() => settings.setDiceFeature(feature, enabled));
+        await savePreference(() => settings.setDiceFeature('actionChecksEnabled', enabled));
         // A global preference also applies if the chat changes during its save.
-        if (!enabled && !unsubscribe) { cancel(feature); }
+        if (!enabled && !unsubscribe) { cancel(); }
         if (!guard()) { throw new Error('聊天或页面已切换。'); }
         emit();
     }
@@ -50,21 +50,19 @@ export function createDiceController(settings: Pick<XiaobaiOsSettingsRepository,
             unsubscribeSheets = sheets.subscribe(emit);
             let previous = settings.read()!.apps.dice;
             unsubscribe = settings.subscribe(next => {
-                for (const feature of ['actionChecksEnabled', 'encountersEnabled'] as const) {
-                    if (previous[feature] && !next.apps.dice[feature]) { cancel(feature); }
-                }
+                if (previous.actionChecksEnabled && !next.apps.dice.actionChecksEnabled) { cancel(); }
                 previous = next.apps.dice;
                 emit();
             });
         },
-        stopBackground() { unsubscribe?.(); unsubscribeSheets?.(); unsubscribe = null; unsubscribeSheets = null; activation = null; cancel('actionChecksEnabled'); cancel('encountersEnabled'); },
+        stopBackground() { unsubscribe?.(); unsubscribeSheets?.(); unsubscribe = null; unsubscribeSheets = null; activation = null; cancel(); },
         async handleMessage(message) {
             const payload = message.payload as { chatIdentity?: string; feature?: string; enabled?: boolean; frequency?: unknown; rule?: unknown; sheet?: unknown } | undefined;
             const owner = activation;
             if (!owner?.isCurrent() || payload?.chatIdentity !== state().chatIdentity) { throw new Error('聊天或页面已切换。'); }
             if (message.type === 'dice/set-feature') {
-                if (typeof payload?.enabled !== 'boolean' || !['actionChecksEnabled', 'encountersEnabled'].includes(payload.feature ?? '')) { throw new Error('开关值无效。'); }
-                await setEnabled(payload.feature as DiceFeature, payload.enabled,
+                if (typeof payload?.enabled !== 'boolean' || payload.feature !== 'actionChecksEnabled') { throw new Error('开关值无效。'); }
+                await setEnabled(payload.enabled,
                     () => activation === owner && owner.isCurrent() && payload.chatIdentity === getChatIdentity());
             } else if (message.type === 'dice/set-rule') {
                 const rule = payload?.rule;
@@ -97,6 +95,6 @@ export function createDiceController(settings: Pick<XiaobaiOsSettingsRepository,
             } else { throw new Error('未知的 Dice 操作。'); }
             return state();
         },
-        async disable() { await setEnabled('actionChecksEnabled', false); await setEnabled('encountersEnabled', false); },
+        async disable() { await setEnabled(false); },
     };
 }

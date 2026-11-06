@@ -29,6 +29,39 @@ const fieldProposal = (f, overrides = {}) => ({ type: 'field', entityId: 'hero',
     nature: 'established_fact', evidence: { floor: 1, quote: '铁匠收钱后' }, ...overrides });
 const history = (f, update) => [{ sourceReceipt: f.receipt, worldUpdate: update, endMesId: 1, summary: '主角支付金币后获得了铁剑。' }];
 
+test('custody and use can change without transferring ownership; relationship identities use one direction', async t => {
+    const f = await setup(t);
+    const proposal = (entityId,field,value) => fieldProposal(f,{entityId,field,value,before:{present:false}});
+    const prepare = proposals => prepareWorldUpdate({...f.raw,proposals},f.context);
+    const custody = proposal('sword','保管人',{entityId:'hero'});
+    const use = proposal('sword','使用人',{entityId:'far-away'});
+    const teacher = proposal('smith','关系身份/hero',{entityId:'hero',role:'师父'});
+    const inverse = proposal('hero','关系身份/smith',{entityId:'smith',role:'徒弟'});
+    const batch = prepare([custody,use,teacher]);
+    assert.throws(() => prepare([teacher,inverse]),/重复/);
+    assert.throws(() => prepare([{...teacher,value:{entityId:'sword',role:'师父'}}]),/引用/);
+    assert.throws(() => prepare([{...custody,value:{entityId:'sword'}}]),/人物或组织/);
+    const ops = batch.proposals.map(p => set(p.entityId,p.field,p.value));
+    const committed = (await f.service.commit(f.service.command(f.state,ops,'保管与使用'))).state;
+    const sword = committed.entities.find(entity => entity.id === 'sword');
+    assert.equal(sword.fields.owner.value.entityId,'smith');
+    assert.equal(sword.fields['保管人'].value.entityId,'hero');
+    assert.equal(sword.fields['使用人'].value.entityId,'far-away');
+    await assert.rejects(f.service.commit(f.service.command(committed,[set('hero',inverse.field,inverse.value)],'反向重复')),/原方向/);
+    const returned = (await f.service.commit(f.service.command(committed,[set('sword','保管人',null)],'卸下保管职责'))).state;
+    assert.equal(returned.entities.find(entity => entity.id === 'sword').fields['使用人'].value.entityId,'far-away');
+});
+
+test('a proposed player agenda inferred from narration requires review; an NPC agenda can remain explicit', async t => {
+    const f = await setup(t);
+    f.context.playerNames = ['hero'];
+    const propose = holders => prepareWorldUpdate({...f.raw,proposals:[{type:'story',nature:'intention',groupId:'goal',certainty:'explicit',
+        before:{present:false},evidence:{floor:1,quote:'铁匠收钱后'},record:{id:'future',kind:'goal',holders,title:'复兴工坊',
+            description:'让乡里的学徒都能学到手艺',status:'open'}}]},f.context).proposals[0];
+    assert.equal(propose(['hero','铁匠']).certainty,'uncertain');
+    assert.equal(propose(['铁匠']).certainty,'explicit');
+});
+
 test('full context includes distant secrets, beliefs, plans and map semantics without a narration relevance limit', async t => {
     const f = await setup(t); f.state.modules.map = { atlas: { locations: [{ key: 'cellar', name: '秘密地窖' }] } };
     f.state.modules.variables = { raw: 'retired-module-secret' }; f.state.sources.variables = { raw: 'retired-source-secret' };

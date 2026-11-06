@@ -3,6 +3,8 @@ import { resolveActiveProviderConfig } from '../../../agent-core/provider-resolu
 import { createAppRuntimeGroup } from '../../kernel/runtime-group.js';
 import { createWorldModule } from './module.js';
 import { WORLD_PROMPTS } from './prompt-registration.js';
+import { currentInvolvement } from '../../../story-state/situation-links.js';
+import { registerEvolutionReader } from './evolution-view.js';
 import { createWorldManagement } from './management/participant.js';
 import { createWorldService } from './application/service.js';
 import type { PartitionStore } from '../../kernel/contracts.js';
@@ -25,7 +27,7 @@ export function createProductionWorldModule(dependencies: {
         install({ world, maintenance, agent, prompts, execution }) {
             const injection = prompts.register(WORLD_PROMPTS);
             execution.addCleanup(injection.dispose);
-            const unregister = maintenance.registerParticipant(createWorldMaintenanceParticipant(world, () => dependencies.settings.read()!.apps.world));
+            const unregister = maintenance.registerParticipant(createWorldMaintenanceParticipant(world, () => dependencies.settings.read()!.apps.world, currentInvolvement));
             execution.addCleanup(unregister);
             const controller = createWorldController({ world, settings: dependencies.settings, maintenance: maintenance.runner,
                 getChatIdentity: dependencies.getChatIdentity,
@@ -44,7 +46,8 @@ export function createProductionWorldModule(dependencies: {
         const world = createWorldService(context.partition as PartitionStore<WorldDomain>, context.files, dependencies.getChatIdentity);
         try {
             const unregister = registry.register(createWorldManagement(world));
-            return () => { unregister(); world.dispose(); };
+            const disconnect = registerEvolutionReader(world);
+            return () => { disconnect(); unregister(); world.dispose(); };
         } catch (error) { world.dispose(); throw error; }
     } };
 }

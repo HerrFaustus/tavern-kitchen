@@ -6,6 +6,8 @@ export const MAX_WORLD_DATA_MESSAGE_CHARS = 16_000;
 
 export function buildWorldDataMessage(world: WorldContent): string {
     const data = worldContent(world);
+    // The next edit needs the current body. Historical evidence stays available in the reader.
+    for (const article of data.news) { delete article.progress; }
     const render = (description: string) => [
         '<world_state>', description, safePromptJson(data), '</world_state>',
     ].join('\n');

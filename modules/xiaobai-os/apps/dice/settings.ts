@@ -17,7 +17,6 @@ export function normalizeDiceSettings(value: unknown): DiceSettings {
         // Retain this conversion while those installed settings are supported; runtime writes accept only current choices.
         actionCheckFrequency: isActionCheckFrequency(input.actionCheckFrequency) ? input.actionCheckFrequency : 'standard',
         actionCheckRule: isActionCheckRule(input.actionCheckRule) ? input.actionCheckRule : 'd20',
-        encountersEnabled: typeof input.encountersEnabled === 'boolean' ? input.encountersEnabled : false,
         // Preserve the user-requested sheet until the user document upgrade confirms its copy.
         // finishDiceSheetMigration removes it; ordinary settings and Dice never read this field.
         ...(Object.hasOwn(input, 'coc7Sheet') ? { coc7Sheet: input.coc7Sheet } : {}),

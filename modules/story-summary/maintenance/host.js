@@ -1,3 +1,4 @@
+import { crossesReviewInterval } from '../data/narrative-window.js';
 import { getContext } from '../../../../../../extensions.js';
 import { getSummaryStore } from '../data/store.js';
 import { getMemoryCommitState, assertMemoryWritable, getPublishedSummaryMemory } from '../data/memory-commit.js';
@@ -16,11 +17,12 @@ import { executeMemoryTask, hasMaintenanceBoundary } from './execution.js';
 import { readMaintenanceDiagnostics, createMaintenanceStatusReader } from './diagnostics.js';
 import { createMemoryChatController } from './chat-controller.js';
 
-export function createMemoryMaintenanceHost({ isEnabled, invalidateRecall, refreshSummary, changed, readSummaryDiagnostics, chatChanged = () => {} }) {
+export function createMemoryMaintenanceHost({ generateReviewedLayer, isEnabled, invalidateRecall, refreshSummary, changed, readSummaryDiagnostics, chatChanged = () => {} }) {
     let unregister = null, chat = null, executing = 0, refreshAfterRun = false, publishedRevision = 0;
     const readStatus = createMaintenanceStatusReader();
     const enabled = () => isEnabled() && getSummaryPanelConfig().memoryMaintenanceEnabled;
     const summaryStyle = () => getSummaryPanelConfig().prompts.summaryStyle;
+    const proofreadingPrompt = () => getSummaryPanelConfig().proofreadingPrompt || '';
     const read = () => {
         const context = getContext();
         const store = getSummaryStore();
@@ -33,7 +35,7 @@ export function createMemoryMaintenanceHost({ isEnabled, invalidateRecall, refre
             return await executeMemoryTask(task, {
                 read, enabled: isEnabled, automaticEnabled: enabled,
                 filterRules: () => getSummaryPanelConfig().textFilterRules,
-                summaryStyle,
+                summaryStyle, proofreadingPrompt, generateReviewedLayer,
                 invalidateRecall, refreshSummary, readMaintenance: diagnostics, ...options,
             });
         } finally {
@@ -73,7 +75,7 @@ export function createMemoryMaintenanceHost({ isEnabled, invalidateRecall, refre
     }
     chat = createMemoryChatController({
         identity: () => getChatIdentity(getContext()), chatId: () => getContext().chatId,
-        scheduler, execute, summaryStyle, status: () => readStatus(publishedState()),
+        scheduler, execute, summaryStyle, proofreadingPrompt, status: () => readStatus(publishedState()),
         previewTask: () => {
             const current = read();
             return isEnabled() && hasMaintenanceBoundary(current) && getMemoryCommitState() !== 'unconfirmed'
@@ -85,7 +87,10 @@ export function createMemoryMaintenanceHost({ isEnabled, invalidateRecall, refre
         chat,
         start() {
             if (!unregister) unregister = registerMemoryMaintenance(batch => {
-                if (batch.identity === getChatIdentity(getContext())) scheduler.submitted(batch);
+                if (batch.identity !== getChatIdentity(getContext()) || !enabled()) return;
+                const interval = getSummaryPanelConfig().proofreadingInterval ?? 5;
+                if (batch.cutoff >= 0 && !crossesReviewInterval(getContext().chat, batch.start, batch.cutoff, interval)) return;
+                scheduler.submitted(batch);
             });
         },
         stop() { scheduler.cancel(); chat.reset({ preview: false }); unregister?.(); unregister = null; },

@@ -1,3 +1,4 @@
+import { timelineRounds, summaryLayers } from '../../data/summary-layers.js';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { parse } from 'acorn';
@@ -7,7 +8,9 @@ import { refreshFloorSummaries } from '../../floor-summary.js';
 import { floorCoverageEnd } from '../../inline/ledger.js';
 import { firstInvalidMemorySource } from '../../data/turn-source.js';
 import { prepareMemorySources, validateMemorySources } from '../../../world-records/turn-runtime.js';
-import { authorityStoryStore } from '../../../world-records/authority-context.js';
+import { worldAuthorityForContext, authorityStoryStore } from '../../../world-records/authority-context.js';
+import { getSummarySourceEnd } from '../../generate/source-boundary.js';
+import { SUMMARY_BATCH_FLOORS } from '../../data/summary-workflow.js';
 
 // Execute production entrypoints with explicit boundary dependencies. Never
 // assert source spelling: these tests protect observable state and stored data.
@@ -19,8 +22,8 @@ const declarations = parse(source, { sourceType: 'module', ecmaVersion: 'latest'
 export function entry(names, dependencies) {
     // Existing entrypoint fixtures exercise the retained independent-summary path.
     // Main-reply behavior is tested through its controller and actual persistence separately.
-    const context = vm.createContext({ observeBackgroundTask, MEMORY_CHAT_MESSAGES, refreshFloorSummaries, floorCoverageEnd,
-        firstInvalidMemorySource, prepareMemorySources, validateMemorySources, authorityStoryStore,
+    const context = vm.createContext({ getSummarySourceEnd, observeBackgroundTask, MEMORY_CHAT_MESSAGES, refreshFloorSummaries, floorCoverageEnd, SUMMARY_BATCH_FLOORS,
+        timelineRounds, summaryLayers, firstInvalidMemorySource, prepareMemorySources, validateMemorySources, worldAuthorityForContext, authorityStoryStore,
         getSummaryPanelConfig: () => ({ inlineSummary: { enabled: false } }), ...dependencies });
     vm.runInContext(declarations.filter(node => node.type === 'FunctionDeclaration' ? names.includes(node.id.name)
         : node.type === 'VariableDeclaration' && node.declarations.some(item => names.includes(item.id.name)))

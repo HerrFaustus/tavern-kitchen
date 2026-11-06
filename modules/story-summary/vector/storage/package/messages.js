@@ -30,7 +30,8 @@ export const PACKAGE_PROGRESS = Object.freeze({
 });
 
 const WARNINGS = {
-    legacy_events_omitted: '旧包的事件向量没有来源校验信息，未恢复；请使用“补齐缺漏”重新生成。聊天记忆未修改。',
+    legacy_events_omitted: '已跳过旧包中缺少来源记录的事件卡向量。',
+    retired_event_vectors: '事件卡已迁移，已跳过旧卡片的向量。',
 };
 
 export function packageError(code, details = {}, cause) {

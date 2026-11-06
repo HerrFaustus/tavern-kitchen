@@ -75,10 +75,11 @@ export function createWorldController({ world, settings, maintenance, getChatIde
                 if (id === 'world' && identity === getChatIdentity()) { publish(); }
             });
             if (!unsubscribeSettings) {
-                let subscribed = settings.read()!.apps.world.subscribed;
+                let previous = settings.read()!.apps.world;
                 unsubscribeSettings = settings.subscribe(next => {
-                    if (subscribed && !next.apps.world.subscribed) { cancel('unsubscribed'); }
-                    subscribed = next.apps.world.subscribed;
+                    const current = next.apps.world;
+                    if ((previous.subscribed && !current.subscribed) || (previous.peopleEvolution && !current.peopleEvolution)) { cancel('unsubscribed'); }
+                    previous = current;
                     publish();
                 });
             }

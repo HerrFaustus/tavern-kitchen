@@ -127,3 +127,10 @@ test('regeneration excludes the AI answer being replaced from both query and raw
     assert.ok(result.chunks.every(chunk => chunk.floor < 4));
     assert.equal(host.embeddings[0][0].includes('obsolete'), false);
 });
+
+test('summary-only injection keeps character relevance without retrieving old prose', async () => {
+    const result = await mod.recallRawMemory(config, { hiddenThrough: 1, focusOnly: true });
+    assert.deepEqual(result.chunks, []);
+    assert.deepEqual(result.focusCharacters, ['Alice']);
+    assert.equal(host.embeddings.length, 0);
+});

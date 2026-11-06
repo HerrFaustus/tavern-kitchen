@@ -13,8 +13,8 @@ const built = await build({ stdin: { resolveDir: root, contents: "export * from 
     bundle: true, write: false, format: 'esm', platform: 'node', plugins: [{ name: 'model-boundary', setup(api) {
         api.onResolve({ filter: /(?:data\/config|text-api\/host)\.js$/ }, args => ({ path: args.path.includes('text-api') ? 'model' : 'config', namespace: 'fixture' }));
         api.onLoad({ filter: /.*/, namespace: 'fixture' }, args => ({ contents: args.path === 'model'
-            ? 'export async function generateFeatureText(feature,options){globalThis.__worldUpdateLLMTest.calls.push({feature,...options});return {text:"fixture response"};}'
-            : names.map(name => `export const DEFAULT_SUMMARY_${name}_PROMPT=${JSON.stringify(name)};`).join('\n') + '\nexport const getSummaryAssistantDocPrompt=()=>"fixture summary contract";' }));
+            ? 'export async function generateFeatureText(feature,options){options.onDispatch?.(options.messages);globalThis.__worldUpdateLLMTest.calls.push({feature,...options});return {text:"fixture response"};}'
+            : names.map(name => `export const DEFAULT_SUMMARY_${name}_PROMPT=${JSON.stringify(name)};`).join('\n') + '\nexport const getSummaryAssistantDocPrompt=()=>"fixture summary contract"; export const getSummaryPanelConfig=()=>({prompts:{round:"逐轮依据",stage:"阶段依据"}});' }));
     } }] });
 // eslint-disable-next-line no-unsanitized/method -- Fixed local bundle with an in-process model boundary; no external code.
 const mod = await import(await createTestModuleUrl(built.outputFiles[0].text));
@@ -44,4 +44,14 @@ test('source-only manual summaries retain their existing model contract', async 
     captured.calls.length = 0;
     await mod.generateSummary({ existingSummary: '旧总结', existingFacts: [], newHistoryText: '本轮', historyRange: '1' });
     assert.equal(captured.calls.length, 1); assert.equal(captured.calls[0].messages.some(message => message.content.startsWith('【管理员全视资料')), false);
+});
+
+test('the configured round and stage prompts reach their respective model requests', async () => {
+    await mod.generateSummary({ existingSummary: '', existingFacts: [], newHistoryText: '新正文',
+        historyRange: '7–8', updateContext: context() });
+    const { messages } = captured.calls.at(-1);
+    assert.ok(messages.some(m => m.content.includes('逐轮依据')));
+    assert.ok(!messages.some(m => m.content.includes('阶段依据')));
+    await mod.generateReviewedLayer({level:'stage', reason:'任务已完成', children:[{start:0,end:1,text:'旧摘要'}]});
+    assert.ok(captured.calls.at(-1).messages.some(m => m.content.includes('阶段依据')));
 });

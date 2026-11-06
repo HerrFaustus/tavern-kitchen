@@ -104,18 +104,6 @@ function clearSheetFailure() {
                 <p>功能开启期间，会自动创建「后厨工作台 · 行动检定显示」全局正则。</p>
             </aside>
         </section>
-        <section aria-labelledby="dice-encounter-label" class="dice-feature">
-            <div class="dice-switch-row">
-                <h2 id="dice-encounter-label">随机遭遇</h2>
-                <input
-                    type="checkbox" class="dice-switch" role="switch" aria-labelledby="dice-encounter-label" :checked="state.encountersEnabled"
-                    :disabled="busy" @click.prevent="send('dice/set-feature', { feature: 'encountersEnabled', enabled: !state.encountersEnabled })"
-                >
-            </div>
-            <p>偶尔为剧情添一点变数，也可从已开启的世界背景与剧情记忆中寻找灵感。</p>
-            <p class="dice-rates">轻微 5% <span aria-hidden="true">·</span> 中等 3% <span aria-hidden="true">·</span> 重大 1%</p>
-            <p class="dice-cooldown">触发后，接下来的两次用户发言不会触发新遭遇。不额外调用模型。</p>
-        </section>
         <section v-if="error" class="dice-recovery" aria-live="polite">
             <p>{{ error.message }}</p>
         </section>
@@ -127,9 +115,6 @@ function clearSheetFailure() {
 .dice-switch-row { display:flex; align-items:center; justify-content:space-between; gap:16px; }
 h1,h2 { margin:0; font-size:20px; font-weight:650; }
 .dice-feature + .dice-feature { margin-top:28px; padding-top:24px; border-top:1px solid color-mix(in srgb,currentColor 15%,transparent); }
-.dice-rates { font-size:13px; word-spacing:.08em; }
-.dice-rates span { margin:0 .2em; opacity:.5; }
-.dice-cooldown { font-size:13px; }
 p { margin:14px 0; }
 .dice-intro { margin-top:24px; }
 .dice-frequency { min-width:0; margin:20px 0 0; padding:0; border:0; }

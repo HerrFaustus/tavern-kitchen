@@ -1,6 +1,6 @@
 export const TEXT_API_COPY = Object.freeze({
     title: 'API 配置档案', host: '沿用酒馆', unset: '未选择配置',
-    features: { summary: '剧情总结', planner: '剧情规划', memory: '剧情助手', world: '世界与地图后台', l0: '召回语义整理', embedding: '向量嵌入', rerank: '召回重排' },
+    features: { summary: '剧情总结', planner: '剧情规划', memory: '剧情校对', world: '世界与地图后台', l0: '召回语义整理', embedding: '向量嵌入', rerank: '召回重排' },
     load: '加载中…', retry: '重试', save: '保存配置', saved: '已保存', saving: '保存中…',
     add: '新增配置', rename: '重命名配置', remove: '删除配置',
     name: '配置名称', duplicate: '已存在同名配置', emptyName: '请输入配置名称',

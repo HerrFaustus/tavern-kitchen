@@ -2,6 +2,9 @@ export interface WorldNews {
     id: string;
     title: string;
     body: string;
+    situationId?: string;
+    subjectId?: string;
+    progress?: { from: string; reason: string; quote: string; floor: number };
 }
 
 export interface WorldContent {
@@ -33,6 +36,8 @@ export function sameWorldContent(left: WorldContent, right: WorldContent): boole
     return left.overview === right.overview && left.news.length === right.news.length
         && left.news.every((item, index) => {
             const other = right.news[index];
-            return item.id === other.id && item.title === other.title && item.body === other.body;
+            return item.id === other.id && item.title === other.title && item.body === other.body && item.situationId === other.situationId && item.subjectId === other.subjectId
+                && item.progress?.from === other.progress?.from && item.progress?.quote === other.progress?.quote
+                && item.progress?.floor === other.progress?.floor && item.progress?.reason === other.progress?.reason;
         });
 }

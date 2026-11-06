@@ -1,62 +1,20 @@
 import { RELATION_TRENDS, FACTS_LIMIT_PER_SUBJECT } from './fact-predicates.js';
-import { ARC_PROGRESS_MAX } from '../generate/arc-progress.js';
 
 // Generation embeds these passages verbatim. Maintenance selects the content
 // passages at the end; update protocol, output counts and field-schema notes stay out.
 
 // 一、总结写作要求：生成与维护共用。调整时间、详略、文风时看这里。
-export const SUMMARY_EVENT_STYLE_RULES = `### 卡片要求
-- 每张卡片记一件有叙事价值的事。以后玩家随口提起它时，比如"上次在酒馆拍欠条那回"，系统靠卡片里的词把这张卡片找回来。所以卡片要留下玩家会用来指代这件事的东西：人名和原文称呼、地点、关键物件、具体动作、关系或态度的变化、约定或交换条件、被揭开的秘密；原文有关键原话时，再留一句 15 字以内的。
-- "两人发生冲突""关系恶化"这类话放在哪件事上都成立，找不回具体那一次。要写清是谁、在哪、拿着什么、对谁做了什么、结果怎样。
-
-### 时间写法
-- 卡片以后会在别的时间被读到，timeLabel 和 summary 里的时间要让人知道说的是哪一天，而不是只写“今天、昨天、明晚”。
-- 原文给了日期，就用原文日期；有年份就保留，原文和已有总结都没有交代年份时不补年份。
-- 原文没有日期时，可以写“搬入新家的第二晚”这类能找到对应事件的说法。已有总结按“第3天”记时，就接着用同一套记法；日期和间隔都要有原文或已有总结的依据，不凭空推算。
-- 时间标签示例：原文写“2026年6月12日”，就写“2026年6月12日”；原文只写“6月12日”且已有总结也未交代年份，就写“6月12日”。
-- 原文明确当前为2026年6月12日，追问“昨晚”的去向并约定“明晚”见面时，分别写为2026年6月11日晚和2026年6月13日晚。
-
-### 详略与篇幅
-- 每张卡片写 1 句，事情确实多时写 2 句。两句都要有具体内容，第一句不用来铺垫。
-- 写不下时，先舍弃气氛描写，其次是次要人物的反应，再次是心理描写；连续的动作可以压成结果。人名、地点、物件、关键动作和原话最后才删。
-- 只写和这件事有关的名词。
-
-### 文风和示例
-- 用朴实、白描、有烟火气的笔触记录事实，避免比喻和意象
-- 示例只示范写到多具体，不要求模仿题材、语气或句式
-- 不合格：
-  1. 二人在酒馆发生冲突，关系恶化。
-  2. 两人有暧昧互动，并约定再次见面。
-  3. 她揭示了一个秘密，对方受到打击。
-- 合格：
-  1. 苏晚在黑鹭酒馆当众把欠条拍到顾衡胸口，骂他拿她母亲的旧宅做赌注，顾衡想抓她手腕被她甩开，周围赌客起哄，两人彻底撕破脸。 (#120-123)
-  2. 2026年6月12日，周柠在旅馆浴室门口盯着林雨锁骨上的咬痕，追问2026年6月11日晚和谁在一起，林雨一边整理湿透的白衬衫一边嘴硬否认，最后答应2026年6月13日晚还去旧码头见她。 (#88-91)`;
+export const SUMMARY_EVENT_STYLE_RULES = '以本轮原文为据，写清人物、关键互动、条件和实际结果。';
 
 export function resolveSummaryStyle(summaryStyle) {
     return String(summaryStyle || '').trim() || SUMMARY_EVENT_STYLE_RULES;
 }
 
-const summaryStyleBlock = summaryStyle => `[Event Summary Style]\n${resolveSummaryStyle(summaryStyle)}`;
+const summaryStyleBlock = summaryStyle => `[Summary Style]\n${resolveSummaryStyle(summaryStyle)}`;
 
 // 二、总结数据规则：分类、字段含义与增量更新协议。
-export const SUMMARY_MEMORY_ROLE_RULES = `[Memory Role]
-memoryRole describes what an event leaves for later context. Choose one role based on its main evidenced result:
-- 状态变化: A status is established, changed or ended: identity, relationship, residence, ownership or ongoing circumstances.
-- 约定承诺: A plan, promise, rule or responsibility is agreed, fulfilled or cancelled. An intention alone is not a completed state change.
-- 信息揭示: Someone learns an identity, secret, reason or truth. Preserve who learned it in the summary.
-- 偏好习惯: An explicitly stated preference, aversion or taboo, or a recurring behavior supported by the available history. A single action alone does not establish a habit.
-- 具体经历: A recognizable interaction or experience, including daily life, conflict, comfort or adventure, whose main contribution is the episode itself.
-These roles are different uses of memory, not importance levels. Choose the main result; keep other relevant details in the summary. Continuous actions and reactions about the same occurrence stay together rather than being split to fill roles.`;
-
-export const SUMMARY_ARC_RULES = `[Arc Progress Tracking]
-角色弧光记录一个角色在经历中逐渐发生的变化。本次新对话让某个角色的变化有了推进时，才输出这个角色的 arcUpdates。
-- name：角色的正式名。
-- trajectory：这个角色当前所处的阶段，15 字以内。
-- progress：0～${ARC_PROGRESS_MAX} 的整数，和已有总结里显示的进度是同一刻度。
-- newMoment：本次推动变化的那段经历；没有可写的就省略。`;
-
 const FACT_CONTENT_RULES = `### 事实记录什么
-- 事实记录剧情已经确认、之后会持续成立的情况，比如身份、生死、住在哪里、东西归谁、两人是什么关系、稳定的身体特征。角色扮演时，这些事实让角色前后一致。某一次发生了什么，记在事件卡片里。
+- 事实记录剧情已经确认、之后会持续成立的情况，比如身份、生死、住在哪里、东西归谁、两人是什么关系、稳定的身体特征。角色扮演时，这些事实让角色前后一致。某一次发生了什么，记在本轮总结里。
 - s 是主体，p 是记录哪一方面，o 是这一方面现在的完整情况。同一 s+p 只保存一条，新内容替换旧内容；同一方面沿用已有谓词，不另起同义的名称。
 
 ### 核心事实与普通事实
@@ -91,18 +49,15 @@ ${ALIAS_PURPOSE_RULE}
 ${ALIAS_IDENTITY_RULE}
 - to 是已有总结中稳定使用的主名，from 是其他写法，evidence 简短说明依据。
 - 例: {"to":"五条悟","from":["悟","Gojo Satoru"],"evidence":"当前中文称呼“悟”与既有日文名五条悟均指同一角色"}
-- 保存时，系统会把角色列表、事件参与者、事实的主体和关系对象、弧光的角色名统一改成主名；卡片正文和引语里的称呼保持原样。这里只给出映射。`;
+- 保存时，系统会把角色列表、事件参与者、事实的主体和关系对象统一改成主名；卡片正文和引语里的称呼保持原样。这里只给出映射。`;
 
 export function buildSummaryAssistantDocPrompt(summaryStyle) {
     return `
 Summary Specialist:
 Acknowledged. Now reviewing the incremental summarization specifications:
 
-${SUMMARY_MEMORY_ROLE_RULES}
-
 ${summaryStyleBlock(summaryStyle)}
 
-${SUMMARY_ARC_RULES}
 
 Ready to process incremental summary requests with strict deduplication.`;
 }
@@ -191,7 +146,7 @@ ${ANCHOR_WHERE_RULE}`;
 
 // 四、维护入口：引用上面的内容规则，不另写一份。
 export const getSummaryContentRules = summaryStyle => [
-    SUMMARY_MEMORY_ROLE_RULES, summaryStyleBlock(summaryStyle),
+    summaryStyleBlock(summaryStyle),
     `[Facts]
 ${FACT_CONTENT_RULES}`,
     `[Character Aliases]

@@ -7,7 +7,7 @@ import { createFloorSummaryController } from './controller.js';
 import { createFloorPanel } from './panel.js';
 import { installFloorDisplayFilter } from './host-regex.js';
 import { applyTextFilterRules } from '../data/text-filter-rules.js';
-import { floorCoverageEnd, isFloorEntryCurrent } from './ledger.js';
+import { floorCoverageEnd, isFloorEntryCurrent, restoreFloorRoundSources } from './ledger.js';
 import { entry } from '../tests/helpers/story-summary-entry.js';
 import { captureRangeSource } from '../data/turn-source.js';
 import { memoryDigest } from '../data/memory-policy.js';
@@ -25,15 +25,15 @@ test('main reply payload is bounded and incomplete/duplicate/invalid blocks neve
     assert.equal(stripFloorProtocol(raw(payload)), '正文');
     assert.equal(applyTextFilterRules(raw(payload), []), '正文');
 });
-test('source and event provenance are bound to the actual reply and preceding user, with stable event IDs', () => {
+test('round provenance binds the actual reply and preceding user without creating cards', () => {
     const chat = [{ mes: '旧故事' }, { mes: '过去看看', is_user: true }, { mes: raw(payload), swipe_id: 0 }];
     const source = floorSource(chat, 2);
     assert.equal(source.start, 1);
     const result = prepareFloorPayload(payload, {}, source);
-    assert.match(result.events[0].summary, /\(#2-3\)$/);
+    assert.equal(result.events, undefined);
     assert.equal(result.storyUpdates.find(record => record.kind === 'clock').label, '黄昏');
     assert.equal(result.storyUpdates.find(record => record.kind === 'scene').location, '渡口');
-    assert.equal(prepareFloorPayload(payload, {}, source, ['evt-6']).events[0].id, 'evt-6');
+    assert.equal(prepareFloorPayload(payload, {}, source).events, undefined);
     chat[2].swipe_id = 1;
     assert.notEqual(floorSource(chat, 2).digest, source.digest);
     chat[2].swipe_id = 0; chat[1].mes = '不要过去';
@@ -49,6 +49,16 @@ test('new floor records share stable candidate provenance while legacy floor rec
     const legacy = { floor: 1, source: floorSource(chat, 1, 1) };
     assert.equal(legacy.source.version, undefined); assert.equal(isFloorEntryCurrent(legacy, chat), true);
     chat[1].mes += ' 改写'; assert.equal(isFloorEntryCurrent(entry, chat), false); assert.equal(isFloorEntryCurrent(legacy, chat), false);
+});
+test('legacy floor-only rounds regain a review and recall source only for matching prose', () => {
+    const chat = [{ is_user: true, mes: '要过河吗？' }, { mes: '明早渡河。' }, { mes: '已经过河。' }];
+    const batch = floor => ({ endMesId: floor, floorEntry: { floor, source: floorSource(chat, floor, 1) } });
+    const store = { summaryHistory: [batch(1), batch(2)] };
+    chat[2].mes = '尚未过河。';
+    assert.equal(restoreFloorRoundSources(store, chat), true);
+    assert.deepEqual(store.summaryHistory[0].roundSource, captureRangeSource(chat, 0, 1));
+    assert.equal(store.summaryHistory[1].roundSource, undefined);
+    assert.equal(restoreFloorRoundSources(store, chat), false);
 });
 test('review mode and malformed replies perform no model calls or metadata writes; chat changes cancel a queued edit', async () => {
     let context = { chatId: 'a', characterId: 1, chat: [{ is_user: true, mes: '走吧' }, { mes: raw(payload) }] };
@@ -175,8 +185,8 @@ test('native system notices are not narrative floors, while hidden real replies 
     assert.equal(floorSource([{ mes: '系统通知', is_system: true, extra: { type: 'comment' } }], 0), null);
     assert.equal(isNarrativeReply({ mes: '角色的旧回复', is_system: true }), true);
     const parsed = prepareFloorPayload({ summary: '场景变化', updates: { arcUpdates: [{ name: '贝拉', trajectory: '寻找线索', progress: 30 }] } }, {}, { start: 0, floor: 0 });
-    assert.equal(parsed.events[0].memoryRole, '具体经历'); assert.equal(parsed.arcUpdates[0].progress, 0.3);
-    assert.equal(prepareFloorPayload({ summary: '保留楼尾文字', updates: { events: [] } }, {}, { start: 0, floor: 0 }, [], [], true).events.length, 0);
+    assert.equal(parsed.events, undefined); assert.equal(parsed.arcUpdates, undefined);
+    assert.equal(prepareFloorPayload({ summary: '保留楼尾文字', updates: { events: [] } }, {}, { start: 0, floor: 0 }, [], [], true).events, undefined);
 });
 
 test('old v2 floor cards remain current across visibility changes without accepting a prose edit', () => {

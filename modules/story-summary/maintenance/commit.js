@@ -17,6 +17,7 @@ export function publishedMaintenanceCommit(prepared, snapshot) {
     const receipt = byId.get(prepared.receipt.id);
     const result = projectMaintenanceResult(receipts, receipt.outcome);
     const impact = maintenanceImpact(result.operations);
+    if (prepared.hasLayers) impact.summary = true;
     return { ...prepared, receipts, receipt, impact, outcome: result.outcome,
         ranges: maintenanceRanges(snapshot.storySummary.summaryHistory, prepared.ranges.cutoff - 1),
         current: { ...prepared.current, store: snapshot.storySummary, json: snapshot.storySummary.json,
@@ -32,6 +33,7 @@ export async function commitMemorySession(session, result, ports, signal) {
     requireMemory(session.ownsHistory(current), 'conflict');
     const memory = session.assertCurrent(current), edit = session.pending;
     const operations = edit.operations, impact = maintenanceImpact(operations);
+    if (edit.layers?.length || edit.revisions?.length) impact.summary = true;
     const previous = projection(current);
     const boundary = current.store.lastSummarizedMesId;
     const store = { ...current.store, json: memory.json,
@@ -39,6 +41,13 @@ export async function commitMemorySession(session, result, ports, signal) {
             ? { ...batch, maintenance: [...batch.maintenance] } : batch),
         ...(impact.summary ? { updatedAt: Date.now() } : {}),
     };
+    if (edit.layers?.length || edit.revisions?.length) {
+        const index = store.summaryHistory.findIndex(batch => batch.endMesId === boundary);
+        requireMemory(index >= 0, 'conflict');
+        const batch = store.summaryHistory[index];
+        store.summaryHistory[index] = { ...batch, ...(edit.layers?.length && { reviewLayers: [...(batch.reviewLayers || []), ...structuredClone(edit.layers)] }),
+            ...(edit.revisions?.length && { roundRevisions: [...(batch.roundRevisions || []), ...structuredClone(edit.revisions)] }) };
+    }
     const receipts = [];
     const create = extra => ({ version: 2, id: receiptId(), runId: result.runId, createdAt: Date.now(), policy: session.policy,
         start: session.start + 1, cutoff: session.cutoff + 1, operations: [],
@@ -55,11 +64,12 @@ export async function commitMemorySession(session, result, ports, signal) {
         appendMaintenanceReceipt(store, receipt); receipts.push(receipt);
     }
     const receipt = receipts.at(-1);
+    if (edit.revisions?.length) receipt.roundRevisionCount = edit.revisions.length;
     receipt.coverage = session.coverage(); receipt.summary = edit.note; receipt.calls = structuredClone(result.calls || []);
     const snapshot = { storySummary: store, stateAtoms: memory.atoms,
         l0Index: impact.floors.length ? { ...current.l0Index, byFloor: { ...current.l0Index.byFloor } } : current.l0Index };
     updateMaintainedAnchorIndex(snapshot, impact.floors);
-    const prepared = { receipt, receipts, impact, ranges: maintenanceRanges(store.summaryHistory, session.cutoff),
+    const prepared = { receipt, receipts, impact, hasLayers: !!(edit.layers?.length || edit.revisions?.length), ranges: maintenanceRanges(store.summaryHistory, session.cutoff),
         current: { ...current, store, json: store.json, atoms: snapshot.stateAtoms, l0Index: snapshot.l0Index } };
     try {
         const published = await ports.commit(snapshot, previous, impact, () => {

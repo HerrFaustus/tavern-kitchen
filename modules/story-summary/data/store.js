@@ -1,3 +1,5 @@
+import { migrateRoundSummaries } from './migrations/round-summaries.js';
+import { restoreFloorRoundSources } from '../inline/ledger.js';
 // Story Summary - Store
 // 大总结以一份 JSON 保存 events、characters、arcs、facts 等；L3 Facts 是召回时的投影名称，不是另一份总结存储。
 
@@ -18,8 +20,7 @@ import {
 } from "./summary-undo.js";
 import { isRelationFact, parseRelationTarget, factKey, FACTS_LIMIT_PER_SUBJECT } from "./fact-predicates.js";
 import { createFactIdAllocator } from './fact-identity.js';
-import { projectSummaryEvent, normalizeEventStringArray } from "./events.js";
-import { upgradeStoredEventMemoryRoles } from "./migrations/event-memory-role.js";
+import { normalizeEventStringArray } from "./events.js";
 import { upgradeSummaryHistory, createSummaryBatch } from './summary-history.js';
 export { getRollbackOnceTargetEndMesId } from './summary-history.js';
 import { getRollbackOnceTargetEndMesId } from './summary-history.js';
@@ -72,10 +73,7 @@ function normalizeSummaryJson(json) {
         changed = true;
     }
 
-    if (!Array.isArray(next.events)) {
-        next.events = [];
-        changed = true;
-    } else {
+    if (Array.isArray(next.events)) {
         const events = [];
         for (const event of next.events) {
             if (!isPlainObject(event)) {
@@ -235,6 +233,8 @@ function normalizeSummaryStore(store) {
         changed = true;
     }
 
+    changed = migrateRoundSummaries(store) || changed;
+    changed = restoreFloorRoundSources(store, getContext().chat) || changed;
     const json = normalizeSummaryJson(store.json);
     if (json.changed) {
         store.json = json.value;
@@ -267,7 +267,9 @@ export function getSummaryStore() {
     const store = chat_metadata.extensions[EXT_ID].storySummary;
     let changed = false;
     if (!loadedEventStores.has(store)) {
-        try { changed = normalizeSummaryStore(store); }
+        try {
+            changed = normalizeSummaryStore(store);
+        }
         catch (error) {
             if (!['summary_history_invalid', 'invalid_history'].includes(error.code)) throw error;
             // Malformed history stays available for export, never becomes a baseline.
@@ -275,7 +277,6 @@ export function getSummaryStore() {
             store.summaryInvalid = true;
             xbLog.error(MODULE_ID, 'summary_history_invalid', error);
         }
-        changed = upgradeStoredEventMemoryRoles(store) || changed;
         loadedEventStores.add(store);
     }
 
@@ -477,12 +478,6 @@ function normalizeCharacterNameKey(name) {
     return String(name || '').trim().toLowerCase();
 }
 
-function normalizeArcProgress(value) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return 0;
-    return Math.max(0, Math.min(1, n));
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // 大总结数据合并
 // ═══════════════════════════════════════════════════════════════════════════
@@ -494,7 +489,7 @@ export function mergeNewData(oldJson, parsed, endMesId, options = {}) {
 
     // 初始化大总结的各部分
     merged.keywords ||= [];
-    merged.events ||= [];
+
     merged.characters ||= {};
     merged.characters.main ||= [];
     merged.arcs ||= [];
@@ -505,9 +500,6 @@ export function mergeNewData(oldJson, parsed, endMesId, options = {}) {
         merged.keywords = incoming.keywords.map(k => ({ ...k, _addedAt: endMesId }));
     }
 
-    (incoming.events || []).forEach(e => {
-        merged.events.push(projectSummaryEvent({ ...e, _addedAt: endMesId }));
-    });
 
     // newCharacters
     const existingMain = new Set(
@@ -524,37 +516,6 @@ export function mergeNewData(oldJson, parsed, endMesId, options = {}) {
             existingMain.add(key);
         }
     });
-
-    // arcUpdates
-    const arcMap = new Map(
-        (merged.arcs || [])
-            .map(a => [normalizeCharacterNameKey(a.name), a])
-            .filter(([key]) => key)
-    );
-    (incoming.arcUpdates || []).forEach(update => {
-        const name = String(update?.name || '').trim();
-        if (!name) return;
-        const key = normalizeCharacterNameKey(name);
-        const existing = arcMap.get(key);
-        const progress = normalizeArcProgress(update.progress);
-        if (existing) {
-            existing.trajectory = update.trajectory;
-            existing.progress = progress;
-            if (update.newMoment) {
-                existing.moments = existing.moments || [];
-                existing.moments.push({ text: update.newMoment, _addedAt: endMesId });
-            }
-        } else {
-            arcMap.set(key, {
-                name,
-                trajectory: update.trajectory,
-                progress,
-                moments: update.newMoment ? [{ text: update.newMoment, _addedAt: endMesId }] : [],
-                _addedAt: endMesId,
-            });
-        }
-    });
-    merged.arcs = Array.from(arcMap.values());
 
     // facts 与其他大总结字段参与同一次合并及撤销差量。
     merged.facts = mergeFacts(merged.facts, incoming.factUpdates || [], endMesId);
@@ -736,7 +697,8 @@ export async function executeRollback(chatId, store, targetEndMesId, options = {
     const oldEvents = draft.json?.events || [];
     const retainedEvents = new Map((restored.json.events || []).map(event => [event.id, event]));
     const deletedEventIds = oldEvents.filter(event => !sameMemory(event, retainedEvents.get(event.id))).map(event => event.id);
-    draft.json = hasSummaryContent(restored.json) ? restored.json : null;
+    const keepsRounds = draft.summaryHistory.some(batch => batch.endMesId <= targetEndMesId && (batch.summary || batch.importedRounds?.length || batch.legacyRoundBase || batch.legacyRoundChanges || batch.floorEntry?.payload?.summary));
+    draft.json = keepsRounds || hasSummaryContent(restored.json) ? restored.json : null;
     next.stateAtoms = restored.atoms;
     updateMaintainedAnchorIndex(next, impact.floors);
     for (const batch of draft.summaryHistory || []) if (batch.endMesId > targetEndMesId && batch.floorEntry?.anchorVersion) {
@@ -745,7 +707,13 @@ export async function executeRollback(chatId, store, targetEndMesId, options = {
     }
     draft.lastSummarizedMesId = targetEndMesId;
     draft.summaryHistory = (draft.summaryHistory || []).filter(entry => entry.endMesId <= targetEndMesId);
-    if (maintenanceOnly) draft.summaryHistory.find(entry => entry.endMesId === targetEndMesId).maintenance = [];
+    if (maintenanceOnly) {
+        const baseline = draft.summaryHistory.find(entry => entry.endMesId === targetEndMesId);
+        baseline.maintenance = [];
+        delete baseline.legacyRoundChanges;
+        delete baseline.roundRevisions;
+        delete baseline.reviewLayers;
+    }
     delete draft.summaryInvalid;
     const invalidSourceFloor = Math.min(draft.sourceInvalidFromFloor ?? Infinity, getRuntimeInvalidSourceFloor() ?? Infinity);
     const rollbackSourceFloor = Math.min(draft.sourceRollbackFromFloor ?? Infinity, getRuntimeSourceRollbackFloor() ?? Infinity);

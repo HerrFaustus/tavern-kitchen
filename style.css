@@ -170,3 +170,7 @@
 #tk-workspace .tk-overview-scene-meta span { padding: 2px 8px; border-radius: 999px; background: var(--SmartThemeBlurTintColor); font-size: .85em; }
 #tk-workspace .tk-overview-situation { font-size: 1.02em; line-height: 1.7; }
 #tk-workspace .tk-overview-pending { border-inline-start: 3px solid var(--SmartThemeQuoteColor); padding-inline-start: 8px; }
+
+#tk-workspace .tk-evolution { flex: 0 0 auto; padding: 6px 4px; max-height: 32%; overflow: auto; border-top: 1px solid var(--SmartThemeBorderColor); }
+#tk-workspace .tk-evolution label { display: inline-flex; align-items: center; gap: 6px; }
+#tk-workspace .tk-evolution small { display: block; }

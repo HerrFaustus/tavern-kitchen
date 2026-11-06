@@ -53,7 +53,7 @@ export function connectionError(error, preset) {
     return safe;
 }
 
-export async function generateText(preset, { messages, signal, onDelta, timeoutMs = 180000 } = {}, dependencies = {}) {
+export async function generateText(preset, { messages, signal, onDelta, onDispatch, timeoutMs = 180000 } = {}, dependencies = {}) {
     const snapshot = structuredClone(assertPreset(preset));
     const controller = new AbortController();
     const abort = () => controller.abort(signal.reason);
@@ -64,6 +64,7 @@ export async function generateText(preset, { messages, signal, onDelta, timeoutM
             controller.signal.throwIfAborted();
             if (snapshot.provider === HOST_PROVIDER) {
                 if (!dependencies.generateHost) throw new Error(COPY.hostUnavailable);
+                onDispatch?.(messages);
                 return dependencies.generateHost(snapshot, { messages, signal: controller.signal, onDelta });
             }
             const config = resolveConnection(snapshot);
@@ -72,6 +73,7 @@ export async function generateText(preset, { messages, signal, onDelta, timeoutM
             const createAdapter = dependencies.createAdapter || (await import('../agent-core/provider-config.js')).createAgentAdapter;
             const adapter = createAdapter({ ...config, timeoutMs });
             let previous = '';
+            onDispatch?.(messages);
             const result = await adapter.chat({
                 messages, signal: controller.signal, reasoning: config.reasoning,
                 ...(snapshot.maxTokens != null ? { maxTokens: snapshot.maxTokens } : {}),

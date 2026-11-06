@@ -1,3 +1,4 @@
+import { migrateRoundSummaries } from './migrations/round-summaries.js';
 import { createSummaryBaseline } from './summary-history.js';
 import { assignImportedFactIds } from './fact-identity.js';
 import { MEMORY_DATA_COPY } from './memory-copy.js';
@@ -20,6 +21,11 @@ export function readSummaryPackageData(raw) {
             if (record.remove) throw new Error('场景状态存档不能包含删除指令');
             parseStoryUpdates([record]);
         }
+    }
+    if (data.rounds !== undefined) {
+        const valid = row => typeof row?.summary === 'string' && typeof row.timeLabel === 'string'
+            && Array.isArray(row.participants) && row.participants.every(name => typeof name === 'string');
+        if (!Array.isArray(data.rounds) || !data.rounds.every(valid)) throw new Error('本轮总结导入结构无效');
     }
     return data;
 }
@@ -70,6 +76,11 @@ export function applyImportedSummaryBoundary(store, boundary) {
     store.summaryHistory = [createSummaryBaseline(boundary)];
     delete store.floorDrafts;
     delete store.pendingImportBoundary;
+    if (store.json.importedRounds) {
+        store.summaryHistory[0].importedRounds = store.json.importedRounds;
+        delete store.json.importedRounds;
+    }
+    migrateRoundSummaries(store);
     store.updatedAt = Date.now();
     return true;
 }
@@ -88,6 +99,7 @@ export function prepareImportedSummary(previous, json, boundary) {
         store.lastSummarizedMesId = -1;
         store.summaryHistory = [];
         store.pendingImportBoundary = true;
+        migrateRoundSummaries(store);
     }
     store.updatedAt = Date.now();
     next.stateAtoms = [];

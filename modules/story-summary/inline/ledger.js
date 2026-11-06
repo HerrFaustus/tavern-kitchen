@@ -1,3 +1,4 @@
+import { reviewedRounds } from '../data/summary-layers.js';
 import { floorSource, prepareFloorPayload, validateFloorPayload } from './protocol.js';
 import { applyExactSummaryHistoryUndo, summaryBatchChanges, buildSummaryUndo } from '../data/summary-undo.js';
 import { createSummaryBatch } from '../data/summary-history.js';
@@ -71,6 +72,23 @@ export function isFloorEntryCurrent(entry, chat) {
     return memoryDigest(source.messages.map(({ floor, ...message }) => message)) === entry.source.digest;
 }
 
+// Early floor summaries kept only the fingerprint. Recover a full receipt
+// from the current candidate only when its saved fingerprint still matches.
+export function restoreFloorRoundSources(store, chat) {
+    if (store.summaryInvalid || !Array.isArray(chat)) return false;
+    let changed = false;
+    for (const batch of store.summaryHistory || []) {
+        const entry = batch.floorEntry;
+        if (batch.sourceReceipt || batch.roundSource || !entry || entry.deleted || entry.omitted
+            || entry.floor !== batch.endMesId || !isFloorEntryCurrent(entry, chat)) continue;
+        const start = floorSource(chat, entry.floor).start;
+        if (start !== entry.source.start) continue;
+        batch.roundSource = captureRangeSource(chat, start, entry.floor);
+        changed = true;
+    }
+    return changed;
+}
+
 /** Highest contiguous covered floor; a new inline summary must never hide older gaps. */
 export function floorCoverageEnd(store) {
     if (!store?.summaryHistory?.some(batch => batch.floorEntry)) return store?.lastSummarizedMesId ?? -1;
@@ -91,7 +109,6 @@ export function reviseFloorMemory(previous, chat, floor, edit, merge, filterRule
     const store = next.storySummary;
     if (store.summaryInvalid || store.sourceInvalidFromFloor != null) conflict('原文变动尚未完成回退，请稍后重试。');
     const history = store.summaryHistory ||= [];
-    const reservedIds = [...(store.json?.events || []).map(event => event.id), ...history.flatMap(batch => batch.floorEntry?.eventIds || [])];
     let index = history.findIndex(batch => batch.floorEntry?.floor === floor);
     const inserting = index < 0;
     if (inserting && floor <= (store.lastSummarizedMesId ?? -1)) {
@@ -105,9 +122,8 @@ export function reviseFloorMemory(previous, chat, floor, edit, merge, filterRule
     const entry = { version: 1, floor, source, payload: validateFloorPayload(edit.payload ?? old?.payload),
         ...(!old || old.anchorVersion || Object.hasOwn(edit.payload || {}, 'anchors') ? { anchorVersion: 1,
             anchorPreviousIndex: clone(old && Object.hasOwn(old, 'anchorPreviousIndex') ? old.anchorPreviousIndex : previous.l0Index?.byFloor?.[floor] ?? null) } : {}),
-        eventIds: clone(edit.eventIds ?? old?.eventIds ?? []), omitted: edit.omitted ?? old?.omitted ?? false,
+        omitted: edit.omitted ?? old?.omitted ?? false,
         deleted: edit.deleted ?? old?.deleted ?? false, empty: edit.empty ?? old?.empty ?? false,
-        suppressDefaultEvent: edit.suppressDefaultEvent ?? old?.suppressDefaultEvent ?? false,
         reviewed: edit.reviewed ?? old?.reviewed ?? false };
     const boundary = index < 0 ? (store.lastSummarizedMesId ?? -1) : tail[0].previousEndMesId;
     const restored = index < 0 ? { json: clone(store.json || {}), atoms: clone(next.stateAtoms || []) }
@@ -124,7 +140,7 @@ export function reviseFloorMemory(previous, chat, floor, edit, merge, filterRule
         if (current) {
             if (!isFloorEntryCurrent(current, chat)) conflict(`第 ${current.floor + 1} 楼原文已变化，需先回退。`);
             const parsed = current.omitted || current.deleted ? { events: [] }
-                : prepareFloorPayload(current.payload, memory.json, current.source, current.eventIds, reservedIds, current.suppressDefaultEvent);
+                : prepareFloorPayload(current.payload, memory.json, current.source);
             const result = merge(memory.json, parsed, current.floor, { returnMeta: true, sourceStart: current.source.start });
             memory.json = result.json;
             const existingFacts = new Set((before.facts || []).map(fact => fact.id));
@@ -132,22 +148,29 @@ export function reviseFloorMemory(previous, chat, floor, edit, merge, filterRule
                 if (!existingFacts.has(fact.id)) fact.id = `fact-inline-${memoryDigest([current.floor, current.source.digest, fact.s, fact.p]).slice(0, 24)}`;
             }
             undo = buildSummaryUndo(before, memory.json, { aliasChanged: result.aliasChanged, includeAliases: true });
-            if (!current.omitted && !current.deleted) current.eventIds = parsed.events.map(event => event.id);
         } else {
             replayLegacy(memory, original); undo = buildSummaryUndo(before, memory.json);
         }
         const batch = createSummaryBatch(end, original.endMesId, undo, original.policy || memoryPolicy(filterRules));
         if (original.sourceReceipt) batch.sourceReceipt = clone(original.sourceReceipt);
-        if (original.summary) batch.summary = original.summary;
+        for (const key of ['summary', 'roundVersion', 'roundSource', 'memoryTags', 'roundRevisions', 'reviewLayers', 'layers', 'legacyRoundChanges', 'legacyRoundBase']) {
+            if (original[key] !== undefined) batch[key] = clone(original[key]);
+        }
+        if (current) {
+            batch.summary = current.omitted || current.deleted ? '' : current.payload.summary;
+            if (offset === 0 && old && (current.payload.summary !== old.payload.summary
+                || !sameMemory(current.payload.memoryTags, old.payload.memoryTags))) {
+                const prior = reviewedRounds(history).find(row => row.endMesId === original.endMesId);
+                batch.roundVersion = (prior?.roundVersion || original.roundVersion || 0) + 1;
+            }
+            if (current.payload.memoryTags) batch.memoryTags = clone(current.payload.memoryTags);
+            if (!batch.sourceReceipt) batch.roundSource = captureRangeSource(chat, current.source.start, current.floor);
+        }
         if (original.worldUpdate) batch.worldUpdate = clone(original.worldUpdate);
         if (current) batch.floorEntry = current;
         const generated = current?.anchorVersion ? [applyInlineAnchors(memory, current, batch.policy)] : [];
         batch.maintenance = [...generated, ...replayMaintenance(memory, (original.maintenance || []).filter(receipt => !isInlineAnchorReceipt(receipt)))];
         rebuilt.push(batch); end = batch.endMesId;
-    }
-    const ids = new Set((memory.json.events || []).map(event => event.id));
-    for (const event of memory.json.events || []) for (const id of event.causedBy || []) {
-        if (!ids.has(id)) conflict(`后续事件仍引用 ${id}，请先修改其前因后再删除。`);
     }
     store.json = memory.json; store.summaryHistory = rebuilt; store.lastSummarizedMesId = end;
     store.updatedAt = Date.now(); delete store.pendingImportBoundary;

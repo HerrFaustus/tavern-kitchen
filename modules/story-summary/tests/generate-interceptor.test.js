@@ -42,7 +42,7 @@ test('dispatcher awaits handlers in registration order', async () => {
 
 test('dispatcher uses explicit module order instead of initialization order', async () => {
     const calls = [];
-    register('ena-planner', () => calls.push('ena'), GENERATE_INTERCEPTOR_ORDER.ENA_PLANNER);
+    register('ena-planner', () => calls.push('ena'), GENERATE_INTERCEPTOR_ORDER.STORY_PLANNER);
     register('story-summary', () => calls.push('story'), GENERATE_INTERCEPTOR_ORDER.STORY_SUMMARY);
     register('draw', () => calls.push('draw'), GENERATE_INTERCEPTOR_ORDER.DRAW);
 

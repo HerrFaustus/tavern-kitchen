@@ -1,3 +1,4 @@
+import { reviewedRounds } from './data/summary-layers.js';
 import { summaryBatchChanges } from './data/summary-undo.js';
 import { floorChangeText } from '../story-state/view.js';
 import { createFloorPanel } from './inline/panel.js';
@@ -8,15 +9,12 @@ export function refreshFloorSummaries() { activePanels?.schedule(); }
 /** Preserve the actual batch provenance; an event's addedAt is not its source floor. */
 export function projectFloorSummary(store, floor, invalidFrom = null) {
     if (!store || store.summaryInvalid || (invalidFrom != null && floor >= invalidFrom)) return null;
-    const batch = store.summaryHistory?.find(item => item.kind === 'batch'
+    const batch = reviewedRounds(store.summaryHistory).find(item => item.kind === 'batch'
         && floor > item.previousEndMesId && floor <= item.endMesId && (!item.floorEntry || item.floorEntry.floor === floor));
     if (!batch || batch.endMesId > store.lastSummarizedMesId
         || (invalidFrom != null && batch.endMesId >= invalidFrom)) return null;
     if (typeof batch.summary === 'string' && batch.summary.trim()) return { start: batch.previousEndMesId + 1, end: batch.endMesId, text: batch.summary };
-    const events = (store.json?.events || []).filter(event => event._addedAt === batch.endMesId && event.summary?.trim());
-    if (!events.length) return null;
-    return { start: batch.previousEndMesId + 1, end: batch.endMesId,
-        text: events.map(event => event.title ? `${event.title}：${event.summary}` : event.summary).join('\n') };
+    return null;
 }
 
 export function projectFloorChanges(store, floor, invalidFrom = null) {
@@ -36,6 +34,7 @@ export function installFloorSummaries({ getSnapshot, openMemory, updateFloor, ex
     function refresh() {
         const snapshot = getSnapshot();
         if (!snapshot?.enabled) { clear(); return; }
+        const projected = { ...snapshot, roundHistory: reviewedRounds(snapshot.store?.summaryHistory) };
         const live = new Set();
         for (const message of doc.querySelectorAll('#chat .mes[mesid]')) {
             const floor = Number(message.getAttribute('mesid'));
@@ -50,7 +49,7 @@ export function installFloorSummaries({ getSnapshot, openMemory, updateFloor, ex
                 panel = createFloorPanel({ doc, floor, openMemory, updateFloor, extractFloor, summarizeFloor, schedule });
                 text.after(panel.node); nodes.set(message, panel);
             }
-            panel.refresh(snapshot);
+            panel.refresh(projected);
         }
         for (const [message, panel] of nodes) if (!live.has(message)) { panel.node.remove(); nodes.delete(message); }
     }

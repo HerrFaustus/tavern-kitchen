@@ -27,20 +27,21 @@ function syncNativeControls(target) {
         for (const property of properties) target.style.setProperty(`--tk-${control.dataset.control}-${property}`, style.getPropertyValue(property));
     }
 }
-export const KITCHEN_TABS = [['overview', '总览'], ['world', '世界'], ['memory', '剧情'], ['planner', '规划'], ['settings', 'API 设置']];
+export const KITCHEN_TABS = [['overview', '主角'], ['world', '世界'], ['memory', '剧情'], ['planner', '规划'], ['settings', 'API 设置']];
 export const KITCHEN_ROUTES = {
-    overview: [['overview', '当前故事']],
-    memory: [['memory', '事件时间线'], ['memory-settings', '剧情设置']],
-    world: [['world', '世界状态'], ['situation', '局势'], ['lore', '设定'], ['people', '人物'], ['map', '地图'], ['world-engine', '后台演化'], ['world-management', '世界管理']],
+    overview: [['overview', '主角']],
+    memory: [['memory', '剧情时间线'], ['suspense', '悬念簿'], ['proofreading', '剧情校对'], ['memory-settings', '剧情设置']],
+    world: [['people', '人物'], ['map', '地图'], ['situation', '局势'], ['lore', '设定']],
     planner: [['planner', '剧情规划'], ['dice', '行动判定']],
     settings: [['settings', 'API 设置']],
 };
-const canonicalRoute = id => id === 'relations' ? 'people' : id === 'world-records' ? 'world' : id === 'agent-api' ? 'settings' : id;
+const routeAliases = new Map([['world', 'people'], ['world-engine', 'situation'], ['world-records', 'situation'], ['summaries', 'memory-settings'], ['relations', 'people'], ['agent-api', 'settings']]);
+const canonicalRoute = id => routeAliases.get(id) || id;
 const parentOf = id => KITCHEN_TABS.find(([key]) => KITCHEN_ROUTES[key].some(([route]) => route === id))?.[0];
-const worldTabs = new Set(['map', 'world-engine', 'dice', 'agent-api', 'settings']);
-const memoryTabs = new Set(['memory', 'situation', 'lore', 'people', 'relations', 'memory-settings']);
+const worldTabs = new Set(['map', 'dice', 'agent-api', 'settings']);
+const memoryTabs = new Set(['memory', 'proofreading', 'situation', 'lore', 'people', 'relations', 'memory-settings']);
 // Keep current-story routes visible; reference and maintenance pages live under one overflow entry.
-const subnavOverflow = { world: new Set(['lore', 'world-engine', 'world-management']) };
+const subnavOverflow = { world: new Set(['lore']) };
 export const getKitchenMount = id => workspace?.getMount(id) ?? null;
 export const openKitchenTab = id => workspace?.open(id);
 export const closeKitchenWorkspace = () => workspace?.close();
@@ -143,7 +144,10 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
     body.append(worldMount);
     const memoryMount = doc.createElement('div'); memoryMount.id = 'tk-memory-mount'; memoryMount.hidden = true; body.append(memoryMount);
     if (settingsElement) mounts.get('settings').append(settingsElement);
-    panel.append(header, tabs, subnav, featureBar, body);
+    const evolution = doc.createElement('section');
+    evolution.hidden = true; evolution.className = 'tk-evolution';
+    let stopEvolution;
+    panel.append(header, tabs, subnav, featureBar, body, evolution);
     const entry = doc.createElement('div'); entry.id = 'tk-topbar'; entry.className = 'drawer';
     const trigger = doc.createElement('button');
     trigger.type = 'button'; trigger.className = 'drawer-toggle tk-topbar-toggle';
@@ -178,6 +182,7 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
         if (visible === open) return;
         visible = open;
         if (!open) generation += 1;
+        if (!open) { stopEvolution?.(); stopEvolution = undefined; evolution.replaceChildren(); evolution.hidden = true; }
         onVisibility(open, active);
     };
     panel.inert = true;
@@ -262,7 +267,14 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
                 actions[id] = () => { throw error; };
             }
         },
-        getMount: id => worldTabs.has(id) ? worldMount : memoryTabs.has(id) ? memoryMount : mounts.get(canonicalRoute(id)),
+        showEvolution(mount) {
+            stopEvolution?.(); evolution.hidden = false;
+            stopEvolution = mount(evolution);
+        },
+        getMount(id) {
+            const route = canonicalRoute(id);
+            return worldTabs.has(route) ? worldMount : memoryTabs.has(route) ? memoryMount : mounts.get(route);
+        },
         isActive: id => isOpen() && active === canonicalRoute(id),
         async open(id = active || 'overview') {
             id = canonicalRoute(id);
@@ -297,6 +309,7 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
                 more.open = false;
             }
             subnav.hidden = parent === 'overview' || parent === 'settings';
+            stopEvolution?.(); stopEvolution = undefined; evolution.replaceChildren(); evolution.hidden = true;
             renderFeatureBar(id);
             onVisibility(true, id);
             if (wasClosed) buttons.get(parent).focus({ preventScroll: true });

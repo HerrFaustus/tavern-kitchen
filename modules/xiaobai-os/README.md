@@ -13,7 +13,7 @@ SillyTavern 中的独立应用面板，与小白酒馆 Phone OS 不共享数据�
 | 地图 | [世界图册与场景地图](./docs/map-app-target-design.md) |
 | 世界 | [镜头外新闻、阅读与轻背景](./docs/world-app-target-design.md) |
 | 任务 | [委托、招募、维护与奖励托管](./docs/tasks-app-target-design.md) |
-| Dice | [行动检定与随机遭遇](./docs/dice-app-target-design.md)、[D100 人物属性](./docs/dice-coc7-design.md) |
+| Dice | [行动检定](./docs/dice-app-target-design.md)、[D100 人物属性](./docs/dice-coc7-design.md) |
 | 商店 | [商品、库存与回复效果](./docs/shop-app-target-design.md) |
 | 钱包 | [用户级余额与流水](./apps/wallet/README.md) |
 | 银行 | [存单、理财与计期](./docs/bank-app-target-design.md) |

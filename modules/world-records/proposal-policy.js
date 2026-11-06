@@ -51,6 +51,9 @@ export function clearProposal(proposal, source) {
     const left = Math.max(...['。', '！', '？', '\n'].map(mark => message.lastIndexOf(mark, start - 1)));
     const next = message.slice(end).search(/[。！？\n]/);
     const sentence = message.slice(left + 1, next < 0 ? message.length : end + next);
+    const closure = proposal.type === 'story' && proposal.record?.kind === 'situation'
+        && (proposal.record.remove || proposal.record.status !== 'open');
+    if (closure && /请求|申请|恳求|提议|商议|建议|希望|盼望|是否|能否|request(?:ed)?\b|propos(?:e|ed)\b/i.test(sentence)) return false;
     if (proposal.nature === 'established_fact' && /可能|也许|或许|似乎|据说|传闻|打算|计划|准备|如果|假如|尚未|没有|并未|未曾|不曾|并非|想要|将会|may\b|might\b|perhaps\b|plans? to\b|not\b/i.test(sentence)) return false;
     return true;
 }

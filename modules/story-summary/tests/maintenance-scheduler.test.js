@@ -70,7 +70,7 @@ const deferred = () => {
 
 beforeEach(() => {
     const fixture = maintenanceFixture();
-    Object.assign(host, { fixture, enabled: true, config: { memoryMaintenanceEnabled: true, textFilterRules: [], prompts: { summaryStyle: '' } },
+    Object.assign(host, { fixture, enabled: true, config: { memoryMaintenanceEnabled: true, proofreadingInterval: 1, textFilterRules: [], prompts: { summaryStyle: '' } },
         requests: [], writes: 0, files: [], confirmations: [], listeners: new Set(), afterSave: null, beforeReadback: null, onRunFinished: null,
         respond: async () => ({ text: 'Review finished.' }),
         metadata: { extensions: { TavernKitchen: {
@@ -173,6 +173,27 @@ async function appendSummary() {
 }
 
 const options = { timeout: 5000 };
+test('automatic proofreading counts completed replies and passes review instructions at the due boundary', options, async () => {
+    host.config.proofreadingInterval = 2;
+    host.config.proofreadingPrompt = '核对信件归属';
+    await appendSummary();
+    await nextTurn();
+    assert.equal(host.requests.length, 0);
+    const finished = waitForStatus('partial');
+    await appendSummary();
+    const result = await finished;
+    assert.equal(host.requests.length, 1);
+    assert.match(host.requests[0].systemPrompt, /核对信件归属/);
+    assert.deepEqual(result.ranges.pending, [{ from: 1, to: store().lastSummarizedMesId + 1 }]);
+});
+test('one summary spanning a five-turn boundary triggers one review', options, async () => {
+    host.config.proofreadingInterval = 5;
+    // The fixture contains twelve completed replies. One catch-up notification covers turns 10–12.
+    const finished = waitForStatus('partial');
+    submitted(18);
+    await finished;
+    assert.equal(host.requests.length, 1);
+});
 test('a summary submitted during saving waits and runs exactly once after confirmation', options, async t => {
     const saving = await holdSave(t);
     const finished = waitForStatus('partial');

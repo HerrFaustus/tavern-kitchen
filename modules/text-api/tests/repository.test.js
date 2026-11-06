@@ -5,7 +5,7 @@ import { StorageFile } from '../../../core/storage-file.js';
 import { createTextApiRepository } from '../repository.js';
 import { migrateLegacySettings } from '../migration.js';
 import { applyPresetAction, resolveFeaturePreset, TEXT_API_SETTINGS_KEY as KEY } from '../model.js';
-import { assertPlannerPresetReady } from '../../ena-planner/ena-planner-api-config.js';
+import { assertPlannerPresetReady } from '../../story-planner/preset.js';
 import { legacy, emptyPlanner } from './legacy-fixtures.js';
 
 // Contracts: loss of settings, silent endpoint changes, or incorrect references

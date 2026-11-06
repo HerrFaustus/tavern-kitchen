@@ -1,13 +1,13 @@
+import { reviewedRounds } from '../../data/summary-layers.js';
 const normalize = value => String(value || '').normalize('NFKC').trim().toLowerCase();
 
 export function getRawEntityVocabulary(store, context) {
     const data = store?.json || {};
     const names = [context.name2,
         ...(data.characters?.main || []).map(item => typeof item === 'string' ? item : item.name),
-        ...(data.events || []).flatMap(event => event.participants || []),
         ...(data.arcs || []).map(arc => arc.name),
         ...(data.storyRecords || []).flatMap(record => [record.name, record.person, record.location, ...(record.participants || [])]),
-        ...(store?.summaryHistory || []).flatMap(batch => batch.memoryTags?.characters || []),
+        ...reviewedRounds(store?.summaryHistory).flatMap(batch => batch.memoryTags?.characters || []),
     ];
     const displayMap = new Map();
     const user = normalize(context.name1);

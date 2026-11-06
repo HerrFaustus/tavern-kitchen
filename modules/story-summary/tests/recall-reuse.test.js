@@ -158,6 +158,7 @@ test('only recall and assembly config changes affect the config key', () => {
     assert.equal(recallConfigKey({ ...config, vector: { ...config.vector, l0Api: { model: 'other' }, l0Concurrency: 25 } }), key);
     assert.equal(recallConfigKey({ ...config, vector: { ...config.vector,
         embeddingApi: { modelCache: ['cached-list'], providers: { inactive: { model: 'other' } } } } }), key);
+    assert.equal(recallConfigKey({ ...config, prompts: { memoryTemplate: "旧指令" }, trigger: { ...config.trigger, wrapperHead: "旧前缀" } }), key);
     for (const changed of [
         { ...config, vector: { enabled: false } },
         { ...config, vector: { ...config.vector, embeddingApi: { model: 'other' } } },
@@ -167,6 +168,5 @@ test('only recall and assembly config changes affect the config key', () => {
         { ...config, ui: { ...config.ui, hideSummarized: true } },
         { ...config, ui: { ...config.ui, useVectorBoundary: false } },
         { ...config, textFilterRules: [] },
-        { ...config, prompts: { memoryTemplate: 'changed' } },
     ]) assert.notEqual(recallConfigKey(changed), key);
 });

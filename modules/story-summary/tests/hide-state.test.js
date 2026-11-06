@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createHideStateController } from '../hide-state.js';
+import { createHideStateController, getHiddenThrough } from '../hide-state.js';
 
 function deferred() {
     let resolve;
@@ -429,4 +429,14 @@ test('chat-disable can include immediate restoration in its own metadata save wi
     assert.equal([...f.rendered.values()].some(Boolean), false);
     await clearing;
     assert.equal(f.saves.length, 0);
+});
+
+test('the five-turn window retains whole exchanges, pending input and unsummarized history', () => {
+    const chat = Array.from({ length: 12 }, (_, i) => ({ mes: String(i), is_user: i % 2 === 0 }));
+    chat.splice(3, 0, { mes: 'second user message', is_user: true });
+    chat.push({ mes: 'next question', is_user: true }, { mes: 'streaming reply' });
+    const state = { chat, enabled: true, keepVisibleTurns: 5, stableEnd: 13, length: chat.length, summaryBoundary: 12 };
+    assert.equal(getHiddenThrough(state), 1);
+    assert.equal(getHiddenThrough({ ...state, summaryBoundary: 0 }), 0);
+    assert.equal(getHiddenThrough({ ...state, keepVisibleTurns: 0 }), 12);
 });

@@ -33,15 +33,7 @@ export function projectStoryCharacters(store, { throughMessageIndex, currentMess
         const names = aliases.filter(item => key(item.to) === key(personName)).map(item => text(item.from)).filter(Boolean);
         if (selectedName && selectedName !== key(personName) && !names.some(alias => key(alias) === selectedName)) continue;
         const related = value => [key(personName), ...names.map(key)].includes(key(value));
-        const arc = selectedName && (json.arcs || []).find(item => related(item.name) && at(item, throughMessageIndex));
         const lines = [];
-        if (arc) {
-            if (text(arc.trajectory)) lines.push(`人物弧光：${text(arc.trajectory)}`);
-            for (const moment of arc.moments || []) {
-                const momentText = text(typeof moment === 'string' ? moment : moment?.text);
-                if (at(moment, throughMessageIndex) && momentText) lines.push(momentText);
-            }
-        }
         for (const fact of selectedName ? json.facts || [] : []) {
             if (!fact.retracted && at(fact, throughMessageIndex)
                 && (related(fact.s) || related(fact.o) || related(parseRelationTarget(fact.p)))) {

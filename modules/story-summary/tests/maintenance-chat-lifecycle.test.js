@@ -173,8 +173,9 @@ test('changing writing preferences reaches later turns without modifying stored 
     host.respond = async () => ({ text: 'No changes requested.' });
     for (const summaryStyle of ['Use concrete actions.', 'Conservez les dates complètes.', '']) {
         host.config.prompts.summaryStyle = summaryStyle;
+        host.config.proofreadingPrompt = summaryStyle ? '查证原文中的承诺' : '';
         await h.maintenance.chat.send({ identity: h.maintenance.chat.identity, text: '当前有什么任务？' });
-        const expected = getMemoryChatPrompt(summaryStyle);
+        const expected = getMemoryChatPrompt(summaryStyle, host.config.proofreadingPrompt);
         assert.equal(host.requests.at(-1).systemPrompt.slice(0, expected.length), expected);
         assert.equal(host.writes, 0);
         assert.deepEqual(h.memory(), before);

@@ -1,4 +1,4 @@
-export type DiceFeature = 'actionChecksEnabled' | 'encountersEnabled';
+export type DiceFeature = 'actionChecksEnabled';
 export const ACTION_CHECK_FREQUENCIES = ['standard', 'active'] as const;
 export type ActionCheckFrequency = typeof ACTION_CHECK_FREQUENCIES[number];
 export const ACTION_CHECK_RULES = ['d20', 'coc7'] as const;
@@ -8,7 +8,6 @@ export interface DiceSettings {
     actionChecksEnabled: boolean;
     actionCheckFrequency: ActionCheckFrequency;
     actionCheckRule: ActionCheckRule;
-    encountersEnabled: boolean;
 }
 
 export interface DiceClientState extends Omit<DiceSettings, 'coc7Sheet'> {

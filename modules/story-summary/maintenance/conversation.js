@@ -26,8 +26,8 @@ export function buildMemoryChatMessages(question, history = []) {
 }
 
 /** Local preview only. Send-time measurement remains the execution authority. */
-export function estimateMemoryChatContext({ question = '', history = [], task = null, config = {}, summaryStyle } = {}) {
-    const prompt = getMemoryChatPrompt(summaryStyle);
+export function estimateMemoryChatContext({ question = '', history = [], task = null, config = {}, summaryStyle, proofreadingPrompt } = {}) {
+    const prompt = getMemoryChatPrompt(summaryStyle, proofreadingPrompt);
     const messages = [...memoryChatHistory(history), { role: 'user', content: question }];
     const tools = [...(task ? MEMORY_TOOLS : []), READ_MAINTENANCE_TOOL];
     const material = memoryChatMaterial(task, REVIEW_LIMITS.turns);
@@ -45,13 +45,13 @@ export function estimateMemoryChatContext({ question = '', history = [], task = 
  * the complete provider request before sending it. No history payload is retained.
  */
 export function createMemoryChatContextEstimator() {
-    let previousHistory, previousTask, previousConfig, previousStyle, base;
-    return ({ question = '', history = [], task = null, config = {}, summaryStyle } = {}) => {
+    let previousHistory, previousTask, previousConfig, previousStyle, previousPrompt, base;
+    return ({ question = '', history = [], task = null, config = {}, summaryStyle, proofreadingPrompt } = {}) => {
         const taskKey = JSON.stringify(task), configKey = JSON.stringify(config);
-        if (!base || previousHistory !== history || previousTask !== taskKey || previousConfig !== configKey || previousStyle !== summaryStyle) {
-            base = estimateMemoryChatContext({ history, task, config, summaryStyle });
+        if (!base || previousHistory !== history || previousTask !== taskKey || previousConfig !== configKey || previousStyle !== summaryStyle || previousPrompt !== proofreadingPrompt) {
+            base = estimateMemoryChatContext({ history, task, config, summaryStyle, proofreadingPrompt });
             previousHistory = history; previousTask = taskKey; previousConfig = configKey;
-            previousStyle = summaryStyle;
+            previousStyle = summaryStyle; previousPrompt = proofreadingPrompt;
         }
         const questionTokens = question ? Math.max(0, estimateConversationTokens({ messages: [{ role: 'user', content: question }] })
             - estimateConversationTokens()) : 0;

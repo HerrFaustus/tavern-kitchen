@@ -3,6 +3,9 @@ import type { XiaobaiOsFileState } from '../../kernel/contracts.js';
 
 export interface WorldSettings {
     subscribed: boolean;
+    peopleEvolution?: boolean;
+    sceneryEvolution?: boolean;
+    encounterFrequency?: 'off' | 'occasional' | 'lively';
     injectToStory: boolean;
 }
 

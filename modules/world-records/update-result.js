@@ -1,6 +1,8 @@
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
 import { validateRangeSource } from '../story-summary/data/turn-source.js';
-import { parseStoryUpdates } from '../story-state/records.js';
+import { isPersonalAgenda, parseStoryUpdates } from '../story-state/records.js';
+import { nameKey } from '../story-state/protagonist-identity.js';
+import { PERSON_FIELDS, RELATION_PREFIX, validatePersonField } from './person-fields.js';
 
 const natures = ['established_fact', 'rumor', 'belief', 'intention', 'hypothesis', 'creative_proposal', 'unclassified'];
 const kinds = ['person', 'organization', 'place', 'item', 'subject'];
@@ -32,6 +34,8 @@ function evidence(value, source) {
 }
 function validateValue(field, value, entities) {
     json(value);
+    if (PERSON_FIELDS.has(field)) check(typeof value === 'string' || value === null, '人物特征须为描述文本或明确清空');
+    if (field === '持有类别') check(value === null || ['资产','物品'].includes(value), '持有类别须为资产或物品');
     if (value && typeof value === 'object' && Object.hasOwn(value, 'entityId')) check(entities.some(entity => entity.id === value.entityId), '关联对象不存在');
     if (field === 'coins') check(Number.isSafeInteger(value) && value >= 0, '金币须为非负安全整数');
     if (['location', 'owner', 'parent'].includes(field)) {
@@ -40,7 +44,7 @@ function validateValue(field, value, entities) {
     }
 }
 
-export function prepareWorldUpdate(raw, context) {
+export function prepareWorldUpdate(raw, context, {requireHolders = true} = {}) {
     check(raw && typeof raw === 'object' && !Array.isArray(raw), '缺少统一更新结果');
     const expected = { worldId: context.basis.worldId, branchId: context.basis.branchId, version: context.basis.version };
     check(equal(raw.basis, expected), '世界或分支版本与输入不一致');
@@ -58,6 +62,11 @@ export function prepareWorldUpdate(raw, context) {
             const field = text(item.field, '字段名', 100), old = entity.fields[field];
             check(equal(item.before, old ? { present: true, value: old.value } : { present: false }), '旧值与世界快照不一致');
             validateValue(field, item.value, entities);
+            validatePersonField(entity, field, item.value, entities);
+            if (field.startsWith(RELATION_PREFIX) && item.value) {
+                const pair = 'relationship:' + JSON.stringify([entity.id,item.value.entityId].sort());
+                check(!seen.has(pair),'同一关系身份在本批中重复'); seen.add(pair);
+            }
             check(!old || !equal(old.value, item.value), '未变化的字段不应重复提议');
             const alreadyExecuted = context.executionReceipts.some(receipt => {
                 const source = receipt.origin && context.incrementTurns?.find(turn => turn.id === receipt.origin.sourceId)?.source;
@@ -68,7 +77,7 @@ export function prepareWorldUpdate(raw, context) {
             check(!alreadyExecuted, '本轮该字段已有执行回执，只能补记经过或记录冲突');
             proposal = { type: 'field', entityId: entity.id, field, before: structuredClone(item.before), value: structuredClone(item.value), nature: item.nature, evidence: proof };
         } else if (item.type === 'story') {
-            const record = parseStoryUpdates([item.record])[0], old = context.world.storyRecords.find(item => item.id === record.id);
+            const record = parseStoryUpdates([item.record], {requireHolders})[0], old = context.world.storyRecords.find(item => item.id === record.id);
             check(equal(item.before, old ? { present: true, value: old } : { present: false }), '场景或认知记录旧值不一致');
             check(!old || old.kind === record.kind, '同一场景记录不能改变类型');
             proposal = { type: 'story', record, before: structuredClone(item.before), nature: item.nature, evidence: proof };
@@ -79,6 +88,13 @@ export function prepareWorldUpdate(raw, context) {
             proposal = { type: 'entity', name, kind: item.kind, aliases: [...new Set(item.aliases.map(alias => text(alias, '别名', 200)))], nature: item.nature, evidence: proof };
         }
         Object.assign(proposal, decisionMetadata(item));
+        if (proposal.type === 'story' && isPersonalAgenda(proposal.record) && proposal.record.status === 'open'
+            && context.playerNames?.length && proposal.record.holders?.some(name => context.playerNames.includes(nameKey(name)))) {
+            const old = proposal.before.value;
+            const newIntent = !old || ['title','description','conditions','holders'].some(field => !equal(old[field] ?? null,proposal.record[field] ?? null));
+            if (newIntent && proposal.certainty === 'explicit' && !context.increment.messages.some(message =>
+                message.role === 'user' && message.text.includes(proof.quote))) proposal.certainty = 'uncertain';
+        }
         const key = item.type === 'field' ? `field:${item.entityId}/${item.field}` : item.type === 'story' ? `story:${proposal.record.id}` : `entity:${item.kind}/${item.name}`;
         check(!seen.has(key), '同批提案重复'); seen.add(key); return proposal;
     });

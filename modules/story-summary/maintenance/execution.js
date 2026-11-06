@@ -19,7 +19,7 @@ export function hasMaintenanceBoundary(current) {
 
 /** The host task owns the draft and final save, independently of the iframe. */
 export async function executeMemoryTask(task, {
-    read, enabled, automaticEnabled, filterRules: currentFilterRules, summaryStyle, invalidateRecall, refreshSummary,
+    read, enabled, automaticEnabled, generateReviewedLayer, filterRules: currentFilterRules, summaryStyle, proofreadingPrompt, invalidateRecall, refreshSummary,
     signal, phase = () => {}, mode = 'auto', question, history, readMaintenance,
     onCall, onStream, onContext, onProgress,
 }) {
@@ -70,7 +70,7 @@ export async function executeMemoryTask(task, {
     }
     const canMaintain = enabled() && hasMaintenanceBoundary(current) && getMemoryCommitState() !== 'unconfirmed';
     const batch = canMaintain ? current.store.summaryHistory.find(entry => entry.endMesId === task.cutoff) : null;
-    const session = canMaintain ? createMemorySession({ ...current, ...task,
+    const session = canMaintain ? createMemorySession({ ...current, ...task, generateReviewedLayer,
         filterRules: batch?.policy ? batch.policy.filterRules : currentFilterRules() }) : null;
     owner = current.store;
     let index = { status: 'ready' }, latest = null, prepared = null, saveError = null;
@@ -176,7 +176,7 @@ export async function executeMemoryTask(task, {
     }
     assertIdentity();
     const result = await runMemoryAgent(session, { ...agent, signal, mode, question, history, runId,
-        summaryStyle: summaryStyle(),
+        summaryStyle: summaryStyle(), proofreadingPrompt: proofreadingPrompt?.(),
         readMaintenance: async args => {
             assertIdentity();
             let saveState;

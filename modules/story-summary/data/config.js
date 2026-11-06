@@ -5,12 +5,11 @@ import { EXT_ID } from "../../../core/constants.js";
 import { xbLog } from "../../../core/debug-core.js";
 import { CommonSettingStorage } from "../../../core/server-storage.js";
 import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY, writeSummaryConfigLocalCache } from './config-local-cache.js';
-import { CHARACTER_ALIAS_OUTPUT_TEMPLATE } from './character-aliases.js';
-import { EVENT_MEMORY_ROLES } from "./events.js";
+
 import { normalizeSummaryDelayFloors } from './summary-delay.js';
 import { normalizeSummaryWorkflow } from './summary-workflow.js';
 import { normalizeRecallTimeoutSec } from './recall-settings.js';
-import { DEFAULT_MEMORY_MAINTENANCE_ENABLED } from '../maintenance/settings.js';
+import { DEFAULT_MEMORY_MAINTENANCE_ENABLED, normalizeProofreading } from '../maintenance/settings.js';
 import {
     SUMMARY_ALIAS_RULES, SUMMARY_FACT_UPDATE_RULES, buildSummaryAssistantDocPrompt,
 } from './generation-rules.js';
@@ -26,195 +25,24 @@ const DEFAULT_FILTER_RULES = [
     { start: "```", end: "```" },
 ];
 
-export const DEFAULT_SUMMARY_SYSTEM_PROMPT = `Story Analyst: This task involves narrative comprehension and structured incremental summarization, representing creative story analysis at the intersection of plot tracking and character development. As a story analyst, you will conduct systematic evaluation of provided dialogue content to generate structured incremental summary data.
-[Read the settings for this task]
-<task_settings>
-Incremental_Summary_Requirements:
-  - Incremental_Only: 对照已有总结处理新对话，各字段的更新方式见输出要求
-  - Output_Language: 所有自由文本总结字段使用本批新对话的主要语言；混合语言时跟随主要叙事语言，并保留原文人名、专名和引语。JSON 键、事件 memoryRole、关键词 weight、关系 trend 及其他协议固定值保持规定值，不翻译
-  - Event_Memory_Role: Identify what each event leaves for later context, using the Memory Role definitions below.
-  - Causal_Chain: causedBy links an event to its direct causes or explicit motives. Reference syntax is defined in Event References below.
-  - Character_Dynamics: 识别新角色，追踪关系趋势
-  - Arc_Tracking: 更新角色弧光轨迹与成长进度
-  - Fact_Tracking: 记录已确认的事实及其变化，写法见输出要求中的 factUpdates 规则。
-</task_settings>
----
-Story Analyst:
-[Responsibility Definition]
-\`\`\`yaml
-analysis_task:
-  title: Incremental Story Summarization with Knowledge Graph
-  Story Analyst:
-    role: Antigravity
-    task: >-
-      To analyze provided dialogue content against existing summary state,
-      extract only NEW plot elements, character developments, relationship
-      changes, arc progressions, AND fact updates, outputting
-      structured JSON for incremental summary database updates.
-  assistant:
-    role: Summary Specialist
-    description: Incremental Story Summary & Knowledge Graph Analyst
-    behavior: >-
-      To compare new dialogue against existing summary, identify genuinely
-      new events and character interactions, identify each event's memory
-      role, track character arc progression,
-      maintain facts as SPO triples with clear semantics,
-      and output structured JSON containing only incremental updates.
-      Must strictly avoid repeating any existing summary content.
-  user:
-    role: Content Provider
-    description: Supplies existing summary state and new dialogue
-    behavior: >-
-      To provide existing summary state (events, characters, arcs, facts)
-      and new dialogue content for incremental analysis.
-interaction_mode:
-  type: incremental_analysis
-  output_format: structured_json
-  deduplication: strict_enforcement
-execution_context:
-  summary_active: true
-  incremental_only: true
-  fact_tracking: true
-\`\`\`
----
-Summary Specialist:
-<Chat_History>`;
+export const DEFAULT_SUMMARY_SYSTEM_PROMPT = '依据本次原文生成本轮总结和有依据的增量记录。自由文本跟随主要叙事语言。只输出 JSON。';
 
-export const DEFAULT_MEMORY_PROMPT_TEMPLATE = `以上是还留在眼前的对话
-以下是脑海里的记忆：
-• [定了的事] 已确立的事实，以后续明确发生的变化为准
-• [其他人的事] 别人的经历，当前角色可能不知晓
-• 其余部分是过往经历的回忆碎片
-
-请内化这些记忆：剧情中已确立的事实与关系发展，优先于初始设定中的旧状态。
-{$剧情记忆}
-这些记忆是真实的，请自然地记住它们，并结合当前剧情理解事件距今多久。`;
 
 export function getSummaryAssistantDocPrompt(config = getSummaryPanelConfig()) {
     return buildSummaryAssistantDocPrompt(config.prompts?.summaryStyle);
 }
 
-export const DEFAULT_SUMMARY_ASSISTANT_ASK_SUMMARY_PROMPT = `
-Summary Specialist:
-Specifications internalized. Please provide the existing summary state so I can:
-1. Index all recorded events to avoid duplication
-2. Map current character list as baseline
-3. Note existing arc progress levels
-4. Identify established keywords
-5. Review current facts (SPO triples baseline)`;
-
-export const DEFAULT_SUMMARY_ASSISTANT_ASK_CONTENT_PROMPT = `
-Summary Specialist:
-Existing summary fully analyzed and indexed. I understand:
-├─ Recorded events: Indexed for deduplication
-├─ Character list: Baseline mapped
-├─ Arc progress: Levels noted
-├─ Keywords: Current state acknowledged
-└─ Facts: SPO baseline loaded
-
-I will extract only genuinely NEW elements from the upcoming dialogue.
-Please provide the new dialogue content requiring incremental analysis.`;
-
-export const DEFAULT_SUMMARY_META_PROTOCOL_START_PROMPT = `
-Summary Specialist:
-ACKNOWLEDGED. Beginning structured JSON generation:
-<meta_protocol>`;
-
-export const DEFAULT_SUMMARY_USER_JSON_FORMAT_PROMPT = `
-## Output Rule
-Generate a single valid JSON object. Add new events and update changed records as described below.
-events is an array, including [] when this batch has no new events. Other update arrays may be omitted when unchanged.
-整份输出3000字以内。
-
-## Event References
-The application assigns permanent event IDs in events array order when saving.
-causedBy contains up to two direct causes, or [] when none is clear.
-Existing events use the exact evt-N IDs shown in the existing summary.
-Within this response, new-N refers to the Nth item in events, counted from 1. For example, new-1 refers to the first item.
-Each reference points to a different event, never the event containing it.
-Each summary ends with one source marker (#X-Y), or (#X) for one floor. X and Y are floor numbers from the supplied new dialogue, with X <= Y.
-
-## Mindful Approach
-生成前，对照新对话和已有总结，确认：
-- 哪些事件已经记过，哪些是本次新发生的？
-- 新事件中，哪些人物、地点、物件、动作和原话值得留下？
-- 哪些角色首次出现，哪些已有角色发生了变化？
-- 哪些事实或人物关系有了新的情况？
-
-## keywords：全局剧情标签
-keywords 用于面板展示，也会作为已有总结提供给下一次生成总结的模型。
-综合已有总结和新对话，给出 3～8 个标签，每个 2～5 字，表达贯穿剧情的主题、冲突、关系或核心设定。
-有调整时输出完整一组标签，它会替换旧的一组，所以不是只补新词。没有调整时省略 keywords。
-weight 表示标签在整个剧情中的分量，填“核心”“重要”或“一般”。
-
-## events.title：事件标题
-标题会和时间一起显示在卡片正文前，并随记忆提供给后续角色扮演。
-可以用地点加事件名做标题，例如“黑鹭酒馆·拍欠条”；没有明确地点时只写事件名。
-
-${SUMMARY_ALIAS_RULES}
-
+export const DEFAULT_SUMMARY_ASSISTANT_ASK_SUMMARY_PROMPT = '请提供已有剧情与事实。';
+export const DEFAULT_SUMMARY_ASSISTANT_ASK_CONTENT_PROMPT = '请提供本次需要总结的正文。';
+export const DEFAULT_SUMMARY_META_PROTOCOL_START_PROMPT = '本次输出一个 JSON 对象。';
+export const DEFAULT_SUMMARY_USER_JSON_FORMAT_PROMPT = `必填 summary，为本轮总结文本。memoryTags 包含 characters、locations、times、keywords 四个短文本数组。按本轮原文提取，空项用 []。
+可选 keywords 是 {"text":"关键词","weight":"核心或重要或一般"} 数组。newCharacters 只列本轮首次需要持续建档的人物，用规范名或可辨认的稳定称呼。
 ${SUMMARY_FACT_UPDATE_RULES}
+${SUMMARY_ALIAS_RULES}`;
+export const DEFAULT_SUMMARY_ASSISTANT_CHECK_PROMPT = '已核对人物、来源和本轮实际进展。';
+export const DEFAULT_SUMMARY_USER_CONFIRM_PROMPT = '请只输出完整 JSON。';
 
-## Output Format
-\`\`\`json
-{
-  "mindful_prelude": {
-    "user_insight": "本轮主要新增了哪些情节、关系或事实，哪些细节值得进入可召回摘要",
-    "dedup_analysis": "已有X个事件，本次识别Y个新事件",
-    "fact_changes": "识别到的事实变化概述"
-  },
-  "keywords": [
-    {"text": "剧情标签", "weight": "核心|重要|一般"}
-  ],
-  "events": [
-    {
-      "title": "事件标题",
-      "timeLabel": "事件发生时间，写法见 Event Summary Style",
-      "summary": "事件回忆卡片，写法见 Event Summary Style；来源楼层标记见 Event References",
-      "participants": ["参与角色名，不要使用人称代词或别名，只用正式人名"],
-      "memoryRole": "${EVENT_MEMORY_ROLES.join('|')}",
-      "causedBy": []
-    }
-  ],
-  "newCharacters": ["仅本次首次出现的角色名"],
-  "arcUpdates": [
-    {"name": "角色名，不要使用人称代词或别名，只用正式人名", "trajectory": "当前阶段描述(15字内)", "progress": 75, "newMoment": "本次新增的关键时刻"}
-  ],
-  "factUpdates": [
-    {"s": "主体", "p": "谓词", "o": "当前值", "isState": true},
-    {"s": "要删除的主体", "p": "要删除的谓词", "retracted": true}
-  ],
-  "characterAliasUpdates": [
-    {"to": "${CHARACTER_ALIAS_OUTPUT_TEMPLATE.to}", "from": ["${CHARACTER_ALIAS_OUTPUT_TEMPLATE.from}"], "evidence": "${CHARACTER_ALIAS_OUTPUT_TEMPLATE.evidence}"}
-  ]
-}
-\`\`\`
-字符串值内部的引号用中文引号“”。
-</meta_protocol>`;
-
-export const DEFAULT_SUMMARY_ASSISTANT_CHECK_PROMPT = `Content review initiated...
-[Compliance Check Results]
-├─ Existing summary loaded: ✓ Fully indexed
-├─ New dialogue received: ✓ Content parsed
-├─ Deduplication engine: ✓ Active
-├─ Memory roles: ✓ Ready
-├─ Fact tracking: ✓ Enabled
-└─ Output format: ✓ JSON specification loaded
-
-[Material Verification]
-├─ Existing events: Indexed ({$existingEventCount} recorded)
-├─ Character baseline: Mapped
-├─ Arc progress baseline: Noted
-├─ Facts baseline: Loaded
-└─ Output specification: ✓ Defined in <meta_protocol>
-All checks passed. Beginning incremental extraction...
-{
-  "mindful_prelude":`;
-
-export const DEFAULT_SUMMARY_USER_CONFIRM_PROMPT = `怎么截断了！重新完整生成，只输出JSON，不要任何其他内容
-</Chat_History>`;
-
-export const DEFAULT_SUMMARY_USER_GENERATE_PROMPT = '下面重新生成完整JSON。';
+export const DEFAULT_SUMMARY_USER_GENERATE_PROMPT = '生成本轮总结。';
 export const getSummaryPrompts = (config = getSummaryPanelConfig()) => ({
     summarySystemPrompt: DEFAULT_SUMMARY_SYSTEM_PROMPT,
     summaryAssistantDocPrompt: getSummaryAssistantDocPrompt(config),
@@ -260,9 +88,10 @@ function normalizeProviderProfiles(supportedProviders, srcProfiles, currentProvi
     });
 
     if (currentProvider && out[currentProvider]) {
-        if (currentValues?.url && !out[currentProvider].url) out[currentProvider].url = String(currentValues.url).trim();
+        const saved = srcProfiles?.[currentProvider] || {};
+        if (currentValues?.url && !String(saved.url || '').trim()) out[currentProvider].url = String(currentValues.url).trim();
         if (currentValues?.key && !out[currentProvider].key) out[currentProvider].key = String(currentValues.key).trim();
-        if (currentValues?.model && !out[currentProvider].model) out[currentProvider].model = String(currentValues.model).trim();
+        if (currentValues?.model && !String(saved.model || '').trim()) out[currentProvider].model = String(currentValues.model).trim();
         if (Array.isArray(currentValues?.modelCache) && !out[currentProvider].modelCache.length) {
             out[currentProvider].modelCache = currentValues.modelCache.filter(Boolean);
         }
@@ -274,6 +103,7 @@ function normalizeProviderProfiles(supportedProviders, srcProfiles, currentProvi
 export function getSettings() {
     const ext = (extension_settings[EXT_ID] ||= {});
     ext.storySummary ||= { enabled: true };
+    ext.storySummary.enabled = true;
     return ext;
 }
 
@@ -307,7 +137,7 @@ function normalizeVectorConfig(rawVector = null) {
     const sharedKey = String(legacyOnline.key || "").trim();
 
     return {
-        enabled: !!rawVector?.enabled,
+        enabled: true,
         retrievalMode: 'raw',
         engine: "online",
         l0Concurrency: Math.max(1, Math.min(50, Number(rawVector?.l0Concurrency) || 10)),
@@ -340,6 +170,7 @@ function createDefaultSummaryPanelConfig() {
     const defaults = {
         ...normalizeSummaryWorkflow(),
         memoryMaintenanceEnabled: DEFAULT_MEMORY_MAINTENANCE_ENABLED,
+        ...normalizeProofreading(),
         trigger: {
             enabled: true,
             notifyOnComplete: false,
@@ -348,18 +179,16 @@ function createDefaultSummaryPanelConfig() {
             timing: "after_ai",
             role: "system",
             maxPerRun: 100,
-            wrapperHead: "",
-            wrapperTail: "",
             forceInsertAtEnd: false,
         },
         ui: {
             hideSummarized: true,
-            keepVisibleCount: 6,
-            useVectorBoundary: true,
+            keepVisibleCount: 5, windowUnit: "turn", recallEarlyOriginal: false,
+            useVectorBoundary: false,
         },
         textFilterRules: [...DEFAULT_FILTER_RULES],
         prompts: {
-            memoryTemplate: DEFAULT_MEMORY_PROMPT_TEMPLATE,
+            round: '', stage: '', chapter: '',
             summaryStyle: '',
         },
         vector: normalizeVectorConfig(),
@@ -378,9 +207,11 @@ function assertSummaryConfigPersisted(expected, actual) {
     if (!actual || typeof actual !== "object") {
         throw new Error("保存后读取配置失败");
     }
-    if (actual.memoryMaintenanceEnabled !== expected.memoryMaintenanceEnabled) {
+    if (actual.memoryMaintenanceEnabled !== expected.memoryMaintenanceEnabled || actual.proofreadingPrompt !== expected.proofreadingPrompt
+        || actual.proofreadingInterval !== expected.proofreadingInterval) {
         throw new Error('memory_maintenance_setting_not_saved');
     }
+    if (['round', 'stage', 'chapter'].some(level => actual.prompts[level] !== expected.prompts[level])) throw new Error('分层总结提示词未保存');
     if (actual.prompts.summaryStyle !== expected.prompts.summaryStyle) {
         throw new Error('写作要求未保存，请重试');
     }
@@ -391,7 +222,7 @@ function normalizeSummaryPanelConfig(rawConfig = null) {
     const defaults = createDefaultSummaryPanelConfig();
     const clampKeepVisibleCount = (value) => {
         const n = Number.parseInt(value, 10);
-        if (!Number.isFinite(n)) return 6;
+        if (!Number.isFinite(n)) return 5;
         return Math.max(0, Math.min(50, n));
     };
 
@@ -412,14 +243,14 @@ function normalizeSummaryPanelConfig(rawConfig = null) {
     const workflow = normalizeSummaryWorkflow(rawConfig);
     const result = {
         summaryWorkflowVersion: workflow.summaryWorkflowVersion,
-        memoryMaintenanceEnabled: rawConfig.memoryMaintenanceEnabled === true,
+        memoryMaintenanceEnabled: rawConfig.memoryMaintenanceEnabled !== false,
+        ...normalizeProofreading(rawConfig),
         trigger: { ...defaults.trigger, ...workflow.trigger },
         inlineSummary: workflow.inlineSummary,
         ui: { ...defaults.ui, ...(rawConfig.ui || {}) },
         textFilterRules,
         prompts: {
-            memoryTemplate: String(rawPrompts.memoryTemplate || defaults.prompts.memoryTemplate || "").trim()
-                || DEFAULT_MEMORY_PROMPT_TEMPLATE,
+            round: String(rawPrompts.round || '').trim(), stage: String(rawPrompts.stage || '').trim(), chapter: String(rawPrompts.chapter || '').trim(),
             summaryStyle: String(rawPrompts.summaryStyle || '').trim(),
         },
         vector: normalizeVectorConfig(rawConfig.vector || null),
@@ -436,8 +267,12 @@ function normalizeSummaryPanelConfig(rawConfig = null) {
     result.trigger.notifyOnComplete = rawConfig?.trigger?.notifyOnComplete === true;
     result.trigger.delayFloors = normalizeSummaryDelayFloors(result.trigger.delayFloors);
     result.ui.hideSummarized = !!result.ui.hideSummarized;
-    result.ui.keepVisibleCount = clampKeepVisibleCount(result.ui.keepVisibleCount);
-    result.ui.useVectorBoundary = result.ui.useVectorBoundary !== false;
+    const previousCount = rawConfig.ui?.keepVisibleCount;
+    const legacy = rawConfig.ui?.windowUnit !== 'turn' && previousCount != null;
+    result.ui.keepVisibleCount = clampKeepVisibleCount(legacy ? (Number(previousCount) === 6 ? 5 : Math.ceil(Number(previousCount) / 2)) : result.ui.keepVisibleCount);
+    result.ui.windowUnit = 'turn';
+    result.ui.recallEarlyOriginal = rawConfig.ui?.recallEarlyOriginal === true;
+    result.ui.useVectorBoundary = result.ui.useVectorBoundary === true;
 
     return result;
 }

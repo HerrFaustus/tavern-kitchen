@@ -360,7 +360,7 @@ type TaskGenerationBoundary =
 
 `worldInfo`只调用 SillyTavern 1.18 的`getWorldInfoPrompt(boundaryMessages.reverse(), hostMaxContext, true, globalScanData)`。`boundaryMessages`是截至捕获边界的全部非 system 聊天正文，并按宿主`world_info_include_names`决定是否使用`说话人: 正文`；最近 4 条只限制发送给 Agent 的`<recent_messages>`，不能反过来缩窄宿主世界书扫描。`hostMaxContext`使用 SillyTavern 当前上下文上限，无效时才回退 8,192；第三个参数必须为 dry-run；`globalScanData`使用宿主已展开的 persona、角色描述、性格、深度提示、场景、创作者注释和`trigger: normal`，否则按这些字段匹配的世界书会被错误漏掉。只读取返回对象的`worldInfoBefore`、`worldInfoAfter`和`worldInfoDepth`：前两项映射到 before/after；`worldInfoDepth`不是字符串数组，而是`{depth,role,entries}`对象数组，只按返回顺序展开每项`entries`中的文本，忽略 depth/role 等控制字段，再按本节容量写入 depth。不得把整个对象`String()`成`[object Object]`，也不读取 examples、Author's Note、outlets、Tavern memory/status/map。调用失败降级为空并记内部日志。
 
-`storyEvents`只能调用 Story Summary 的`getStorySummaryL2EventText({ throughMessageIndex, maxCharacters: 20_000 })`窄接口。接口只投影 events 的时间、标题、参与者和摘要，只接受`_addedAt <= throughMessageIndex`的完整事件块；从最新事件向前装箱后恢复时间正序。Story Summary 不可消费、关闭、读取失败或没有合格事件时整块缺席，普通 OS 不读取它的 metadata/store。
+`storyEvents`只能调用 Story Summary 的`getStorySummaryRoundText({ throughMessageIndex, maxCharacters: 20_000 })`窄接口。接口读取指定边界内已保存的本轮总结和人物标签，只接受`_addedAt <= throughMessageIndex`的完整总结，按篇幅从最近的记录向前选择，再恢复时间正序。Story Summary 不可消费、关闭、读取失败或没有合格事件时整块缺席，普通 OS 不读取它的 metadata/store。
 
 上下文快照只作为五层请求中的 XML 资料块使用，不再序列化成单一上下文 JSON。保存前由同一个 adapter 重新捕获并规范化，要求 osId/binding 与整个快照深相等。实际参与请求的消息、swipe、角色卡、persona、激活世界书、L2 事件或玩家身份变化会使迟到结果失效；未进入有界上下文的旧消息不构成虚假依赖。边界只活在本次请求中，不持久化。
 

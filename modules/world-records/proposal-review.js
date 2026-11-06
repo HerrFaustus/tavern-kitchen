@@ -55,8 +55,10 @@ function approvalContext(state, record, baseline) {
 }
 function normalizeApproval(state, record, proposal, baseline) {
     const context = approvalContext(state, record, baseline);
+    const legacy = proposal.type === 'story' && record.update.proposals.some(original =>
+        original.type === 'story' && original.record.kind === 'plan' && original.record.id === proposal.record.id && !original.record.holders);
     const approved = prepareWorldUpdate({ basis: context.basis, proposals: [proposal], conflicts: [],
-        acknowledgedReceipts: context.executionReceipts.map(receipt => receipt.commandId) }, context).proposals[0];
+        acknowledgedReceipts: context.executionReceipts.map(receipt => receipt.commandId) }, context, {requireHolders:!legacy}).proposals[0];
     if (approved.type === 'entity') check(!state.entities.some(entity => (entity.kind === approved.kind || entity.kind === 'subject')
         && [entity.name, ...entity.aliases].some(name => [approved.name, ...approved.aliases].some(alias => namesEqual(name, alias)))), '同名或别名对象已经存在，请复用原对象');
     return approved;

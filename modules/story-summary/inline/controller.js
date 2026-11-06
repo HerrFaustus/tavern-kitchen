@@ -29,15 +29,12 @@ export function createFloorSummaryController({ getContext, enabled, getConfig, e
         const draft = previous.storySummary.floorDrafts?.[floor];
         const payload = change.payload ?? (draft?.source?.digest === source.digest ? draft.payload : old?.payload) ?? extracted.payload;
         if (!payload) throw new Error(extracted.error || '主回复未附带总结，可在楼尾补写，或用酒馆重新生成本楼。');
-        const options = { ...(draft?.source?.digest === source.digest ? { eventIds: draft.eventIds, suppressDefaultEvent: draft.suppressDefaultEvent } : {}),
-            ...change, payload: validateFloorPayload(payload) };
+        const options = { ...change, payload: validateFloorPayload(payload) };
         let next;
         if (change.stage) {
             next = structuredClone(previous);
             next.storySummary.floorDrafts ||= {};
-            next.storySummary.floorDrafts[floor] = { source, payload: options.payload,
-                ...(options.eventIds ? { eventIds: options.eventIds } : {}),
-                ...(options.suppressDefaultEvent ? { suppressDefaultEvent: true } : {}) };
+            next.storySummary.floorDrafts[floor] = { source, payload: options.payload };
         } else {
             next = reviseFloorMemory(previous, getContext().chat, floor, options, merge, getFilterRules());
             if (preparedSources) findFloorBatch(next.storySummary, floor).sourceReceipt = structuredClone(preparedSources.receipt);
@@ -71,7 +68,7 @@ export function createFloorSummaryController({ getContext, enabled, getConfig, e
         const extracted = extractFloorPayload(getContext().chat?.[floor]?.mes);
         if (extracted.status !== 'ready') { refresh(); return extracted; }
         if (getConfig().review && !force) { refresh(); return { pending: true }; }
-        return update(floor, { payload: extracted.payload, omitted: false, deleted: false, empty: false, suppressDefaultEvent: false, reviewed: force });
+        return update(floor, { payload: extracted.payload, omitted: false, deleted: false, empty: false, reviewed: force });
     }
     return { update, ingest, error: floor => errors.get(key(floor)) || '', reset() { errors.clear(); refresh(); } };
 }

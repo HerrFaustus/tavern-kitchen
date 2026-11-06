@@ -5,7 +5,7 @@ import { resolveAgentProfile } from '../../text-api/profile-runtime.js';
 import { isSillyTavernProvider } from '../../agent-core/provider-resolution.js';
 import { buildProviderAssistantToolCallMessage, buildProviderToolResultMessage, resolveResultToolCalls, dropInvalidatedThinkingFromMessage } from '../../agent-core/runtime/protocol.js';
 import { getMemoryMaintenancePrompt, getMemoryChatPrompt, MEMORY_RESPONSE_REPAIR, MEMORY_SAVE_RECOVERY } from './prompt.js';
-import { MEMORY_TOOLS, READ_MAINTENANCE_TOOL, RECOVER_MAINTENANCE_SAVE_TOOL } from './tools.js';
+import { NARRATIVE_UNIT_TOOLS, MEMORY_TOOLS, READ_MAINTENANCE_TOOL, RECOVER_MAINTENANCE_SAVE_TOOL } from './tools.js';
 import { normalizeToolArguments, validateToolArguments } from './arguments.js';
 import { MemoryMaintenanceError, requireMemory } from './errors.js';
 import { REVIEW_LIMITS, OPENING_TOKENS } from './limits.js';
@@ -29,11 +29,12 @@ export const memoryRunId = () => Array.from(crypto.getRandomValues(new Uint8Arra
 /** A turn owns its provider session and write baseline; chat history is only material. */
 export async function runMemoryAgent(session, { adapter, config, signal, onCall = () => {}, onProgress = () => {},
     onStream = () => {}, onContext = () => {}, mode = 'auto', question = '', history = [], readMaintenance,
-    onFinish, onRecover, readCurrent, summaryStyle, limits: requestedLimits = REVIEW_LIMITS, runId = memoryRunId(), createSummaryAdapter, countTokens } = {}) {
+    onFinish, onRecover, readCurrent, summaryStyle, proofreadingPrompt, limits: requestedLimits = REVIEW_LIMITS, runId = memoryRunId(), createSummaryAdapter, countTokens } = {}) {
     const limits = { ...REVIEW_LIMITS, ...requestedLimits };
     const calls = [], receipts = [];
-    const tools = [...(session ? MEMORY_TOOLS : []), ...(mode === 'chat' || readMaintenance ? [READ_MAINTENANCE_TOOL] : [])];
-    const basePrompt = mode === 'chat' ? getMemoryChatPrompt(summaryStyle) : getMemoryMaintenancePrompt(summaryStyle);
+    const tools = [...(session ? MEMORY_TOOLS : []), ...(session?.canReviewUnits ? NARRATIVE_UNIT_TOOLS : []), ...(mode === 'chat' || readMaintenance ? [READ_MAINTENANCE_TOOL] : [])];
+    const domainPrompt = mode === 'chat' ? getMemoryChatPrompt(summaryStyle, proofreadingPrompt) : getMemoryMaintenancePrompt(summaryStyle, proofreadingPrompt);
+    const basePrompt = session?.canReviewUnits ? domainPrompt + '\n先用 ReadNarrativeUnits 的 round 层核对本轮总结，发现误记或重复时用 ReviseRoundSummary 附逐字依据修订；人物、地点、时间或关键词有误时一并更正 memoryTags，再判断分段。自动校对时兼看剧情分段；手动时按用户请求判断。先 ReadNarrativeUnits 阅读未归并摘要，需要时 ReadSource 核查原文。篇幅只提醒回看。局部目标达成、揭晓或转场构成闭合单元时，用 CloseNarrativeUnit 标明实际起止楼、理由和逐字证据。检查日可以晚于结束日；保留结尾之后的摘要与跨阶段悬念。没有闭合就继续积累。形成新阶段后读取 chapter 候选，只有贯穿数个阶段的目标已有结果且重心转移时才结章。' : domainPrompt;
     let systemPrompt = basePrompt, lastRequestPrompt;
     let messages = [], responses = null, outcome = { status: 'turn_limit', summary: '' }, failure = null;
     let finalRanges, summaryAdapter, rulesMeasurement;
@@ -179,9 +180,15 @@ export async function runMemoryAgent(session, { adapter, config, signal, onCall 
         }
         requireMemory(session, 'no_boundary');
         const repairingConflict = recovery?.state === 'not_saved' && recovery.error?.code === 'memory_updated';
+        if (['ReviseRoundSummary', 'CloseNarrativeUnit'].includes(toolCall.name)) requireMemory(!recovery && !finalized, 'save_recovery_required');
         if ((recovery && !repairingConflict) || finalized) requireMemory(!['EditMemory', 'CompleteMaintenance'].includes(toolCall.name), 'save_recovery_required');
         const current = await readCurrent?.();
         requireMemory(!signal?.aborted, 'cancelled');
+        if (['ReadNarrativeUnits', 'ReviseRoundSummary', 'CloseNarrativeUnit'].includes(toolCall.name)) {
+            const normalized = normalizeToolArguments(args, definition.function.parameters);
+            validateToolArguments(normalized, definition.function.parameters);
+            return session.reviewUnit(toolCall.name, normalized, current, readCurrent, signal);
+        }
         const result = session.runTool(toolCall.name, args, current);
         if (repairingConflict && ['EditMemory', 'CompleteMaintenance'].includes(toolCall.name) && ['staged', 'unchanged'].includes(result.status)) {
             recovery = null;

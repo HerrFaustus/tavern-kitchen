@@ -16,12 +16,12 @@ interface PromptContextAdapterDependencies {
 
 async function defaultStoryEvents(throughMessageIndex: number): Promise<string> {
     const module = await import('../../../story-summary/story-summary.js') as {
-        getStorySummaryL2EventText: (options: {
+        getStorySummaryRoundText: (options: {
             throughMessageIndex: number;
             maxCharacters: number;
         }) => string;
     };
-    return module.getStorySummaryL2EventText({ throughMessageIndex, maxCharacters: 20_000 });
+    return module.getStorySummaryRoundText({ throughMessageIndex, maxCharacters: 20_000 });
 }
 
 export function createPromptContextAdapter({

@@ -5,7 +5,6 @@ export const root = path.resolve(import.meta.dirname, '../..');
 export const entries = {
     'host/plugin': 'plugin-entry.js',
     'apps/debug-panel': 'modules/debug-panel/debug-panel-page.js',
-    'apps/ena-planner': 'modules/ena-planner/ena-planner-page.js',
     'apps/story-summary': 'modules/story-summary/story-summary-ui.js',
     'apps/xiaobai-os': 'modules/xiaobai-os/shell/app-src/main.ts',
     'runtime/os-agent': 'modules/xiaobai-os/agent/browser-entry.ts',

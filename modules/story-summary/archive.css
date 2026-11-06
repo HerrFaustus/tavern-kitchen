@@ -188,6 +188,12 @@
     .archive-drawer-body { padding: 23px 20px; height: calc(100% - 69px); }
     .archive-reading .tl-pg-btn, .archive-reading .tl-pg-num { min-height: 44px; }
 }
+.timeline-unit { padding-block: 8px; border-top: 1px solid var(--bdr); min-width: 0; }
+.timeline-unit > summary { cursor: pointer; padding-block: 8px; color: var(--txt); overflow-wrap: anywhere; }
+.timeline-unit > summary:focus-visible { outline: 2px solid var(--archive-accent); outline-offset: 2px; }
+.timeline-unit-text { display: block; color: var(--txt2); line-height: 1.8; margin-top: 4px; white-space: pre-wrap; }
+.timeline-unit blockquote { margin: 8px 0; padding-inline-start: 8px; color: var(--txt3); overflow-wrap: anywhere; }
+.timeline-children { margin-block: 8px; padding-inline-start: clamp(8px, 2vw, 20px); border-inline-start: 1px solid var(--bdr); }
 @media (prefers-reduced-motion: reduce) {
     .archive *, .archive-drawer * { transition: none !important; animation: none !important; }
 }

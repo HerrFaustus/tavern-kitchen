@@ -125,7 +125,7 @@ test('knowledge and plans are written to authoritative story state while creativ
     const proposals = [
         { type: 'story', record: { id: 'belief', kind: 'knowledge', person: '主角', content: '信使可信', certainty: 'believed', evidence: '听到信使介绍', learnedAt: '' }, before: { present: false }, nature: 'belief', evidence: proof },
         { type: 'story', record: { id: 'scene', kind: 'scene', location: '月球', participants: [], situation: '', tension: '', pendingBeat: '' }, before: { present: false }, nature: 'creative_proposal', evidence: proof },
-        { type: 'story', record: { id: 'return', kind: 'plan', title: '返城', description: '之后返城', status: 'open', reason: '', due: '明天' }, before: { present: false }, nature: 'intention', evidence: proof },
+        { type: 'story', record: { id: 'return', kind: 'plan', holders:['主角','信使'], title: '返城', description: '之后返城', status: 'open', reason: '', due: '明天' }, before: { present: false }, nature: 'intention', evidence: proof },
     ];
     const f = await fixture(t, proposals);
     let state = (await f.service.commit(f.service.proposalCommand(f.state, f.requestId, 1, 'accepted'))).state;

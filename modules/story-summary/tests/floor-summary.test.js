@@ -5,8 +5,8 @@ import { parseHTML } from 'linkedom';
 import { projectFloorSummary, installFloorSummaries } from '../floor-summary.js';
 import { createFloorPanel } from '../inline/panel.js';
 
-const store = { lastSummarizedMesId: 3, summaryHistory: [{ kind: 'batch', previousEndMesId: 0, endMesId: 3 }],
-    json: { events: [{ title: '抵达', summary: '<img src=x onerror=alert(1)>', _addedAt: 3 }] } };
+const store = { lastSummarizedMesId: 3, summaryHistory: [{ kind: 'batch', previousEndMesId: 0, endMesId: 3, summary: '抵达：<img src=x onerror=alert(1)>' }],
+    json: {} };
 test('floor summaries retain multi-floor provenance and reject stale or untraceable records', () => {
     assert.deepEqual(projectFloorSummary(store, 1), { start: 1, end: 3, text: '抵达：<img src=x onerror=alert(1)>' });
     assert.equal(projectFloorSummary(store, 0), null);
@@ -42,7 +42,7 @@ test('message annotations stay idempotent, render plain text and clear when chan
     await setTimeout(120);
     assert.equal(document.querySelectorAll('.tk-floor-summary').length, 1);
     assert.equal(document.querySelector('.tk-floor-summary img'), null);
-    assert.match(document.querySelector('.tk-floor-summary .tk-fp-summary').textContent, /<img/);
+    assert.match(document.querySelector('.tk-floor-summary').textContent, /<img/);
     document.querySelector('.tk-fp-toggle').click();
     document.querySelector('.tk-fp-content button').click(); assert.deepEqual(opened, [1]);
     panel.schedule(); await setTimeout(120);

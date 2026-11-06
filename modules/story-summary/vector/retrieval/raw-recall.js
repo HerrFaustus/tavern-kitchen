@@ -14,13 +14,21 @@ import { rerank } from '../llm/reranker.js';
 import { throwIfSignalAborted } from '../../../../shared/common/abort-utils.js';
 import { recordRecallFallback, recordRecallObservation, recordRecallRuntimeProgress } from '../../recall-diagnostics.js';
 
-export async function recallRawMemory(vectorConfig, { hiddenThrough, excludeLastAi = false, signal = null,
+export async function recallRawMemory(vectorConfig, { hiddenThrough, focusOnly = false, excludeLastAi = false, signal = null,
     diagnostics, withQueryEmbedding } = {}) {
     const { chatId, chat = [] } = getContext();
     const store = getPublishedSummaryStore();
     const empty = { chunks: [], focusCharacters: [], stats: { documents: 0, candidates: 0 } };
     if (!chatId || !chat.length || hiddenThrough < 0) return empty;
     if (excludeLastAi && !chat.at(-1)?.is_user) hiddenThrough = Math.min(hiddenThrough, chat.length - 2);
+    const queryMessages = chat.slice(0, excludeLastAi && !chat.at(-1)?.is_user ? -1 : undefined).slice(-3);
+    const query = boundRecallEmbeddingSegment(queryMessages.map(message => `${message.name || (message.is_user ? '用户' : '角色')}：${cleanRecallMessageText(message.mes || '')}`).join('\n'));
+    if (!query.trim()) return empty;
+    const vocabulary = getRawEntityVocabulary(store, getContext());
+    injectEntities(vocabulary.lexicon, vocabulary.displayMap, vocabulary.blockedTerms);
+    const tokenizer = getTokenizerSnapshot();
+    const focusCharacters = [...new Set(tokenizer.extractEntities(query))];
+    if (focusOnly) return { ...empty, focusCharacters };
     const source = captureRangeSource(chat, 0, chat.length - 1);
     const assertCurrent = () => {
         throwIfSignalAborted(signal);
@@ -33,16 +41,9 @@ export async function recallRawMemory(vectorConfig, { hiddenThrough, excludeLast
     const documents = chat.slice(0, hiddenThrough + 1).flatMap((message, floor) => omitted.has(floor) ? []
         : chunkMessage(floor, message).map(chunk => ({ ...chunk, tags: tags.get(floor) || [], candidate: messageCandidates(message).selected })));
     if (!documents.length) return empty;
-    const queryMessages = chat.slice(0, excludeLastAi && !chat.at(-1)?.is_user ? -1 : undefined).slice(-3);
-    const query = boundRecallEmbeddingSegment(queryMessages.map(message => `${message.name || (message.is_user ? '用户' : '角色')}：${cleanRecallMessageText(message.mes || '')}`).join('\n'));
-    if (!query.trim()) return empty;
-    const vocabulary = getRawEntityVocabulary(store, getContext());
-    injectEntities(vocabulary.lexicon, vocabulary.displayMap, vocabulary.blockedTerms);
-    const tokenizer = getTokenizerSnapshot();
     const normalizedQuery = query.normalize('NFKC').toLowerCase();
     const tagTerms = [...new Set([...tags.values()].flat())].filter(term => normalizedQuery.includes(term.normalize('NFKC').toLowerCase()));
     const terms = [...new Set([...tagTerms, ...tokenizer.tokenizeForIndex(query).slice(-32)])].slice(0, 48);
-    const focusCharacters = [...new Set(tokenizer.extractEntities(query))];
     let queryVector = null;
     const fingerprint = getEngineFingerprint(vectorConfig);
     const meta = await getMeta(chatId);

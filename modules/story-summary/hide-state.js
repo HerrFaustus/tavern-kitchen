@@ -1,3 +1,5 @@
+import { beforeRecentTurns } from './data/narrative-window.js';
+
 // Automatic hiding owns the host's message visibility while managed, as before.
 // managed=false releases control without changing flags; enabled=false restores
 // visibility only while the module still manages this chat. Explicit clear() is
@@ -5,10 +7,13 @@
 // Host flags are a projection, not a second boundary. All bookkeeping below is
 // session-local; loading/deleting a chat audits its saved flags from scratch.
 export function getHiddenThrough({ enabled, summaryBoundary, vectorBoundary = -1,
-    useVectorBoundary, keepVisibleCount, length }) {
+    useVectorBoundary, keepVisibleCount, keepVisibleTurns, chat, stableEnd, length }) {
     if (!enabled || !Number.isInteger(summaryBoundary) || summaryBoundary < 0) return -1;
     const boundary = useVectorBoundary && Number.isInteger(vectorBoundary) && vectorBoundary >= 0
         ? vectorBoundary : summaryBoundary;
+    if (Array.isArray(chat) && Number.isInteger(keepVisibleTurns)) {
+        return Math.min(summaryBoundary, boundary, beforeRecentTurns(chat, stableEnd ?? length - 1, keepVisibleTurns));
+    }
     // Clamp before reserving visible messages, including after chat deletion.
     return Math.max(-1, Math.min(boundary, length - 1) - keepVisibleCount);
 }
@@ -58,6 +63,7 @@ export function createHideStateController({
             && state.enabled === current.enabled
             && state.summaryBoundary === current.summaryBoundary
             && state.useVectorBoundary === current.useVectorBoundary
+            && state.keepVisibleTurns === current.keepVisibleTurns && state.stableEnd === current.stableEnd
             && state.keepVisibleCount === current.keepVisibleCount
             && matchesMessagePrefix(current, state.messages);
     }
@@ -72,7 +78,7 @@ export function createHideStateController({
             for (let id = Math.max(0, start); id <= Math.min(last, state.length - 1); id++) {
                 const message = state.chat[id];
                 const hidden = id <= end;
-                if (!message || Boolean(message.is_system) === hidden) continue;
+                if (!message || (message.is_system && message.extra?.type) || Boolean(message.is_system) === hidden) continue;
                 message.is_system = hidden;
                 renderMessage(id, hidden);
                 changed++;

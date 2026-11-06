@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeSummaryWorkflow, SUMMARY_WORKFLOW_VERSION } from '../data/summary-workflow.js';
+import { normalizeSummaryWorkflow, SUMMARY_WORKFLOW_VERSION, SUMMARY_BATCH_FLOORS } from '../data/summary-workflow.js';
 import { getAutoSummaryPlan } from '../generate/summary-trigger.js';
 
 test('new and migrated chats independently summarize the completed reply through the latest floor', () => {
@@ -18,7 +18,7 @@ test('new and migrated chats independently summarize the completed reply through
         assert.equal(getAutoSummaryPlan(chat, 1, workflow.trigger, 'after_ai').triggered, false);
         if (raw.trigger) {
             assert.equal(workflow.trigger.role, raw.trigger.role);
-            assert.equal(workflow.trigger.maxPerRun, raw.trigger.maxPerRun);
+            assert.equal(workflow.trigger.maxPerRun, SUMMARY_BATCH_FLOORS);
         }
     }
 });
@@ -27,6 +27,6 @@ test('post-migration scheduling choices survive reload without restoring main-re
     const raw = { ...normalizeSummaryWorkflow(), inlineSummary: { enabled: true },
         trigger: { enabled: false, timing: 'before_user', interval: 8, delayFloors: 4 } };
     const restored = normalizeSummaryWorkflow(JSON.parse(JSON.stringify(raw)));
-    assert.deepEqual(restored.trigger, raw.trigger);
+    assert.deepEqual(restored.trigger, { ...raw.trigger, delayFloors: 0, maxPerRun: SUMMARY_BATCH_FLOORS });
     assert.equal(restored.inlineSummary.enabled, false);
 });

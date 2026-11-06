@@ -1,19 +1,11 @@
 import { getRequestHeaders } from '../../../../../../script.js';
 import { setHostChatCompletionsRequestHeadersProvider } from '../../shared/host-llm/chat-completions/client.js';
 import { HOST_PROVIDER } from './model.js';
-import { loadSharedAgentSettings, saveSharedAgentSettings } from '../agent-core/settings-repository.js';
-import { normalizeWebSettings } from '../agent-core/web/settings.js';
 import { getTextApiRepository } from './repository.js';
 import { listTextModels, testTextConnection } from './runtime.js';
 import { importCurrentTavernApi } from './tavern-import.js';
 import { createIdentifier } from '../../shared/common/identifier.js';
 export async function handleProfileRequest(data, signal) {
-    if (data.action === 'web-load') return normalizeWebSettings(await loadSharedAgentSettings());
-    if (data.action === 'web-save') {
-        const result = await saveSharedAgentSettings(normalizeWebSettings(data.settings), { silent: false });
-        if (!result.ok) throw new Error('联网设置保存失败');
-        return normalizeWebSettings(result.config);
-    }
     const repository = await getTextApiRepository();
     if (data.action === 'load') return repository.load();
     if (data.action === 'mutate') return repository.mutate(data.feature || 'library', data.mutation);

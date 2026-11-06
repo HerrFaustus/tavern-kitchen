@@ -41,7 +41,7 @@ export interface DiceTarget {
 }
 
 export function readDiceRecords(message: DiceHostMessage): unknown {
-    return message.extra?.[DICE_MESSAGE_KEY];
+    return message.is_user ? undefined : message.extra?.[DICE_MESSAGE_KEY];
 }
 
 export function captureDiceTarget(source: DiceChat, index: number, generatedFrom: number, rule: ActionCheckRule = 'd20', coc7Sheet: Coc7Sheet | null = null): DiceTarget | null {

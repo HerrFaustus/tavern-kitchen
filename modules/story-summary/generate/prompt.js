@@ -9,12 +9,13 @@ import { getContext } from "../../../../../../extensions.js";
 import { getPublishedSummaryStore as getSummaryStore, getFacts } from "../data/store.js";
 import { floorCoverageEnd } from '../inline/ledger.js';
 import { isRelationFact } from "../data/fact-predicates.js";
-import { getVectorConfig, getSummaryPanelConfig, getSettings, DEFAULT_MEMORY_PROMPT_TEMPLATE } from "../data/config.js";
+import { getVectorConfig, getSummaryPanelConfig, getSettings } from "../data/config.js";
 import {
     hydrateDirectEvidence,
     releaseDirectEvidenceContext,
 } from "../vector/retrieval/recall.js";
 import { getMeta } from "../vector/storage/chunk-store.js";
+import { getSummarySourceEnd } from './source-boundary.js';
 import { recallRawMemory } from '../vector/retrieval/raw-recall.js';
 import { plotBackgroundItems } from './plot-background.js';
 import { getPublishedStateAtoms as getStateAtoms } from "../vector/storage/state-store.js";
@@ -31,6 +32,7 @@ import { packEventEvidence } from "./event-evidence-packing.js";
 import { tryConsumeWholeItem } from './token-budget.js';
 import { getHiddenThrough } from '../hide-state.js';
 import { availableStoryRecords, storyContextLines } from '../../story-state/records.js';
+import { isPrivateStoryField } from '../../world-records/authority.js';
 import { authorityMemoryStoryStore } from '../../world-records/authority-context.js';
 
 // Metrics
@@ -169,25 +171,6 @@ function getEventSortKey(event) {
     if (r) return r.start;
     const m = String(event?.id || "").match(/evt-(\d+)/);
     return m ? parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 系统前导与后缀
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * 构建系统前导文本
- * @returns {string} 前导文本
- */
-function buildMemoryPromptText(memoryBody) {
-    const templateRaw = String(
-        getSummaryPanelConfig()?.prompts?.memoryTemplate || DEFAULT_MEMORY_PROMPT_TEMPLATE
-    );
-    const template = templateRaw.trim() || DEFAULT_MEMORY_PROMPT_TEMPLATE;
-    if (template.includes("{$剧情记忆}")) {
-        return template.replaceAll("{$剧情记忆}", memoryBody);
-    }
-    return `${template}\n${memoryBody}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -363,16 +346,6 @@ function selectConstraintsByBudgetDesc(grouped, budgetState) {
  * @param {object} arc - 弧光对象
  * @returns {string} 格式化后的行
  */
-function formatArcLine(arc) {
-    const moments = (arc.moments || [])
-        .map(m => (typeof m === "string" ? m : m.text))
-        .filter(Boolean);
-
-    if (moments.length) {
-        return `- ${arc.name}：${moments.join(" → ")}`;
-    }
-    return `- ${arc.name}：${arc.trajectory}`;
-}
 
 /**
  * 从 L0 获取展示文本
@@ -785,7 +758,7 @@ function buildNonVectorPrompt(store) {
     const sections = [];
 
     // [Constraints] L3 Facts (structured: people/world)
-    const allFacts = getFacts().filter(f => !f.retracted);
+    const allFacts = getFacts().filter(fact => !fact.retracted && !isPrivateStoryField(fact.p));
     const nonVectorPeopleDict = buildConstraintPeopleDict(
         { events: data.events || [] },
         []
@@ -821,14 +794,10 @@ function buildNonVectorPrompt(store) {
     }
 
     // [Arcs]
-    if (data.arcs?.length) {
-        const lines = data.arcs.map(formatArcLine);
-        sections.push(`[人物弧光]\n${lines.join("\n")}`);
-    }
 
     if (!sections.length) return "";
 
-    return buildMemoryPromptText(sections.join("\n\n"));
+    return sections.join("\n\n");
 }
 
 /**
@@ -845,16 +814,7 @@ export function buildNonVectorPromptText() {
         return "";
     }
 
-    let text = buildNonVectorPrompt(store);
-    if (!text.trim()) {
-        return "";
-    }
-
-    const cfg = getSummaryPanelConfig();
-    if (cfg.trigger?.wrapperHead) text = cfg.trigger.wrapperHead + "\n" + text;
-    if (cfg.trigger?.wrapperTail) text = text + "\n" + cfg.trigger.wrapperTail;
-
-    return text;
+    return buildNonVectorPrompt(store);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -973,7 +933,6 @@ async function buildVectorPrompt(store, recallResult, allEvents, focusCharacters
     let deferredDirectEvidenceContext = recallResult?.directEvidenceContext || null;
     try {
 
-    const data = store.json || {};
     // Use the same event collection supplied to recall, not a later store revision.
     const eventIndex = new Map(allEvents.filter(event => event?.id).map(event => [event.id, event]));
     const eventEvidenceBudget = { used: 0, max: EVENT_EVIDENCE_MAX };
@@ -994,7 +953,7 @@ async function buildVectorPrompt(store, recallResult, allEvents, focusCharacters
         summaryBoundary: floorCoverageEnd(store),
         vectorBoundary: meta?.lastChunkFloor ?? -1,
         useVectorBoundary: !store.summaryHistory?.some(batch => batch.floorEntry) && !!getVectorConfig()?.enabled && uiCfg.useVectorBoundary,
-        keepVisibleCount: uiCfg.keepVisibleCount,
+        keepVisibleTurns: uiCfg.keepVisibleCount, chat: getContext().chat, stableEnd: getSummarySourceEnd(getContext().chat, getContext().chat.length - 1),
         length: getContext().chat.length,
     });
     const hiddenChunk = chunk => chunk?.floor >= 0 && chunk.floor <= hiddenThrough && !omitted.has(chunk.floor);
@@ -1038,7 +997,7 @@ async function buildVectorPrompt(store, recallResult, allEvents, focusCharacters
 
     const T_Constraint_Start = performance.now();
 
-    const allFacts = getFacts();
+    const allFacts = getFacts().filter(fact => !isPrivateStoryField(fact.p));
     const knownCharacters = getKnownCharacters(store);
     const filteredConstraints = filterConstraintsByRelevance(
         allFacts,
@@ -1060,7 +1019,7 @@ async function buildVectorPrompt(store, recallResult, allEvents, focusCharacters
     const constraintBudget = { used: 0, max: CONSTRAINT_MAX };
     const storyLines = [];
     const storyBudget = { used: 0, max: 800 };
-    for (const line of storyContextLines(availableStoryRecords(authorityMemoryStoryStore(store, getContext())), focusCharacters)) pushWithBudget(storyLines, line, storyBudget);
+    for (const line of storyContextLines(availableStoryRecords(authorityMemoryStoryStore(store, getContext())), [getContext().name1, ...focusCharacters])) pushWithBudget(storyLines, line, storyBudget);
     constraintBudget.used = storyBudget.used;
     const groupedSelectedConstraints = selectConstraintsByBudgetDesc(groupedConstraints, constraintBudget);
     if (evidenceTrace) {
@@ -1097,46 +1056,6 @@ async function buildVectorPrompt(store, recallResult, allEvents, focusCharacters
     // ═══════════════════════════════════════════════════════════════════════
     // [Arcs] 人物弧光
     // ═══════════════════════════════════════════════════════════════════════
-
-    if (evidenceTrace && data.arcs?.length) {
-        const { name1 } = getContext();
-        const relevant = new Set(
-            [String(name1 || "").trim(), ...(focusCharacters || [])]
-                .map(s => String(s || "").trim())
-                .filter(Boolean)
-        );
-        for (const arc of (data.arcs || [])) {
-            const name = String(arc?.name || "").trim();
-            if (name && relevant.has(name)) evidenceTrace.arc('final', arc);
-        }
-    }
-
-    if (data.arcs?.length) {
-        const { name1 } = getContext();
-        const userName = String(name1 || "").trim();
-
-        const relevant = new Set(
-            [userName, ...(focusCharacters || [])]
-                .map(s => String(s || "").trim())
-                .filter(Boolean)
-        );
-
-        const filteredArcs = (data.arcs || []).filter(a => {
-            const n = String(a?.name || "").trim();
-            return n && relevant.has(n);
-        });
-        if (filteredArcs.length) {
-            const arcBudget = { used: 0, max: ARCS_MAX };
-            for (const a of filteredArcs) {
-                const line = formatArcLine(a);
-                if (!pushWithBudget(assembled.arcs.lines, line, arcBudget)) continue;
-                if (evidenceTrace) evidenceTrace.arc('prompt', a);
-            }
-            assembled.arcs.tokens = arcBudget.used;
-            injectionStats.arc.count = assembled.arcs.lines.length;
-            injectionStats.arc.tokens = arcBudget.used;
-        }
-    }
 
     // ═══════════════════════════════════════════════════════════════════════
     // [Events] L2 Events → 直接命中 + 相似命中 + 因果链 + EvidenceGroup
@@ -1543,9 +1462,6 @@ async function buildVectorPrompt(store, recallResult, allEvents, focusCharacters
     if (assembled.recentEvidence.lines.length) {
         sections.push(`[新鲜记忆] 还没总结的部分\n${assembled.recentEvidence.lines.join("\n")}`);
     }
-    if (assembled.arcs.lines.length) {
-        sections.push(`[这些人] 他们的弧光\n${assembled.arcs.lines.join("\n")}`);
-    }
 
     if (!sections.length) {
         if (metrics) metrics.timing.formatting = Math.round(performance.now() - T_Format_Start);
@@ -1558,7 +1474,7 @@ async function buildVectorPrompt(store, recallResult, allEvents, focusCharacters
     }
 
     const memoryBody = `<剧情记忆>\n\n${sections.join("\n\n")}\n\n</剧情记忆>`;
-    const promptText = buildMemoryPromptText(memoryBody);
+    const promptText = memoryBody;
 
     if (metrics) {
         metrics.formatting.sectionsIncluded = [];
@@ -1567,7 +1483,6 @@ async function buildVectorPrompt(store, recallResult, allEvents, focusCharacters
         if (assembled.relatedEvents.lines.length) metrics.formatting.sectionsIncluded.push('related_events');
         if (assembled.distantEvidence.lines.length) metrics.formatting.sectionsIncluded.push('distant_evidence');
         if (assembled.recentEvidence.lines.length) metrics.formatting.sectionsIncluded.push('recent_evidence');
-        if (assembled.arcs.lines.length) metrics.formatting.sectionsIncluded.push('arcs');
 
         const formattingTime = Math.round(performance.now() - T_Format_Start);
         metrics.timing.formatting = formattingTime;
@@ -1656,22 +1571,20 @@ export async function buildVectorPromptText(excludeLastAi = false, options = {})
     if (!vectorCfg?.enabled) return finish('', '原文检索未启用');
     const { chatId, chat = [] } = getContext();
     const cfg = getSummaryPanelConfig();
-    meta = chatId ? await getMeta(chatId) : null;
+    meta = chatId && (cfg.ui.useVectorBoundary || cfg.ui.recallEarlyOriginal !== false) ? await getMeta(chatId) : null;
     let hiddenThrough = getHiddenThrough({
         enabled: cfg.ui.hideSummarized, summaryBoundary: floorCoverageEnd(store),
         vectorBoundary: meta?.lastChunkFloor ?? -1,
         useVectorBoundary: !store.summaryHistory?.some(batch => batch.floorEntry) && cfg.ui.useVectorBoundary,
-        keepVisibleCount: cfg.ui.keepVisibleCount, length: chat.length,
+        keepVisibleTurns: cfg.ui.keepVisibleCount, chat, stableEnd: getSummarySourceEnd(chat, chat.length - 1), length: chat.length,
     });
     if (excludeLastAi && !chat.at(-1)?.is_user) hiddenThrough = Math.min(hiddenThrough, chat.length - 2);
     try {
-        recallResult = await recallRawMemory(vectorCfg, { hiddenThrough, excludeLastAi, signal, diagnostics, withQueryEmbedding });
+        recallResult = await recallRawMemory(vectorCfg, { focusOnly: cfg.ui.recallEarlyOriginal === false, hiddenThrough, excludeLastAi, signal, diagnostics, withQueryEmbedding });
         if (signal?.aborted) return finish('', '召回已取消');
         diagnostics.stage = 'prompt-assembly';
         assembly = buildRawPrompt(store, recallResult, hiddenThrough);
-        let text = assembly.promptText;
-        if (text && cfg.trigger?.wrapperHead) text = cfg.trigger.wrapperHead + '\n' + text;
-        if (text && cfg.trigger?.wrapperTail) text += '\n' + cfg.trigger.wrapperTail;
+        const text = assembly.promptText;
         diagnostics.stage = 'prompt-ready';
         return finish(text, text ? '' : '没有需要补入的早期记忆');
     } catch (error) {
@@ -1683,7 +1596,7 @@ export async function buildVectorPromptText(excludeLastAi = false, options = {})
 export function buildRawPrompt(store, recallResult, hiddenThrough) {
     const { chat = [], name1 = '' } = getContext();
     const focus = [...new Set([name1, ...(recallResult.focusCharacters || [])].filter(Boolean))];
-    const facts = filterConstraintsByRelevance(getFacts().filter(fact => !fact.retracted), focus, getKnownCharacters(store), name1);
+    const facts = filterConstraintsByRelevance(getFacts().filter(fact => !fact.retracted && !isPrivateStoryField(fact.p)), focus, getKnownCharacters(store), name1);
     const dict = buildConstraintPeopleDict(null, focus);
     const constraints = { used: 0, max: CONSTRAINT_MAX };
     const stateLines = [];
@@ -1691,9 +1604,6 @@ export function buildRawPrompt(store, recallResult, hiddenThrough) {
     for (const line of storyContextLines(availableStoryRecords(authorityMemoryStoryStore(store, getContext())), focus)) pushWithBudget(stateLines, line, storyBudget);
     constraints.used = storyBudget.used;
     stateLines.push(...formatConstraintsStructured(selectConstraintsByBudgetDesc(groupConstraintsForDisplay(facts, dict), constraints), 'asc'));
-    for (const arc of store.json?.arcs || []) if (focus.some(name => normalize(name) === normalize(arc.name))) {
-        pushWithBudget(stateLines, formatArcLine(arc), constraints);
-    }
     const background = [], raw = [];
     const plotBudget = { used: 0, max: 4000 }, rawBudget = { used: 0, max: 3000 };
     const items = plotBackgroundItems(store, chat, hiddenThrough);
@@ -1709,7 +1619,7 @@ export function buildRawPrompt(store, recallResult, hiddenThrough) {
     if (stateLines.length) sections.push(`[当前相关状态]\n${stateLines.join('\n')}`);
     if (background.length) sections.push(`[早期剧情摘要]\n${background.join('\n')}`);
     if (raw.length) sections.push(`[本轮相关的早期原文]\n${raw.join('\n')}`);
-    return { promptText: sections.length ? buildMemoryPromptText(`<剧情记忆>\n${sections.join('\n\n')}\n</剧情记忆>`) : '',
+    return { promptText: sections.length ? `<剧情记忆>\n${sections.join('\n\n')}\n</剧情记忆>` : '',
         rawChunks: included, backgroundItems: items.length, includedBackgroundItems: background.length,
         tokens: constraints.used + plotBudget.used + rawBudget.used };
 }

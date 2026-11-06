@@ -1,3 +1,4 @@
+import { clearProposal as isClearLifecycleProposal } from './proposal-policy.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
@@ -40,6 +41,19 @@ async function fixture(t, { transform = value => value, text = `${quote}。主�
         setIdentity: value => { identity = value; }, setAvailable: value => { available = value; } };
 }
 const reviews = state => worldUpdates(state)[0].reviews || [];
+test('an evidenced loan automatically changes who holds the sword without transferring title or use', async t => {
+    const quote = '铁匠把自己的铁剑暂时交给主角保管。';
+    const loan = {type:'field',entityId:'sword',field:'保管人',before:{present:false},value:{entityId:'hero'},
+        nature:'established_fact',certainty:'explicit',groupId:'loan',evidence:{floor:1,quote}};
+    const f = await fixture(t,{text:quote,transform:() => [loan]});
+    const state = await f.service.autoConfirm();
+    const sword = state.entities.find(entity => entity.id === 'sword');
+    assert.equal(sword.fields.owner.value.entityId,'smith');
+    assert.equal(sword.fields['保管人'].value.entityId,'hero');
+    assert.equal(sword.fields['使用人'],undefined);
+    assert.equal(reviews(state).length,1);
+    assert.equal((await f.service.autoConfirm()).version,state.version);
+});
 function assertTrade(state, applied) {
     assert.equal(state.entities.find(item => item.id === 'hero').fields.coins.value, applied ? 5 : 10);
     assert.equal(state.entities.find(item => item.id === 'smith').fields.coins.value, applied ? 5 : 0);
@@ -120,7 +134,7 @@ test('automatic confirmation refuses stale world, unavailable memory and unsaved
 test('automatic clear beliefs and intentions keep their nature; multiple story changes merge in one event', async t => {
     const extra = [{ type: 'story', record: { id: 'belief', kind: 'knowledge', person: '主角', content: '信使可信', certainty: 'believed', evidence: '信使的自述' },
         before: { present: false }, nature: 'belief', evidence: { floor: 1, quote: '主角相信信使' }, groupId: 'belief', certainty: 'explicit' },
-    { type: 'story', record: { id: 'plan', kind: 'plan', title: '主角寻找矿洞', description: '寻找矿洞', status: 'open', due: '' },
+    { type: 'story', record: { id: 'plan', kind: 'plan', holders:['主角'], title: '主角寻找矿洞', description: '寻找矿洞', status: 'open', due: '' },
         before: { present: false }, nature: 'intention', evidence: { floor: 1, quote: '决定寻找矿洞' }, groupId: 'plan', certainty: 'explicit' }];
     const f = await fixture(t, { extra }), state = await f.service.autoConfirm();
     assertTrade(state, true); assert.equal(reviews(state).length, 5);
@@ -218,4 +232,13 @@ test('regenerating the same raw range cannot automatically override a manual rej
     const delivered = await f.service.syncTurns(f.chat, { history: f.history });
     assert.equal((await f.service.autoConfirm()).version, delivered.version); assertTrade(await f.service.read(), false);
     assertTrade((await f.service.commit(f.service.proposalBatchCommand(delivered, receipt.id, [0, 1, 2], 'accepted'))).state, true);
+});
+
+test('a request to end a situation cannot automatically close it', () => {
+    const proof = quote => ({floor:3,quote});
+    const proposal = {type:'story', groupId:'port', certainty:'explicit', nature:'established_fact',
+        record:{kind:'situation',status:'done'}, evidence:proof('解封')};
+    const check = text => isClearLifecycleProposal(proposal,{messages:[{floor:3,role:'assistant',text}]});
+    assert.equal(check('商会请求解封。'),false);
+    assert.equal(check('港务官当场宣布解封。'),true);
 });

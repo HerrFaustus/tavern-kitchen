@@ -484,6 +484,7 @@ function canonicalizeStoryRecord(record, resolver) {
     if (record.name) record.name = resolver.resolveName(record.name);
     if (record.person) record.person = resolver.resolveName(record.person);
     if (record.participants) record.participants = canonicalizeNameList(record.participants, resolver);
+    if (record.holders) record.holders = canonicalizeNameList(record.holders, resolver);
 }
 
 export function applyCharacterAliasUpdates(json, updates, floor) {

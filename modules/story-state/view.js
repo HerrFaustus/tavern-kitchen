@@ -1,5 +1,7 @@
-import { availableStoryRecords, characterStoryState, PRESENCE, BELIEFS, THREAD_STATUS, STORY_KINDS, storyRecordText, relativeStoryTime } from './records.js';
+import { nameKey, protagonistIdentity } from './protagonist-identity.js';
+import { isPersonalAgenda, projectPersonalAgendas, availableStoryRecords, characterStoryState, PRESENCE, BELIEFS, THREAD_STATUS, SITUATION_FIELDS, STORY_KINDS, storyRecordText, relativeStoryTime } from './records.js';
 import { FIELD_LABELS } from '../world-records/domain.js';
+import { PERSON_FIELDS, PERSON_SECTIONS, POSSESSION_ROLES, RELATION_PREFIX } from '../world-records/person-fields.js';
 import { worldStoryRecords } from '../world-records/world-story-state.js';
 
 const el = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
@@ -12,27 +14,55 @@ function section(parent, title, className) { const node = el('section', undefine
 function line(parent, label, value) { if (value) { const row = el('p'); row.append(el('strong', `${label}：`), document.createTextNode(value)); parent.append(row); } }
 export function renderPersonState(parent, records, name, resolveName) {
     const state = characterStoryState(records, name, resolveName);
+    if (state.presence === 'unknown' && !state.note && !state.knowledge.length) return null;
     const group = section(parent, '在场度与认知'); group.className = 'tk-person-state';
-    line(group, '在场度', PRESENCE[state.presence]);
+    if (state.presence !== 'unknown') line(group, '在场度', PRESENCE[state.presence]);
     if (state.note) group.append(el('p', state.note, 'tk-record-note'));
-    if (!state.knowledge.length) group.append(el('p', '尚未记录这个人物获知了什么。', 'tk-record-note'));
     for (const knowledge of state.knowledge) {
         const row = el('details'); row.append(el('summary', `${BELIEFS[knowledge.certainty]} · ${knowledge.content}`));
         line(row, '依据', knowledge.evidence); line(row, '获知时间', knowledge.learnedAt); row.append(source(knowledge)); group.append(row);
     }
     return group;
 }
+export function renderPersonalAgendas(parent, records, matches) {
+    const owned = records.filter(record => isPersonalAgenda(record) && record.holders?.some(matches));
+    for (const kind of ['plan', 'goal']) {
+        if (owned.some(record => record.kind === kind)) renderThreads(parent, owned, [kind]);
+    }
+}
 export function renderThreads(parent, records, kinds = ['plan', 'suspense', 'situation'], limit = Infinity) {
-    const labels = { plan: '计划', suspense: '悬念', situation: '局面' };
+    const labels = { plan: '计划', goal:'目标', suspense: '悬念', situation: '局面' };
     const clock = records.find(record => record.kind === 'clock');
     for (const kind of kinds) {
         const entries = records.filter(record => record.kind === kind), open = entries.filter(record => record.status === 'open');
         const group = section(parent, labels[kind]);
         const append = (container, record) => {
-            const row = el('details'); row.append(el('summary', `${record.title} · ${THREAD_STATUS[record.status]}`));
-            if (record.description) row.append(el('p', record.description));
+            const row = el('details'); row.dataset.recordId = record.id; row.append(el('summary', `${record.title} · ${THREAD_STATUS[record.status]}`));
+            if (kind === 'situation') {
+                const scenery = record.flavor === 'scenery' || record.flavor === 'encounter';
+                line(row, '类型', record.flavor === 'encounter' ? '风物 · 街头见闻' : scenery ? '风物' : '事态');
+                line(row, scenery ? '眼前细节' : '局势概况', record.description);
+                if (scenery) {
+                    if (record.flavor !== 'encounter') line(row, '类别', record.category);
+                    line(row, '时节', record.period);
+                    line(row, '阶段', record.phase);
+                    line(row, '关联局势', record._relatedTitle || records.find(item => item.id === record.relatedId)?.title);
+                }
+                for (const [key, label] of Object.entries(SITUATION_FIELDS)) line(row, label, record[key]);
+                const history = el('details'); history.append(el('summary', '局势历史'));
+                for (const step of record._history || []) {
+                    const item = el('p', step.text); item.append(document.createTextNode(' '), source(step)); history.append(item);
+                }
+                row.append(history);
+                for (const item of record._developments || []) line(row, '幕后进展 · ' + item.title, item.body);
+            } else if (isPersonalAgenda(record)) {
+                line(row,'持有人',record.holders?.join('、') || '待归属');
+                line(row,'具体内容',record.description);
+                line(row,'条件约束',record.conditions);
+                line(row,'当前进展',record.statusNote);
+            } else if (record.description) row.append(el('p', record.description));
             const relative = relativeStoryTime(record.due, clock?.date);
-            line(row, '期限', record.due ? `${record.due}${relative ? `（${relative}）` : ''}` : '');
+            line(row, record.flavor === 'encounter' ? '散场条件' : '期限', record.due ? `${record.due}${relative ? `（${relative}）` : ''}` : '');
             line(row, '结案原因', record.reason); row.append(source(record)); container.append(row);
         };
         if (!open.length) group.append(el('p', `暂无未结${labels[kind]}。`, 'tk-record-note'));
@@ -43,55 +73,121 @@ export function renderThreads(parent, records, kinds = ['plan', 'suspense', 'sit
         if (closed.length) { const history = el('details'); history.append(el('summary', `已结 ${closed.length} 项`)); closed.forEach(record => append(history, record)); group.append(history); }
     }
 }
-export function createStoryOverview({ getSnapshot }) {
+export function createSuspenseBook({ getSnapshot }) {
     let root;
-    const expanded = new Set();
     return {
-        mount(parent) { root ||= el('div', undefined, 'tk-world-records tk-story-overview'); root.setAttribute('aria-label', '故事总览'); if (root.parentElement !== parent) parent.append(root); },
+        mount(parent) {
+            root ||= el('div', undefined, 'tk-world-records');
+            if (root.parentElement !== parent) parent.append(root);
+        },
         show(world) {
-            for (const detail of root.querySelectorAll('details')) { const key = detail.querySelector('summary')?.textContent; if (detail.open) expanded.add(key); else expanded.delete(key); }
-            root.replaceChildren(el('h3', '总览', 'standoutHeader'));
-            const snapshot = getSnapshot(), store = snapshot?.enabled ? snapshot.store : null;
-            const invalid = store?.summaryInvalid || snapshot?.invalidFrom != null || store?.sourceInvalidFromFloor != null;
-            const records = invalid || !store ? [] : worldStoryRecords(world, availableStoryRecords(store, snapshot?.invalidFrom));
-            const json = !invalid && store?.json || {};
-            const scene = records.find(record => record.kind === 'scene'), clock = records.find(record => record.kind === 'clock');
-            const status = el('p', invalid ? '原文已变化，正在等待剧情回退；旧场景暂不显示。' : !snapshot?.enabled ? '剧情模块尚未启用；世界已确认状态仍可查看。' : store?.lastSummarizedMesId >= 0 ? `剧情已整理至第 ${store.lastSummarizedMesId + 1} 楼，之后的对话尚未纳入。` : '尚未整理剧情。生成总结后，场景和重要变化会汇入这里。', 'tk-record-note tk-overview-status'); status.setAttribute('role', 'status'); root.append(status);
-            const current = section(root, '当前场景', 'tk-overview-scene');
-            const meta = el('div', undefined, 'tk-overview-scene-meta');
-            meta.append(el('span', `故事时间 · ${clock?.label || '未记录'}`), el('span', `地点 · ${scene?.location || '未记录'}`));
-            current.append(meta);
-            if (scene) {
-                if (scene.situation) current.append(el('p', scene.situation, 'tk-overview-situation'));
-                line(current, '张力', scene.tension);
-                if (scene.pendingBeat) { const pending = el('p', undefined, 'tk-overview-pending'); pending.append(el('strong', '待兑现：'), document.createTextNode(scene.pendingBeat)); current.append(pending); }
-                current.append(source(scene));
-            } else current.append(el('p', '尚无场景快照；不会从旧事件推测当前地点与人物。', 'tk-record-note'));
-            const people = section(root, '在场与附近人物');
-            const names = [...new Set([...(scene?.participants || []), ...records.filter(record => record.kind === 'person').map(record => record.name)])];
-            const nearby = names.filter(name => ['present', 'nearby'].includes(characterStoryState(records, name).presence));
-            if (!nearby.length) people.append(el('p', '尚未确认在场人物。', 'tk-record-note'));
-            for (const name of nearby.slice(0, 6)) { const state = characterStoryState(records, name); const detail = el('details'); detail.append(el('summary', `${name} · ${PRESENCE[state.presence]} · ${state.knowledge.length} 条认知`)); renderPersonState(detail, records, name); people.append(detail); }
-            if (nearby.length > 6) people.append(el('p', `另有 ${nearby.length - 6} 人，前往人物页查看。`, 'tk-record-note'));
-            renderThreads(root, records, ['plan', 'suspense', 'situation'], 4);
-            const recent = section(root, '近期剧情');
-            for (const event of (json.events || []).slice(-5).reverse()) { const detail = el('details'); detail.append(el('summary', event.title || '未命名事件'), el('p', event.summary)); if (event.timeLabel) detail.append(el('small', event.timeLabel, 'tk-record-note')); recent.append(detail); }
-            if (!json.events?.length) recent.append(el('p', '暂无已整理剧情。', 'tk-record-note'));
-            for (const arc of (json.arcs || []).slice(0, 5)) line(recent, arc.name, arc.trajectory);
-            const state = section(root, '世界重要状态');
-            const entries = (world?.entities || []).flatMap(entity => Object.entries(entity.fields).map(([field, record]) => ({ entity, field, record }))).sort((a, b) => b.record.version - a.record.version);
-            for (const { entity, field, record } of entries.slice(0, 8)) {
-                const value = record.value?.entityId ? world.entities.find(item => item.id === record.value.entityId)?.name || '未知对象' : typeof record.value === 'string' ? record.value : JSON.stringify(record.value);
-                line(state, `${entity.name} · ${FIELD_LABELS[field] || field}`, value);
+            const expanded = new Set([...root.querySelectorAll('details')].filter(item => item.open).map(item => item.dataset.recordId));
+            root.replaceChildren();
+            const snapshot = getSnapshot(), store = snapshot?.store;
+            if (!snapshot?.enabled || !store || snapshot.invalidFrom != null || store.summaryInvalid || store.sourceInvalidFromFloor != null) {
+                root.append(el('p', '正在等待有效的剧情记忆。', 'tk-record-note'));
+                return;
             }
-            if (!entries.length) state.append(el('p', '尚无已确认世界状态。', 'tk-record-note'));
-            const pending = world?.claims?.filter(claim => claim.status === 'pending').length || 0;
-            if (pending) state.append(el('p', `${pending} 条来源记录待确认`, 'tk-record-note'));
-            for (const detail of root.querySelectorAll('details')) detail.open = expanded.has(detail.querySelector('summary')?.textContent);
+            renderThreads(root, worldStoryRecords(world, availableStoryRecords(store)), ['suspense']);
+            for (const item of root.querySelectorAll('details')) item.open = expanded.has(item.dataset.recordId);
         },
         isEditing: () => false,
-        empty() { root.replaceChildren(el('h3', '总览', 'standoutHeader'), el('p', '选择一段对话后，这里汇总当前场景、剧情与世界状态。', 'tk-record-note')); },
-        reset() { expanded.clear(); root?.replaceChildren(); },
+        empty() { root.replaceChildren(el('p', '选择一段对话后查看悬念。', 'tk-record-note')); },
+        reset() { root?.replaceChildren(); },
+    };
+}
+export function renderWorldAttributes(root, entities, person) {
+    const byId = new Map(entities.map(entity => [entity.id, entity.name]));
+    const fields = Object.entries(person?.fields || {}).filter(([, record]) => record.nature === 'established_fact');
+    const groups = new Map();
+    const group = label => {
+        if (!groups.has(label)) groups.set(label, section(root,label));
+        return groups.get(label);
+    };
+    for (const [label, keys] of Object.entries(PERSON_SECTIONS)) {
+        for (const key of keys) {
+            const record = person?.fields?.[key];
+            const raw = record?.nature === 'established_fact' ? record.value : null;
+            const value = raw && typeof raw === 'object' ? byId.get(raw.entityId) || JSON.stringify(raw) : raw;
+            if (value) line(group(label), key, value);
+        }
+    }
+    for (const [field, record] of fields) {
+        if (PERSON_FIELDS.has(field)) continue;
+        const value = record.value;
+        if (field.startsWith(RELATION_PREFIX)) {
+            if (value?.role) line(group('关系身份'), byId.get(value.entityId) || '未知人物', '本人是对方的' + value.role);
+            continue;
+        }
+        line(root, FIELD_LABELS[field] || field, value?.entityId ? byId.get(value.entityId) || '未知对象'
+            : typeof value === 'string' ? value : JSON.stringify(value));
+    }
+    for (const other of entities) {
+        if (!person || other.id === person.id) continue;
+        const roles = Object.entries(POSSESSION_ROLES).flatMap(([key,label]) => {
+            const record = other.fields?.[key];
+            const id = record?.nature === 'established_fact' && record.value?.entityId;
+            return id ? [{id, label, name:byId.get(id) || '未知对象'}] : [];
+        });
+        const asset = other.kind === 'place' || other.fields?.['持有类别']?.nature === 'established_fact' && other.fields['持有类别'].value === '资产';
+        const possession = asset || other.kind === 'item';
+        if (possession && roles.some(role => role.id === person.id)) {
+            line(group(asset ? '资产' : '物品'),other.name,roles.map(role => role.label + '：' + role.name).join('；'));
+        }
+        for (const [field, record] of Object.entries(other.fields || {})) {
+            if (record.nature !== 'established_fact' || record.value?.entityId !== person.id) continue;
+            if (possession && Object.hasOwn(POSSESSION_ROLES,field)) continue;
+            if (field.startsWith(RELATION_PREFIX) && record.value.role) line(group('关系身份'),other.name,'对方是本人的' + record.value.role);
+            else line(group('直接关联'),other.name,(FIELD_LABELS[field] || field) + '为' + person.name);
+        }
+    }
+}
+
+export function createProtagonistView({ getSnapshot, getPlayerName, getInvolvement }) {
+    let root;
+    return {
+        mount(parent) {
+            root ||= el('div', undefined, 'tk-world-records');
+            root.setAttribute('aria-label', '主角');
+            if (root.parentElement !== parent) parent.append(root);
+        },
+        show(world) {
+            const entities = world.entities;
+            const { hero, names, title } = protagonistIdentity(entities, getPlayerName());
+            root.replaceChildren(el('h3', title || '主角', 'standoutHeader'));
+            if (!hero && !names.size) {
+                root.append(el('p', '尚无法确定当前玩家对应的人物。', 'tk-record-note'));
+                return;
+            }
+            if (hero) renderWorldAttributes(root, entities, hero);
+            const snapshot = getSnapshot();
+            const records = worldStoryRecords(world, snapshot?.enabled ? availableStoryRecords(snapshot.store, snapshot.invalidFrom) : []);
+            const matches = name => names.has(nameKey(name));
+            const knownNames = new Set(entities.filter(entity => ['person','subject'].includes(entity.kind))
+                .flatMap(entity => [entity.name,...(entity.aliases || [])]));
+            knownNames.add(title);
+            renderPersonalAgendas(root, projectPersonalAgendas(records, knownNames), matches);
+            const personal = records.filter(record => record.kind === 'person' && matches(record.name)
+                || record.kind === 'knowledge' && matches(record.person)
+                || record.kind === 'scene' && record.participants.some(matches));
+            if (personal.length) {
+                const identity = Symbol('player');
+                const resolve = name => name === identity || matches(name) ? identity : name;
+                const current = characterStoryState(records, identity, resolve);
+                const scene = personal.find(record => record.kind === 'scene');
+                if (scene && current.presence === 'present' && !hero?.fields.location) line(root, '所在场景', scene.location);
+                renderPersonState(root, records, identity, resolve);
+            }
+            const near = (getInvolvement?.(world) || []).filter(item => item.near);
+            if (near.length) {
+                const group = section(root, '当前牵涉');
+                for (const item of near) line(group, item.title, item.reason);
+            }
+            if (root.childElementCount === 1) root.append(el('p', '尚无与主角明确相关的世界记录。', 'tk-record-note'));
+        },
+        isEditing: () => false,
+        empty() { root.replaceChildren(el('p', '选择一段对话后查看主角状态。', 'tk-record-note')); },
+        reset() { root?.replaceChildren(); },
     };
 }
 

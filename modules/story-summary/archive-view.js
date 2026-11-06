@@ -1,4 +1,7 @@
-import { EVENT_MEMORY_ROLES } from './data/events.js';
+
+
+import { buildTimelineTree, selectTimelineTree, timelineLabels } from './timeline-tree.js';
+import { buildAliasResolver } from './data/character-aliases.js';
 
 export const ARCHIVE_COPY = Object.freeze({
     allEvents: '全部剧情', allSubjects: '全部对象', unknownRole: '未标注',
@@ -14,16 +17,22 @@ export const ARCHIVE_COPY = Object.freeze({
 
 export function getArchiveCharacters(data) {
     const entries = new Map();
-    for (const arc of data.arcs) entries.set(arc.name, { name: arc.name, id: arc.id || arc.name });
-    const add = name => { if (name && !entries.has(name)) entries.set(name, { name, id: name }); };
+    const {resolveName} = buildAliasResolver(data.characterAliases);
+    
+    const add = rawName => {
+        const name = resolveName(rawName);
+        if (name && !entries.has(name)) entries.set(name, { name, id: name });
+    };
+    for (const entity of data.entities || []) if (entity.kind === 'person') add(entity.name);
+    for (const name of data.legacyCharacterNames || []) add(name);
     for (const item of data.characters.main) add(typeof item === 'string' ? item : item.name);
     for (const relation of data.characters.relationships) { add(relation.from); add(relation.to); }
     for (const alias of data.characterAliases) add(alias.to);
-    for (const event of data.events) for (const name of event.participants || []) add(name);
+    if (data.playerName) add(data.playerName);
     for (const record of data.storyRecords || []) {
         if (record.kind === 'person') add(record.name);
         if (record.kind === 'knowledge') add(record.person);
-        if (record.kind === 'scene') for (const name of record.participants) add(name);
+        for (const name of record.holders || []) add(name);
     }
     return [...entries.values()];
 }
@@ -48,6 +57,7 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
     let role = '';
     let subject = '';
     let descending = true;
+    const expanded = new Set();
     let detailEventId = null;
     let profileInDialog = false;
     let restoreFocus = null;
@@ -96,25 +106,33 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
         if (profileInDialog) closeDialogs();
         detailEventId = event.id;
         $('archive-detail-title').textContent = ARCHIVE_COPY.eventDetail;
-        const causes = (event.causedBy || []).map(id => getData().events.find(e => e.id === id)).filter(Boolean);
         setHtml($('archive-detail-body'), `
             <div class="archive-muted">${h(event.timeLabel || ARCHIVE_COPY.noTime)}</div>
             <h3 class="archive-detail-heading">${h(event.title || ARCHIVE_COPY.untitled)}</h3>
             <p class="archive-detail-text">${h(event.summary || '')}</p>
             ${event.participants?.length ? `<h3>${ARCHIVE_COPY.participants}</h3><div class="archive-participants">${event.participants.map(name => `<button class="archive-text" data-archive-person="${h(name)}">${h(name)}</button>`).join('')}</div>` : ''}
-            ${causes.length ? `<h3>${ARCHIVE_COPY.causes}</h3>${causes.map(e => `<button class="archive-cause" data-archive-event="${getData().events.indexOf(e)}">${h(e.title)}</button>`).join('')}` : ''}
-            <button class="archive-text archive-detail-edit" data-archive-edit="events">${ARCHIVE_COPY.editEvents}</button>`);
+            `);
         openDialog(detail);
     }
 
     function timelineEvents() {
-        const events = getData().events.filter(e => (!role || (e.memoryRole || ARCHIVE_COPY.unknownRole) === role)
-            && (view !== 'story' || matches(e.title, e.summary, e.timeLabel, ...(e.participants || []))));
-        return descending ? events.reverse() : events;
+        const data = getData();
+        return selectTimelineTree(buildTimelineTree(data.rounds || [], data.narrativeUnits || []), {
+            level: role, query: view === 'story' ? $('archive-search').value.trim().toLocaleLowerCase() : '', descending,
+        });
     }
 
-    function timelineItem(event) {
-        const index = getData().events.indexOf(event);
+    function timelineItem(node) {
+        if (!node.round) {
+            const { id, level, start, end, text, reason, evidence } = node;
+            return `<details class="timeline-unit" data-unit="${h(id)}" ${expanded.has(id) || node.reveal ? 'open' : ''}>
+                <summary><strong>${h(timelineLabels[level])}</strong> <span class="archive-muted">第 ${h(start + 1)}–${h(end + 1)} 楼</span>
+                <span class="timeline-unit-text">${h(text)}</span></summary>
+                ${reason ? `<p class="archive-muted">收束依据：${h(reason)}</p>` : ''}
+                ${evidence ? `<blockquote>第 ${h(evidence.floor)} 楼：${h(evidence.quote)}</blockquote>` : ''}
+                <div class="timeline-children">${node.children.map(timelineItem).join('')}</div></details>`;
+        }
+        const { round: event, index } = node;
         return `<article class="archive-event">
             <div class="archive-event-time">${h(event.timeLabel || '')}</div>
             <div class="archive-event-main">
@@ -127,10 +145,12 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
 
     function refreshIndexes() {
         const data = getData();
-        const roles = [...EVENT_MEMORY_ROLES, ARCHIVE_COPY.unknownRole].filter(item => data.events.some(e => (e.memoryRole || ARCHIVE_COPY.unknownRole) === item));
+        const counts = { round: (data.rounds || []).length, stage: 0, chapter: 0 };
+        for (const unit of data.narrativeUnits || []) counts[unit.level]++;
+        const roles = Object.keys(timelineLabels).filter(level => counts[level]);
         if (role && !roles.includes(role)) role = '';
-        setHtml($('archive-story-index'), ['', ...roles].map(item => `<button class="archive-index-button" data-archive-role="${h(item)}" aria-pressed="${item === role}">${h(item || ARCHIVE_COPY.allEvents)}<span>${item ? data.events.filter(e => (e.memoryRole || ARCHIVE_COPY.unknownRole) === item).length : data.events.length}</span></button>`).join(''));
-        $('archive-story-heading').textContent = role || ARCHIVE_COPY.allEvents;
+        setHtml($('archive-story-index'), ['', ...roles].map(item => `<button class="archive-index-button" data-archive-role="${h(item)}" aria-pressed="${item === role}">${h(timelineLabels[item] || ARCHIVE_COPY.allEvents)}<span>${item ? counts[item] : counts.round + counts.stage + counts.chapter}</span></button>`).join(''));
+        $('archive-story-heading').textContent = timelineLabels[role] || ARCHIVE_COPY.allEvents;
         $('archive-order').textContent = descending ? ARCHIVE_COPY.newest : ARCHIVE_COPY.oldest;
         const facts = worldFacts();
         const subjects = [...new Set(facts.map(f => f.s))];
@@ -176,6 +196,7 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
 
     function reset() {
         closeDialogs();
+        expanded.clear();
         role = '';
         subject = '';
         descending = true;
@@ -218,11 +239,16 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
         });
     }
     document.addEventListener('click', event => {
+        const unit = event.target.closest('.timeline-unit > summary')?.parentElement;
+        if (unit) {
+            if (unit.open) expanded.delete(unit.dataset.unit);
+            else expanded.add(unit.dataset.unit);
+        }
         const button = event.target.closest('button');
         if (!button) return;
         if (button.dataset.archiveRole != null) { role = button.dataset.archiveRole; refreshIndexes(); onTimelineChange({ page: 0 }); }
         if (button.dataset.archiveSubject != null) { subject = button.dataset.archiveSubject; refreshIndexes(); onFactsChange(); }
-        if (button.dataset.archiveEvent != null) showEvent(getData().events[Number(button.dataset.archiveEvent)]);
+        if (button.dataset.archiveEvent != null) showEvent((getData().rounds || [])[Number(button.dataset.archiveEvent)]);
         if (button.dataset.archivePerson != null) {
             if (detail.open && !profileInDialog) closeDialogs();
             const name = button.dataset.archivePerson;
@@ -248,7 +274,7 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
         refresh() {
             refreshIndexes(); refreshRoster();
             if (detail.open && detailEventId != null) {
-                const event = getData().events.find(e => e.id === detailEventId);
+                const event = (getData().rounds || []).find(e => e.id === detailEventId);
                 if (event) showEvent(event); else closeDialogs();
             }
         },

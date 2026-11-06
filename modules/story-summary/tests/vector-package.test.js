@@ -994,6 +994,18 @@ for (const failure of ['storage', 'cancel', 'chat-switch', 'source-edit']) {
     });
 }
 
+test('after card migration old embeddings do not block checks, export or mixed-package restore', async () => {
+    const bytes = await createBytes();
+    delete memory().storySummary.json.events;
+    assert.equal((await mod.checkVectorCacheConsistency()).status, 'consistent');
+    assert.equal((await mod.createVectorPackage()).eventCount, 0);
+    const restored = await mod.restoreVectorPackage(bytes);
+    assert.ok(restored.chunkCount > 0);
+    assert.equal(restored.eventCount, 0);
+    assert.deepEqual(restored.warningCodes, ['retired_event_vectors']);
+    assert.equal(await db.eventVectors.count(), 0);
+});
+
 test('empty metadata is not initialized by import or export', async () => {
     const bytes = await createBytes();
     delete host.metadata.extensions;

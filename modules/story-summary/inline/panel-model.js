@@ -1,3 +1,4 @@
+import { reviewedRounds } from '../data/summary-layers.js';
 import { extractFloorPayload, floorSource } from './protocol.js';
 import { findFloorBatch, isFloorEntryCurrent } from './ledger.js';
 import { STORY_FIELDS, STORY_KINDS, storyRecordText } from '../../story-state/records.js';
@@ -8,17 +9,17 @@ export const FIELD_LABELS = { summary: '摘要', title: '标题', participants: 
     s: '对象', p: '属性', o: '值', isState: '随剧情变化', retracted: '撤回事实', trend: '关系趋势',
     name: '人物', trajectory: '轨迹', progress: '进度（0–100）', newMoment: '本轮节点',
     text: '关键词', weight: '重要程度', to: '规范称呼', from: '旧称呼', evidence: '依据', ...STORY_FIELDS };
-const fields = { events: ['title', 'summary', 'participants', 'causedBy', 'timeLabel', 'memoryRole'],
+const fields = { 
     factUpdates: ['s', 'p', 'o', 'isState', 'retracted', 'trend'], arcUpdates: ['name', 'trajectory', 'progress', 'newMoment'],
     newCharacters: ['name'], keywords: ['text', 'weight'], characterAliasUpdates: ['to', 'from', 'evidence'] };
 const storyFields = { scene: ['location', 'situation', 'participants', 'tension', 'pendingBeat'], clock: ['label', 'date'],
     person: ['name', 'presence', 'note'], knowledge: ['person', 'content', 'certainty', 'evidence', 'learnedAt'],
-    plan: ['title', 'description', 'status', 'reason', 'due'], suspense: ['title', 'description', 'status', 'reason', 'due'],
-    situation: ['title', 'description', 'status', 'reason', 'due'] };
-const groups = { events: '剧情', factUpdates: '世界', arcUpdates: '人物', newCharacters: '人物', keywords: '关键词', characterAliasUpdates: '人物' };
+    plan: ['title', 'description', 'holders', 'conditions', 'status', 'statusNote', 'reason', 'due'], goal: ['title', 'description', 'holders', 'conditions', 'status', 'statusNote', 'reason', 'due'], suspense: ['title', 'description', 'status', 'reason', 'due'],
+    situation: ['title', 'description', 'parties', 'scope', 'impact', 'releaseCondition', 'status', 'reason', 'due'] };
+const groups = { factUpdates: '世界', arcUpdates: '人物', newCharacters: '人物', keywords: '关键词', characterAliasUpdates: '人物' };
 
 export function floorEditItems(payload, store) {
-    const items = Object.entries(payload.updates || {}).flatMap(([bucket, rows]) => (rows || []).map((raw, index) => {
+    const items = Object.entries(payload.updates || {}).filter(([bucket]) => bucket !== 'events' && bucket !== 'arcUpdates').flatMap(([bucket, rows]) => (rows || []).map((raw, index) => {
         const value = bucket === 'newCharacters' ? { name: raw } : raw;
         let group = groups[bucket] || '变化';
         if (bucket === 'storyUpdates') group = STORY_KINDS[value.kind] || '世界';
@@ -47,7 +48,8 @@ export function floorEditItems(payload, store) {
 export function floorPanelModel(snapshot, floor) {
     const { store, chat } = snapshot;
     const source = floorSource(chat, floor);
-    const batch = findFloorBatch(store, floor);
+    const history = snapshot.roundHistory || reviewedRounds(store?.summaryHistory);
+    const batch = findFloorBatch({ summaryHistory: history }, floor);
     const current = isFloorEntryCurrent(batch?.floorEntry, chat) && !store?.summaryInvalid
         && !(snapshot.invalidFrom != null && batch.endMesId >= snapshot.invalidFrom);
     const entry = current ? batch.floorEntry : null;
@@ -55,14 +57,14 @@ export function floorPanelModel(snapshot, floor) {
     const draft = store?.floorDrafts?.[floor];
     const staged = draft?.source?.digest === source.digest;
     let payload = staged ? draft.payload : entry?.empty ? structuredClone(EMPTY_FLOOR_PAYLOAD) : entry?.payload || extracted.payload || structuredClone(EMPTY_FLOOR_PAYLOAD);
+    if (entry && !staged && batch.summary) payload = { ...payload, summary: batch.summary };
     if ((!entry || entry.anchorVersion) && payload.anchors === undefined) payload = { ...payload, anchors: inlineAnchorInputs(payload) };
-    const legacy = !store?.summaryInvalid && snapshot.invalidFrom == null && !batch && store?.summaryHistory?.find(item => item.kind === 'batch' && !item.floorEntry && floor > item.previousEndMesId && floor <= item.endMesId);
+    const legacy = !store?.summaryInvalid && snapshot.invalidFrom == null && !batch && history.find(item => item.kind === 'batch' && !item.floorEntry && floor > item.previousEndMesId && floor <= item.endMesId);
     const rangeSummary = typeof legacy?.summary === 'string' ? legacy.summary.trim() : '';
     if (rangeSummary && !staged && !entry) payload = { ...structuredClone(EMPTY_FLOOR_PAYLOAD), summary: rangeSummary };
-    const legacyEvents = legacy ? (store?.json?.events || []).filter(event => event._addedAt === legacy.endMesId) : [];
     const status = entry?.omitted ? '番外' : entry?.deleted ? '已删除' : staged ? '待审查' : entry ? '已写入'
         : rangeSummary ? '已写入' : extracted.status === 'ready' ? '待审查' : extracted.status === 'incomplete' ? '输出未完成' : extracted.status === 'invalid' ? '格式有误' : legacy ? '旧区间' : '待总结';
-    return { source, payload, entry, batch, legacy, legacyEvents, status, staged, pending: staged || (!entry && !rangeSummary),
+    return { source, payload, entry, batch, legacy, status, staged, pending: staged || (!entry && !rangeSummary),
         error: snapshot.getError?.(floor) || (!staged && !entry ? extracted.error : '') || '',
         items: floorEditItems(payload, batch?.undo ? { json: { storyRecords: (batch.undo.storyRecordChanges || []).map(change => change.previous).filter(Boolean) } } : store) };
 }

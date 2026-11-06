@@ -1,3 +1,8 @@
+import { stripFloorProtocol } from '../inline/protocol.js';
+import { prepareMemoryTags } from '../data/memory-tags.js';
+import { reviewedRounds, roundSourceId } from '../data/summary-layers.js';
+import { isRangeSourceCurrent } from '../data/turn-source.js';
+import { readNarrativeUnits, requestNarrativeClosure, validateStagedUnits } from './narrative-review.js';
 import { editMemoryBatch, iterateMemoryRecords, memoryItems, memoryKey, sameMemory, MEMORY_COLLECTIONS } from './domain.js';
 import { createEvidenceReader } from './evidence.js';
 import { MemoryMaintenanceError, requireMemory, memoryUpdated } from './errors.js';
@@ -13,7 +18,7 @@ import { projectMaintenanceResult } from './result.js';
 export { projectMemoryRecord } from './records.js';
 export { MEMORY_PAGE_CHARS, MEMORY_PAGE_SIZE, OPENING_TOKENS } from './limits.js';
 
-const generation = ({ maintenance: _receipts, ...batch }) => batch;
+const generation = ({ maintenance: _receipts, reviewLayers: _layers, roundRevisions: _revisions, ...batch }) => batch;
 const find = (memory, { collection, key }) => {
     const value = memoryItems(memory, collection).find(item => memoryKey(collection, item) === key) ?? null;
     return collection === 'facts' && value?.retracted ? null : value;
@@ -33,13 +38,13 @@ function recordLookup(memory) {
 
 /** One task borrows published records; only observed values and changed records are detached. */
 export function createMemorySession({ chatId, chat, json, atoms, l0Index, cutoff, start = 0, store,
-    filterRules = [], openingTokens = OPENING_TOKENS }) {
+    generateReviewedLayer, filterRules = [], openingTokens = OPENING_TOKENS }) {
     let source = { json: json || {}, atoms }, history = store?.summaryHistory || [];
     const originalBatches = history.map(generation);
     const policy = memoryPolicy(filterRules), evidence = createEvidenceReader(() => chat, cutoff, filterRules);
     const observed = new Map(), overlay = new Map(), conflicts = new Map(), completionBaseline = new Map();
     const confirmedOperations = [], acknowledged = new Set();
-    let pending = null, ownershipHistory, ownership;
+    let confirmedLayers = 0, pending = null, ownershipHistory, ownership;
     const ownerFor = batches => {
         if (batches !== ownershipHistory) { ownershipHistory = batches; ownership = memoryOwnership(batches, cutoff); }
         return ownership;
@@ -327,6 +332,7 @@ export function createMemorySession({ chatId, chat, json, atoms, l0Index, cutoff
     }
     function assertCurrent(current) {
         assertBoundary(current);
+        if (pending?.revisions?.length || pending?.layers?.length) validateStagedUnits(reviewState(current), pending.layers);
         const memory = { json: current.json || {}, atoms: current.atoms }, batches = current.store?.summaryHistory || history;
         const keys = [...overlay.values()];
         if (pending?.completions.length) {
@@ -353,10 +359,52 @@ export function createMemorySession({ chatId, chat, json, atoms, l0Index, cutoff
         }
         return { supplied: evidence.ranges(), missingAnchors };
     }
-    return { chatId, cutoff, start, evidence, policy,
+    const canReviewUnits = !!generateReviewedLayer && reviewedRounds(history).some(batch => roundSourceId(batch) && batch.summary);
+    function reviewState(current) {
+        const revisions = pending?.revisions || [];
+        const history = reviewedRounds(current.store.summaryHistory);
+        const latest = new Map(history.map(batch => [batch.endMesId, batch]));
+        for (const change of revisions) {
+            const batch = latest.get(change.end);
+            requireMemory(batch && roundSourceId(batch) === change.sourceId && (batch.roundVersion || 0) === change.baseVersion && batch.summary === change.previous
+                && isRangeSourceCurrent(batch.sourceReceipt?.source || batch.roundSource, current.chat), 'conflict');
+            latest.set(change.end, { ...batch, summary: change.text, roundVersion: change.baseVersion + 1, ...(change.memoryTags && { memoryTags: change.memoryTags }) });
+        }
+        // The copy already contains effective text. Avoid applying its overlays a second time.
+        return { ...current, store: { ...current.store, summaryHistory: [...latest.values()].map(({ roundRevisions, legacyRoundBase, legacyRoundChanges, ...batch }) => batch) } };
+    }
+    async function reviewUnit(name, args, current, reread, signal) {
+        assertBoundary(current);
+        const staged = pending?.layers || [];
+        const view = reviewState(current);
+        if (name === 'ReadNarrativeUnits') return readNarrativeUnits(view, staged, cutoff, args);
+        if (name === 'ReviseRoundSummary') {
+            const batch = view.store.summaryHistory.find(item => item.endMesId === args.to - 1);
+            const source = batch?.sourceReceipt?.source || batch?.roundSource;
+            requireMemory(source && batch.summary && !batch.floorEntry?.omitted && batch.endMesId <= cutoff
+                && isRangeSourceCurrent(source, current.chat) && (batch.roundVersion || 0) === args.version && batch.summary === args.previous, 'conflict');
+            const floor = args.evidence.floor - 1, quote = args.evidence.quote;
+            requireMemory(floor >= source.start && floor <= source.end && quote.trim() && quote.length <= 1000
+                && !(current.chat[floor]?.is_system && current.chat[floor]?.extra?.type) && stripFloorProtocol(current.chat[floor]?.mes).includes(quote)
+                && args.text.trim() && args.text.length <= 12000, 'invalid_arguments');
+            const memoryTags = args.memoryTags && prepareMemoryTags({ memoryTags: args.memoryTags });
+            if (args.text.trim() === batch.summary && (!memoryTags || sameMemory(memoryTags, batch.memoryTags))) return { status: 'unchanged' };
+            const draft = ensurePending();
+            (draft.revisions ??= []).push({ version: 1, end: batch.endMesId, sourceId: roundSourceId(batch),
+                ...(memoryTags && { memoryTags }), baseVersion: args.version, previous: batch.summary, text: args.text.trim(), evidence: { ...args.evidence } });
+            return { status: 'staged' };
+        }
+        const result = await requestNarrativeClosure(args, view, staged, cutoff, generateReviewedLayer, async () => reviewState(await reread()), signal);
+        if (result.node) {
+            const draft = ensurePending();
+            (draft.layers ??= []).push(result.node);
+        }
+        return { status: result.status, level: args.level, from: args.from, to: args.to, summary: result.node?.text };
+    }
+    return { chatId, cutoff, start, evidence, policy, canReviewUnits, reviewUnit,
         get operations() { return confirmedOperations; }, get pending() { return pending; },
-        get hasPending() { return !!pending && !!(pending.operations.length || pending.completions.length || pending.outcome); },
-        get stagedCount() { return pending?.operations.length || 0; }, get savedCount() { return confirmedOperations.length; },
+        get hasPending() { return !!pending && !!(pending.operations.length || pending.completions.length || pending.layers?.length || pending.revisions?.length || pending.outcome); },
+        get stagedCount() { return (pending?.operations.length || 0) + (pending?.layers?.length || 0) + (pending?.revisions?.length || 0); }, get savedCount() { return confirmedOperations.length + confirmedLayers; },
         get stagedCompletions() { return pending?.completions || []; },
         coverage, runTool, initial, task, ownsHistory, assertCurrent,
         inputProvided() { evidence.inputProvided(); },
@@ -365,6 +413,7 @@ export function createMemorySession({ chatId, chat, json, atoms, l0Index, cutoff
             const { current, receipt } = saved, id = receipt.id;
             if (acknowledged.has(id)) return;
             if (!pending) return;
+            confirmedLayers += (pending.layers?.length || 0) + (pending.revisions?.length || 0);
             confirmedOperations.push(...projectMaintenanceResult(saved.receipts).operations);
             acknowledged.add(id);
             refresh(current); pending = null; overlay.clear(); conflicts.clear(); observed.clear(); completionBaseline.clear();

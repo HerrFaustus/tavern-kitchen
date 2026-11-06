@@ -1,20 +1,20 @@
 {
-  "version": "0.2.21",
-  "verified_at_utc": "2026-11-05T13:10:47Z",
-  "build_id": "d625731eec24707bc109",
+  "version": "0.2.22",
+  "verified_at_utc": "2026-11-06T07:41:36Z",
+  "build_id": "3064ad6a599932957389",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
   "quality": "passed",
   "unit_tests": {
-    "total": 1667,
-    "passed": 1667,
+    "total": 1690,
+    "passed": 1690,
     "failed": 0,
     "cancelled": 0,
     "skipped": 0
   },
   "memory_runtime": "passed",
-  "scope": "Same-turn atomic world proposal batches and conservative automatic confirmation of complete explicit groups; uncertain, conflicting, stale or legacy proposals remain manual. Original proposals, sources, branch/world/story guards, per-target effect receipts, modification and rejection remain. Hierarchy, full knowledge views, partitioned capacity handling and live-host end-to-end QA remain pending.",
+  "scope": "Story memory and raw retrieval enabled by default, retired module/chat/vector activation controls removed, retired range options fixed to the completed tail and an internal batch limit. Confirmed catch-up batches continue sequentially, preserving source/version/idempotency, cancellation and retry progress. Existing provider selections, master gate and automatic-summary pause remain. Source-linked round/stage/chapter summaries, editable layer instructions, and chat-scoped request previews are verified offline. Review-directed stage and chapter closure is verified with offline adapters. Complete knowledge views, capacity partitioning and live-host QA remain pending.",
   "runtime_changes": true,
   "removed_source_paths": 1763,
   "removed_modules_in_build": 0,
@@ -96,7 +96,7 @@
     ],
     "verified_version": "0.1.9"
   },
-  "ui_review": "0.2.21 production world proposal panel exercised with Linkedom and actual service/IndexedDB: grouped edit and rejection, same-turn full-batch review, stale form preservation, automatic result display and remaining manual controls. Existing single-item, retry, source and structured knowledge tests remain. Native controls/details/fieldsets are reused. No new screenshots or layout-engine/live-host verification; browser use is disabled in Work settings. Older browser fixtures retain their original version scope.",
+  "ui_review": "0.2.22 actual settings HTML and Linkedom: no module/chat/vector activation or summary-range controls; vector parameters visible; legacy disabled vector config loads and is collected as enabled without missing-node errors; recent prose visibility controls remain. Production config and panel provider normalization preserve existing selections. Existing world proposal DOM tests remain. No new screenshots, layout-engine or live-host verification; browser use remains disabled in Work settings. Older browser fixtures retain their original scope.",
   "local_variable_regression": {
     "version": "0.2.15",
     "new_tests": 24,
@@ -287,7 +287,7 @@
     },
     "errors": []
   },
-  "modules": 928,
+  "modules": 932,
   "phone_removal_fixture": {
     "version": "0.2.3",
     "desktop": [
@@ -540,6 +540,31 @@
       "proposal approval/execution",
       "live-host and paid-model end-to-end evaluation"
     ]
+  },
+  "memory_defaults": {
+    "version": "0.2.22",
+    "status": "passed",
+    "new_tests": 12,
+    "total_tests": 1679,
+    "build_id": "2d79366e5133429f09ae",
+    "verified": [
+      "module and per-chat disabled flags cannot invisibly disable story memory",
+      "vector missing/false/true settings normalize to enabled across save and reload",
+      "master control and automatic-summary pause remain effective",
+      "retired delay and range controls normalize to zero delay and an internal 100-floor cap",
+      "manual panel messages cannot restore retired range values",
+      "host and panel keep legacy flat API choices and explicit provider profiles",
+      "old server data can load without an initialization write",
+      "actual settings DOM and vector loading/collection work after controls are removed",
+      "manual and automatic catch-up save each range before continuing",
+      "provider failure and user cancellation preserve confirmed progress and stop later work",
+      "existing source, version, branch and effect-idempotency tests remain in the full suite"
+    ],
+    "retired_source_files": [
+      "modules/story-summary/data/chat-toggle.js"
+    ],
+    "paid_model_calls": 0,
+    "live_host_browser_test": false
   },
   "world_proposal_batch": {
     "version": "0.2.21",

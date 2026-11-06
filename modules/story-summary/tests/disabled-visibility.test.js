@@ -3,7 +3,6 @@ import test from 'node:test';
 import { entry, startupEntry } from './helpers/story-summary-entry.js';
 import { createHideStateController } from '../hide-state.js';
 import { isXiaobaiMasterEnabled } from '../runtime-gate.js';
-import { getChatStorySummaryEnabled, setChatStorySummaryEnabled, resolveStorySummaryEnabled } from '../data/chat-toggle.js';
 
 function fixture() {
     const chat = [false, true, true, false].map(is_system => ({ is_system }));
@@ -12,14 +11,11 @@ function fixture() {
     const context = { chatId: 'issue-121', chat, saveChat: async () => saves.push(chat.map(message => message.is_system)) };
     const mod = entry(['hideState', 'getStorySummaryEnablement', 'isStorySummaryEnabledForCurrentChat',
         'applyHideState', 'applyHideStateDebounced', 'cancelPendingHide', 'clearHideState', 'unregisterEvents', 'runStorySummaryTeardown',
-        'getStorySummaryChatState', 'setStorySummaryEnabledForCurrentChat'], {
+        'getStorySummaryChatState'], {
         createHideStateController,
         getContext: () => context,
         getSettings: () => ({ storySummary: { enabled: state.enabled } }),
         isXiaobaiMasterEnabled: () => state.master,
-        getChatStorySummaryEnabled, setChatStorySummaryEnabled, resolveStorySummaryEnabled,
-        chatSummaryStateChanging: false,
-        saveChatSummaryState: current => current.saveChat(),
         handleChatChanged: async () => {},
         chat_metadata: {}, EXT_ID: 'TavernKitchen',
         getPendingMemoryCommit: () => state.pending || null,
@@ -149,21 +145,19 @@ test('scheduled visibility work after disabling preserves manual hiding', async 
     assert.deepEqual(f.saves, []);
 });
 
-test('chat disable restores once; later chat work and master shutdown leave new manual hides alone', async () => {
+test('legacy disabled chats are enabled without rewriting metadata; master shutdown preserves unowned manual hides', async () => {
     const f = fixture();
     f.state.master = true;
-    f.mod.events = { cleanup() {} };
-    await f.mod.setStorySummaryEnabledForCurrentChat(false);
-    assert.deepEqual(f.chat.map(message => message.is_system), [false, false, false, false]);
-    assert.equal(f.saves.length, 1);
-    f.chat[1].is_system = f.chat[2].is_system = true;
-    await f.mod.applyHideState();
-    await f.mod.clearHideState();
-    await f.mod.setStorySummaryEnabledForCurrentChat(false);
+    const metadata = { extensions: { TavernKitchen: { storySummaryEnabled: false } } };
+    f.mod.chat_metadata = metadata;
+    assert.equal(f.mod.getStorySummaryChatState().chatEnabled, true);
+    assert.equal(f.mod.isStorySummaryEnabledForCurrentChat(), true);
+    assert.equal(metadata.extensions.TavernKitchen.storySummaryEnabled, false);
+    assert.equal(f.saves.length, 0);
     f.state.master = false;
     await f.mod.unregisterEvents();
     assert.deepEqual(f.chat.map(message => message.is_system), [false, true, true, false]);
-    assert.equal(f.saves.length, 1);
+    assert.equal(f.saves.length, 0);
 });
 
 test('the runtime master gate reads the published host master flag', () => {

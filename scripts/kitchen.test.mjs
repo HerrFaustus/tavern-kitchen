@@ -4,7 +4,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pluginRoot, hostPathForImport, servedHostImport } from './host/paths.mjs';
 import { createDiceResultStorage } from '../modules/xiaobai-os/apps/dice/application/result-storage.ts';
-import { createDefaultXiaobaiOsSettings } from '../modules/xiaobai-os/host/settings-normalization.ts';
+import { PROMPT_INJECTION_POLICY } from '../modules/xiaobai-os/host/prompt-injection-policy.ts';
+import { readDiceRecords } from '../modules/xiaobai-os/apps/dice/host/message-records.ts';
+import { createDefaultXiaobaiOsSettings, normalizeXiaobaiOsSettings } from '../modules/xiaobai-os/host/settings-normalization.ts';
 
 test('deployment paths survive a shallow source checkout and a renamed install directory', () => {
     assert.equal(hostPathForImport(path.join(pluginRoot, 'plugin-entry.js'), '../../../extensions.js'), 'public/scripts/extensions.js');
@@ -39,9 +41,24 @@ test('new installs leave autonomous model calls disabled and the shipped app set
     assert.equal(defaults.apps.map.autoMaintenance, false);
     assert.equal(defaults.apps.world.subscribed, false);
     assert.equal(defaults.apps.dice.actionChecksEnabled, false);
-    assert.equal(defaults.apps.dice.encountersEnabled, false);
+    assert.equal(Object.hasOwn(defaults.apps.dice, 'encountersEnabled'), false);
     const host = JSON.parse(fs.readFileSync(path.join(pluginRoot, 'modules/xiaobai-os/host/app-catalog.json')));
     const shell = JSON.parse(fs.readFileSync(path.join(pluginRoot, 'modules/xiaobai-os/shell/app-catalog.json')));
     assert.deepEqual(new Set(host), new Set(['dice', 'map', 'world', 'agent-api']));
     assert.deepEqual(shell, host);
+});
+
+test('retired Dice encounters cannot activate from old settings or chat data; action checks and street scenes remain available', () => {
+    const loaded = normalizeXiaobaiOsSettings({ apps: {
+        dice: { actionChecksEnabled: true, encountersEnabled: true },
+        world: { encounterFrequency: 'off' },
+    } });
+    assert.equal(loaded.apps.dice.actionChecksEnabled, true);
+    assert.equal(Object.hasOwn(loaded.apps.dice, 'encountersEnabled'), false);
+    assert.equal(loaded.apps.world.encounterFrequency, 'off');
+    assert.deepEqual(PROMPT_INJECTION_POLICY.filter(group => group.id.startsWith('dice')).map(group => group.id), ['dice_check']);
+    const legacy = { is_user: true, extra: { xiaobaiOsDice: { schemaVersion: 1, encounter: { outcome: 'high', event: '桥塌了' } } } };
+    assert.equal(readDiceRecords(legacy), undefined);
+    const result = { checks: [] };
+    assert.equal(readDiceRecords({ extra: { xiaobaiOsDice: result } }), result);
 });

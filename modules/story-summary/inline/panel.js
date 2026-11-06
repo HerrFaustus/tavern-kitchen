@@ -6,11 +6,11 @@ const choices = { presence: { present: '在场', nearby: '附近', away: '离场
     certainty: { known: '已知', believed: '相信／误解', uncertain: '怀疑' },
     status: { open: '未结', done: '完成', cancelled: '取消', failed: '失败' },
     weight: { 核心: '核心', 重要: '重要', 一般: '一般' } };
-const arrays = new Set(['participants', 'causedBy', 'from']);
+const arrays = new Set(['participants', 'holders', 'causedBy', 'from']);
 const booleans = new Set(['isState', 'retracted']);
 const iconNames = { 人物: 'user', 认知: 'brain', 场景: 'location-dot', 故事时钟: 'clock', 剧情: 'book-open',
     场景锚点: 'bookmark',
-    物品: 'box-open', 变量: 'sliders', 计划: 'list-check', 悬念: 'circle-question', 局面: 'flag', 世界: 'globe' };
+    物品: 'box-open', 变量: 'sliders', 计划: 'list-check', 目标: 'bullseye', 悬念: 'circle-question', 局面: 'flag', 世界: 'globe' };
 
 export function createFloorPanel({ doc, floor, updateFloor, extractFloor, summarizeFloor, openMemory, schedule }) {
     const root = doc.createElement('article'); root.className = 'tk-floor-summary tk-fp';
@@ -159,14 +159,13 @@ export function createFloorPanel({ doc, floor, updateFloor, extractFloor, summar
         renderContent();
         const patch = (value, remove = false) => {
             const payload = structuredClone(model.payload);
-            const eventIds = [...(model.entry?.eventIds || [])];
             if (item.bucket === 'anchors') {
                 if (remove) payload.anchors.splice(item.index, 1); else payload.anchors[item.index] = value;
                 return commitPayload(payload);
             }
-            if (remove) { payload.updates[item.bucket].splice(item.index, 1); if (item.bucket === 'events') eventIds.splice(item.index, 1); }
+            if (remove) payload.updates[item.bucket].splice(item.index, 1);
             else payload.updates[item.bucket][item.index] = item.bucket === 'newCharacters' ? value.name : value;
-            return commitPayload(payload, { eventIds, ...(remove && item.bucket === 'events' && !payload.updates.events.length ? { suppressDefaultEvent: true } : {}) });
+            return commitPayload(payload);
         };
         const form = editor(item.key, item.value, item.fields, values => patch(values), () => patch(null, true));
         content.querySelector(`[data-edit="${item.key}"]`)?.replaceWith(form);
@@ -175,10 +174,8 @@ export function createFloorPanel({ doc, floor, updateFloor, extractFloor, summar
         if (!model || busy) return;
         content.replaceChildren();
         if (model.legacy) {
-            const events = model.legacyEvents;
             content.append(element('p', '', `${model.legacy.summary ? '区间摘要' : '旧版区间总结'} · 第 ${model.legacy.previousEndMesId + 2}–${model.legacy.endMesId + 1} 楼`));
             if (model.legacy.summary) content.append(element('p', 'tk-fp-summary', model.legacy.summary));
-            else for (const event of events) content.append(element('p', 'tk-fp-summary', event.summary));
             content.append(button(model.legacy.summary ? '查看剧情资料' : '在剧情资料中编辑', () => openMemory(floor), 'menu_button')); return;
         }
         const disabled = !!model.entry?.omitted;

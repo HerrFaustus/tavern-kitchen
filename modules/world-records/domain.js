@@ -4,6 +4,7 @@ import { UPDATE_PREFIX } from './update-context.js';
 import { validateUpdateRecord } from './update-ledger.js';
 import { prepareProposalReview, repeatedProposalReview, validateProposalReviewHistory } from './proposal-review.js';
 import { validateWorldStoryState } from './world-story-state.js';
+import { validatePersonField } from './person-fields.js';
 
 // Host-independent world archive. Only established fields participate in commands.
 export const SCHEMA = 3;
@@ -159,6 +160,7 @@ export function applyCommand(previous, command, reviewContext = {}) {
     function mutate(id, update) { const entity = entityById(state, id); const before = structuredClone(entity); update(entity); entity.revision = version; record('entity', id, before, entity); }
     function setField(id, field, value, source) {
         field = safeField(field); validateReference(state, field, value);
+        validatePersonField(entityById(state,id),field,value,state.entities);
         mutate(id, e => { e.fields[field] = { value: structuredClone(value), nature: 'established_fact', source: sourceOf(source), eventId, version }; });
     }
     for (const op of operations) {

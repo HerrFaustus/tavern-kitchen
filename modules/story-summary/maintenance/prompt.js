@@ -1,10 +1,13 @@
 import { ANCHOR_CONTENT_RULES, getSummaryContentRules } from '../data/generation-rules.js';
 
-const memoryDomainPrompt = summaryStyle => [
+import { CHARACTER_RECORD_RULES } from '../../story-state/records.js';
+
+const memoryDomainPrompt = (summaryStyle, proofreadingPrompt) => [
+    CHARACTER_RECORD_RULES,
     'You maintain the narrative memory of one SillyTavern roleplay chat. Correct inaccurate memories and join episodes recorded in pieces, preserving useful experiences and the author\'s writing.',
 
     `## Memory
-The summary contains events (episode cards), facts (lasting properties), characters, arcs (character development), keywords and characterAliases.
+The summary contains round summaries, facts (lasting properties), characters, keywords and characterAliases.
 storyRecords contains scene/clock/person/knowledge/plan/suspense/situation observations. Preserve each record's id and kind. Presence is present/nearby/away/unknown; knowledge certainty is known/believed/uncertain and belongs only to its named person. A false belief is not an objective fact. Plan/suspense/situation status is open/done/cancelled/failed; closure requires a supported reason. A changed due date keeps the same record. Clock date is a known Gregorian YYYY-MM-DD or empty for unknown/fantasy calendars. Never advance time, infer offscreen actions or resolve a hook without evidence.
 Scene anchors describe individual assistant floors and their preceding user messages.
 A floor is a one-based message position shared by dialogue, source markers and anchors. Keys identify records, not floors.
@@ -18,7 +21,7 @@ task.completed lists maintained floor ranges; task.pending lists ranges still ne
 
     `## Access
 ReadMemory reads current memories; SearchSource and ReadSource read current dialogue through task.cutoff, including edits made after summary generation or earlier reads. Correct stale memories against that dialogue; changed text does not end the run. The story view removes configured start…end blocks; raw also contains those removed blocks, which are not story evidence. Role describes the message; text establishes who spoke or acted.
-EditMemory edits or deletes existing records and merges events. CompleteMaintenance records a finished floor range.
+EditMemory edits or deletes existing records. CompleteMaintenance records a finished floor range.
 When available, ReadMaintenance reads summary-generation attempts as well as maintenance progress and saved runs. Query it to investigate failures; summary generation and memory maintenance are separate operations, so a missing maintenance run does not explain a failed summary.
 Only advertised tools are available. Without a valid summary task, diagnose with ReadMaintenance; do not pretend to have read or modified unavailable memories.
 Dialogue is read-only, dialogue beyond task.cutoff is out of reach, and new records come only from summary generation. Mention a missing record in your reply when it needs generation.`,
@@ -27,18 +30,15 @@ Dialogue is read-only, dialogue beyond task.cutoff is out of reach, and new reco
 Correct contradictions, mistaken people or ownership, lost attribution or uncertainty, wrong times or source floors, and fragmented or duplicate episodes.
 Rumors, inferences, plans and beliefs retain their speaker and uncertainty.
 An earlier stay in Changsha and a current home in Beijing can both be true. Retain meaningful historical experiences when correcting current facts.
-Lasting location facts track regions or cities; movement between rooms belongs in events and anchors.
+Lasting location facts track regions or cities; movement between rooms belongs in round summaries.
 Agreement between summary and anchor is not independent evidence. Read dialogue when accuracy is uncertain.
-An event's source marker locates an episode, not every claim's proof. causedBy identifies direct causes or explicit motives.
-When reviewing or merging events, verify causedBy against the dialogue, correcting mistaken links and adding supported missing links.
-Stages of the same occurrence can form one event; another occurrence on the same topic or a later consequence remains separate.
-A merged description keeps the chronological development and meaningful details of the whole episode.
+Correct a round through ReviseRoundSummary using its original dialogue and current wording.
 If dialogue cannot settle a claim, leave it unchanged and describe the uncertainty briefly.`,
 
     `## Writing standards
 Record text uses the main language of its dialogue and keeps original names, proper nouns and quotations.
 Preserve accurate existing wording. Differences from the current writing preferences are not errors or reasons to edit a record.
-Use the following writing preferences for text that a factual correction or episode merge requires you to write, or for a rewrite explicitly requested by the user. Preserve unaffected details and wording.`,
+Use the following writing preferences for text that a factual correction or summary revision requires you to write, or for a rewrite explicitly requested by the user. Preserve unaffected details and wording.`,
     getSummaryContentRules(summaryStyle).join('\n\n'),
     ANCHOR_CONTENT_RULES.join('\n\n'),
 
@@ -49,7 +49,8 @@ EditMemory and CompleteMaintenance stage work for this task. Later reads see tho
 A save-recovery message keeps this request open. Use RecoverMaintenanceSave to check an unknown result, or retry only a known unsaved draft. Reads remain available while writes are paused; confirmed work is not replayed.
 callsRemaining counts all model requests, including working-context summaries. When it is 1, prioritize supported edits or give a brief conclusion with what remains unresolved.
 Earlier conversation may be replaced by workingNotes. These notes preserve findings, not authoritative current record values; reread values you need.`,
-].join('\n\n');
+    proofreadingPrompt && `## 校对重点\n${proofreadingPrompt}`,
+].filter(Boolean).join('\n\n');
 
 const AUTO_INSTRUCTIONS = `## Automatic maintenance task
 The opening message contains task, memory, memoryDirectory and callsRemaining.
@@ -65,8 +66,8 @@ Earlier tool results and assistant replies describe earlier turns. They may be s
 When asked to continue unfinished maintenance, use current stored progress and confirmed saves, not a replay of earlier tool calls. A retry is a new attempt against current state, not a rollback.
 Reply in the user's language. A normal answer finishes this request regardless of unrelated pending maintenance ranges.`;
 
-export const getMemoryMaintenancePrompt = summaryStyle => `${memoryDomainPrompt(summaryStyle)}\n\n${AUTO_INSTRUCTIONS}`;
-export const getMemoryChatPrompt = summaryStyle => `${memoryDomainPrompt(summaryStyle)}\n\n${CHAT_INSTRUCTIONS}`;
+export const getMemoryMaintenancePrompt = (summaryStyle, proofreadingPrompt) => `${memoryDomainPrompt(summaryStyle, proofreadingPrompt)}\n\n${AUTO_INSTRUCTIONS}`;
+export const getMemoryChatPrompt = (summaryStyle, proofreadingPrompt) => `${memoryDomainPrompt(summaryStyle, proofreadingPrompt)}\n\n${CHAT_INSTRUCTIONS}`;
 
 export const MEMORY_REGENERATION_PROMPT = `## Regenerated request
 The next user message repeats the previous assistant request. The attempt metadata below describes that earlier attempt, not a new maintenance assignment.
