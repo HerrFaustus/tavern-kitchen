@@ -8,10 +8,16 @@ import { createPlanner } from './runtime.js';
 import { createNoteStore } from './storage.js';
 import { assertPlannerPresetReady } from './preset.js';
 
+import { createPlannerSettings } from './settings-view.js';
+
 const ID = 'kitchen-chapter-note';
 export function installPlanner({snapshot, getContext, settings, saveSettings}) {
-    let message = '等待正文生成', statusNode, view = 0;
-    const status = text => { message = text; if (statusNode?.isConnected) statusNode.textContent = text; };
+    let message = '等待正文生成', canRetry = false, renderStatus, view = 0;
+    const status = (text, retryable = false) => {
+        message = text;
+        canRetry = retryable;
+        renderStatus?.(message, canRetry);
+    };
     const writer = createPlanner({snapshot, store:createNoteStore(), preference:()=>settings.preference || '', status,
         async write(messages,signal) {
             const preset = await resolveTextApi('planner');
@@ -23,7 +29,7 @@ export function installPlanner({snapshot, getContext, settings, saveSettings}) {
     const reset = () => { generation++; writer.cancel(); clear(); };
     const events = createModuleEvents(ID);
     events.on(event_types.GENERATION_STARTED, (_type,_options,dryRun) => { if (!dryRun) reset(); });
-    events.on(event_types.CHAT_CHANGED, () => { reset(); view++; statusNode = null; message = '等待正文生成'; });
+    events.on(event_types.CHAT_CHANGED, () => { reset(); view++; status('等待正文生成'); });
     for (const event of [event_types.GENERATION_STOPPED,event_types.GENERATION_ENDED]) events.on(event,reset);
     registerGenerateInterceptor(ID, async (_chat,contextSize,_abort,type,run) => {
         clear();
@@ -48,32 +54,35 @@ export function installPlanner({snapshot, getContext, settings, saveSettings}) {
             const repository = await getTextApiRepository();
             const api = await repository.load();
             if (view !== token) return;
-            const el = (tag,text) => Object.assign(document.createElement(tag),text ? {textContent:text} : {});
-            const panel = el('section'); panel.style.cssText='display:grid;gap:1em;max-width:42rem;margin:1rem auto;padding:1rem';
-            const modelLabel = el('label','后台作家模型 '), model = el('select');
-            model.append(new Option('选择独立模型配置',''));
-            for (const preset of api.presets.filter(p=>acceptsProfile('planner',p))) model.append(new Option(preset.name,preset.id));
-            model.value = api.bindings.planner;
-            modelLabel.append(model);
-            const prefLabel = el('label','创作偏好'), pref = el('textarea');
-            pref.rows = 4; pref.maxLength = 3000; pref.value = settings.preference || ''; pref.style.width='100%';
-            prefLabel.append(pref);
-            const save = el('button','保存配置'), retry = el('button','下次正文重试'), state = el('p',message);
-            statusNode = state; state.setAttribute('role','status');
-            save.onclick = async () => {
-                if (!model.value) { status('请先在 API 设置中创建并选择独立文本配置'); return; }
-                save.disabled = true;
-                const before = settings.preference;
-                try {
-                    await repository.mutate('planner',{type:'select',id:model.value});
-                    settings.preference = pref.value.trim(); await saveSettings();
-                    reset(); writer.retry(); status('配置已保存，下次审稿使用');
-                } catch { settings.preference = before; status('保存失败，请重新打开核对配置'); }
-                finally { save.disabled = false; }
-            };
-            retry.onclick = () => { writer.retry(); status('将在下次需要审稿时重试'); };
-            panel.append(modelLabel,prefLabel,save,retry,state); root.replaceChildren(panel);
+            renderStatus = createPlannerSettings(root, {
+                presets: api.presets.filter(preset => acceptsProfile('planner', preset)),
+                selected: api.bindings.planner,
+                preference: settings.preference,
+                async save(model, preference) {
+                    if (!model) {
+                        status('请先在 API 设置中创建并选择独立文本配置', canRetry);
+                        return;
+                    }
+                    const before = settings.preference;
+                    try {
+                        await repository.mutate('planner', { type: 'select', id: model });
+                        settings.preference = preference;
+                        await saveSettings();
+                        reset();
+                        writer.retry();
+                        status('配置已保存，下次审稿使用');
+                    } catch {
+                        settings.preference = before;
+                        status('保存失败，请重新打开核对配置', canRetry);
+                    }
+                },
+                retry() {
+                    writer.retry();
+                    status('将在下次需要审稿时重试');
+                },
+            });
+            renderStatus(message, canRetry);
         },
-        dispose() { reset(); view++; events.cleanup(); unregisterGenerateInterceptor(ID); },
+        dispose() { renderStatus = null; reset(); view++; events.cleanup(); unregisterGenerateInterceptor(ID); },
     };
 }

@@ -13,17 +13,21 @@
 
 #tk-topbar .tk-topbar-toggle { border: 0; padding: 0; margin: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
 #tk-topbar button:focus-visible { outline: 2px solid var(--SmartThemeQuoteColor); outline-offset: 3px; }
-#tk-workspace { --tk-drawer-height: 100dvh; position: fixed; top: 0; right: 0; left: auto; margin: 0; width: max(320px, calc((100dvw - var(--sheldWidth, 800px) - 2px) / 2)); max-width: 100dvw; min-width: 0 !important; min-height: 0 !important; max-height: var(--tk-drawer-height); height: 0; padding: 5px; flex-direction: column; overflow: hidden; font: inherit; border-radius: 0 0 10px 10px; transition-property: height, display; transition-duration: var(--animation-duration-2x, 200ms); transition-timing-function: ease-in-out; transition-behavior: allow-discrete; }
-#tk-workspace.openDrawer { display: flex; height: var(--tk-drawer-height); overflow: hidden; }
-#tk-workspace.closedDrawer { display: none; height: 0; }
-@starting-style { #tk-workspace.openDrawer { height: 0; } }
+/* The host's fillRight drawer supplies the desktop geometry, theme and animation. */
+#tk-workspace { font: inherit; }
+#tk-workspace.openDrawer { display: flex; overflow: hidden; }
+#tk-workspace .tk-tabs { flex-wrap: wrap; }
+#tk-workspace .tk-planner-settings { display: grid; gap: .65em; padding: 5px; }
+#tk-workspace .tk-planner-settings label { display: grid; min-width: 0; gap: .2em; }
+#tk-workspace .tk-planner-settings :is(select, textarea) { width: 100%; min-width: 0; margin: 0; }
+#tk-workspace .tk-planner-settings textarea { resize: vertical; }
 #tk-workspace[hidden], #tk-workspace [hidden] { display: none !important; }
 #tk-workspace .tk-workspace-header { display: flex; align-items: center; justify-content: space-between; gap: 5px; padding: 0 2px; }
 #tk-workspace h2 { font: inherit; font-weight: 600; margin: 0; }
 #tk-workspace .menu_button { width: max-content; max-width: 100%; white-space: nowrap; }
 #tk-workspace .tk-close { margin: 0; min-height: 28px; min-width: 28px; }
 #tk-workspace .tk-tabs, #tk-workspace .tk-subnav { display: flex; flex-shrink: 0; gap: 5px; padding: 0; }
-#tk-workspace .tk-tabs button { flex: 1; font: inherit; min-width: 0; min-height: 30px; padding-inline: 5px; white-space: nowrap; }
+#tk-workspace .tk-tabs button { flex: 1 1 max-content; font: inherit; min-width: 0; min-height: 30px; padding-inline: 5px; white-space: nowrap; }
 #tk-workspace .tk-subnav { flex-wrap: wrap; gap: 0 5px; }
 #tk-workspace .tk-subnav button { flex: 1 0 auto; font: inherit; font-size: .9em; white-space: nowrap; min-height: 28px; margin: 0 0 5px; }
 #tk-workspace .tk-subnav-more { position: relative; flex: 1 0 auto; margin: 0 0 5px; }
@@ -120,7 +124,8 @@
 #tk-workspace #tavern-kitchen-settings .checkbox_label { min-height: 36px; }
 #tk-workspace :is(button, [role="button"], summary, input, select, textarea) { transition-duration: var(--animation-duration-2x, 200ms) !important; transition-timing-function: ease-in-out !important; transition-delay: 0s !important; }
 @media (max-width: 1000px) {
-    #tk-workspace { top: var(--topBarBlockSize, 40px); width: 100dvw; --tk-drawer-height: calc(100dvh - var(--topBarBlockSize, 40px)); }
+    #tk-workspace { inset-inline: 0; top: var(--topBarBlockSize); width: 100dvw; border-radius: 0 0 20px 20px; }
+    #tk-workspace.openDrawer { height: calc(100dvh - 45px); }
     #tk-workspace #tavern-kitchen-settings { padding: 12px; }
 }
 @media (prefers-reduced-motion: reduce) { #tk-workspace, #tk-workspace * { transition-duration: 0s !important; animation: none !important; } }

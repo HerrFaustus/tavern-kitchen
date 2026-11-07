@@ -38,7 +38,7 @@ export function createPlanner({snapshot, store, write, preference, status}) {
                     status('当前章节札记已就绪');
                     return saved.chapter.text;
                 } catch (error) {
-                    if (fresh()) { failed = ticket; status('札记未能发布，可检查模型设置并重试'); }
+                    if (fresh()) { failed = ticket; status('札记未能发布，可检查模型设置并重试', true); }
                     return '';
                 }
             } finally {
