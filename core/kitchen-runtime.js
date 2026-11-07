@@ -7,8 +7,7 @@ import { getCurrentUserHandle } from '../../../../user.js';
 import { EXT_ID } from './constants.js';
 import { buildEntryUrl } from './build-assets.js';
 import { createExtensionDrawer } from './extension-drawer.js';
-import { createDefaultXiaobaiOsSettings, prepareXiaobaiOsSettings, initXiaobaiOs, mountWorldEvolution, openXiaobaiOs, isDiceContinuationPending } from '../modules/xiaobai-os/index.js';
-import { configureL0ContinuationCheck } from '../modules/story-summary/vector/pipeline/l0-eligibility.js';
+import { createDefaultXiaobaiOsSettings, prepareXiaobaiOsSettings, initXiaobaiOs, mountWorldEvolution, openXiaobaiOs } from '../modules/xiaobai-os/index.js';
 import { observeAsyncCallback } from '../shared/common/async-errors.js';
 import { requireTurnRuntime } from '../modules/world-records/turn-runtime.js';
 const { saveSettings } = hostScript;
@@ -23,7 +22,7 @@ const settings = extension_settings[EXT_ID] ??= {
 window.isTavernKitchenEnabled = settings.enabled;
 const cleanups = new Map();
 window.registerKitchenModuleCleanup = (id, cleanup) => cleanups.set(id, cleanup);
-configureL0ContinuationCheck(isDiceContinuationPending);
+
 let memory;
 let planner;
 let worldArchive;
@@ -78,7 +77,7 @@ function buildFeatureSwitches() {
     const os = featureSwitch('xiaobaiOs', '启用地图、世界与 API');
     return {
         planner: [planner],
-        map: [os], dice: [os], settings: [os],
+        map: [os], settings: [os],
     };
 }
 async function toggleFeature(key, enabled) {
@@ -135,7 +134,7 @@ function configureWorkspace() {
         memory.openStoryWorld(id === 'situation' ? 'world' : id);
         if (id === 'people' || id === 'situation') kitchen.showEvolution(parent => mountWorldEvolution(parent, id));
     };
-    for (const id of ['map', 'dice', 'settings', 'agent-api']) actions[id] = async () => {
+    for (const id of ['map', 'settings', 'agent-api']) actions[id] = async () => {
         await requireFeatures();
         if (!kitchen.isActive(id)) return;
         if (!settings.xiaobaiOs?.enabled) throw new Error('地图、世界与 API 尚未启用，请在对应板块中开启并刷新。');

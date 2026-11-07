@@ -32,7 +32,7 @@ test('round provenance binds the actual reply and preceding user without creatin
     const result = prepareFloorPayload(payload, {}, source);
     assert.equal(result.events, undefined);
     assert.equal(result.storyUpdates.find(record => record.kind === 'clock').label, '黄昏');
-    assert.equal(result.storyUpdates.find(record => record.kind === 'scene').location, '渡口');
+    assert.equal(result.storyUpdates.some(record => record.kind === 'scene'), false);
     assert.equal(prepareFloorPayload(payload, {}, source).events, undefined);
     chat[2].swipe_id = 1;
     assert.notEqual(floorSource(chat, 2).digest, source.digest);

@@ -19,7 +19,7 @@ export function readSummaryPackageData(raw) {
         if (!Array.isArray(data.storyRecords) || data.storyRecords.length > 20000 || new Set(data.storyRecords.map(record => record.id)).size !== data.storyRecords.length) throw new Error('场景状态导入结构无效');
         for (const record of data.storyRecords) {
             if (record.remove) throw new Error('场景状态存档不能包含删除指令');
-            parseStoryUpdates([record]);
+            parseStoryUpdates([record], {archived:true});
         }
     }
     if (data.rounds !== undefined) {
@@ -27,7 +27,8 @@ export function readSummaryPackageData(raw) {
             && Array.isArray(row.participants) && row.participants.every(name => typeof name === 'string');
         if (!Array.isArray(data.rounds) || !data.rounds.every(valid)) throw new Error('本轮总结导入结构无效');
     }
-    return data;
+    return data.storyRecords?.some(record => record.kind === 'scene')
+        ? {...data,storyRecords:data.storyRecords.filter(record => record.kind !== 'scene')} : data;
 }
 
 function stampImportedSummaryJson(json, boundary) {

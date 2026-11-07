@@ -4,7 +4,7 @@ import type { XiaobaiOsAppRuntime } from '../../../types.js';
 
 export interface MapPromptEventHandlers {
     readonly generationStarted: () => void;
-    readonly intercept: () => void;
+    readonly intercept: (chat?: unknown, generationType?: string) => void;
     readonly requestBuilt: () => void;
     readonly generationEnded: () => void;
     readonly generationStopped: () => void;
@@ -22,6 +22,18 @@ export type MapPromptRuntime = Pick<
     'startBackground' | 'stopBackground' | 'handleChatChanged' | 'cancelAll'
 >;
 
+// The interceptor receives the actual host chat for this request, including swipe/regeneration edits.
+function turnText(chat: unknown, type: string): string {
+    if (!Array.isArray(chat)) { return ''; }
+    const messages = chat.filter(message => message && !message.is_system && typeof message.mes === 'string');
+    for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].is_user) {
+            return type === 'continue' ? messages.slice(i).map(message => message.mes).join('\n') : messages[i].mes;
+        }
+    }
+    return type === 'continue' ? messages.at(-1)?.mes ?? '' : '';
+}
+
 export function createMapPromptRuntime({
     readCurrentMap,
     setPrompt,
@@ -34,12 +46,12 @@ export function createMapPromptRuntime({
         setPrompt('');
     }
 
-    function intercept(): void {
+    function intercept(chat?: unknown, generationType = 'normal'): void {
         clearPrompt();
         try {
             const map = readCurrentMap();
             if (!map) {return;}
-            const prompt = buildMapPromptBlock(map);
+            const prompt = buildMapPromptBlock(map, turnText(chat, generationType));
             if (prompt) {setPrompt(prompt);}
         } catch (error) {
             clearPrompt();

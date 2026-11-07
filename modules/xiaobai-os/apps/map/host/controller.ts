@@ -10,6 +10,7 @@ import type {
 } from '../../../types.js';
 import type { MapService } from '../application/service.js';
 import type { MapClientState, MapClientStatus } from '../types.js';
+import { readMapConditions } from '../../../../story-state/situation-links.js';
 import { maintenanceState, skippedMaintenanceMessage } from './maintenance-state.js';
 
 type UnknownRecord = Record<string, unknown>;
@@ -95,6 +96,7 @@ export function createMapController({
         return {
             chatIdentity,
             map: view.map,
+            ...(view.map ? {localConditions:readMapConditions(chatIdentity,view.map.atlas)} : {}),
             writeState: view.writeState,
             ...status,
             autoMaintenance: preferences?.autoMaintenance === true,

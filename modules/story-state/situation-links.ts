@@ -1,3 +1,5 @@
+import type { MapAtlas } from '../xiaobai-os/domains/map/types.js';
+
 type Situation = { id: string; title: string };
 type Development = { id: string; title: string; body: string; situationId?: string };
 let catalog: ((identity: string) => Situation[]) | undefined;
@@ -20,3 +22,11 @@ export function registerInvolvement(read: NonNullable<typeof involvement>) {
     return () => { if (involvement === read) { involvement = undefined; } };
 }
 export const currentInvolvement = (identity:string) => involvement?.(identity) || [];
+
+export interface MapCondition {id:string; title:string; phase:string; detail:string; places:string[]}
+let conditions: ((identity:string, atlas:MapAtlas) => MapCondition[]) | undefined;
+export function registerMapConditions(read: NonNullable<typeof conditions>) {
+    conditions = read;
+    return () => { if (conditions === read) { conditions = undefined; } };
+}
+export const readMapConditions = (identity:string, atlas:MapAtlas) => conditions?.(identity,atlas) || [];

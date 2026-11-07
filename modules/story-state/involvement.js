@@ -69,7 +69,7 @@ export function readInvolvement(world, snapshot, playerName, {includeAgendas = f
             if (!row.fixed) { row.near = change.action === 'enter'; row.reason = row.near ? change.reason : ''; }
         }
     }
-    applyRegionalProximity(rows, world, identity, factual, situations);
+    applyRegionalProximity(rows, world, identity, situations);
     if (includeAgendas) {
         const peopleByName = new Map(), knownNames = new Set();
         for (const row of rows.values()) {

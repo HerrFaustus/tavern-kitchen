@@ -25,7 +25,7 @@ function subscribeSimplePromptEvents(
         if (!value) { handlers.generationStarted(); }
     });
     registerGenerateInterceptor(key, (
-        _chat: unknown,
+        chat: unknown,
         _contextSize: unknown,
         _abort: unknown,
         type: unknown,
@@ -35,7 +35,7 @@ function subscribeSimplePromptEvents(
             handlers.generationStopped();
             return;
         }
-        handlers.intercept();
+        handlers.intercept(chat, generationType);
     }, order);
     events.on(event_types.GENERATE_AFTER_DATA, (_data: unknown, dryRun: unknown) => { if (!dryRun) { handlers.requestBuilt(); } });
     events.on(event_types.GENERATION_ENDED, handlers.generationEnded);

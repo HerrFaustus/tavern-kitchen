@@ -12,6 +12,7 @@ export function proposalTurn(state, proposal) {
 export function proposalGroups(state, update) {
     const groups = new Map();
     update.proposals.forEach((proposal, index) => {
+        if (proposal.type === 'story' && proposal.record.kind === 'scene') return;
         const turn = proposalTurn(state, proposal);
         const key = proposal.groupId ? memoryDigest([turn?.id || proposal.evidence.floor, proposal.groupId]) : `legacy:${index}`;
         if (!groups.has(key)) groups.set(key, { indices: [], turn });

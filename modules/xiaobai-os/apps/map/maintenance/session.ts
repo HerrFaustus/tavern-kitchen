@@ -14,11 +14,8 @@ import { compileAtlasIntent } from '../tools/atlas-intent-compiler.js';
 import { buildMapAtlasDataMessage } from '../tools/atlas-data-message.js';
 import { readAtlas } from '../tools/atlas-reader.js';
 import { buildMapMaintenancePrompt } from './prompt.js';
-import { mapToolResult, type MapToolItemReport, type MapToolResult } from '../tools/result.js';
-import { compileSceneIntent } from '../tools/scene-intent-compiler.js';
-import { resolveSceneKey, sceneForTool } from '../tools/scene-reader.js';
+import type { MapToolItemReport, MapToolResult } from '../tools/result.js';
 import { MAP_MAINTENANCE_TOOLS, MAP_MAINTENANCE_TOOL_NAMES } from '../tools/tool-contract.js';
-import { intentId, isRecord } from '../tools/intent-common.js';
 
 function mapContent(domain: MapDomainV1): Pick<MapDomainV1, 'atlas' | 'scenes'> {
     return { atlas: domain.atlas, scenes: domain.scenes };
@@ -84,26 +81,8 @@ export function createMapMaintenanceSession(
             if (name === MAP_MAINTENANCE_TOOL_NAMES.ATLAS_READ) {
                 return readAtlas(staged, args);
             }
-            if (name === MAP_MAINTENANCE_TOOL_NAMES.SCENE_READ) {
-                if (!isRecord(args)) { throw new TypeError('MapSceneRead expects an object.'); }
-                const unknown = Object.keys(args).filter(key => key !== 'scene');
-                if (unknown.length) { throw new TypeError(`MapSceneRead has unsupported fields: ${unknown.join(', ')}.`); }
-                const key = intentId(args.scene);
-                if (!key) { throw new TypeError('MapSceneRead.scene is required.'); }
-                const keyForScene = resolveSceneKey(staged, key);
-                const scene = staged.scenes[keyForScene];
-                // Domain validation guarantees one owner. Use its key on readback
-                // so a scene key cannot be mistaken for another location's key.
-                const owner = staged.atlas.locations.find(location => location.sceneKey === keyForScene);
-                return mapToolResult({ data: { revision: staged.revision, scene: scene && owner ? sceneForTool(scene, owner) : null } });
-            }
             if (name === MAP_MAINTENANCE_TOOL_NAMES.ATLAS_EDIT) {
                 return acceptCompile('atlas', 'world', compileAtlasIntent(staged, args, source.player));
-            }
-            if (name === MAP_MAINTENANCE_TOOL_NAMES.SCENE_EDIT) {
-                const requestedScene = isRecord(args) ? intentId(args.scene, '*') : '*';
-                const scene = resolveSceneKey(staged, requestedScene);
-                return acceptCompile('scene', scene, compileSceneIntent(staged, args, source.player));
             }
             throw new TypeError(`Unknown map maintenance tool: ${name}`);
         },

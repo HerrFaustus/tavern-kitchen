@@ -48,7 +48,7 @@ export function createMapModule(dependencies: MapModuleDependencies): XiaobaiOsA
             const mapContext = context.useCapability(MAP_CONTEXT_CAPABILITY);
             context.execution.addCleanup(mapContext.registerProvider(() => {
                 const current = map.readCurrent().map;
-                return current ? buildMapPromptBlock(current) : '';
+                return current ? buildMapPromptBlock(current, '', 'background') : '';
             }));
             return dependencies.install({
                 ownerId: context.ownerId,

@@ -168,14 +168,10 @@ export function createProtagonistView({ getSnapshot, getPlayerName, getInvolveme
             knownNames.add(title);
             renderPersonalAgendas(root, projectPersonalAgendas(records, knownNames), matches);
             const personal = records.filter(record => record.kind === 'person' && matches(record.name)
-                || record.kind === 'knowledge' && matches(record.person)
-                || record.kind === 'scene' && record.participants.some(matches));
+                || record.kind === 'knowledge' && matches(record.person));
             if (personal.length) {
                 const identity = Symbol('player');
                 const resolve = name => name === identity || matches(name) ? identity : name;
-                const current = characterStoryState(records, identity, resolve);
-                const scene = personal.find(record => record.kind === 'scene');
-                if (scene && current.presence === 'present' && !hero?.fields.location) line(root, '所在场景', scene.location);
                 renderPersonState(root, records, identity, resolve);
             }
             const near = (getInvolvement?.(world) || []).filter(item => item.near);
@@ -194,7 +190,7 @@ export function createProtagonistView({ getSnapshot, getPlayerName, getInvolveme
 export function floorChangeText(change) {
     const label = STORY_KINDS[(change.after || change.before)?.kind] || { events: '剧情', facts: '世界', characters: '人物', arcs: '叙事线', keywords: '关键词', storyRecords: '状态' }[change.collection] || '变化';
     const describe = value => {
-        if (Array.isArray(value)) return value.map(describe).join('；');
+        if (Array.isArray(value)) return value.map(describe).filter(Boolean).join('；');
         if (!value) return '';
         if (value.kind) return storyRecordText(value);
         if (value.s) return `${value.s} · ${value.p}：${value.o || '撤回'}`;

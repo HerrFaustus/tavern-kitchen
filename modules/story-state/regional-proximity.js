@@ -1,5 +1,4 @@
 import { nameKey } from './protagonist-identity.js';
-import { characterStoryState } from './records.js';
 
 const fact = (entity, field) => {
     const record = entity?.fields?.[field];
@@ -12,7 +11,7 @@ function addName(index, name, id) {
 }
 
 // Map keys and world entity IDs occupy separate namespaces. A registered binding joins them.
-function indexGeography(entities, atlas) {
+export function indexGeography(entities, atlas) {
     const places = new Map(), names = new Map(), bindings = new Map(), mapIds = new Map();
     for (const entity of entities) {
         for (const binding of entity.bindings || []) bindings.set(binding, entity);
@@ -56,11 +55,9 @@ function indexGeography(entities, atlas) {
     return {parents, mapIds, bound, resolve, ancestry};
 }
 
-export function applyRegionalProximity(rows, world, identity, factual, situations) {
+export function applyRegionalProximity(rows, world, identity, situations) {
     const entities = world.entities || [], atlas = world.modules?.map?.atlas || {};
     const geo = indexGeography(entities, atlas);
-    const scene = factual.find(record => record.kind === 'scene');
-    const scenePlace = geo.resolve(scene?.location);
     const personNames = new Map();
     for (const entity of entities.filter(item => item.kind === 'person' || item.kind === 'subject')) {
         for (const name of [entity.name,...(entity.aliases || [])]) addName(personNames, name, entity.id);
@@ -78,12 +75,6 @@ export function applyRegionalProximity(rows, world, identity, factual, situation
         if (!key || key === playerKey) return;
         if (!rows.has(key)) rows.set(key, {key, kind:'person', title:name, near:false, reason:''});
         peopleAt.set(key, place);
-    }
-    for (const name of scene?.participants || []) {
-        const key = keyFor(name);
-        if (characterStoryState(factual, name, nameKey).presence !== 'present') continue;
-        if (identity.names.has(nameKey(name))) playerPlace = scenePlace;
-        else if (rows.has(key)) locate(key, name, scenePlace);
     }
     for (const actor of atlas.actors || []) {
         const place = geo.mapIds.get(actor.locationKey);

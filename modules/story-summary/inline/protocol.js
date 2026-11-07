@@ -60,21 +60,14 @@ export function extractFloorPayload(raw) {
 }
 
 /** Stable event IDs survive editing an earlier floor; model-provided source markers never set provenance. */
-export function prepareFloorPayload(payload, json) {
+export function prepareFloorPayload(payload) {
     const value = validateFloorPayload(payload);
     const raw = clone(value.updates);
-    const records = clone(raw.storyUpdates || []);
+    const records = clone(raw.storyUpdates || []).filter(record => record?.kind !== 'scene');
     if (value.timeStart || value.timeEnd || value.date) {
         const at = records.findIndex(record => record.id === 'clock');
         const clock = { id: 'clock', kind: 'clock', label: value.timeEnd || value.timeStart || value.date, date: value.date };
         if (at >= 0) records[at] = clock; else records.push(clock);
-    }
-    if (value.location) {
-        const at = records.findIndex(record => record.id === 'scene');
-        const previous = at >= 0 ? records[at] : (json.storyRecords || []).find(record => record.id === 'scene');
-        const scene = { participants: [], ...previous, id: 'scene', kind: 'scene', location: value.location };
-        delete scene._addedAt; delete scene._sourceStart;
-        if (at >= 0) records[at] = scene; else records.push(scene);
     }
     raw.storyUpdates = records;
     return prepareSummaryResult(raw);
@@ -86,7 +79,7 @@ ${STORY_UPDATE_PROTOCOL}
 JSON 另含 anchors 数组：每轮 0–2 张可独立理解的场景卡，结构为 {"scene":"至少15字，写明人物、实际行动、结果与必要背景","where":"地点，不明留空","edges":[{"s":"施事人物","t":"受事人物","r":"已发生的互动"}]}。每张最多三条互动边；不虚构关系，不把规划当事实，同一场景不拆碎。没有可记录内容时 anchors=[]。它与 updates 同时输出，不需要另一次请求。`;
 
 function floorProtocolContext(store) {
-    const records = (store?.json?.storyRecords || []).slice(-80).map(({ _addedAt, _sourceStart, ...record }) => record);
+    const records = (store?.json?.storyRecords || []).filter(record => record.kind !== 'scene').slice(-80).map(({ _addedAt, _sourceStart, ...record }) => record);
     while (records.length && JSON.stringify(records).length > 24_000) records.shift();
     return JSON.stringify({ records });
 }

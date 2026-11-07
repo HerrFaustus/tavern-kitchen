@@ -1,14 +1,6 @@
-/** Shared map concepts and setup workflow for maintenance and administration. */
-export const MAP_GEOGRAPHY_PROMPT = [
-    '## Geography and browsing',
-    'Players browse the world overview, enter a region, then open a place’s scene. These are browsing levels within one map.',
-    'The atlas holds locations, routes and actor positions. A concrete place is any location whose scale is neither "world" nor "region". It belongs to its nearest ancestor with scale "region", and its scene is that place’s internal layout.',
-    'A location with scale "world" is optional and comes from the setting. Regions can appear directly in the world overview without one.',
-    'Map coordinates put north up (smaller y) and east right (larger x), in atlas positions and scene layouts alike.',
-].join('\n');
-
-export const MAP_PLACE_SETUP_PROMPT = [
-    '## Establishing a place',
-    'For a new place or an empty atlas, first use MapAtlasEdit to register the place and all missing parents together in locations. Reuse known location keys and link containment with parent. Include a world parent in that batch when the setting uses one.',
-    'After the atlas result accepts the place and its region, use MapSceneEdit with scene set to the concrete place key. This draws the place internally; region and world locations remain atlas geography.',
-].join('\n');
+export const MAP_GEOGRAPHY_PROMPT = `地图按世界 → 地区 → 地点 → 地点要素建档。为有依据的实体保留稳定 key，以 parent 记录归属。一个世界可含多个地区，每个地区可有多个地点。地点内部可辨认的固定物、设施或环境特征放入 features。已有城市、建筑、房间之间的具体归属继续保留。世界未命名时沿用已知地区，等待资料明确归属。
+世界概述海陆与地区如何分布、哪些地理条件影响各地生活。地区说清从哪里延伸到哪里，联系当地气候、聚落生计与来往限制。地点从进入者的视角写清入口、内部布局、使用者的日常，以及能辨认它的声音、气味或光线。要素写清位于何处、长什么样、如何使用、留下什么痕迹以及当前状态。近景优先具体，远方按已知资料简记。
+资料充足时，世界、地区全景通常写250–450字，写出地理条件如何影响通行与生活；常驻或近景地点全景写220–400字，从入口写到一两个可点的地标，交代感官印象从哪里来、当地人怎样使用这里。远景概述约50–120字。各已知专项词条可写80–180字，一项围绕一个主题展开；重要要素的外观、用途或历史每项约80–160字，方位和当前状态按事实短写。以上为中文写作目标；材料只支持一句就写一句。新建或有实质补充时展开，不逐轮扩写相同段落。
+地图只保存重访时仍成立的特征。每年举办灯节可写习俗，今年灯节占着石坡归局势风物；一次看到的纸灯随本轮总结。当前的天气、人群、节庆阶段、临时路况不写进全景、常态印象和要素档案。临时状态终结后，仅在正文证实永久改建、损毁、易主等长期结果时更新地图。旧词条若混入临时印象，根据新证据修订，必要时用 null 清除已失效的全景或专项字段。
+brief 写可独立阅读的全景。按证据选填 extent 范围与边界、layout 空间格局、role 功能与地位、landscape 地貌环境、life 居民日常、customs 秩序习俗、history 来历变迁、access 通行条件、atmosphere 常态印象（反复可辨认的声音、气味、光线及其来源）。避免在父子词条间重复相同段落，缺乏依据的项留空。links 只记录已知连接、通行方式和方向，actors 记录已确认的位置。有明确依据时用 bearing 记录在所属地区内的八方方位。省略几何建模，避免提前揭露隐秘通道。`;
+export const MAP_PLACE_SETUP_PROMPT = `先用 MapAtlasRead 核对已有词条，再用 MapAtlasEdit 按变化更新。沿用已有 key。featureUpdates 按原名补记 description、positionHint、purpose、history、state。全景用已有地点或要素的准确名称自然行文。正文明确“位于码头北侧”才给该要素写 placement.bearing=N；“吊机位于仓门以西”则给吊机写 placement={bearing:"W",relativeTo:"仓门"}，参照物须是同地点的已有或同批要素。“朝北、左手边、旁边、尽头”只按原意记入 positionHint。方位失效或移动后无新方位时用 placement:null。未变化的字段省略，已证实消失的要素用 remove。仅凭人物提及某地不能标记到访。`;

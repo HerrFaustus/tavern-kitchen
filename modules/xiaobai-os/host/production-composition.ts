@@ -3,14 +3,11 @@ import { observeBackgroundTask } from '../../../shared/common/async-errors.js';
 import { getRequestHeaders } from '../../../../../../../script.js';
 import { extensionFolderPath } from '../../../core/constants.js';
 import { createAgentApiModule } from '../apps/agent-api/module.js';
-import { createProductionDiceModule } from '../apps/dice/production-module.js';
-import { upgradeDiceUserFile } from '../apps/dice/upgrade/partition-v1.js';
 import {
     createMapContextCapabilityRegistration,
     MAP_CONTEXT_CAPABILITY,
 } from '../apps/map/context-capability.js';
 import { createProductionMapModule } from '../apps/map/production-module.js';
-import { createMapProjectionRuntime } from '../apps/map/host/projection-runtime.js';
 import { createProductionWorldModule } from '../apps/world/production-module.js';
 import { createWorldContextCapabilityRegistration, WORLD_CONTEXT_CAPABILITY } from '../apps/world/context-capability.js';
 import { copyWorldBranch } from '../apps/world/host/branch-copy.js';
@@ -29,7 +26,6 @@ import {
 } from '../storage/sillytavern-file-storage.js';
 import { createSillyTavernChatMetadataAdapter } from '../storage/sillytavern-chat-metadata.js';
 import { createSidecarIndex } from '../storage/sidecar-index.js';
-import { initialUserPartitions } from './user-initial-partitions.js';
 import { createUserStoryResolver } from './user-story.js';
 import { createXiaobaiOsBootstrap, type XiaobaiOsBootstrap } from './bootstrap.js';
 import { createKernelComposition } from './kernel-composition.js';
@@ -99,18 +95,13 @@ export function createProductionBootstrap(
         }),
     ];
 
-    const dice = createProductionDiceModule(settings, () => upgradeDiceUserFile(composition.userTransactions!));
     const modules = [
-        dice,
         createAgentApiModule(),
         createProductionMapModule({
             settings,
-            mainGeneration,
-            replyPause: dice.replyPause,
             getPlayerDisplayName: () => getSillyTavernChatSurface()?.playerName ?? '玩家',
             getChatIdentity: getSillyTavernChatIdentity,
             subscribePrompt: subscribeMapPromptEvents,
-            createProjectionRuntime: createMapProjectionRuntime,
         }),
         createProductionWorldModule({
             settings,
@@ -127,7 +118,7 @@ export function createProductionBootstrap(
         beforeRead: () => bindingLifecycle.ready(),
         user: {
             storage: userFiles,
-            initialPartitions: () => initialUserPartitions(settings.readLegacyDiceSheet()),
+            initialPartitions: () => Promise.resolve({}),
             resolveStory: createUserStoryResolver({
                 ready: () => bindingLifecycle.ready(), references, manager: bindingManager,
                 install: envelope => composition.transactions.installResolvedEnvelope(envelope),
@@ -159,12 +150,6 @@ export function createProductionBootstrap(
                 bindingLifecycle.start();
                 await bindingLifecycle.ready();
                 await composition.install();
-                // Only remove the old sheet after the user document has acknowledged its copy.
-                // App installation is isolated: an unavailable user file must not disable chat-only APPs.
-                if (composition.userTransactions?.getFileState() === 'ready') {
-                    await composition.userTransactions.prepare();
-                    await settings.finishDiceSheetMigration();
-                }
                 const maintenance = composition.capabilities.require(MAINTENANCE_CAPABILITY);
                 maintenance.runner.startBackground(subscribeMaintenanceMessages);
                 productionInstalled = true;

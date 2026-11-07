@@ -42,12 +42,12 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     const mount = getKitchenMount('map');
     const parent = mount.parentElement;
     const frame = document.createElement('iframe'); mount.append(frame);
-    await workspace.open('dice');
+    await workspace.open('settings');
     await setImmediate();
-    assert.equal(getKitchenMount('dice'), mount);
+    assert.equal(getKitchenMount('settings'), mount);
     assert.equal(mount.parentElement, parent, 'tab switches must not detach a live iframe');
     assert.equal(mount.firstElementChild, frame);
-    assert.equal(mount.getAttribute('aria-label'), '行动判定');
+    assert.equal(mount.getAttribute('aria-label'), 'API 设置');
     for (const route of ['situation', 'people', 'relations']) {
         await workspace.open(route);
         assert.equal(getKitchenMount(route), getKitchenMount('memory'));
@@ -61,8 +61,6 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     await workspace.open('lore');
     assert.equal(getKitchenMount('lore'), getKitchenMount('situation'));
     assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '设定');
-    assert.equal(document.querySelector('.tk-subnav-more summary').textContent, '更多 · 设定');
-    assert.deepEqual([...document.querySelectorAll('.tk-subnav-more [data-route]')].map(button => button.dataset.route), ['lore']);
     assert.equal(getKitchenMount('variables'), null);
     await workspace.open('variables');
     assert.equal(workspace.isActive('lore'), true, 'a retired variable route must not open or replace the active panel');
@@ -70,8 +68,7 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     assert.equal(document.querySelector('.tk-subnav [data-route="situation"]').textContent, '局势');
     await workspace.open('world-records');
     assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '局势');
-    assert.equal(document.querySelector('.tk-subnav-more summary').textContent, '更多');
-    assert.deepEqual([...document.querySelectorAll('.tk-subnav > button')].map(button => button.dataset.route), ['people', 'map', 'situation']);
+    assert.deepEqual([...document.querySelectorAll('.tk-subnav > button')].map(button => button.dataset.route), ['people', 'map', 'situation', 'lore']);
     assert.equal(getKitchenMount('world-records'), getKitchenMount('memory'));
     await workspace.open('world');
     assert.equal(workspace.isActive('people'), true);
@@ -112,17 +109,17 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     workspace.close();
     assert.equal(document.querySelector('#tk-workspace').classList.contains('closedDrawer'), true);
     assert.equal(document.querySelector('#tk-topbar button').getAttribute('aria-expanded'), 'false');
-    await workspace.open('dice');
+    await workspace.open('settings');
     assert.equal(mount.firstElementChild, frame);
     // Host closes drawers itself when another top-level tool is opened.
     const panel = document.querySelector('#tk-workspace');
     panel.classList.replace('openDrawer', 'closedDrawer');
     await setImmediate();
-    assert.equal(workspace.isActive('dice'), false);
+    assert.equal(workspace.isActive('settings'), false);
     assert.equal(document.querySelector('#tk-topbar button').getAttribute('aria-expanded'), 'false');
-    assert.deepEqual(visibility.at(-1), [false, 'dice']);
+    assert.deepEqual(visibility.at(-1), [false, 'settings']);
     await workspace.open();
-    assert.equal(workspace.isActive('dice'), true);
+    assert.equal(workspace.isActive('settings'), true);
     assert.equal(mount.firstElementChild, frame, 'host dismissal must preserve the frame');
     workspace.close();
     const opening = workspace.open('map');

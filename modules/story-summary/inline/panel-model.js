@@ -12,14 +12,15 @@ export const FIELD_LABELS = { summary: '摘要', title: '标题', participants: 
 const fields = { 
     factUpdates: ['s', 'p', 'o', 'isState', 'retracted', 'trend'], arcUpdates: ['name', 'trajectory', 'progress', 'newMoment'],
     newCharacters: ['name'], keywords: ['text', 'weight'], characterAliasUpdates: ['to', 'from', 'evidence'] };
-const storyFields = { scene: ['location', 'situation', 'participants', 'tension', 'pendingBeat'], clock: ['label', 'date'],
+const storyFields = { clock: ['label', 'date'],
     person: ['name', 'presence', 'note'], knowledge: ['person', 'content', 'certainty', 'evidence', 'learnedAt'],
     plan: ['title', 'description', 'holders', 'conditions', 'status', 'statusNote', 'reason', 'due'], goal: ['title', 'description', 'holders', 'conditions', 'status', 'statusNote', 'reason', 'due'], suspense: ['title', 'description', 'status', 'reason', 'due'],
     situation: ['title', 'description', 'parties', 'scope', 'impact', 'releaseCondition', 'status', 'reason', 'due'] };
 const groups = { factUpdates: '世界', arcUpdates: '人物', newCharacters: '人物', keywords: '关键词', characterAliasUpdates: '人物' };
 
 export function floorEditItems(payload, store) {
-    const items = Object.entries(payload.updates || {}).filter(([bucket]) => bucket !== 'events' && bucket !== 'arcUpdates').flatMap(([bucket, rows]) => (rows || []).map((raw, index) => {
+    const items = Object.entries(payload.updates || {}).filter(([bucket]) => bucket !== 'events' && bucket !== 'arcUpdates').flatMap(([bucket, rows]) => (rows || []).flatMap((raw, index) => {
+        if (bucket === 'storyUpdates' && raw.kind === 'scene') return [];
         const value = bucket === 'newCharacters' ? { name: raw } : raw;
         let group = groups[bucket] || '变化';
         if (bucket === 'storyUpdates') group = STORY_KINDS[value.kind] || '世界';

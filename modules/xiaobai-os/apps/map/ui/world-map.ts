@@ -1,4 +1,4 @@
-import type { MapAtlas, MapLink, MapLocation } from '../../../domains/map/types.js';
+import { bearings, type MapAtlas, type MapLink, type MapLocation } from '../../../domains/map/types.js';
 import { locationTrail } from '../../../domains/map/hierarchy.js';
 import type { MapBrowseScope } from './map-browse.js';
 
@@ -25,8 +25,23 @@ export function layoutWorldMap(atlas: MapAtlas, scope: Pick<MapBrowseScope, 'loc
     const positioned = (location: MapLocation) => location.position && (location.parent || '') === scope.positionParent;
     const nodes: WorldMapNode[] = locations.filter(positioned)
         .map(location => ({ location, x: location.position![0], y: location.position![1], placed: true }));
+    const directional = locations.filter(item => !positioned(item) && item.bearing && (item.parent || '') === scope.positionParent);
+    const centerX = nodes.length ? nodes.reduce((sum,node) => sum+node.x,0)/nodes.length : 500;
+    const centerY = nodes.length ? nodes.reduce((sum,node) => sum+node.y,0)/nodes.length : 420;
+    for (const location of directional) {
+        const angle = bearings.indexOf(location.bearing!) * Math.PI / 4;
+        let radius = 240;
+        let x: number, y: number;
+        do {
+            x = Math.round(centerX + Math.sin(angle)*radius);
+            y = Math.round(centerY - Math.cos(angle)*radius);
+            radius += 160;
+        } while (nodes.some(node => Math.hypot(node.x-x,node.y-y) < 160));
+        nodes.push({location,x,y,placed:false});
+    }
+    const assigned = new Set(nodes.map(node => node.location.key));
     let candidate = 0;
-    for (const location of locations.filter(item => !positioned(item))) {
+    for (const location of locations.filter(item => !assigned.has(item.key))) {
         let x: number;
         let y: number;
         do {

@@ -1,12 +1,10 @@
 import type { XiaobaiOsSettingsRepository } from '../../host/settings-repository.js';
-import type { MainGenerationRuntime } from '../../host/main-generation-runtime.js';
 import type { XiaobaiOsChatIdentity } from '../../types.js';
 import { createAppRuntimeGroup } from '../../kernel/runtime-group.js';
 import { createMapController } from './host/controller.js';
 import { createMapMaintenanceParticipant } from './host/maintenance-participant.js';
 import { createMapPromptRuntime, type MapPromptEventHandlers } from './host/prompt-runtime.js';
 import { createMapSettingsRuntime } from './host/settings-runtime.js';
-import type { createMapProjectionRuntime, MapProjectionReplyPause } from './host/projection-runtime.js';
 import { createMapModule } from './module.js';
 import { MAP_PROMPTS } from './prompt-registration.js';
 import { createMapManagement } from './management/participant.js';
@@ -15,7 +13,7 @@ import type { PartitionStore } from '../../kernel/contracts.js';
 import type { MapDomainV1 } from '../../domains/map/types.js';
 import type { AppRegistrationContext, XiaobaiOsAppModule } from '../../kernel/app-registry.js';
 import { MANAGEMENT_CAPABILITY } from '../../capabilities/management/index.js';
-import { notifyWorldSourcesChanged, storyIdentityKey } from '../../../world-records/sources.js';
+import { notifyWorldSourcesChanged, storyIdentityKey, subscribeWorldSources } from '../../../world-records/sources.js';
 import { authorityMap } from '../../../world-records/authority-context.js';
 import { createWorldMapStore } from '../../../world-records/map-store.js';
 import { getWorldBridge } from '../../../world-records/bridge.js';
@@ -25,12 +23,9 @@ import { createIdentifier } from '../../../../shared/common/identifier.js';
 
 export interface ProductionMapModuleDependencies {
     settings: XiaobaiOsSettingsRepository;
-    mainGeneration: MainGenerationRuntime;
-    replyPause?: MapProjectionReplyPause;
     getChatIdentity: () => XiaobaiOsChatIdentity | null;
     getPlayerDisplayName: () => string;
     subscribePrompt(handlers: MapPromptEventHandlers): () => void;
-    createProjectionRuntime: typeof createMapProjectionRuntime;
 }
 
 export function createProductionMapModule(dependencies: ProductionMapModuleDependencies): XiaobaiOsAppModule {
@@ -56,7 +51,8 @@ export function createProductionMapModule(dependencies: ProductionMapModuleDepen
                 settings: dependencies.settings,
                 maintenance: maintenance.runner,
                 getChatIdentity: dependencies.getChatIdentity,
-                subscribeData: map.subscribe,
+                // Map changes already publish this event; summary-only scenery updates publish it too.
+                subscribeData: subscribeWorldSources,
             });
             const prompt = createMapPromptRuntime({
                 readCurrentMap: () => authorityMap(map.readCurrent().map, dependencies.getChatIdentity()),
@@ -67,8 +63,7 @@ export function createProductionMapModule(dependencies: ProductionMapModuleDepen
                 settings: dependencies.settings,
                 maintenance: maintenance.runner,
             });
-            const projection = dependencies.createProjectionRuntime(map, dependencies.settings, maintenance.runner, controller.readState, dependencies.mainGeneration, dependencies.replyPause);
-            return createAppRuntimeGroup(controller, [prompt, settings, projection]);
+            return createAppRuntimeGroup(controller, [prompt, settings]);
         },
         async dispose(runtime) { await runtime.stopBackground?.(); },
     });

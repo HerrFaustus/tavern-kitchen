@@ -3,9 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pluginRoot, hostPathForImport, servedHostImport } from './host/paths.mjs';
-import { createDiceResultStorage } from '../modules/xiaobai-os/apps/dice/application/result-storage.ts';
 import { PROMPT_INJECTION_POLICY } from '../modules/xiaobai-os/host/prompt-injection-policy.ts';
-import { readDiceRecords } from '../modules/xiaobai-os/apps/dice/host/message-records.ts';
 import { createDefaultXiaobaiOsSettings, normalizeXiaobaiOsSettings } from '../modules/xiaobai-os/host/settings-normalization.ts';
 
 test('deployment paths survive a shallow source checkout and a renamed install directory', () => {
@@ -17,48 +15,18 @@ test('deployment paths survive a shallow source checkout and a renamed install d
     assert.throws(() => hostPathForImport(path.join(pluginRoot, 'plugin-entry.js'), '../../../../../../private.json'));
 });
 
-test('a failed dice cleanup keeps the published result; confirmed cleanup forgets only selected IDs', async () => {
-    const snapshots = [];
-    const forgotten = [];
-    let status = 'unconfirmed';
-    const store = { transact: async (update, options) => {
-        update({ currentOrInitial: () => ({ sheet: { name: 'player' }, resultOverrides: { one: 1, two: 2 } }), replace: data => snapshots.push(data) });
-        snapshots.push(options.signal);
-        return { status };
-    } };
-    const service = createDiceResultStorage(store, { forget: ids => forgotten.push([...ids]) });
-    await assert.rejects(service.clearResults(new Set(['one'])));
-    assert.deepEqual(forgotten, []);
-    assert.equal(snapshots[1].aborted, true);
-    status = 'confirmed';
-    await service.clearResults(new Set(['one']));
-    assert.deepEqual(snapshots[2], { sheet: { name: 'player' }, resultOverrides: { two: 2 } });
-    assert.deepEqual(forgotten, [['one']]);
-});
-
 test('new installs leave autonomous model calls disabled and the shipped app set contains no removed products', () => {
     const defaults = createDefaultXiaobaiOsSettings();
     assert.equal(defaults.apps.map.autoMaintenance, false);
     assert.equal(defaults.apps.world.subscribed, false);
-    assert.equal(defaults.apps.dice.actionChecksEnabled, false);
-    assert.equal(Object.hasOwn(defaults.apps.dice, 'encountersEnabled'), false);
     const host = JSON.parse(fs.readFileSync(path.join(pluginRoot, 'modules/xiaobai-os/host/app-catalog.json')));
     const shell = JSON.parse(fs.readFileSync(path.join(pluginRoot, 'modules/xiaobai-os/shell/app-catalog.json')));
-    assert.deepEqual(new Set(host), new Set(['dice', 'map', 'world', 'agent-api']));
+    assert.deepEqual(new Set(host), new Set(['map', 'world', 'agent-api']));
     assert.deepEqual(shell, host);
 });
 
-test('retired Dice encounters cannot activate from old settings or chat data; action checks and street scenes remain available', () => {
-    const loaded = normalizeXiaobaiOsSettings({ apps: {
-        dice: { actionChecksEnabled: true, encountersEnabled: true },
-        world: { encounterFrequency: 'off' },
-    } });
-    assert.equal(loaded.apps.dice.actionChecksEnabled, true);
-    assert.equal(Object.hasOwn(loaded.apps.dice, 'encountersEnabled'), false);
-    assert.equal(loaded.apps.world.encounterFrequency, 'off');
-    assert.deepEqual(PROMPT_INJECTION_POLICY.filter(group => group.id.startsWith('dice')).map(group => group.id), ['dice_check']);
-    const legacy = { is_user: true, extra: { xiaobaiOsDice: { schemaVersion: 1, encounter: { outcome: 'high', event: '桥塌了' } } } };
-    assert.equal(readDiceRecords(legacy), undefined);
-    const result = { checks: [] };
-    assert.equal(readDiceRecords({ extra: { xiaobaiOsDice: result } }), result);
+test('legacy action check settings cannot enable a check prompt', () => {
+    const loaded = normalizeXiaobaiOsSettings({ apps: { dice: { actionChecksEnabled: true } } });
+    assert.equal(Object.hasOwn(loaded.apps,'dice'), false);
+    assert.ok(PROMPT_INJECTION_POLICY.every(group => !group.id.startsWith('dice')));
 });

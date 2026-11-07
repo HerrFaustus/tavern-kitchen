@@ -1,5 +1,6 @@
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
 import { worldStoryRecords } from '../world-records/world-story-state.js';
+import { indexGeography } from './regional-proximity.js';
 import { availableStoryRecords } from './records.js';
 
 const clean = (value, max = 200) => typeof value === 'string' ? value.trim().slice(0, max) : '';
@@ -34,8 +35,8 @@ export function ambientControl(store, world, receipt, preferences) {
 }
 
 export const AMBIENT_PROTOCOL = `在独立总结 JSON 中另给 ambient（与正文事实及 worldUpdate 分开）。ambient.place 是当前视角的明确地点，仍在原处请复用 previous.place；无据留空。period 是明确的故事日期或时段，沿用未变化的值。timeJump 仅在本轮正文明确跨日或显著跳时时为 true。publicSpace 仅为可偶遇人群的公开场所，quiet 仅为适合插入背景细节的平静场景；私密、战斗、紧张对峙均不适合。不得猜测这些条件。若当前到访已有街头见闻，且正文明确已满足其散场条件，返回 encounterEnded:true。
-正文已明确发生的节庆、物候、天气用有原文依据的 situation 类型 story 提案，flavor="scenery"，scope 写准确地点，phase 写所处阶段，category 写节庆、天气、物候或地方日常，impact 写可感知细节。相关事态可填 relatedId。不根据幕后推演伪造正文证据。
-当 ambientControl.evolve 开启时，当前牵涉中的风物每轮可检查，只写有依据的细微变化；其余风物只有到达、明显跳时、收到有关该风物的直接消息才粗略复查。无变化留空。允许复查时，可在 ambient.scenery 中给至多两条风物推演：{id,title,category,phase,detail,until,ended,relatedId,quote}。同地持续推演或远程复查必须用 quote 逐字引用本批 AI 正文依据，沿用 active 内已有 id；依据时节、地方设定和已发生的剧情，允许自然消退，避免重复正文已有风物。缺依据返回空数组。
+正文已明确发生的节庆、物候、天气用有原文依据的 situation 类型 story 提案，flavor="scenery"，scope 写准确地点，phase 写所处阶段，category 写节庆、天气、物候或地方日常，impact 写该阶段当地可见、可听或实际影响行动的变化。有依据的近景风物通常写80–180字，交代影响谁、在何处、怎样随阶段变化；远景或只有一处线索时简记。沿用同一条风物并在已证实消退时结束。地方惯常节俗、布局和长期感官特征归地图。相关事态可填 relatedId。不根据幕后推演伪造正文证据。
+当 ambientControl.evolve 开启时，当前牵涉中的风物每轮可检查，只写有依据的细微变化；其余风物只有到达、明显跳时、收到有关该风物的直接消息才粗略复查。无变化留空。允许复查时，可在 ambient.scenery 中给至多两条风物推演：{id,title,category,phase,detail,until,ended,relatedId,quote}。同地持续推演或远程复查必须用 quote 逐字引用本批 AI 正文依据，沿用 active 内已有 id；依据时节、地方设定和已发生的剧情，detail 在依据充足时写80–180字，具体到近景里可辨认的变化，远方有多少消息写多少。允许自然消退，避免重复正文已有风物。缺依据返回空数组。
 只有 ambientControl.draw 为 true、进入公共地点或明确跳时、且场面平静时，可给 ambient.encounter:{title,detail,until,relatedId}；例如收摊促销、流动艺人或街头布道。写看得到听得到的一处细节，写散场条件，不替玩家回应，不要求玩家参与。不符合时省略。不要把幕后风物或见闻写入 summary 或 worldUpdate。`;
 
 export function prepareAmbient(raw, control, end, knownIds = [], entities = []) {
@@ -116,6 +117,32 @@ export function currentSituations(store, world, factual = worldStoryRecords(worl
         if (!background || record.status !== 'open' || (record._addedAt ?? -1) >= background._addedAt) records.set(record.id, record);
     }
     return [...records.values()];
+}
+
+// A read-only display of current effects. The map stores only lasting geography.
+export function mapLocalConditions(world, snapshot, atlas) {
+    if (!world || !atlas?.locations.length) return [];
+    if (snapshot?.enabled && (snapshot.invalidFrom != null || snapshot.store?.summaryInvalid || snapshot.store?.sourceInvalidFromFloor != null)) return [];
+    const store = snapshot?.enabled ? snapshot.store : null;
+    const geo = indexGeography(world.entities || [],atlas);
+    const keyById = new Map();
+    for (const [key,id] of geo.mapIds) {
+        keyById.set(id,keyById.has(id) ? null : key);
+        keyById.set('map:' + key,key);
+    }
+    const removed = new Set((world.modules?.story?.records || []).filter(entry => entry.record.remove).map(entry => entry.record.id));
+    const conditions = [];
+    for (const row of currentSituations(store,world)) {
+        if (row.status !== 'open' || removed.has(row.id)) continue;
+        const detail = row.impact || (row.flavor ? row.description : '');
+        if (!detail) continue;
+        const stable = row.placeId?.startsWith('entity:') || row.placeId?.startsWith('map:');
+        const scopes = row.scope ? [row.scope,...row.scope.split(/[、，,；;\n]/u)] : [];
+        const ids = stable ? [row.placeId] : scopes.map(name => geo.resolve(name));
+        const places = [...new Set(ids.map(id => keyById.get(id)).filter(Boolean))];
+        if (places.length) conditions.push({id:row.id,title:row.title,phase:row.phase || '',detail,places});
+    }
+    return conditions;
 }
 
 export function ambientPrompt(store, world, factual = [], preferences = {}) {

@@ -1663,12 +1663,12 @@ test('old-server save and uncertain save never publish newly completed ranges', 
     }
 });
 
-test('scene records share actual summary persistence and return to the imported baseline on rollback', async () => {
+test('person records share actual summary persistence and return to the imported baseline on rollback', async () => {
     const original = await importFixture();
     const previous = mod.readSummaryMemory();
     const next = structuredClone(previous);
     const merged = mod.mergeNewData(next.storySummary.json, { storyUpdates: [
-        { id: 'scene', kind: 'scene', location: '渡口', situation: '等候', participants: ['夏实'], tension: '', pendingBeat: '信使返回' },
+        { id: 'a', kind: 'person', name: '夏实', presence:'present', note:'等候' },
         { id: 'p1', kind: 'plan', title: '送信', description: '', status: 'open', due: '', reason: '' },
     ] }, 25, { returnMeta: true, sourceStart: 24 });
     next.storySummary.json = merged.json; next.storySummary.lastSummarizedMesId = 25;
@@ -2763,7 +2763,7 @@ test('main reply commits once, replays a historical correction and survives actu
     assert.equal(ext().storySummary.summaryHistory.at(-2).summary, '抵达旧渡口');
     assert.equal(ext().storySummary.summaryHistory.at(-2).floorEntry.source.digest, firstId);
     assert.equal(ext().storySummary.summaryHistory.at(-1).floorEntry.source.digest, secondId);
-    assert.equal(ext().storySummary.json.storyRecords.find(record => record.id === 'scene').location, '码头');
+    assert.equal((ext().storySummary.json.storyRecords || []).some(record => record.kind === 'scene'), false);
     host.metadata = structuredClone(host.files.get(host.context.chatId)); mod.reload(); mod.getSummaryStore();
     assert.equal(ext().storySummary.summaryHistory.at(-2).floorEntry.payload.summary, '抵达旧渡口');
     assert.equal((await mod.executeRollback(host.context.chatId, mod.getSummaryStore(), baseline.lastSummarizedMesId)).status, 'rolled_back');

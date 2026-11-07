@@ -1,5 +1,5 @@
 import { mountTextApiSettings } from '../text-api/settings-ui.js';
-import { characterStoryState, projectPersonalAgendas } from '../story-state/records.js';
+import { projectPersonalAgendas } from '../story-state/records.js';
 import { renderWorldAttributes, renderPersonalAgendas, renderPersonState, renderThreads } from '../story-state/view.js';
 import { buildAliasResolver } from './data/character-aliases.js';
 import { WORKSPACE_COPY } from './workspace-copy.js';
@@ -1489,12 +1489,6 @@ const UNANNOTATED_LABEL = '未标注';
         renderUnassigned();
         const attributes = document.createElement('section');
         renderWorldAttributes(attributes,entities,person);
-        const scene = records.find(record => record.kind === 'scene');
-        if (scene?.location && !person?.fields?.location && characterStoryState(records,name,resolve).presence === 'present') {
-            const location = document.createElement('p');
-            location.textContent = '所在场景：' + scene.location;
-            attributes.append(location);
-        }
         const title = c.querySelector('.prof-name');
         if (state) title.after(state);
         if (attributes.childElementCount) title.after(attributes);

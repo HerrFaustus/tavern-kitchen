@@ -1,6 +1,4 @@
 import type { MapSettings } from '../apps/map/types.js';
-import type { ActionCheckFrequency, ActionCheckRule, DiceFeature, DiceSettings } from '../apps/dice/types.js';
-import { isActionCheckFrequency, isActionCheckRule } from '../apps/dice/settings.js';
 import type { WorldSettings } from '../apps/world/types.js';
 import type { XiaobaiOsSettings as XiaobaiOsSettingsRoot } from '../types.js';
 import { jsonValuesEqual } from './json-values-equal.js';
@@ -14,7 +12,6 @@ import {
 
 type XiaobaiOsSettings = XiaobaiOsSettingsRoot<{
     map: MapSettings;
-    dice: DiceSettings;
     world: WorldSettings;
 }>;
 
@@ -45,11 +42,6 @@ export interface XiaobaiOsSettingsRepository {
     setEnabled: (enabled: boolean) => Promise<XiaobaiOsSettings>;
     setMapAutoMaintenance: (enabled: boolean) => Promise<XiaobaiOsSettings>;
     setMapProjection: (enabled: boolean) => Promise<XiaobaiOsSettings>;
-    setDiceFeature: (feature: DiceFeature, enabled: boolean) => Promise<XiaobaiOsSettings>;
-    setDiceActionCheckFrequency: (frequency: ActionCheckFrequency) => Promise<XiaobaiOsSettings>;
-    setDiceActionCheckRule: (rule: ActionCheckRule) => Promise<XiaobaiOsSettings>;
-    readLegacyDiceSheet: () => unknown;
-    finishDiceSheetMigration: () => Promise<XiaobaiOsSettings>;
     setEncounterFrequency: (frequency: NonNullable<WorldSettings['encounterFrequency']>) => Promise<XiaobaiOsSettings>;
     setWorldPreference: (key: Exclude<keyof WorldSettings, 'encounterFrequency'>, enabled: boolean) => Promise<XiaobaiOsSettings>;
     subscribe: (listener: (settings: XiaobaiOsSettings) => void) => () => void;
@@ -250,47 +242,6 @@ export function createSettingsRepository(adapter: XiaobaiOsSettingsAdapter): Xia
         });
     }
 
-    function setDiceFeature(feature: DiceFeature, enabled: boolean): Promise<XiaobaiOsSettings> {
-        if (feature !== 'actionChecksEnabled') {
-            throw new TypeError('invalid Dice feature');
-        }
-        if (typeof enabled !== 'boolean') { throw new TypeError('Dice feature must be a boolean'); }
-        return mutate(next => {
-            next.apps.dice[feature] = enabled;
-            return next;
-        });
-    }
-
-    function setDiceActionCheckRule(rule: ActionCheckRule): Promise<XiaobaiOsSettings> {
-        if (!isActionCheckRule(rule)) { throw new TypeError('dice_rule_invalid'); }
-        return mutate(next => {
-            next.apps.dice.actionCheckRule = rule;
-            return next;
-        });
-    }
-
-    function readLegacyDiceSheet(): unknown {
-        return (read()?.apps.dice as unknown as UnknownRecord | undefined)?.coc7Sheet ?? null;
-    }
-
-    function finishDiceSheetMigration(): Promise<XiaobaiOsSettings> {
-        const current = read();
-        if (current && !Object.hasOwn(current.apps.dice, 'coc7Sheet')) { return Promise.resolve(current); }
-        return mutate(next => {
-            delete (next.apps.dice as unknown as UnknownRecord).coc7Sheet;
-            return next;
-        });
-    }
-
-    function setDiceActionCheckFrequency(frequency: ActionCheckFrequency): Promise<XiaobaiOsSettings> {
-        if (!isActionCheckFrequency(frequency)) { throw new TypeError('invalid Dice action-check frequency'); }
-        return mutate(next => {
-            next.apps.dice.actionCheckFrequency = frequency;
-            return next;
-        });
-    }
-
-
     function setWorldPreference(key: Exclude<keyof WorldSettings, 'encounterFrequency'>, enabled: boolean): Promise<XiaobaiOsSettings> {
         if (key !== 'subscribed' && key !== 'injectToStory' && key !== 'peopleEvolution' && key !== 'sceneryEvolution') { throw new TypeError('invalid World preference'); }
         if (typeof enabled !== 'boolean') { throw new TypeError('World preference must be a boolean'); }
@@ -324,11 +275,6 @@ export function createSettingsRepository(adapter: XiaobaiOsSettingsAdapter): Xia
         setEnabled,
         setMapAutoMaintenance,
         setMapProjection,
-        setDiceFeature,
-        setDiceActionCheckFrequency,
-        setDiceActionCheckRule,
-        readLegacyDiceSheet,
-        finishDiceSheetMigration,
         setWorldPreference,
         setEncounterFrequency: (frequency: NonNullable<WorldSettings['encounterFrequency']>) => mutate(next => {
             next.apps.world.encounterFrequency = frequency;

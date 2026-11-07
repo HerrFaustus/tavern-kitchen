@@ -123,7 +123,7 @@ export function validateStoredUpdate(update) {
                 && Object.hasOwn(item, 'value'), '保存的旧值或新值无效');
             key = `field:${item.entityId}/${item.field}`;
         } else if (item.type === 'story') {
-            parseStoryUpdates([item.record]);
+            parseStoryUpdates([item.record], {archived:true});
             check(item.before && typeof item.before.present === 'boolean', '保存的场景旧值无效'); key = `story:${item.record.id}`;
         } else {
             text(item.name, '保存的对象名', 200); check(kinds.includes(item.kind) && Array.isArray(item.aliases) && item.aliases.length <= 50, '保存的对象类型或别名无效');

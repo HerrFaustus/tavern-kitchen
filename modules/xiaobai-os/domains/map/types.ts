@@ -109,7 +109,25 @@ export interface MapScene {
     elements: MapElement[];
 }
 
-export interface MapLocation {
+export const bearings = ['N','NE','E','SE','S','SW','W','NW'] as const;
+export const compassLabels = {N:'北',NE:'东北',E:'东',SE:'东南',S:'南',SW:'西南',W:'西',NW:'西北'} as const;
+export const geographyLabels = {
+    extent: '范围与边界', layout: '空间格局', role: '功能与地位',
+    landscape: '地貌与环境', life: '居民与日常', customs: '秩序与习俗',
+    history: '来历与变迁', access: '通行条件', atmosphere: '常态印象',
+} as const;
+export const featureLabels = {
+    description: '外观', positionHint: '所在位置', purpose: '用途', history: '来历与痕迹', state: '当前状态',
+} as const;
+export const geographyFields = Object.keys(geographyLabels) as Array<keyof typeof geographyLabels>;
+export const featureFields = Object.keys(featureLabels) as Array<keyof typeof featureLabels>;
+
+export interface PlaceFeature extends Partial<Record<keyof typeof featureLabels, string>> {
+    name: string;
+    placement?: {bearing: typeof bearings[number]; relativeTo?: string};
+}
+
+export interface MapLocation extends Partial<Record<keyof typeof geographyLabels, string>> {
     key: string;
     name: string;
     scale: MapLocationScale;
@@ -117,6 +135,9 @@ export interface MapLocation {
     parent?: string;
     sceneKey?: string;
     brief?: string;
+    features?: Array<string | PlaceFeature>;
+    /** Compass direction relative to the containing area, when established. */
+    bearing?: typeof bearings[number];
     /** Stable map position within the parent region; north is smaller y. Not GPS or distance. */
     position?: [number, number];
     terrain?: MapTerrain;

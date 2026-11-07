@@ -1,8 +1,8 @@
 import { plannerSnapshot } from '../story-planner/notes.js';
-import { ambientControl, ambientPrompt } from '../story-state/ambient.js';
+import { ambientControl, ambientPrompt, mapLocalConditions } from '../story-state/ambient.js';
 import { readInvolvement } from '../story-state/involvement.js';
 import { protagonistIdentity } from '../story-state/protagonist-identity.js';
-import { registerInvolvement, registerSituationCatalog } from '../story-state/situation-links.js';
+import { registerInvolvement, registerMapConditions, registerSituationCatalog } from '../story-state/situation-links.js';
 import { availableStoryRecords } from '../story-state/records.js';
 import { worldStoryRecords } from './world-story-state.js';
 import { createWorldStorage } from './storage.js';
@@ -43,6 +43,8 @@ export function createWorldArchive({ getContext, getAccountId = () => 'default-u
         const state = await sync(); if (state) service.assertSourcesConsistent(state); return state;
     }, onChange: onAuthorityChange });
     const unregisterAuthority = registerWorldAuthority('world-records', authority.read);
+    const unregisterConditions = registerMapConditions((key, atlas) => key && key === captureStoryIdentity(getContext())?.key
+        ? mapLocalConditions(authority.read()?.state, getMemorySnapshot(), atlas) : []);
     const unregisterCatalog = registerSituationCatalog(key => {
         if (!key || captureStoryIdentity(getContext())?.key !== key) return [];
         const memory = getMemorySnapshot();
@@ -157,6 +159,6 @@ export function createWorldArchive({ getContext, getAccountId = () => 'default-u
             const state = await sync(); if (isVisible(route) && !disposed) view.show(state || await service.read());
         },
         reset() { epoch++; latestState = null; service.invalidate(); authority.reset(); for (const view of Object.values(views)) view.reset(); },
-        dispose() { disposed = true; service.invalidate(); authority.reset(); disconnectFocus(); unregisterCatalog(); unregisterTurns(); unregisterBridge(); unregisterAuthority(); unsubscribe(); unregisterMemory(); for (const view of Object.values(views)) view.reset(); storage.close().catch(error => onError(error)); },
+        dispose() { disposed = true; service.invalidate(); authority.reset(); disconnectFocus(); unregisterConditions(); unregisterCatalog(); unregisterTurns(); unregisterBridge(); unregisterAuthority(); unsubscribe(); unregisterMemory(); for (const view of Object.values(views)) view.reset(); storage.close().catch(error => onError(error)); },
     };
 }

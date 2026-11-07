@@ -11,7 +11,7 @@ export function validateWorldStoryState(value) {
     check(new Set(value.records.map(item => item.record?.id)).size === value.records.length, '记录身份重复');
     check(new Set(value.candidates.map(item => item.key)).size === value.candidates.length, '候选身份重复');
     for (const entry of [...value.records, ...value.candidates]) {
-        check(memoryDigest(parseStoryUpdates([entry.record])[0]) === memoryDigest(entry.record), '记录内容无效');
+        check(memoryDigest(parseStoryUpdates([entry.record], {archived:true})[0]) === memoryDigest(entry.record), '记录内容无效');
         check(Number.isSafeInteger(entry.version) && entry.version > 0 && entry.version <= value.revision
             && Number.isSafeInteger(entry.start) && entry.start >= 0 && Number.isSafeInteger(entry.end) && entry.end >= entry.start
             && ['module', 'key', 'label'].every(key => typeof entry.source?.[key] === 'string' && entry.source[key].trim())
@@ -23,8 +23,9 @@ export function validateWorldStoryState(value) {
 }
 
 export function worldStoryRecords(state, baseline = []) {
-    const records = new Map(baseline.map(record => [record.id, structuredClone(record)]));
+    const records = new Map(baseline.filter(record => record.kind !== 'scene').map(record => [record.id, structuredClone(record)]));
     for (const entry of state?.modules?.story?.records || []) {
+        if (entry.record.kind === 'scene') continue;
         if (entry.record.remove) records.delete(entry.record.id);
         else records.set(entry.record.id, { ...structuredClone(entry.record), _addedAt: entry.end, _sourceStart: entry.start,
             _worldVersion: entry.version, _nature: entry.nature });
@@ -33,7 +34,7 @@ export function worldStoryRecords(state, baseline = []) {
 }
 
 export function worldStoryStore(store, state) {
-    if (!store?.json || !state?.modules?.story) return store;
+    if (!store?.json || (!state?.modules?.story && !store.json.storyRecords?.some(row => row.kind === 'scene'))) return store;
     return { ...store, json: { ...store.json, storyRecords: worldStoryRecords(state, store.json.storyRecords || []) } };
 }
 

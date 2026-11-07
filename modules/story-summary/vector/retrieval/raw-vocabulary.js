@@ -6,7 +6,7 @@ export function getRawEntityVocabulary(store, context) {
     const names = [context.name2,
         ...(data.characters?.main || []).map(item => typeof item === 'string' ? item : item.name),
         ...(data.arcs || []).map(arc => arc.name),
-        ...(data.storyRecords || []).flatMap(record => [record.name, record.person, record.location, ...(record.participants || [])]),
+        ...(data.storyRecords || []).flatMap(record => [record.name, record.person]),
         ...reviewedRounds(store?.summaryHistory).flatMap(batch => batch.memoryTags?.characters || []),
     ];
     const displayMap = new Map();

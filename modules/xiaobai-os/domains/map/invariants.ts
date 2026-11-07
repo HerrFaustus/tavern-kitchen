@@ -1,4 +1,4 @@
-import type { MapDomainV1, MapElementShape } from './types.js';
+import { bearings, featureFields, geographyFields, type MapDomainV1, type MapElementShape } from './types.js';
 import { MAP_ARTIFICIAL_LIGHTS, MAP_CERTAINTIES, MAP_ELEMENT_CATEGORIES, MAP_ELEMENT_KINDS, MAP_ELEMENT_SHAPES, MAP_ICON_TOKENS, MAP_LIGHTING_SPACES, MAP_MATERIALS, MAP_NATURAL_LIGHTS } from './semantics.js';
 import { MapValidation } from './validation.js';
 export { MapDomainError, type MapDomainErrorCode } from './validation.js';
@@ -13,7 +13,8 @@ export const MAX_MAP_POINTS = 64;
 export const MAX_MAP_ID_LENGTH = 80;
 export const MAX_MAP_NAME_LENGTH = 120;
 export const MAX_MAP_LABEL_LENGTH = 160;
-export const MAX_MAP_BRIEF_LENGTH = 500;
+export const MAX_MAP_FEATURE_NAME_LENGTH = 500;
+export const MAX_MAP_BRIEF_LENGTH = 1200;
 export const MAX_MAP_COORDINATE = 100_000;
 export const MAX_MAP_DIMENSION = 100_000;
 
@@ -145,7 +146,7 @@ function scene(v: MapValidation, value: unknown, recordKey: string, path: string
 }
 
 function location(v: MapValidation, value: unknown, path: string): void {
-    const record = v.record(value, path, ['key', 'name', 'scale', 'status'], ['parent', 'sceneKey', 'brief', 'position', 'terrain']);
+    const record = v.record(value, path, ['key', 'name', 'scale', 'status'], ['parent', 'sceneKey', 'brief', ...geographyFields, 'features', 'bearing', 'position', 'terrain']);
     if (!record) { return; }
     id(v, record.key, `${path}.key`);
     text(v, record.name, `${path}.name`, MAX_MAP_NAME_LENGTH);
@@ -153,7 +154,37 @@ function location(v: MapValidation, value: unknown, path: string): void {
     token(v, record.status, LOCATION_STATUSES, `${path}.status`);
     if (Object.hasOwn(record, 'parent')) { id(v, record.parent, `${path}.parent`); }
     if (Object.hasOwn(record, 'sceneKey')) { id(v, record.sceneKey, `${path}.sceneKey`); }
-    if (Object.hasOwn(record, 'brief')) { text(v, record.brief, `${path}.brief`, MAX_MAP_BRIEF_LENGTH); }
+    if (Object.hasOwn(record, 'features')) {
+        const items = v.array(record.features, path + '.features', MAX_SCENE_ELEMENTS);
+        const names = new Set(items?.map(item => typeof item === 'string' ? item : (item as {name?:unknown} | null)?.name));
+        items?.forEach((item, index) => {
+            const entryPath = path + '.features.' + index;
+            if (typeof item === 'string') {
+                text(v, item, entryPath, MAX_MAP_FEATURE_NAME_LENGTH);
+                return;
+            }
+            const entry = v.record(item, entryPath, ['name'], [...featureFields,'placement']);
+            if (!entry) { return; }
+            text(v, entry.name, entryPath + '.name', MAX_MAP_FEATURE_NAME_LENGTH);
+            if ('placement' in entry) {
+                const where = v.record(entry.placement, entryPath + '.placement', ['bearing'], ['relativeTo']);
+                if (where) {
+                    token(v, where.bearing, bearings, entryPath + '.placement.bearing');
+                    if ('relativeTo' in where) {
+                        v.check(typeof where.relativeTo === 'string' && names.has(where.relativeTo) && where.relativeTo !== entry.name,
+                            'map_invalid_domain', entryPath + '.placement.relativeTo', 'must name a different feature at this place');
+                    }
+                }
+            }
+            for (const field of featureFields) {
+                if (Object.hasOwn(entry, field)) { text(v, entry[field], entryPath + '.' + field, MAX_MAP_BRIEF_LENGTH); }
+            }
+        });
+    }
+    for (const field of ['brief', ...geographyFields]) {
+        if (Object.hasOwn(record, field)) { text(v, record[field], path + '.' + field, MAX_MAP_BRIEF_LENGTH); }
+    }
+    if (Object.hasOwn(record, 'bearing')) { token(v, record.bearing, bearings, path + '.bearing'); }
     if (Object.hasOwn(record, 'position')) { pair(v, record.position, `${path}.position`); }
     if (Object.hasOwn(record, 'terrain')) { token(v, record.terrain, LOCATION_TERRAINS, `${path}.terrain`); }
 }

@@ -47,7 +47,8 @@ export function formatExistingSummaryForAI(store) {
 
     const data = store.json;
     const parts = [];
-    if (data.storyRecords?.length) parts.push('【当前场景与待办记录，更新时复用 id】\n' + JSON.stringify(data.storyRecords));
+    const records = data.storyRecords?.filter(record => record.kind !== 'scene');
+    if (records?.length) parts.push('【当前剧情状态与待办，更新时复用 id】\n' + JSON.stringify(records));
 
 
     if (data.characters?.main?.length) {
@@ -214,7 +215,7 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
         narrativeSummary = decoded.summary.trim();
         memoryTags = prepareMemoryTags(decoded);
         if (preparedSources?.updateContext) {
-            if (decoded.storyUpdates !== undefined && (!Array.isArray(decoded.storyUpdates) || decoded.storyUpdates.length)) throw new Error('场景、认知与计划变化须进入 worldUpdate 的 story 提案，不直接改写当前状态');
+            if (decoded.storyUpdates !== undefined && (!Array.isArray(decoded.storyUpdates) || decoded.storyUpdates.length)) throw new Error('人物、认知与计划变化须进入 worldUpdate 的 story 提案，不直接改写当前状态');
             worldUpdate = prepareWorldUpdate(decoded.worldUpdate, preparedSources.updateContext);
         }
         parsed = prepareSummaryResult(decoded);

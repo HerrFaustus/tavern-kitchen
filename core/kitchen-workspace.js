@@ -32,16 +32,14 @@ export const KITCHEN_ROUTES = {
     overview: [['overview', '主角']],
     memory: [['memory', '剧情时间线'], ['suspense', '悬念簿'], ['proofreading', '剧情校对'], ['memory-settings', '剧情设置']],
     world: [['people', '人物'], ['map', '地图'], ['situation', '局势'], ['lore', '设定']],
-    planner: [['planner', '剧情规划'], ['dice', '行动判定']],
+    planner: [['planner', '剧情规划']],
     settings: [['settings', 'API 设置']],
 };
 const routeAliases = new Map([['world', 'people'], ['world-engine', 'situation'], ['world-records', 'situation'], ['summaries', 'memory-settings'], ['relations', 'people'], ['agent-api', 'settings']]);
 const canonicalRoute = id => routeAliases.get(id) || id;
 const parentOf = id => KITCHEN_TABS.find(([key]) => KITCHEN_ROUTES[key].some(([route]) => route === id))?.[0];
-const worldTabs = new Set(['map', 'dice', 'agent-api', 'settings']);
+const worldTabs = new Set(['map', 'agent-api', 'settings']);
 const memoryTabs = new Set(['memory', 'proofreading', 'situation', 'lore', 'people', 'relations', 'memory-settings']);
-// Keep current-story routes visible; reference and maintenance pages live under one overflow entry.
-const subnavOverflow = { world: new Set(['lore']) };
 export const getKitchenMount = id => workspace?.getMount(id) ?? null;
 export const openKitchenTab = id => workspace?.open(id);
 export const closeKitchenWorkspace = () => workspace?.close();
@@ -213,24 +211,18 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
         message.append(text, retry, settings); mount.prepend(message);
     };
     const navigate = id => observeBackgroundTask(api.open(id), { source: import.meta.url, operation: 'open-workspace' });
-    const closeSubnavMore = () => { const open = subnav.querySelector('.tk-subnav-more[open]'); if (open) open.open = false; };
-    const subnavButton = (route, label, parent) => {
-        const button = doc.createElement('button'); button.type = 'button'; button.textContent = label; button.className = 'menu_button';
-        button.dataset.route = route; button.addEventListener('click', () => { closeSubnavMore(); navigate(route); });
-        parent.append(button);
-    };
     const buildSubnav = parent => {
-        subnav.replaceChildren(); subnav.dataset.section = parent;
-        const overflow = subnavOverflow[parent] || new Set();
-        for (const [route, label] of KITCHEN_ROUTES[parent]) if (!overflow.has(route)) subnavButton(route, label, subnav);
-        const secondary = KITCHEN_ROUTES[parent].filter(([route]) => overflow.has(route));
-        if (!secondary.length) return;
-        const more = doc.createElement('details'); more.className = 'tk-subnav-more';
-        const summary = doc.createElement('summary'); summary.className = 'menu_button tk-subnav-more-toggle'; summary.textContent = '更多';
-        summary.title = '更多页面'; summary.setAttribute('aria-label', '更多页面');
-        const menu = doc.createElement('div'); menu.className = 'tk-subnav-menu'; menu.setAttribute('role', 'group'); menu.setAttribute('aria-label', '更多页面');
-        for (const [route, label] of secondary) subnavButton(route, label, menu);
-        more.append(summary, menu); subnav.append(more);
+        subnav.replaceChildren();
+        subnav.dataset.section = parent;
+        for (const [route, label] of KITCHEN_ROUTES[parent]) {
+            const button = doc.createElement('button');
+            button.type = 'button';
+            button.className = 'menu_button';
+            button.textContent = label;
+            button.dataset.route = route;
+            button.addEventListener('click', () => navigate(route));
+            subnav.append(button);
+        }
     };
     const renderFeatureBar = id => {
         const items = featureSwitches[id] || [];
@@ -301,14 +293,7 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
                 button.setAttribute('aria-pressed', String(button.dataset.route === id));
                 button.classList.toggle('active', button.dataset.route === id);
             }
-            const more = subnav.querySelector('.tk-subnav-more');
-            if (more) {
-                const activeMore = [...more.querySelectorAll('button[data-route]')].find(button => button.dataset.route === id);
-                more.querySelector('summary').textContent = activeMore ? `更多 · ${activeMore.textContent}` : '更多';
-                more.classList.toggle('is-active', Boolean(activeMore));
-                more.open = false;
-            }
-            subnav.hidden = parent === 'overview' || parent === 'settings';
+            subnav.hidden = KITCHEN_ROUTES[parent].length < 2;
             stopEvolution?.(); stopEvolution = undefined; evolution.replaceChildren(); evolution.hidden = true;
             renderFeatureBar(id);
             onVisibility(true, id);
@@ -339,14 +324,8 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
         const next = event.key === 'Home' ? 0 : event.key === 'End' ? ids.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + ids.length) % ids.length;
         buttons.get(ids[next]).focus(); navigate(ids[next]);
     });
-    panel.addEventListener('click', event => {
-        const open = subnav.querySelector('.tk-subnav-more[open]');
-        if (open && !open.contains(event.target)) open.open = false;
-    });
     panel.addEventListener('keydown', event => {
         if (event.key !== 'Escape' || event.defaultPrevented) return;
-        const open = subnav.querySelector('.tk-subnav-more[open]');
-        if (open) { event.preventDefault(); open.open = false; open.querySelector('summary')?.focus(); return; }
         event.preventDefault(); api.close();
     });
     workspace = api;

@@ -1455,7 +1455,7 @@ function buildFramePayload(store) {
         ...(store?.summaryHistory?.some(batch => batch.layers || batch.reviewLayers) && !store.summaryInvalid
             && store.sourceInvalidFromFloor == null && firstInvalidMemorySource(store, getContext().chat) == null
             ? { narrativeUnits: summaryLayers(store.summaryHistory).parents } : {}),
-        storyRecords: !store?.summaryInvalid && store?.sourceInvalidFromFloor == null ? json.storyRecords || [] : [],
+        storyRecords: !store?.summaryInvalid && store?.sourceInvalidFromFloor == null ? (json.storyRecords || []).filter(record => record.kind !== 'scene') : [],
         characterAliases: normalizeCharacterAliases(json.characterAliases)
             .map(({ from, to, evidence }) => ({ from, to, evidence })),
         lastSummarizedMesId: store?.lastSummarizedMesId ?? -1,
@@ -1614,7 +1614,7 @@ function cloneSummaryJsonForPortability(json) {
         facts: Array.isArray(src.facts)
             ? src.facts.map(normalizeInternalFact).filter((item) => item.s && item.p && item.o)
             : [],
-        ...(src.storyRecords ? { storyRecords: src.storyRecords.map(record => parseStoryUpdates([record])[0]) } : {}),
+        ...(src.storyRecords ? { storyRecords: src.storyRecords.filter(record => record.kind !== 'scene').map(record => parseStoryUpdates([record])[0]) } : {}),
     };
 }
 

@@ -1,3 +1,4 @@
+import type { MapCondition } from '../../../story-state/situation-links.js';
 import type { XiaobaiOsFileState } from '../../kernel/contracts.js';
 import type { MapDomainV1 } from '../../domains/map/types.js';
 
@@ -26,6 +27,7 @@ export interface MapClientState {
     message: string;
     autoMaintenance: boolean;
     projectToChat: boolean;
+    localConditions?: MapCondition[];
     maintenanceStatus?: MapMaintenanceStatus;
     /** Latest in-memory result, available for inspection; not an unread notification. */
     maintenanceMessage?: string;

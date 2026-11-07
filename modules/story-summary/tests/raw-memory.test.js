@@ -53,10 +53,11 @@ test('turn tags retain a version and follow the exact source revision, without a
 });
 
 test('raw vocabulary uses current plot records and aliases without reading historical scene atoms', () => {
-    const vocabulary = getRawEntityVocabulary({ json: { characters: { main: ['Alice'] }, storyRecords: [{ kind: 'scene', location: '钟楼', participants: ['Bob'] }],
+    const vocabulary = getRawEntityVocabulary({ json: { characters: { main: ['Alice'] }, storyRecords: [{ kind: 'scene', location: '钟楼', participants: ['旧在场者'] },{kind:'person',name:'Bob'}],
         characterAliases: [{ from: '小爱', to: 'Alice' }] } }, { name1: '玩家', name2: 'Alice' });
     assert.equal(vocabulary.displayMap.get('小爱'), 'Alice');
     assert.ok(vocabulary.lexicon.has('bob'));
+    assert.equal(vocabulary.lexicon.has('旧在场者'),false);
     assert.equal(vocabulary.lexicon.has('玩家'), false);
 });
 

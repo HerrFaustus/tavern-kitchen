@@ -266,3 +266,20 @@ test('returning to an unchanged chat cannot revive an editor from before the cha
     await assert.rejects(f.map.replaceCurrent(edit, { expectedRevision: before.map.revision }), /map_revision_conflict/);
     assert.equal((await f.service.read()).modules.map.atlas.locations[0].brief, '炉火旁的小铺');
 });
+
+test('long panoramas survive a durable map save; clearing a temporary panorama preserves stable features', async t => {
+    const f = await fixture(t);
+    const original = await f.map.refreshCurrent();
+    const edited = structuredClone(original.map);
+    const long = '渡口铺着青石。'.repeat(160);
+    edited.atlas.locations[0].brief = long;
+    edited.atlas.locations[0].features = [{name:'棚柱',description:long}];
+    await f.map.replaceCurrent(edited,{expectedRevision:original.map.revision});
+    const loaded = (await f.map.refreshCurrent()).map;
+    assert.equal(loaded.atlas.locations[0].brief,long);
+    delete loaded.atlas.locations[0].brief;
+    await f.map.replaceCurrent(loaded,{expectedRevision:loaded.revision});
+    const restored = (await f.map.refreshCurrent()).map.atlas.locations[0];
+    assert.equal(restored.brief,undefined);
+    assert.equal(restored.features[0].description,long);
+});

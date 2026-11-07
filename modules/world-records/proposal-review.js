@@ -17,7 +17,9 @@ const recordFor = (state, requestId) => {
 };
 function originalFor(record, index) {
     check(Number.isSafeInteger(index) && index >= 0 && index < record.update.proposals.length, '提案编号无效');
-    return record.update.proposals[index];
+    const proposal = record.update.proposals[index];
+    check(proposal.record?.kind !== 'scene','旧场景提案已停用');
+    return proposal;
 }
 function beforeValue(state, proposal, baseline) {
     if (proposal.type === 'field') {
@@ -80,7 +82,9 @@ export function proposalReviewOrigin(state, requestId, index) {
 
 export function proposalReviewGroup(state, requestId, index) {
     const record = recordFor(state, requestId); originalFor(record, index);
-    const pending = proposalGroups(state, record.update).find(group => group.indices.includes(index)).indices
+    const group = proposalGroups(state, record.update).find(candidate => candidate.indices.includes(index));
+    check(group, '旧场景提案已停用');
+    const pending = group.indices
         .filter(value => !record.reviews?.some(review => review.index === value));
     return pending.includes(index) ? pending : [index];
 }

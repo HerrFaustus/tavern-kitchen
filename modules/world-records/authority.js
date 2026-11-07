@@ -89,7 +89,11 @@ export function projectAuthorityMap(map, state) {
         const entity = bindings.get(JSON.stringify(['map', `place:${location.key}`]));
         if (!entity) continue;
         location.name = entity.name;
-        if (established(entity.fields.description)) location.brief = typeof entity.fields.description.value === 'string' ? entity.fields.description.value : '';
+        if (established(entity.fields.description)) {
+            const value = entity.fields.description.value;
+            if (typeof value === 'string' && value.trim()) location.brief = value;
+            else delete location.brief;
+        }
         if (established(entity.fields.parent)) {
             const key = placeKey(entity.fields.parent.value?.entityId);
             if (key) location.parent = key; else delete location.parent;

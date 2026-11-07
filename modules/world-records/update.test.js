@@ -168,3 +168,19 @@ test('tampered proposal evidence and delivery IDs are rejected during replay', a
     await assert.rejects(f.service.syncTurns(f.messages, { history: history(f, changed) }), /不能交付不同内容/);
     assert.equal((await f.service.read()).version, state.version);
 });
+
+test('archived scene contents stay out of both model inputs and cannot be proposed again', async t => {
+    const f = await setup(t);
+    const record = {id:'scene',kind:'scene',location:'归档专用旧场地',situation:'归档专用局面',participants:[],pendingBeat:'',tension:''};
+    const entry = {record};
+    f.store.json.storyRecords.push(record);
+    f.state.modules = {story:{records:[entry],candidates:[entry]}};
+    const event = f.state.events.at(-1);
+    event.effects.push({type:'module',id:'story',before:null,after:f.state.modules.story});
+    const context = buildUpdateContext(f.state,f.store,f.messages,f.receipt);
+    assert.doesNotMatch(JSON.stringify(context),/归档专用/);
+    assert.match(JSON.stringify(context.recent),/铁匠收钱/);
+    assert.ok(context.world.storyRecords.some(row=>row.id==='secret-plan'));
+    assert.throws(() => prepareWorldUpdate({...f.raw,proposals:[{type:'story',record,before:{present:false},
+        nature:'established_fact',evidence:{floor:1,quote:'铁匠收钱后'}}]},context));
+});

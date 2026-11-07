@@ -53,7 +53,8 @@ test('any character shows confirmed traits, items and assets by current ownershi
 });
 const plan = { id: 'p1', kind: 'plan', title: '交付信件', status: 'open', due: '2026-10-31' };
 const belief = { id: 'k1', kind: 'knowledge', person: '阿林', certainty: 'believed', content: '信使已经叛逃', evidence: '听到传言', learnedAt: '黎明' };
-const start = () => mergeStoryRecords([], parseStoryUpdates([scene, plan, belief, { id: 'clock', kind: 'clock', label: '十月三十日黎明', date: '2026-10-30' }]), 3, 1);
+const person = { id: 'a', kind:'person', name:'阿林', presence:'present', note:'等候信使' };
+const start = () => mergeStoryRecords([], parseStoryUpdates([person, plan, belief, { id: 'clock', kind: 'clock', label: '十月三十日黎明', date: '2026-10-30' }]), 3, 1);
 test('suspense book shows every open clue and authoritative closures, and clears invalid sources', t => {
     const { document } = parseHTML('<main></main>');
     const original = globalThis.document; globalThis.document = document; t.after(() => { globalThis.document = original; });
@@ -84,10 +85,10 @@ test('existing maintenance can correct knowledge and close plans atomically, and
 });
 test('one summary validates observations, preserves IDs on reschedule/closure and undoes the entire batch', () => {
     const before = { storyRecords: start() };
-    const prepared = prepareSummaryResult({ events: [], storyUpdates: [{ ...plan, status: 'failed', reason: '道路被封' }, { ...scene, participants: ['贝拉'], pendingBeat: '' }] }, { startFloor: 5, endFloor: 6 });
+    const prepared = prepareSummaryResult({ events: [], storyUpdates: [{ ...plan, status: 'failed', reason: '道路被封' }, { ...person, presence:'away', note:'' }] }, { startFloor: 5, endFloor: 6 });
     const after = { storyRecords: mergeStoryRecords(before.storyRecords, prepared.storyUpdates, 5, 4) };
     assert.equal(after.storyRecords.filter(record => record.id === 'p1').length, 1);
-    assert.equal(after.storyRecords.find(record => record.kind === 'scene').pendingBeat, '');
+    assert.equal(after.storyRecords.find(record => record.kind === 'person').note, '');
     const undo = buildSummaryUndo(before, after);
     assert.deepEqual(applySummaryUndo(after, undo).storyRecords, before.storyRecords);
     assert.equal(summaryBatchChanges(undo).length, 2);
@@ -99,7 +100,7 @@ test('one summary validates observations, preserves IDs on reschedule/closure an
 });
 test('omission retains data, deletion is explicit, invalid types and fake dates fail before commit', () => {
     const previous = start(); assert.deepEqual(mergeStoryRecords(previous, [], 10), previous);
-    assert.equal(mergeStoryRecords(previous, parseStoryUpdates([{ id: 'scene', kind: 'scene', remove: true }]), 10).some(record => record.id === 'scene'), false);
+    assert.throws(() => parseStoryUpdates([scene]));
     for (const update of [{ ...plan, status: 'done' }, { ...belief, person: '' }, { ...scene, id: 's2' }, { id: 'clock', kind: 'clock', label: '时间', date: '2026-02-30' }, { kind: 'person', id: 'x', name: '阿林', presence: 'maybe' }]) assert.throws(() => parseStoryUpdates([update]));
     assert.throws(() => parseStoryUpdates([plan, plan]));
     assert.throws(() => mergeStoryRecords(previous, [{ id: 'p1', kind: 'suspense' }], 8));
@@ -107,22 +108,22 @@ test('omission retains data, deletion is explicit, invalid types and fake dates 
     assert.equal(relativeStoryTime('2026-11-01', '2026-10-30'), '2 天后');
     assert.equal(relativeStoryTime('暮秋二日', '暮秋三日'), '');
 });
-test('new scene roster takes precedence, knowledge stays scoped to its owner, stale records are withheld', () => {
-    const records = mergeStoryRecords(start(), parseStoryUpdates([{ id: 'a', kind: 'person', name: '阿林', presence: 'present' }]), 4);
-    const after = mergeStoryRecords(records, parseStoryUpdates([{ ...scene, participants: ['贝拉'] }]), 5);
+test('archived scene roster is ignored, knowledge stays scoped to its owner, stale records are withheld', () => {
+    const records = mergeStoryRecords(start(), parseStoryUpdates([{ ...person, presence: 'away' }]), 4);
+    const after = [...records, { ...scene, participants: ['贝拉'], _addedAt:5 }];
     assert.equal(characterStoryState(after, '阿林').presence, 'away');
-    assert.equal(characterStoryState(after, '贝拉').presence, 'present');
+    assert.equal(characterStoryState(after, '贝拉').presence, 'unknown');
     assert.equal(characterStoryState(after, '贝拉').knowledge.length, 0);
     assert.doesNotMatch(storyContextLines(after).join('\n'), /听到传言/);
     assert.match(storyContextLines(after, ['阿林']).join('\n'), /阿林 · 相信／误解：信使已经叛逃.*听到传言.*黎明/);
     assert.deepEqual(availableStoryRecords({ json: { storyRecords: after }, lastSummarizedMesId: 5 }, 4), []);
     assert.deepEqual(availableStoryRecords({ json: { storyRecords: after }, lastSummarizedMesId: 5, sourceInvalidFromFloor: 4 }), []);
 });
-test('aliases apply to roster, presence and beliefs, while record IDs remain stable', () => {
+test('aliases apply to presence and beliefs, while record IDs remain stable', () => {
     const json = { characters: { main: [] }, storyRecords: start() };
     const result = applyCharacterAliasUpdates(json, [{ to: '林恩', from: ['阿林'], evidence: '姓名揭晓' }], 5);
     assert.equal(result.json.storyRecords.find(record => record.id === 'k1').person, '林恩');
-    assert.deepEqual(result.json.storyRecords.find(record => record.id === 'scene').participants, ['林恩']);
+    assert.equal(result.json.storyRecords.find(record => record.id === 'a').name, '林恩');
     const parsed = canonicalizeIncrementalSummaryData({ storyUpdates: [structuredClone(belief)] }, result.json.characterAliases);
     assert.equal(parsed.storyUpdates[0].person, '林恩');
 });

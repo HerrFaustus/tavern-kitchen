@@ -1,11 +1,9 @@
 import type { ManagementParticipant } from '../../../capabilities/management/index.js';
-import { MANAGEMENT_PAGE_SIZE, textPage } from '../../../capabilities/management/read-page.js';
+import { MANAGEMENT_PAGE_SIZE } from '../../../capabilities/management/read-page.js';
 import { createEmptyMapDomain } from '../../../domains/map/state.js';
 import type { MapService } from '../application/service.js';
 import { compileAtlasIntent } from '../tools/atlas-intent-compiler.js';
-import { compileSceneIntent } from '../tools/scene-intent-compiler.js';
 import { readAtlas } from '../tools/atlas-reader.js';
-import { resolveSceneKey, sceneForTool } from '../tools/scene-reader.js';
 import { createManagementSave } from '../../../capabilities/management/save.js';
 import { jsonValuesEqual } from '../../../host/json-values-equal.js';
 import { createMapReadBaseline } from './read-baseline.js';
@@ -48,15 +46,8 @@ export function createMapManagement(map: MapService, player: () => { actorKey: '
                         evidence.atlas(current, data);
                         return { ok: true, status: 'read', data };
                     }
-                    if (name === 'MapSceneRead') {
-                        const key = resolveSceneKey(current, String(args.scene ?? ''));
-                        const owner = current.atlas.locations.find(l => l.sceneKey === key);
-                        const scene = current.scenes[key];
-                        evidence.scene(current, key, Number(args.offset ?? 0));
-                        return { ok: true, status: 'read', data: textPage(JSON.stringify(scene && owner ? sceneForTool(scene, owner) : null), args.offset) };
-                    }
-                    if (!['MapAtlasEdit', 'MapSceneEdit'].includes(name)) { throw new Error('management_tool_unknown'); }
-                    const compiled = name === 'MapAtlasEdit' ? compileAtlasIntent(current, args, player()) : compileSceneIntent(current, args, player());
+                    if (name !== 'MapAtlasEdit') { throw new Error('management_tool_unknown'); }
+                    const compiled = compileAtlasIntent(current, args, player());
                     if (!compiled.edits.length) { return { ok: compiled.result.ok, status: compiled.result.ok ? 'unchanged' : 'failed', data: compiled.result }; }
                     evidence.assertEdits(current, compiled.edits);
                     const expected = current;

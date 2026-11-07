@@ -1,11 +1,5 @@
-import type {
-    MapActorPosition,
-    MapDomainV1,
-    MapLink,
-    MapLinkKind,
-    MapLocation,
-    MapLocationStatus,
-} from '../../../domains/map/types.js';
+import { placeFeatures } from '../../../domains/map/features.js';
+import { featureFields, geographyFields, type MapActorPosition, type MapDomainV1, type MapLink, type MapLinkKind, type MapLocation, type MapLocationStatus } from '../../../domains/map/types.js';
 import { enumToken, intentId, isRecord } from './intent-common.js';
 import { unassignedMapLocations, visitedMapLocationKeys } from '../../../domains/map/hierarchy.js';
 import { mapToolResult, type MapToolResult } from './result.js';
@@ -20,21 +14,20 @@ export const DEFAULT_ATLAS_READ_LIMIT = 30;
 export const MAX_ATLAS_READ_LIMIT = 300;
 export const MAX_ATLAS_QUERY_LENGTH = 120;
 
-/** Scene links are compiler-owned: the model learns whether a scene exists, never its key. */
-type AgentMapLocation = Omit<MapLocation, 'sceneKey'> & { hasScene: boolean; needsRegion: boolean };
+type AgentMapLocation = Omit<MapLocation, 'sceneKey'> & { needsRegion: boolean };
 
-function projectLocation(location: MapLocation, unassigned: ReadonlySet<string>, visited: ReadonlySet<string>): AgentMapLocation {
+function projectLocation(domain: MapDomainV1, location: MapLocation, unassigned: ReadonlySet<string>, visited: ReadonlySet<string>): AgentMapLocation {
     return {
         key: location.key,
         name: location.name,
         scale: location.scale,
         status: visited.has(location.key) ? 'visited' : location.status,
-        hasScene: !!location.sceneKey,
         needsRegion: unassigned.has(location.key),
         ...(location.parent ? { parent: location.parent } : {}),
+        ...Object.fromEntries(geographyFields.filter(field => location[field]).map(field => [field, location[field]])),
+        ...(location.bearing ? {bearing:location.bearing} : {}),
+        features: placeFeatures(domain, location),
         ...(location.brief ? { brief: location.brief } : {}),
-        ...(location.position ? { position: [...location.position] as [number, number] } : {}),
-        ...(location.terrain ? { terrain: location.terrain } : {}),
     };
 }
 
@@ -98,10 +91,6 @@ export function readAtlas(domain: MapDomainV1, value: unknown): MapToolResult {
     const unassigned = new Set(unassignedMapLocations(domain.atlas).map(location => location.key));
     const visited = visitedMapLocationKeys(domain.atlas);
     const player = domain.atlas.actors.find(actor => actor.actorKey === 'player') || null;
-    const currentLocation = domain.atlas.locations.find(location => location.key === player?.locationKey);
-    const currentScene = currentLocation?.sceneKey
-        ? { scene: currentLocation.key, hasLighting: !!domain.scenes[currentLocation.sceneKey].lighting }
-        : null;
     if (mode === 'summary') {
         return mapToolResult({
             data: {
@@ -114,7 +103,6 @@ export function readAtlas(domain: MapDomainV1, value: unknown): MapToolResult {
                     needsRegion: unassigned.size,
                 },
                 player: structuredClone(player),
-                currentScene,
             },
         });
     }
@@ -123,9 +111,8 @@ export function readAtlas(domain: MapDomainV1, value: unknown): MapToolResult {
             data: {
                 mode,
                 revision,
-                currentScene,
                 atlas: {
-                    locations: domain.atlas.locations.map(location => projectLocation(location, unassigned, visited)),
+                    locations: domain.atlas.locations.map(location => projectLocation(domain, location, unassigned, visited)),
                     links: structuredClone(domain.atlas.links),
                     actors: structuredClone(domain.atlas.actors),
                 },
@@ -145,9 +132,9 @@ export function readAtlas(domain: MapDomainV1, value: unknown): MapToolResult {
             (!parent || location.parent === parent)
             && (!status || visited.has(location.key) === (status === 'visited'))
             && (value.needsRegion === undefined || unassigned.has(location.key) === value.needsRegion)
-            && includesQuery([location.key, location.name, location.brief], query)
+            && includesQuery([location.key, location.name, location.brief, ...geographyFields.map(field => location[field]), ...placeFeatures(domain, location).flatMap(item => [item.name,...featureFields.map(field => item[field]),item.placement?.relativeTo])], query)
         ));
-        const result = page(matches.map(location => projectLocation(location, unassigned, visited)), offset, limit);
+        const result = page(matches.map(location => projectLocation(domain, location, unassigned, visited)), offset, limit);
         return mapToolResult({
             data: {
                 mode, revision, count: result.count, returned: result.returned,

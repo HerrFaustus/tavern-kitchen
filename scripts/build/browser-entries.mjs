@@ -8,7 +8,6 @@ export const entries = {
     'apps/story-summary': 'modules/story-summary/story-summary-ui.js',
     'apps/xiaobai-os': 'modules/xiaobai-os/shell/app-src/main.ts',
     'runtime/os-agent': 'modules/xiaobai-os/agent/browser-entry.ts',
-    'runtime/map-projection': 'modules/xiaobai-os/apps/map/ui/projection-entry.ts',
     'runtime/agent-core': 'modules/agent-core/browser-entry.js',
     'runtime/call-generate': 'bridges/call-generate-service.js',
     'runtime/worldbook': 'bridges/worldbook-bridge.js',

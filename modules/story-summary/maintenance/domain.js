@@ -57,6 +57,7 @@ export function memoryKey(collection, item) {
 // getFacts, mergeFacts), maintenance treats a retracted fact as absent.
 export function* iterateMemoryRecords(memory, collections = MEMORY_COLLECTIONS) {
     for (const collection of collections) for (const value of memoryItems(memory, collection)) {
+        if (collection === 'storyRecords' && value.kind === 'scene') continue;
         if (collection === 'facts' && value?.retracted === true) continue;
         yield { collection, key: memoryKey(collection, value), value };
     }

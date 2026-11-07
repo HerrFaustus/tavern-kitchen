@@ -35,14 +35,14 @@ test('all people and open situations or scenery in a mapped region follow the pl
     assert.deepEqual(titles(),['同行者']);
 });
 
-test('an unmapped scene uses exact place evidence and ambiguous geography never promotes namesakes', () => {
+test('a retired roster cannot establish regional proximity and ambiguous geography never promotes namesakes', () => {
     const world = {entities:[]};
     const records = [{kind:'scene',id:'scene',location:'雾港',participants:['阿青','卖花人','路过的水手']},
         {kind:'person',id:'florist',name:'卖花人',presence:'present',note:'正在等阿青取花'},
         {kind:'situation',id:'snow',title:'初雪',status:'open',flavor:'scenery',scope:'雾港'},
         {kind:'situation',id:'mist',title:'海雾',status:'open',flavor:'scenery',scope:'新雾港'}];
     const read = () => readInvolvement(world,{enabled:true,store:{json:{storyRecords:records}}},'阿青').filter(row => row.near);
-    assert.deepEqual(read().map(row => row.title).sort(),['卖花人','初雪'].sort());
+    assert.deepEqual(read(),[]);
     world.entities = ['a','b'].map(id => ({id,kind:'place',name:'雾港'}));
     assert.deepEqual(read(),[]);
 });

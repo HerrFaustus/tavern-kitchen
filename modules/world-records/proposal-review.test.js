@@ -121,10 +121,10 @@ test('non-fact fields stay claims and new objects receive stable identities with
     const restored = await f.service.restore(state, state); assert.deepEqual(restored.entities, state.entities); assert.deepEqual(f.readReview(restored), f.readReview(state));
 });
 
-test('knowledge and plans are written to authoritative story state while creative scenes remain candidates', async t => {
+test('knowledge and plans are written to authoritative story state while creative situations remain candidates', async t => {
     const proposals = [
         { type: 'story', record: { id: 'belief', kind: 'knowledge', person: '主角', content: '信使可信', certainty: 'believed', evidence: '听到信使介绍', learnedAt: '' }, before: { present: false }, nature: 'belief', evidence: proof },
-        { type: 'story', record: { id: 'scene', kind: 'scene', location: '月球', participants: [], situation: '', tension: '', pendingBeat: '' }, before: { present: false }, nature: 'creative_proposal', evidence: proof },
+        { type: 'story', record: { id: 'moon', kind: 'situation', title: '月球', status: 'open' }, before: { present: false }, nature: 'creative_proposal', evidence: proof },
         { type: 'story', record: { id: 'return', kind: 'plan', holders:['主角','信使'], title: '返城', description: '之后返城', status: 'open', reason: '', due: '明天' }, before: { present: false }, nature: 'intention', evidence: proof },
     ];
     const f = await fixture(t, proposals);
@@ -132,7 +132,7 @@ test('knowledge and plans are written to authoritative story state while creativ
     const knowledge = worldStoryRecords(state)[0]; assert.equal(knowledge.person, '主角'); assert.equal(knowledge.certainty, 'believed');
     assert.equal(knowledge._nature, 'belief'); assert.equal(knowledge._worldVersion, state.version);
     state = (await f.service.commit(f.service.proposalCommand(state, f.requestId, 2, 'accepted', { rechecked: true }))).state;
-    assert.equal(worldStoryRecords(state).some(record => record.id === 'scene'), false); assert.equal(state.modules.story.candidates[0].record.location, '月球');
+    assert.equal(worldStoryRecords(state).some(record => record.id === 'moon'), false); assert.equal(state.modules.story.candidates[0].record.title, '月球');
     state = (await f.service.commit(f.service.proposalCommand(state, f.requestId, 3, 'accepted', { rechecked: true }))).state;
     assert.equal(worldStoryRecords(state).find(record => record.id === 'return').status, 'open');
     assert.equal(worldStoryRecords(state).find(record => record.id === 'return').due, '明天');

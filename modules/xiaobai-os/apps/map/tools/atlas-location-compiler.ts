@@ -1,7 +1,8 @@
+import { placeFeatures, reviseFeatures } from '../../../domains/map/features.js';
 import type { MapDomainEdit } from '../../../domains/map/edit.js';
 import { isMapSceneLocation, locationRegion, unassignedMapLocations } from '../../../domains/map/hierarchy.js';
 import { MAX_MAP_BRIEF_LENGTH } from '../../../domains/map/invariants.js';
-import type { MapAtlas, MapDomainV1, MapLocation, MapLocationScale, MapLocationStatus } from '../../../domains/map/types.js';
+import { geographyFields, type MapAtlas, type MapDomainV1, type MapLocation, type MapLocationScale, type MapLocationStatus } from '../../../domains/map/types.js';
 import { jsonValuesEqual } from '../../../host/json-values-equal.js';
 import { MAP_REGION_REQUIRED_HINT, MAP_SCENE_LOCATION_REQUIRED_HINT } from './hierarchy-feedback.js';
 import { applyIntentEdits, enumToken, intentId, intentText, isRecord } from './intent-common.js';
@@ -9,7 +10,7 @@ import { mapToolFailure, type MapToolItemReport } from './result.js';
 
 const LOCATION_SCALES: readonly MapLocationScale[] = ['world', 'region', 'city', 'district', 'building', 'floor', 'room', 'outdoor'];
 const LOCATION_STATUSES: readonly MapLocationStatus[] = ['mentioned', 'visited'];
-const LOCATION_FIELDS = new Set(['key', 'name', 'scale', 'status', 'parent', 'brief', 'position', 'terrain']);
+const LOCATION_FIELDS = new Set(['key', 'name', 'scale', 'status', 'parent', 'brief', ...geographyFields, 'features', 'featureUpdates', 'bearing', 'position', 'terrain']);
 const LOCATION_EDIT_HINT = 'Correct the related location declarations and their parent references, then retry them together.';
 const LOCATION_REQUIRED_HINT = 'Provide key/name and an existing or same-call parent.';
 
@@ -85,8 +86,29 @@ export function compileAtlasLocations(current: MapDomainV1, values: readonly unk
             const parent = intentId(raw.parent);
             if (parent) {location.parent = parent;} else if (raw.parent === null || raw.parent === '') {delete location.parent;}
             const brief = intentText(raw.brief, '', MAX_MAP_BRIEF_LENGTH);
-            if (brief) {location.brief = brief;}
+            if (raw.featureUpdates !== undefined) {
+                const revised = reviseFeatures(placeFeatures(domain, location), raw.featureUpdates);
+                if (!revised || raw.features !== undefined) {
+                    failures.set(index, { reason: 'invalid_feature_updates', hint: 'Update named features using featureUpdates alone.' });
+                    continue;
+                }
+                location.features = revised;
+            } else if (raw.features !== undefined) {
+                location.features = raw.features as MapLocation['features'];
+            }
+            for (const field of geographyFields) {
+                if (raw[field] === null) { delete location[field]; }
+                else if (raw[field] !== undefined) { location[field] = raw[field] as string; }
+            }
+            if (raw.brief === null) { delete location.brief; }
+            else if (brief) { location.brief = brief; }
+            else if (raw.brief !== undefined && raw.brief !== '') {
+                failures.set(index,{reason:'invalid_location_brief',hint:'Supply a supported panorama, omit it, or clear it with null.'});
+                continue;
+            }
             // Validate authored geography with the complete candidate; never guess a replacement.
+            if (raw.bearing === null) {delete location.bearing;}
+            else if (raw.bearing !== undefined) {location.bearing = raw.bearing as MapLocation['bearing'];}
             if (raw.position === null) {delete location.position;}
             else if (raw.position !== undefined) {location.position = raw.position as MapLocation['position'];}
             if (raw.terrain === null) {delete location.terrain;}

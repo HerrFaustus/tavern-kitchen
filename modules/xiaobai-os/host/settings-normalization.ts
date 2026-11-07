@@ -1,7 +1,5 @@
 import { normalizeMapSettings } from '../apps/map/settings.js';
 import type { MapSettings } from '../apps/map/types.js';
-import { normalizeDiceSettings } from '../apps/dice/settings.js';
-import type { DiceSettings } from '../apps/dice/types.js';
 import { normalizeWorldSettings } from '../apps/world/settings.js';
 import type { WorldSettings } from '../apps/world/types.js';
 import type { XiaobaiOsSettings as XiaobaiOsSettingsRoot } from '../types.js';
@@ -12,7 +10,6 @@ const DEFAULT_OS_ENABLED = true;
 
 export type XiaobaiOsSettings = XiaobaiOsSettingsRoot<{
     map: MapSettings;
-    dice: DiceSettings;
     world: WorldSettings;
 }>;
 
@@ -37,7 +34,6 @@ export function createDefaultXiaobaiOsSettings(): XiaobaiOsSettings {
         enabled: DEFAULT_OS_ENABLED,
         apps: {
             map: normalizeMapSettings(undefined),
-            dice: normalizeDiceSettings(undefined),
             world: normalizeWorldSettings(undefined),
         },
     };
@@ -54,7 +50,6 @@ export function normalizeXiaobaiOsSettings(value: unknown): XiaobaiOsSettings {
         enabled: booleanOr(root.enabled, DEFAULT_OS_ENABLED),
         apps: {
             map: normalizeMapSettings(apps.map),
-            dice: normalizeDiceSettings(apps.dice),
             world: normalizeWorldSettings(apps.world),
         },
     };

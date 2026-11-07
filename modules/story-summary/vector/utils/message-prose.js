@@ -1,6 +1,7 @@
 import { stripDrawImageSlots } from '../../../../shared/legacy-markup/image-marker-syntax.js';
 import { parseChatImageTags } from '../../../../shared/legacy-markup/chat-message-image-markup.js';
-import { CHECK_MARKER_PATTERN } from '../../../xiaobai-os/apps/dice/domain/check-marker-syntax.js';
+// Strip legacy check placeholders from archived chat prose.
+const CHECK_MARKER_PATTERN = String.raw`\[dice:([a-zA-Z0-9_-]+)\]`;
 import { createTtsDirectiveRegex, replaceMessageVoiceMarkers } from '../../../../shared/legacy-markup/tts-message-markup.js';
 
 // Functional markup is not story content. Keep spoken words, and leave unknown
