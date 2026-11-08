@@ -41,12 +41,5 @@
 .text-api .text-api-configuration > summary { cursor: pointer; margin-bottom: 8px; }
 .text-api .text-api-presets { border: 0; padding: 0; }
 
-.text-api { height: 100%; min-height: 0; }
-.text-api > fieldset { display: grid; grid-template-rows: minmax(0, 2fr) minmax(0, 1fr); height: 100%; min-height: 0; overflow: hidden; }
-.text-api .text-api-presets, .text-api .text-api-configuration { min-height: 0; overflow-y: auto; box-sizing: border-box; margin: 0; }
-
-.text-api { display: flex; flex-direction: column; }
-.text-api > fieldset { flex: 1; height: auto; }
-
 .text-api .text-api-presets { align-content: start; }
 .text-api .text-api-presets select { flex: none; }

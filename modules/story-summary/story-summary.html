@@ -145,6 +145,20 @@
 
     <footer id="people-controls" class="tk-module-settings" data-kitchen-controls="people relations" hidden></footer>
 
+    <section id="data-overview" hidden aria-label="后厨数据">
+        <h3>后厨数据</h3><p id="kitchen-card-counts">读取当前聊天的数据…</p>
+        <p>后厨卡保存总结、世界与地图、编剧札记。</p>
+        <p id="kitchen-card-status" role="status"></p>
+    </section>
+    <footer id="data-controls" class="tk-module-settings" data-kitchen-controls="data" hidden>
+        <section data-setting-section="function" id="kitchen-card-actions">
+            <button class="btn" id="btn-export-kitchen-card">导出后厨卡</button>
+            <button class="btn" id="btn-import-kitchen-card">导入后厨卡</button>
+            <input id="kitchen-card-file" type="file" accept=".json,application/json" hidden>
+        </section>
+        <section data-setting-section="function" id="legacy-data-tools"></section>
+    </footer>
+
     <dialog class="archive-drawer" id="archive-detail" aria-labelledby="archive-detail-title">
         <div class="archive-drawer-head"><h2 id="archive-detail-title"></h2><button class="archive-icon" data-close-archive="" aria-label="返回档案">×</button></div>
         <div class="archive-drawer-body" id="archive-detail-body"></div>

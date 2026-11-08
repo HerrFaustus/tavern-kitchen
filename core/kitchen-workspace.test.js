@@ -32,7 +32,7 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     switchInput.checked = false;
     switchInput.dispatchEvent(new document.defaultView.Event('change'));
     assert.deepEqual(toggles[0].slice(0, 2), ['storySummary', false]);
-    assert.equal(document.querySelectorAll('[role="tab"]').length, 5);
+    assert.equal(document.querySelectorAll('[role="tab"]').length, 6);
     assert.equal(document.querySelector('[role="tab"]').textContent, '主角');
     assert.equal(document.querySelector('[aria-selected="true"]').textContent, '剧情');
     await workspace.open('memory');

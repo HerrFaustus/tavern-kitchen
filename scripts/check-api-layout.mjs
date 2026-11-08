@@ -26,7 +26,7 @@ try {
             return;
         }
         await route.fulfill({ contentType: 'text/html', body:
-            '<style>body{background:#202024;color:#ddd;font:15px sans-serif;margin:0;height:100dvh;overflow:hidden}#api{height:100%}' + css + '</style><main id="api"></main>' });
+            '<style>body{background:#202024;color:#ddd;font:15px sans-serif;margin:0;height:100dvh;overflow:hidden}#api{height:100%;overflow:auto}' + css + '</style><main id="api"></main>' });
     });
     await page.goto('http://kitchen.test');
     const presets = [
@@ -66,12 +66,13 @@ try {
     for (const width of [319, 1280]) {
         await page.setViewportSize({ width, height: 780 });
         assert.ok(await page.locator('#api').evaluate(el => el.scrollWidth <= el.clientWidth));
-        const ratio = await settings.evaluate(el => el.getBoundingClientRect().height / globalThis.innerHeight);
-        assert.ok(Math.abs(ratio - 1 / 3) < .015);
+        assert.equal(await settings.evaluate(el => globalThis.getComputedStyle(el).overflowY), 'visible');
+        assert.equal(await page.locator('.text-api > fieldset').evaluate(el => globalThis.getComputedStyle(el).display), 'block');
+        assert.ok(await selector.evaluate(el => el.getBoundingClientRect().height <= 50));
         await page.screenshot({ path: path.join(root, 'output', 'api-layout-' + width + '.png') });
     }
     assert.deepEqual(errors, []);
-    console.log('Verified API browsing above configuration, preset switching and saving at both widths.');
+    console.log('Verified one continuous API page, preset switching and saving at both widths.');
 } finally {
     await browser.close();
 }

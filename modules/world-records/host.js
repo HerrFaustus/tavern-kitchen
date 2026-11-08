@@ -1,3 +1,5 @@
+import { createNoteStore } from '../story-planner/storage.js';
+import { createWorldCardData } from '../kitchen-data/world.js';
 import { plannerSnapshot } from '../story-planner/notes.js';
 import { ambientControl, ambientPrompt, mapLocalConditions } from '../story-state/ambient.js';
 import { readInvolvement } from '../story-state/involvement.js';
@@ -21,7 +23,7 @@ import { buildUpdateContext, UPDATE_PREFIX } from './update-context.js';
 
 export function createWorldArchive({ getContext, createOpening, getAccountId = () => 'default-user', getMemorySnapshot, getAmbientPreferences, getMount, isVisible, onError, onAuthorityChange = () => {} }) {
     const sourceIdentity = () => storyIdentityKey(captureStoryIdentity(getContext()));
-    const identity = () => { const story = sourceIdentity(); return story ? JSON.stringify([getAccountId(), story]) : ''; };
+    const identity = (branch = getMemorySnapshot()?.store?.dataBranch) => { const story = sourceIdentity(); return story ? JSON.stringify([getAccountId(), story, ...(branch ? [branch] : [])]) : ''; };
     const storage = createWorldStorage();
     let authority, latestState = null;
     const service = createWorldService({ storage, getIdentity: identity, isSourceCurrent: turn => !!turn
@@ -134,7 +136,9 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
             sync().then(state => { if (state) for (const [route, view] of Object.entries(views)) if (isVisible(route) && !view.isEditing()) view.show(state); }).catch(error => onError(error));
         });
     });
+    const noteStore = createNoteStore();
     return {
+        cardData: createWorldCardData({ identity, storage, service, noteStore }),
         initialize,
         plannerSnapshot() {
             const ctx = getContext();

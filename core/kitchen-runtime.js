@@ -1,3 +1,4 @@
+import { createKitchenCards } from '../modules/kitchen-data/card.js';
 // 酒馆后厨 0.1 — Based on LittleWhiteBox by biex.
 import { installFloorSummaries } from '../modules/story-summary/floor-summary.js';
 import { createModuleEvents, event_types } from './event-manager.js';
@@ -118,6 +119,15 @@ function configureWorkspace() {
             if (!kitchen.isActive('memory')) return;
             if (!memory) throw new Error('剧情记忆尚未准备好，请刷新后重试。');
             memory.openStoryMemory();
+        },
+        data: async () => {
+            await requireFeatures();
+            if (!kitchen.isActive('data')) return;
+            memory.configureKitchenCards(createKitchenCards({
+                memory: memory.kitchenCardMemory(), world: worldArchive.cardData,
+                isCurrent: identity => memory.kitchenCardMemory().read().identity === identity,
+            }));
+            memory.openStoryMemorySettings('data');
         },
         proofreading: async () => {
             await requireFeatures();

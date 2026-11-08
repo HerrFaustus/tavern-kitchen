@@ -234,3 +234,8 @@
 #tk-module-native-controls > h4 { margin: 0 0 8px; font-size: 1em; }
 #tk-module-native-controls > details { margin-block: 6px; }
 #tk-module-native-controls > details > summary { font-weight: 600; cursor: pointer; padding-block: 4px; }
+
+#tk-workspace .tk-panel-page > .tk-workspace-header { grid-row: 1; }
+#tk-workspace .tk-panel-page > .tk-workspace-body { grid-row: 2; }
+#tk-workspace .tk-panel-page > .tk-workspace-controls { grid-row: 3; }
+#tk-workspace .tk-panel-page.tk-page-full { grid-template-rows: auto minmax(0, 1fr); }

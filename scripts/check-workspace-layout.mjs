@@ -30,9 +30,10 @@ try {
     await page.evaluate(async () => {
         const { createKitchenWorkspace } = await import('/workspace.js');
         const workspace = createKitchenWorkspace({});
+        globalThis.workspace = workspace;
         let enabled = true;
         const configure = () => workspace.configure({
-            actions: { map() {
+            actions: { suspense() {}, settings() {}, map() {
                 const mount = workspace.getMount('map');
                 if (mount.querySelector('iframe')) return;
                 const frame = globalThis.document.createElement('iframe');
@@ -71,6 +72,7 @@ try {
         await page.setViewportSize({ width, height: 780 });
         const ratio = await frame.locator('footer').evaluate(el => el.getBoundingClientRect().height / globalThis.innerHeight);
         assert.ok(Math.abs(ratio - 1 / 3) < .015);
+        assert.ok(await frame.locator('footer').evaluate(el => el.getBoundingClientRect().top >= globalThis.innerHeight * .65));
         assert.equal(await frame.locator('[data-panel="map"]').count(), 1);
         assert.ok(await frame.locator('.tk-panel-controls').evaluate(el => el.open));
         assert.equal(await page.locator('.tk-workspace-controls').count(), 0);
@@ -86,6 +88,20 @@ try {
     assert.equal(await frame.locator('#local-prompt').inputValue(), '保留修改后的本地提示词');
     assert.equal(await frame.locator('[data-settings-group="prompts"]').evaluate(el => el.open), false);
 
+    for (const width of [319,1280]) {
+        await page.setViewportSize({width,height:780});
+        await page.evaluate(() => globalThis.workspace.open('suspense'));
+        const native = page.locator('#tk-module-native-controls');
+        await native.waitFor();
+        const box = await native.evaluate(el => ({top:el.getBoundingClientRect().top,body:el.previousElementSibling.getBoundingClientRect().bottom,height:el.getBoundingClientRect().height,page:el.parentElement.getBoundingClientRect().height,header:el.parentElement.firstElementChild.getBoundingClientRect().height}));
+        assert.ok(box.top >= box.body - 1,'settings must follow content');
+        assert.ok(Math.abs(box.height / (box.page-box.header) - 1/3) < .02);
+        await page.evaluate(() => globalThis.workspace.open('settings'));
+        await page.waitForFunction(() => globalThis.document.querySelector('.tk-panel-page').classList.contains('tk-page-full'));
+        assert.ok(await native.isHidden());
+    }
+    await page.evaluate(() => globalThis.workspace.open('map'));
+    await frame.locator('#tk-module-native-controls').waitFor();
     await frame.getByRole('checkbox', { name: '启用地图' }).focus();
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => globalThis.document.querySelector('#tk-topbar button').getAttribute('aria-expanded') === 'false');

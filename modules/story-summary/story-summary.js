@@ -97,7 +97,7 @@ import { formatStorySummaryL2Events } from "./prompt-events.js";
 import { projectStoryCharacters } from "./prompt-characters.js";
 import { notifyWorldSourcesChanged } from '../world-records/sources.js';
 import { prepareMemorySources, validateMemorySources } from '../world-records/turn-runtime.js';
-import { firstInvalidMemorySource } from './data/turn-source.js';
+import { captureRangeSource, firstInvalidMemorySource } from './data/turn-source.js';
 import { worldAuthorityForContext, authorityStoryStore } from '../world-records/authority-context.js';
 import { getAutoSummaryPlan } from './generate/summary-trigger.js';
 import { getSummarySourceEnd } from './generate/source-boundary.js';
@@ -2125,6 +2125,35 @@ async function handleFrameMessage(event) {
     }
 
     switch (data.type) {
+        case 'KITCHEN_CARD_INFO':
+        case 'KITCHEN_CARD_EXPORT':
+        case 'KITCHEN_CARD_IMPORT':
+            observeBackgroundTask((async () => {
+                try {
+                    if (!kitchenCards) throw new Error('数据模块尚未就绪，请重试');
+                    if (['KITCHEN_CARD_INFO','KITCHEN_CARD_EXPORT'].includes(data.type)) {
+                        const card = await kitchenCards.export();
+                        if (data.type === 'KITCHEN_CARD_INFO') {
+                            postToFrame({ type: 'KITCHEN_CARD_INFO_RESULT', counts: {
+                                rounds: card.data.summary.data.rounds?.length || 0,
+                                people: card.data.world?.entities.filter(row => row.kind === 'person').length || 0,
+                                notes: card.data.notes.length,
+                            } });
+                            return;
+                        }
+                        const url = URL.createObjectURL(new Blob([JSON.stringify(card)], { type: 'application/json' }));
+                        const link = document.createElement('a');
+                        link.href = url; link.download = '后厨卡-' + new Date().toISOString().slice(0,10) + '.json';
+                        link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+                        postToFrame({ type: 'KITCHEN_CARD_RESULT', success: true, message: '后厨卡已导出' });
+                    } else {
+                        const result = await kitchenCards.import(JSON.parse(data.text));
+                        postToFrame({ type: 'KITCHEN_CARD_RESULT', success: true, message: '后厨卡已导入，共 ' + result.rounds + ' 轮总结、' + result.people + ' 个人物、' + result.notes + ' 份札记' });
+                    }
+                } catch (error) { postToFrame({ type: 'KITCHEN_CARD_RESULT', success: false, message: error.message }); }
+            })(), { source: import.meta.url, operation: 'kitchen-card' });
+            break;
+
         case 'DISMISS_SUMMARY_STATUS':
             if (data.statusId === lastSummaryStatus.statusId && lastSummaryStatus.type === 'SUMMARY_ERROR') {
                 postToFrame({ type: 'SUMMARY_STATUS', statusText: '' });
@@ -4044,7 +4073,7 @@ export function openStoryMemory(floor = Math.max(0, getContext().chat.length - 1
     postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view: 'memory' });
 }
 export function openStoryMemorySettings(view = 'settings') {
-    memoryWorkspaceView = view === 'proofreading' ? view : 'memory';
+    memoryWorkspaceView = ['proofreading','data'].includes(view) ? view : 'memory';
     openPanelForMessage(Math.max(0, getContext().chat.length - 1));
     postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view });
 }
@@ -4109,4 +4138,68 @@ export async function summarizeFloorOnDemand(floor) {
 export function invalidateWorldContext() {
     if (isStorySummaryEnabledForCurrentChat()) cancelRecallAndClearPrompt('world-state-changed');
     if (frameReady) postToFrame({ type: 'SUMMARY_FULL_DATA', payload: buildFramePayload(getPublishedSummaryStore()) });
+}
+
+
+let kitchenCards;
+export function configureKitchenCards(adapter) { kitchenCards = adapter; }
+export function kitchenCardMemory() {
+    const source = () => {
+        const chat = getContext().chat || [];
+        return { digest: chat.length ? captureRangeSource(chat, 0, chat.length - 1).digest : '', length: chat.length };
+    };
+    return {
+        read() {
+            const identity = getChatIdentity(getContext());
+            if (!identity) throw new Error('请先打开聊天');
+            getSummaryStore();
+            return { identity, memory: readPublishedSummaryMemory(), summary: buildSummaryExportPackage(getPublishedSummaryStore()), source: source() };
+        },
+        async write(callback) {
+            const context = getContext(), identity = getChatIdentity(context), chatId = context.chatId;
+            if (!identity) throw new Error('请先打开聊天');
+            if (guard.isAnyRunning('summary','vector','anchor')) throw new Error('请等待当前后厨任务结束后导入');
+            cancelActiveSummaryExecution();
+            cancelRecallAndClearPrompt('kitchen-card-import');
+            return runVectorWriteTask({ chatId, kind: 'kitchen-card-import', scope: VECTOR_WRITE_SCOPES.IO }, async () => {
+                await waitForMemoryCommit();
+                const previous = readSummaryMemory(), basis = source();
+                const assertCurrent = () => {
+                    if (getChatIdentity(getContext()) !== identity || JSON.stringify(source()) !== JSON.stringify(basis)) throw new Error('聊天或原文已变化，导入已取消');
+                };
+                assertCurrent();
+                return callback({
+                    assertCurrent,
+                    async commit(data, namespace, assertWorld) {
+                        assertCurrent(); assertWorld();
+                        const current = readSummaryMemory();
+                        if (JSON.stringify(current) !== JSON.stringify(previous)) throw new Error('总结数据已变化，请重试');
+                        let next;
+                        if (JSON.stringify(data.source) === JSON.stringify(basis)) {
+                            next = { storySummary: structuredClone(data.memory.storySummary), stateAtoms: structuredClone(data.memory.stateAtoms), l0Index: structuredClone(data.memory.l0Index) };
+                            if (firstInvalidMemorySource(next.storySummary, getContext().chat || []) != null) throw new Error('总结来源无法与当前聊天对应');
+                        } else {
+                            const imported = extractSummaryImportJson(data.summary);
+                            next = prepareImportedSummary(previous, imported, (getContext().chat?.length || 0) - 1);
+                            next.storySummary.importedArchive = { source: structuredClone(data.source), memory: structuredClone(data.memory) };
+                        }
+                        if (Object.hasOwn(previous.storySummary, 'hideSummarizedHistory')) next.storySummary.hideSummarizedHistory = previous.storySummary.hideSummarizedHistory;
+                        next.storySummary.dataBranch = namespace;
+                        await commitSummaryMemory(chatId, next, { previous, resolvesSourceInvalidity: true,
+                            validate: () => { assertCurrent(); assertWorld(); },
+                            invalidate: async () => {
+                                await updateMeta(chatId, { lastChunkFloor: -1, fingerprint: null });
+                                await clearAllChunks(chatId); await clearEventVectors(chatId); await clearStateVectors(chatId);
+                                invalidateLexicalIndex();
+                            },
+                        });
+                        notifyStorySummaryChatState();
+                        await sendFrameBaseData(getSummaryStore(), getContext().chat.length);
+                        sendFrameFullData(getSummaryStore(), getContext().chat.length);
+                        refreshEntityLexiconAndWarmup();
+                    },
+                });
+            });
+        },
+    };
 }

@@ -38,6 +38,12 @@ try {
             } else if (event.data.type === 'FRAME_READY') {
                 reply({ type: 'LOAD_PANEL_CONFIG', config: {} });
                 reply({ type: 'KITCHEN_MEMORY_VIEW', view: 'memory' });
+            } else if (event.data.type === 'KITCHEN_CARD_INFO') {
+                reply({ type: 'KITCHEN_CARD_INFO_RESULT', counts: { rounds: 7, people: 2, notes: 1 } });
+            } else if (event.data.type === 'KITCHEN_CARD_IMPORT') {
+                globalThis.importedCard = JSON.parse(event.data.text); reply({ type:'KITCHEN_CARD_RESULT', success:true, message:'后厨卡已导入' });
+            } else if (event.data.type === 'KITCHEN_CARD_EXPORT') {
+                globalThis.exportedCard = true; reply({ type: 'KITCHEN_CARD_RESULT', success: true, message: '后厨卡已导出' });
             } else if (event.data.type === 'SAVE_PANEL_CONFIG') {
                 globalThis.savedPrompt = event.data.promptChange;
                 reply({ type: 'PANEL_CONFIG_SAVE_RESULT', requestId: event.data.requestId, success: true });
@@ -56,9 +62,28 @@ try {
     await page.waitForFunction(() => globalThis.savedPrompt?.value === '只提交本轮测试');
     assert.ok(await frame.locator('.archive').evaluate(el => !el.inert && el.checkVisibility()));
     assert.ok(await frame.locator('#settings-modal').evaluate(el => el.closest('#summary-options') && globalThis.getComputedStyle(el).position === 'static'));
+    const view = name => page.evaluate(view => globalThis.document.querySelector('iframe').contentWindow.postMessage({ source:'TavernKitchen', type:'KITCHEN_MEMORY_VIEW', view },globalThis.location.origin), name);
+    assert.ok(await frame.locator('#tab-transfer').isHidden());
+    await view('data');
+    await frame.locator('#data-overview').waitFor();
+    await frame.locator('#kitchen-card-counts').filter({ hasText: '7 轮总结' }).waitFor();
+    assert.ok(await frame.locator('.archive').isHidden());
+    assert.ok(await frame.locator('#summary-controls').isHidden());
     await frame.locator('#tab-transfer > summary').click();
     assert.ok(await frame.locator('#btn-copy-summary').isVisible());
-    const view = name => page.evaluate(view => globalThis.document.querySelector('iframe').contentWindow.postMessage({ source:'TavernKitchen', type:'KITCHEN_MEMORY_VIEW', view },globalThis.location.origin), name);
+    await frame.getByRole('button', { name: '导出后厨卡', exact: true }).click();
+    await page.waitForFunction(() => globalThis.exportedCard === true);
+    await frame.locator('#kitchen-card-file').setInputFiles({name:'fixture.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({type:'TavernKitchenCard',version:1,data:{}}))});
+    await frame.locator('#confirm-ok').click();
+    await page.waitForFunction(() => globalThis.importedCard?.type === 'TavernKitchenCard');
+    await frame.locator('#kitchen-card-file').setInputFiles({name:'bad.json',mimeType:'application/json',buffer:Buffer.from('{}')});
+    await frame.locator('#kitchen-card-status').filter({hasText:'不支持的后厨卡格式'}).waitFor();
+    for (const width of [319,1280]) {
+        await page.setViewportSize({width,height:780});
+        const box = await frame.locator('#data-controls').evaluate(el => ({top:el.getBoundingClientRect().top,height:el.getBoundingClientRect().height,total:globalThis.innerHeight}));
+        assert.ok(Math.abs(box.height/box.total - 1/3) < .02);
+        assert.ok(box.top >= box.total * .65);
+    }
     await view('proofreading');
     await frame.locator('#memory-maintenance-enabled').waitFor({state:'attached'});
     await frame.locator('#tab-agent.active').waitFor();
@@ -151,6 +176,7 @@ try {
         assert.ok(await affairs.isVisible());
         const split = await frame.locator('#situation-controls').evaluate(el => ({ controls: el.getBoundingClientRect().height, total: globalThis.innerHeight }));
         assert.ok(Math.abs(split.controls / split.total - 1 / 3) < .015);
+        assert.ok(await frame.locator('#situation-controls').evaluate(el => el.getBoundingClientRect().top >= globalThis.innerHeight * .65));
         assert.ok(await scenery.isVisible());
         assert.ok(await frame.locator('body').evaluate(body => body.scrollWidth <= body.clientWidth));
         await page.screenshot({ path: path.resolve('output', 'situations-' + width + '.png') });

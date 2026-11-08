@@ -1587,6 +1587,14 @@ const UNANNOTATED_LABEL = '未标注';
         if (!d || d.source !== 'TavernKitchen') return;
 
         switch (d.type) {
+            case 'KITCHEN_CARD_INFO_RESULT':
+                $('kitchen-card-counts').textContent = d.counts.rounds + ' 轮总结 · ' + d.counts.people + ' 个人物 · ' + d.counts.notes + ' 份札记';
+                break;
+            case 'KITCHEN_CARD_RESULT':
+                $('kitchen-card-status').textContent = d.message;
+                $('btn-export-kitchen-card').disabled = $('btn-import-kitchen-card').disabled = false;
+                if (d.success) postMsg('KITCHEN_CARD_INFO');
+                break;
             case 'WORLD_EVOLUTION_RECORDS': {
                 const container = $(d.section === 'people' ? 'people-developments' : 'situation-developments');
                 container.replaceChildren();
@@ -1624,6 +1632,9 @@ const UNANNOTATED_LABEL = '未标注';
             case 'KITCHEN_MEMORY_VIEW': {
                 const options = $('summary-options'), modal = $('settings-modal');
                 const summary = d.view === 'memory';
+                $('data-overview').hidden = d.view !== 'data';
+                $('data-controls').hidden = d.view !== 'data';
+                if (d.view === 'data') postMsg('KITCHEN_CARD_INFO');
                 $('summary-controls').hidden = !summary;
                 $('people-controls').hidden = !['people','relations'].includes(d.view);
                 $('situation-controls').hidden = d.view !== 'world';
@@ -1886,6 +1897,25 @@ const UNANNOTATED_LABEL = '未标注';
     // ═══════════════════════════════════════════════════════════════════════════
 
     function bindEvents() {
+        for (const id of ['tab-transfer','tab-backups','tab-clear']) $('legacy-data-tools').append($(id));
+        const setCardBusy = () => {
+            $('btn-export-kitchen-card').disabled = $('btn-import-kitchen-card').disabled = true;
+            $('kitchen-card-status').textContent = '正在处理后厨卡…';
+        };
+        $('btn-export-kitchen-card').onclick = () => { setCardBusy(); postMsg('KITCHEN_CARD_EXPORT'); };
+        $('btn-import-kitchen-card').onclick = () => $('kitchen-card-file').click();
+        $('kitchen-card-file').onchange = async event => {
+            const file = event.target.files?.[0]; if (!file) return;
+            try {
+                if (file.size > 50 * 1024 * 1024) throw new Error('后厨卡超过 50 MB');
+                const text = await file.text(), card = JSON.parse(text);
+                if (card.type !== 'TavernKitchenCard' || card.version !== 1) throw new Error('不支持的后厨卡格式');
+                if (!await showConfirm('导入后厨卡', '导入后将采用卡内数据，替换当前聊天的后厨数据。', '导入', '取消')) return;
+                setCardBusy(); postMsg('KITCHEN_CARD_IMPORT', { text });
+            } catch (error) { $('kitchen-card-status').textContent = error.message; }
+            finally { event.target.value = ''; }
+        };
+
         // Section edit buttons
         $$('.sec-btn[data-section]').forEach(b => b.onclick = () => openEditor(b.dataset.section));
 

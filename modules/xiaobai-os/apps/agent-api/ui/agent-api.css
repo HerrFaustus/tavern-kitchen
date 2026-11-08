@@ -7,5 +7,5 @@
 .agent-api-panel [hidden] { display: none !important; }
 .agent-api-panel .text-api-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
 
-.agent-api-scroll { overflow: hidden; box-sizing: border-box; }
-.agent-api-content, .agent-api-panel { height: 100%; min-height: 0; }
+.agent-api-scroll { box-sizing: border-box; }
+.agent-api-content, .agent-api-panel { min-height: 0; }

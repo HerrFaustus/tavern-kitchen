@@ -144,3 +144,13 @@ html.tk-embedded[data-kitchen-view="settings"] #tab-agent.active { display: grid
 .memory-controls .memory-settings { border-bottom: 0; }
 
 #tab-agent > .memory-controls { margin: 0; }
+
+html.tk-embedded[data-kitchen-view="data"] body {
+    display: grid; grid-template-rows: minmax(0, 2fr) minmax(0, 1fr); height: 100dvh; margin: 0; overflow: hidden;
+}
+html.tk-embedded[data-kitchen-view="data"] :is(.archive, #settings-modal) { display: none !important; }
+#data-overview { grid-row: 1; min-height: 0; overflow-y: auto; padding: 5px; overflow-wrap: anywhere; }
+#data-controls { grid-row: 2; min-height: 0; margin: 0 5px; overflow-y: auto; box-sizing: border-box; }
+#data-overview[hidden], #data-controls[hidden] { display: none; }
+#tab-agent > .memory-record-view { grid-row: 1; }
+#tab-agent > .memory-controls { grid-row: 2; }

@@ -27,19 +27,20 @@ function syncNativeControls(target) {
         for (const property of properties) target.style.setProperty(`--tk-${control.dataset.control}-${property}`, style.getPropertyValue(property));
     }
 }
-export const KITCHEN_TABS = [['overview', '主角'], ['world', '世界'], ['memory', '剧情'], ['planner', '编剧'], ['settings', 'API']];
+export const KITCHEN_TABS = [['overview', '主角'], ['world', '世界'], ['memory', '剧情'], ['planner', '编剧'], ['settings', 'API'], ['data', '数据']];
 export const KITCHEN_ROUTES = {
     overview: [['overview', '主角']],
     memory: [['memory', '总结'], ['suspense', '悬念'], ['clues', '线索'], ['proofreading', '校对']],
     world: [['people', '人物'], ['map', '地图'], ['situation', '局势'], ['opening','世界生成']],
     planner: [['planner', '编剧']],
     settings: [['settings', 'API']],
+    data: [['data','数据']],
 };
 const routeAliases = new Map([['world', 'people'], ['world-engine', 'situation'], ['world-records', 'situation'], ['summaries', 'memory'], ['memory-settings', 'memory'], ['relations', 'people'], ['agent-api', 'settings']]);
 const canonicalRoute = id => routeAliases.get(id) || id;
 const parentOf = id => KITCHEN_TABS.find(([key]) => KITCHEN_ROUTES[key].some(([route]) => route === id))?.[0];
 const worldTabs = new Set(['map', 'agent-api', 'settings']);
-const memoryTabs = new Set(['memory', 'proofreading', 'situation', 'people', 'relations']);
+const memoryTabs = new Set(['data', 'memory', 'proofreading', 'situation', 'people', 'relations']);
 export const getKitchenMount = id => workspace?.getMount(id) ?? null;
 export const openKitchenTab = id => workspace?.open(id);
 export const closeKitchenWorkspace = () => workspace?.close();
@@ -173,8 +174,10 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
         if (controls.parentElement !== page) page.append(controls);
         page.classList.remove('tk-controls-in-frame');
         if (settingsHeading) settingsHeading.hidden = false;
+        controls.hidden = active === 'settings' && !body.hidden;
     };
     const placeControls = () => {
+        page.classList.toggle('tk-page-full', active === 'settings' && !body.hidden);
         if (!isOpen() || body.hidden) { restoreControls(); return; }
         const mount = api.getMount(active);
         for (const [frame, state] of frames) {
@@ -182,6 +185,7 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
             const target = [...state.document.querySelectorAll('[data-kitchen-controls]')]
                 .find(node => node.dataset.kitchenControls.split(' ').includes(active) && !node.closest('[hidden]'));
             if (!target || !target.checkVisibility()) continue;
+            controls.hidden = false;
             if (controls.parentElement !== target) {
                 restoreLocalSettings();
                 const summary = target.querySelector(':scope > summary');
