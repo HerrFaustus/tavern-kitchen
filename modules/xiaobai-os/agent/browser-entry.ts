@@ -5,8 +5,8 @@ import { setHostChatCompletionsRequestHeadersProvider } from '../../../shared/ho
 
 type UnknownRecord = Record<string, unknown>;
 
-const connectionSystem = definePanelPrompt('settings','worldConnectionSystem','世界与地图接口测试','这是一次由用户主动发起的连接测试。只回复 OK。');
-const connectionInput = definePanelPrompt('settings','worldConnectionInput','世界与地图测试输入','OK');
+const connectionSystem = definePanelPrompt('people|situation|map','worldConnectionSystem','世界与地图接口测试','这是一次由用户主动发起的连接测试。只回复 OK。');
+const connectionInput = definePanelPrompt('people|situation|map','worldConnectionInput','世界与地图测试输入','OK');
 
 export interface XiaobaiOsAgentRunRequest {
     providerConfig: UnknownRecord;

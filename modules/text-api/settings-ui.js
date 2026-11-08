@@ -1,6 +1,6 @@
+import { requestFields, supportsRequestExtras } from '../../shared/common/request-extras.js';
 import './settings-ui.css';
 import { createIdentifier } from '../../shared/common/identifier.js';
-import { buildPresetActionIcon, syncConfigSaveButton } from '../agent-core/ui/settings-markup.js';
 import { createSaveFeedback } from '../agent-core/ui/save-feedback.js';
 import { PROVIDER_OPTIONS, TOOL_MODE_OPTIONS } from '../agent-core/provider-resolution.js';
 import { samplingParametersFor } from '../agent-core/sampling.js';
@@ -8,6 +8,7 @@ import { resolveReasoningCapability, getReasoningModeOptions, getReasoningEffort
 import { getModelListAuthOptions, normalizeModelListAuth, supportsModelListAuth } from '../agent-core/model-list-auth.js';
 import { createPreset, HOST_BINDING, HOST_PROVIDER } from './model.js';
 import { PROFILE_FEATURES, profileChoices } from './profiles.js';
+import { CONNECTION_TEST_PROMPT } from './prompts.js';
 import { TEXT_API_COPY as COPY, deletionMessage } from './copy.js';
 
 export function mountTextApiSettings(root, { feature, namespace, transport, library = false }) {
@@ -15,6 +16,7 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
     const win = doc.defaultView;
     const origin = new URL(doc.referrer || win.location.href).origin;
     let settings, draft, selected, busy = false, revision = 0, networkBusy = false, destroyed = false;
+    let testMessage = CONNECTION_TEST_PROMPT;
     const requests = new Map();
     const element = (tag, text, className) => {
         const node = doc.createElement(tag); if (text != null) node.textContent = text;
@@ -22,15 +24,17 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
     };
     root.classList.add('text-api');
     const fields = element('fieldset');
+    let configuration = fields;
     const status = element('div', '', 'text-api-status'); status.setAttribute('role', 'status');
     const retry = element('button', COPY.retry); retry.type = 'button'; retry.hidden = true;
-    root.replaceChildren(fields, status, retry);
+    root.replaceChildren(status, retry, fields);
     const saveFeedback = createSaveFeedback(syncSaveButton);
     function syncSaveButton(value = saveFeedback.current) {
         const button = fields.querySelector('[data-save]');
         if (button) {
-            syncConfigSaveButton(button, value, { className: 'text-api-icon', disabled: !draft });
-            if (value.status === 'idle') { button.title = COPY.save; button.setAttribute('aria-label', COPY.save); }
+            button.disabled = !draft || value.status === 'saving';
+            button.textContent = value.status === 'saving' ? COPY.saving : value.status === 'success' ? COPY.saved : '保存';
+            button.setAttribute('aria-label', value.status === 'idle' ? COPY.save : button.textContent);
         }
     }
     fields.addEventListener('input', () => saveFeedback.resetSuccess());
@@ -61,10 +65,12 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
     }
     // eslint-disable-next-line no-restricted-syntax -- Checks parent window and exact origin before reading a response.
     win.addEventListener('message', receive);
-    function control(label, input, container = fields) {
-        const field = input.matches('input, select') ? input : input.querySelector('input, select');
+    function control(label, input, container = configuration) {
+        const field = input.matches('input, select, textarea') ? input : input.querySelector('input, select, textarea');
         field?.setAttribute('aria-label', label);
-        const wrapper = element('label'); wrapper.append(element('span', label), input); container.append(wrapper); return wrapper;
+        const wrapper = element('label');
+        if (container === configuration) wrapper.dataset.settingSection = 'model';
+        wrapper.append(element('span', label), input); container.append(wrapper); return wrapper;
     }
     function input(key, type = 'text', source = draft) {
         const node = element('input'); node.type = type; node.value = source[key] ?? '';
@@ -82,14 +88,8 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
         node.onchange = () => { revision++; feedback(''); Promise.resolve().then(() => change(node.value)).catch(error => feedback(error.message, true)); };
         return node;
     }
-    function button(label, run, icon) {
-        const node = element('button', icon ? '' : label, icon ? 'text-api-icon' : ''); node.type = 'button';
-        if (icon) {
-            node.title = label; node.setAttribute('aria-label', label);
-            const range = doc.createRange(); range.selectNodeContents(node);
-            // eslint-disable-next-line no-unsanitized/method -- First-party static SVG selected by a fixed action name.
-            node.append(range.createContextualFragment(buildPresetActionIcon(icon)));
-        }
+    function button(label, run) {
+        const node = element('button', label); node.type = 'button';
         node.onclick = () => { Promise.resolve().then(run).catch(error => feedback(error.message, true)); };
         return node;
     }
@@ -116,6 +116,7 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
         if (busy) return;
         busy = true;
         const stamp = revision;
+        configuration.append(status);
         fields.querySelector('.text-api-presets').disabled = true;
         saveFeedback.set({ status: 'saving' });
         feedback(COPY.saving);
@@ -168,55 +169,93 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
             settings = result.settings; choose(result.id); feedback(result.message);
         } finally { busy = false; fields.disabled = false; render(); }
     }
+    function appendTestMessage() {
+        const details = element('details');
+        const input = element('textarea');
+        input.rows = 2;
+        input.value = testMessage;
+        const local = element('small'); local.setAttribute('role', 'status');
+        const controls = element('fieldset');
+        details.append(element('summary', '测试消息'), controls);
+        control('仅用于测试生成', input, controls);
+        async function persist(value) {
+            controls.disabled = true;
+            try {
+                testMessage = await request('save-test-message', { message: value });
+                input.value = testMessage;
+                local.textContent = '已保存';
+            } catch (error) { local.textContent = error.message; }
+            finally { controls.disabled = false; }
+        }
+        controls.append(button('保存', () => persist(input.value)), button('恢复默认并保存', () => persist(null)), local);
+        details.dataset.settingSection = 'prompts'; configuration.append(details);
+    }
     function render() {
         if (destroyed) return;
         if (!library) {
+            configuration = fields;
             fields.replaceChildren();
             const choices = [{ value: '', label: COPY.unset, disabled: true },
-                ...(feature === 'summary' ? [{ value: HOST_BINDING, label: COPY.host }] : []), ...profileChoices(settings, feature)];
+                ...(feature === 'summary' ? [{ value: HOST_BINDING, label: '跟随酒馆主 API' }] : []), ...profileChoices(settings, feature)];
             const selector = select(choices, settings.bindings[feature], value => {
                 mutate(value === HOST_BINDING ? { type: 'select-host' } : { type: 'select', id: value })
                     .catch(error => { selector.value = settings.bindings[feature] || ''; feedback(error.message, true); });
             });
             control(PROFILE_FEATURES[feature] + '使用的配置', selector);
             const current = settings.presets.find(p => p.id === settings.bindings[feature]);
-            if (current) fields.append(element('p', current.model || '此配置尚未选择模型', 'text-api-status'));
-            fields.append(element('p', '配置的创建、命名和编辑统一在 设置 → API 配置 中完成。', 'text-api-status'));
+            if (current) configuration.append(element('p', current.model || '此配置尚未选择模型', 'text-api-status'));
+            configuration.append(element('p', '在「API」中创建、命名和编辑配置。', 'text-api-status'));
             return;
         }
         const parametersOpen = fields.querySelector('.text-api-parameters')?.open || false;
+        const settingsOpen = fields.querySelector('.text-api-configuration')?.open ?? true;
+        configuration = element('details', null, 'tk-module-settings text-api-configuration');
+        configuration.open = settingsOpen;
+        configuration.dataset.kitchenControls = 'settings agent-api';
+        configuration.append(element('summary', '设置'));
         fields.replaceChildren();
         const toolbar = element('fieldset', null, 'text-api-presets');
         toolbar.disabled = busy;
-        const choices = [{ value: '', label: COPY.unset, disabled: true },
+        const choices = [{ value: HOST_BINDING, label: '跟随酒馆主 API' },
             ...settings.presets.map(preset => ({ value: preset.id, label: preset.name }))];
-        const selector = select(choices, selected, value => {
+        const selector = select(choices, selected || HOST_BINDING, value => {
             choose(value);
-        }); selector.setAttribute('aria-label', COPY.title);
+        });
+        control('选择连接', selector, toolbar);
+        const usage = Object.entries(PROFILE_FEATURES).filter(([key]) =>
+            (settings.bindings[key] ?? (key === 'opening' ? settings.bindings.world : null)) === selected).map(([,name]) => name);
+        toolbar.append(element('small', usage.length ? '用于：' + usage.join('、') : '尚无功能使用此配置'));
         const actions = element('div', null, 'text-api-tools');
-        for (const [label, run, icon] of [[COPY.add, add, 'add'], [COPY.rename, rename, 'rename'], [COPY.save, save, 'save'], [COPY.remove, remove, 'delete']]) {
-            const item = button(label, run, icon);
-            item.disabled = icon !== 'add' && (!draft || (selected === HOST_BINDING && icon !== 'save') || (icon === 'delete' && settings.presets.length === 1));
-            if (icon === 'save') item.dataset.save = '';
-            actions.append(item);
+        actions.dataset.settingSection = 'function';
+        actions.append(button('新建', add));
+        if (draft && selected !== HOST_BINDING) {
+            const saveButton = button('保存', save); saveButton.dataset.save = ''; actions.append(saveButton);
         }
-        const libraryTitle = element('h2', '配置库');
-        fields.append(libraryTitle, element('p', '编辑或新建配置不会更改各板块的选择。', 'text-api-status'));
-        const imports = element('div', null, 'text-api-imports');
-        imports.append(button('复制酒馆主接口', () => importTavern(false)), button('只复制酒馆连接', () => importTavern(true)));
-        fields.append(imports);
-        toolbar.append(selector, actions); fields.append(toolbar);
+        const imports = element('details'); imports.append(element('summary','从酒馆导入'),
+            button('复制完整配置', () => importTavern(false)), button('只复制连接', () => importTavern(true)));
+        actions.append(imports);
+        if (draft && selected !== HOST_BINDING) {
+            const more = element('details'), removeButton = button(COPY.remove, remove);
+            removeButton.disabled = settings.presets.length === 1 || usage.length > 0;
+            more.append(element('summary','更多'),button(COPY.rename,rename),removeButton);
+            actions.append(more);
+        }
+        configuration.append(actions, status, retry);
+        status.dataset.settingSection = retry.dataset.settingSection = 'function';
+        fields.append(toolbar, configuration);
         syncSaveButton();
         if (!draft) return;
         if (selected === HOST_BINDING) {
-            fields.append(button(COPY.test, async () => {
+            const test = button('测试生成', async () => {
                 if (networkBusy) return;
-                networkBusy = true; const stamp = revision; feedback(COPY.testing);
+                networkBusy = true; configuration.append(status); const stamp = revision; feedback(COPY.testing);
                 try { await request('test', { preset: structuredClone(draft) }); if (stamp === revision) feedback(COPY.testOk); }
                 catch (error) { if (stamp === revision) feedback(error.message, true); }
                 finally { networkBusy = false; }
-            }));
-            if (feature === 'planner') fields.append(element('p', COPY.plannerKey, 'text-api-status'));
+            });
+            test.dataset.settingSection = 'function'; configuration.append(test);
+            appendTestMessage();
+            if (feature === 'planner') configuration.append(element('p', COPY.plannerKey, 'text-api-status'));
             return;
         }
         control('接口用途', select([{ value: 'text', label: '文本生成' }, { value: 'embedding', label: '向量嵌入' }, { value: 'rerank', label: '重排' }], draft.kind || 'text', value => {
@@ -228,7 +267,7 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
             const prefix = element('div', null, 'text-api-grid');
             control(COPY.prefix, select([{ value: 'auto', label: COPY.autoPrefix }, { value: 'custom', label: COPY.customPrefix }], draft.prefixMode, value => { draft.prefixMode = value; render(); }), prefix);
             if (draft.prefixMode === 'custom') control(COPY.customPrefix, input('customPrefix'), prefix);
-            fields.append(prefix);
+            prefix.dataset.settingSection = 'model'; configuration.append(prefix);
             const key = input('apiKey', 'password'); const keyRow = element('div', null, 'text-api-inline');
             const reveal = button(COPY.show, () => { key.type = key.type === 'password' ? 'text' : 'password'; reveal.textContent = key.type === 'password' ? COPY.show : COPY.hide; });
             keyRow.append(key, reveal); control(COPY.key, keyRow);
@@ -237,6 +276,18 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
             control(COPY.model, modelInput);
             if (supportsModelListAuth(draft.provider)) control(COPY.modelListAuth, select(getModelListAuthOptions(draft.provider), normalizeModelListAuth(draft.modelListAuth, draft.provider), value => { draft.modelListAuth = value; }));
         }
+        if (supportsRequestExtras(draft.provider)) {
+            const extras = element('details', null, 'text-api-request-extras');
+            extras.append(element('summary', '附加请求参数'), element('p', '支持 YAML 和 JSON。主体参数覆盖同名字段，随后移除排除项。', 'text-api-status'));
+            for (const [key, label, example] of requestFields) {
+                const area = element('textarea');
+                area.className = 'text_pole'; area.rows = 3; area.spellcheck = false;
+                area.value = draft.requestExtras?.[key] || ''; area.placeholder = example;
+                area.oninput = () => { (draft.requestExtras ??= {})[key] = area.value; revision++; feedback(''); };
+                control(label, area, extras);
+            }
+            extras.dataset.settingSection = 'model'; configuration.append(extras);
+        }
         const modelList = select([{ value: '', label: COPY.manual }], '', value => { if (value) { draft.model = value; render(); } });
         modelList.hidden = true; modelList.setAttribute('aria-label', COPY.pull);
         const networkActions = element('div', null, 'text-api-inline');
@@ -244,6 +295,7 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
             if (networkBusy) return;
             networkBusy = true;
             networkActions.querySelectorAll('button').forEach(node => { node.disabled = true; });
+            networkActions.after(status);
             const stamp = revision; feedback(action === 'models' ? COPY.pulling : COPY.testing);
             try {
             const result = await request(action, { preset: structuredClone(draft) });
@@ -251,8 +303,8 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
             if (action === 'models') {
                 modelList.replaceChildren(...[{ value: '', label: COPY.manual }, ...result.map(value => ({ value, label: value }))].map(option => {
                     const node = element('option', option.label); node.value = option.value; return node;
-                })); modelList.hidden = false; feedback(COPY.modelCount(result.length));
-            } else feedback(COPY.testOk);
+                })); modelList.hidden = false; feedback('已获取 ' + COPY.modelCount(result.length));
+            } else feedback(({embedding:'嵌入测试成功',rerank:'重排测试成功'})[draft.kind] || COPY.testOk);
             } catch (error) {
                 if (stamp === revision) feedback(error.message, true);
             } finally {
@@ -260,8 +312,9 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
                 fields.querySelectorAll('[data-network]').forEach(node => { node.disabled = false; });
             }
         }
-        if (draft.provider !== HOST_PROVIDER) networkActions.append(button(COPY.pull, () => connect('models')));
-        networkActions.append(button(COPY.test, () => connect('test'))); networkActions.querySelectorAll('button').forEach(node => { node.dataset.network = ''; node.disabled = networkBusy; }); fields.append(networkActions, modelList);
+        if (draft.provider !== HOST_PROVIDER) networkActions.append(button('获取模型列表', () => connect('models')));
+        networkActions.append(button(({embedding:'测试嵌入',rerank:'测试重排'})[draft.kind] || '测试生成', () => connect('test'))); networkActions.querySelectorAll('button').forEach(node => { node.dataset.network = ''; node.disabled = networkBusy; }); networkActions.dataset.settingSection = modelList.dataset.settingSection = 'function'; configuration.append(networkActions, modelList);
+        if ((draft.kind || 'text') === 'text') appendTestMessage();
         function renderParameters() {
             const existing = fields.querySelector('.text-api-parameters');
             const details = element('details', null, 'text-api-parameters'); details.open = existing?.open ?? parametersOpen;
@@ -287,18 +340,29 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
                 if (efforts.length) control(COPY.effort, select([{ value: '', label: COPY.inherit }, ...efforts], draft.reasoning.effort, value => { draft.reasoning.effort = value; }), details);
                 if (capability.intensity?.kind === 'budget') control(COPY.budget, input('budgetTokens', 'number', draft.reasoning), details);
             }
-            if (existing) existing.replaceWith(details); else fields.append(details);
+            details.dataset.settingSection = 'model';
+            if (existing) existing.replaceWith(details); else configuration.append(details);
         }
         if ((draft.kind || 'text') === 'text') renderParameters();
-        if (feature === 'planner' && !draft.apiKey.trim()) fields.append(element('p', COPY.plannerKey, 'text-api-status'));
+        if (feature === 'planner' && !draft.apiKey.trim()) configuration.append(element('p', COPY.plannerKey, 'text-api-status'));
     }
+    let refreshId = 0;
     async function refresh() {
         if (busy) return;
         fields.disabled = true; retry.hidden = true; feedback(COPY.load);
-        try { settings = await request('load'); if (destroyed) return; choose(library ? (settings.presets.some(p => p.id === selected) ? selected : settings.presets[0]?.id) : settings.bindings[feature]); feedback(''); }
+        const id = ++refreshId;
+        try {
+            const loaded = await request('load');
+            if (destroyed || id !== refreshId) return;
+            settings = loaded;
+            testMessage = loaded.testMessage ?? CONNECTION_TEST_PROMPT;
+            const previous = selected === HOST_BINDING || loaded.presets.some(p => p.id === selected) ? selected : loaded.presets[0]?.id;
+            choose(library ? previous || HOST_BINDING : loaded.bindings[feature]);
+            feedback('');
+        }
         catch (error) { feedback(error.message, true); retry.hidden = false; }
         finally { fields.disabled = !settings; }
     }
-    retry.onclick = refresh;
+    retry.onclick = () => refresh();
     return { refresh() { refresh().catch(error => feedback(error.message, true)); }, destroy() { destroyed = true; revision++; cancelRequests(); saveFeedback.destroy(); win.removeEventListener('message', receive); for (const pending of requests.values()) { win.clearTimeout(pending.timer); pending.reject(new Error(COPY.cancelled)); } requests.clear(); } };
 }

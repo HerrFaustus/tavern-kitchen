@@ -1,4 +1,5 @@
-﻿// ═══════════════════════════════════════════════════════════════════════════
+import { fetchWithExtras } from '../../../../shared/common/request-extras.js';
+// ═══════════════════════════════════════════════════════════════════════════
 // Reranker - 硅基 bge-reranker-v2-m3
 // 对候选文档进行精排，过滤与 query 不相关的内容
 // ═══════════════════════════════════════════════════════════════════════════
@@ -149,7 +150,7 @@ export async function rerank(query, documents, options = {}) {
             String(apiCfg.url || DEFAULT_RERANK_URL),
             getDefaultApiPrefix(apiCfg.provider || 'siliconflow')
         );
-        const response = await fetch(`${baseUrl}/rerank`, {
+        const response = await fetchWithExtras(apiCfg)(`${baseUrl}/rerank`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${key}`,
@@ -385,7 +386,7 @@ export async function testRerankService(apiConfig = {}, { signal } = {}) {
             String(next.url || DEFAULT_RERANK_URL),
             getDefaultApiPrefix(next.provider || 'siliconflow')
         );
-        const response = await fetch(`${baseUrl}/rerank`, {
+        const response = await fetchWithExtras(apiConfig)(`${baseUrl}/rerank`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${key}`,

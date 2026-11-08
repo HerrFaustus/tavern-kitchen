@@ -36,7 +36,7 @@ export const DEFAULT_SUMMARY_ASSISTANT_ASK_SUMMARY_PROMPT = '请提供已有剧�
 export const DEFAULT_SUMMARY_ASSISTANT_ASK_CONTENT_PROMPT = '请提供本次需要总结的正文。';
 export const DEFAULT_SUMMARY_META_PROTOCOL_START_PROMPT = '本次输出一个 JSON 对象。';
 export const DEFAULT_SUMMARY_USER_JSON_FORMAT_PROMPT = `必填 summary，为本轮总结文本。memoryTags 包含 characters、locations、times、keywords 四个短文本数组。按本轮原文提取，空项用 []。
-可选 keywords 是 {"text":"关键词","weight":"核心或重要或一般"} 数组。newCharacters 只列本轮首次需要持续建档的人物，用规范名或可辨认的稳定称呼。
+newCharacters 只列本轮首次需要持续建档的人物，用规范名或可辨认的稳定称呼。
 ${SUMMARY_FACT_UPDATE_RULES}
 ${SUMMARY_ALIAS_RULES}`;
 export const DEFAULT_SUMMARY_ASSISTANT_CHECK_PROMPT = '已核对人物、来源和本轮实际进展。';

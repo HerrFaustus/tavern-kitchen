@@ -3,9 +3,9 @@
 .text-api { color: inherit; min-width: 0; font: inherit; }
 .text-api * { box-sizing: border-box; }
 .text-api fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
-.text-api .text-api-presets { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; }
+.text-api .text-api-presets { display: grid; gap: 5px; margin-bottom: 12px; }
 .text-api .text-api-presets select { flex: 1; min-width: 0; }
-.text-api .text-api-tools { display: flex; align-items: center; gap: 2px; flex: none; }
+.text-api .text-api-tools { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px; }
 .text-api button { font: inherit; cursor: pointer; color: inherit; background: transparent; border: 1px solid var(--bdr, var(--border, #8885)); border-radius: 6px; padding: 8px 12px; }
 .text-api button:disabled { opacity: .45; cursor: default; }
 .text-api .text-api-icon { display: grid; place-items: center; width: 36px; height: 40px; padding: 8px; border: 0; }
@@ -30,3 +30,23 @@
 .text-api .text-api-imports { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
 .text-api .text-api-bindings { margin: 16px 0; padding: 10px 0; border-block: 1px solid var(--SmartThemeBorderColor, #8885); }
 .text-api .text-api-bindings summary { margin-bottom: 8px; }
+.text-api .text-api-request-extras textarea { width: 100%; min-width: 0; resize: vertical; font: inherit; color: inherit; }
+.text-api .text-api-presets label { margin: 0; }
+.text-api .text-api-tools details { margin: 0; }
+.text-api .text-api-tools summary { padding: 4px 0; }
+.text-api .text-api-status:empty { display: none; }
+.text-api .text-api-tools details[open] { flex-basis: 100%; }
+
+.text-api .text-api-configuration { border-top: 1px solid var(--SmartThemeBorderColor, #8885); padding-block: 10px; margin-top: 12px; }
+.text-api .text-api-configuration > summary { cursor: pointer; margin-bottom: 8px; }
+.text-api .text-api-presets { border: 0; padding: 0; }
+
+.text-api { height: 100%; min-height: 0; }
+.text-api > fieldset { display: grid; grid-template-rows: minmax(0, 2fr) minmax(0, 1fr); height: 100%; min-height: 0; overflow: hidden; }
+.text-api .text-api-presets, .text-api .text-api-configuration { min-height: 0; overflow-y: auto; box-sizing: border-box; margin: 0; }
+
+.text-api { display: flex; flex-direction: column; }
+.text-api > fieldset { flex: 1; height: auto; }
+
+.text-api .text-api-presets { align-content: start; }
+.text-api .text-api-presets select { flex: none; }

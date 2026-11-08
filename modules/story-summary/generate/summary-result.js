@@ -63,12 +63,6 @@ function prepareFact(update, path) {
 export function prepareSummaryResult(parsed) {
     object(parsed, 'summary');
     const factUpdates = optionalArray(parsed.factUpdates, 'factUpdates').map((update, i) => prepareFact(update, `factUpdates[${i}]`));
-    const keywords = optionalArray(parsed.keywords, 'keywords').map((keyword, i) => {
-        const path = `keywords[${i}]`;
-        object(keyword, path);
-        if (!['核心', '重要', '一般'].includes(keyword.weight)) invalid(`${path}.weight`, '须为核心、重要或一般');
-        return { text: text(keyword.text, `${path}.text`), weight: keyword.weight };
-    });
     const newCharacters = names(optionalArray(parsed.newCharacters, 'newCharacters'), 'newCharacters');
     const aliasUpdates = optionalArray(parsed.characterAliasUpdates, 'characterAliasUpdates').map((update, i) => {
         const path = `characterAliasUpdates[${i}]`;
@@ -78,7 +72,7 @@ export function prepareSummaryResult(parsed) {
         return { to: text(update.to, `${path}.to`), from, evidence: text(update.evidence, `${path}.evidence`) };
     });
     return {
-        factUpdates, keywords, newCharacters,
+        factUpdates, newCharacters,
         characterAliasUpdates: sanitizeCharacterAliasUpdates(aliasUpdates),
         ...(parsed.storyUpdates === undefined ? {} : { storyUpdates: parseStoryUpdates(parsed.storyUpdates) }),
     };

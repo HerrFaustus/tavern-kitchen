@@ -1,0 +1,1 @@
+var D="DSML_TOOL_CALL_INVALID",_="DeepSeek 不建议使用 JSON 兼容模式。请在「API」的对应配置中，将工具模式改为「原生 Tool Calling」，保存后重试。";function O(L){return L&&typeof L=="object"&&"code"in L&&L.code==="DSML_TOOL_CALL_INVALID"?_:""}export{D as n,O as r,_ as t};

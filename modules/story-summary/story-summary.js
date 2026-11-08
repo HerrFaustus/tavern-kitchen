@@ -1,14 +1,13 @@
 import { getKitchenMount, openKitchenTab, closeKitchenWorkspace, bindKitchenFrame } from '../../core/kitchen-workspace.js';
 import { refreshFloorSummaries } from './floor-summary.js';
 import { createFloorSummaryController } from './inline/controller.js';
-import { extractFloorPayload, floorSource, stripFloorProtocol } from './inline/protocol.js';
+import { extractGeneratedFloorPayload, floorSource, stripFloorProtocol } from './inline/protocol.js';
 import { floorCoverageEnd, isFloorEntryCurrent } from './inline/ledger.js';
 import { installFloorDisplayFilter } from './inline/host-regex.js';
 import { mergeNewData, executeRollback } from './data/store.js';
 import { getTextFilterRules } from './data/config.js';
 import { parseStoryUpdates } from '../story-state/records.js';
 import { getRuntimeInvalidSourceFloor } from './data/memory-commit.js';
-import { handleTextApiRequest } from '../text-api/host.js';
 // ═══════════════════════════════════════════════════════════════════════════
 // Story Summary - 主入口
 //
@@ -20,8 +19,6 @@ import { handleTextApiRequest } from '../text-api/host.js';
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { getContext } from "../../../../../extensions.js";
-import { loadSharedAgentSettings, saveSharedAgentSettings } from '../agent-core/settings-repository.js';
-import { pullModelsForProvider } from '../agent-core/model-list.js';
 import {
     event_types,
     extension_prompts,
@@ -250,7 +247,7 @@ async function sendMemoryMaintenanceResults(offset = 0) {
 }
 const messageButtonOwnership = createMessageButtonOwnership();
 const iframePath = `${extensionFolderPath}/modules/story-summary/story-summary.html`;
-const VALID_SECTIONS = ["keywords", "characters", "facts"];
+const VALID_SECTIONS = ["characters", "facts"];
 const MESSAGE_EVENT = "message";
 const AUTO_SUMMARY_MAX_ATTEMPTS = 3;
 let activeSummaryExecution = null;
@@ -1276,7 +1273,7 @@ function hideOverlay() {
 function createSummaryBtn(mesId) {
     const btn = document.createElement("div");
     btn.className = "mes_btn tavernKitchen-story-summary-btn";
-    btn.title = "剧情总结";
+    btn.title = "总结";
     btn.dataset.mesid = mesId;
     btn.innerHTML = '<i class="fa-solid fa-chart-line"></i>';
     btn.addEventListener("click", (e) => {
@@ -1444,7 +1441,6 @@ function buildFramePayload(store) {
         entities,
         playerName: getContext().name1 || '',
         chatId: getContext().chatId || '',
-        keywords: json.keywords || [],
         rounds: !store?.summaryInvalid && store?.sourceInvalidFromFloor == null && firstInvalidMemorySource(store, getContext().chat) == null ? timelineRounds(store) : [],
         characters: {
             main: json.characters?.main || [],
@@ -1639,7 +1635,6 @@ function buildSummaryExportPackage(store) {
         exportedAt: new Date().toISOString(),
         data,
         counts: {
-            keywords: json.keywords.length,
             rounds: data.rounds.length,
             characters: json.characters.main.length,
             aliases: json.characterAliases.length,
@@ -1663,15 +1658,6 @@ function formatSummaryCharacterName(item) {
 function formatStorySummaryMemoryText(store) {
     const json = cloneSummaryJsonForPortability(store?.json || {});
     const lines = [];
-
-    pushSection(lines, "关键词", (json.keywords || [])
-        .map((item) => {
-            const text = String(item?.text || "").trim();
-            if (!text) return "";
-            const weight = String(item?.weight || "").trim();
-            return `- ${text}${weight ? `（${weight}）` : ""}`;
-        })
-        .filter(Boolean));
 
     pushSection(lines, "本轮总结", timelineRounds(store).map(round => round.timeLabel + " " + round.summary));
 
@@ -1750,7 +1736,6 @@ async function importSummaryMemoryPackage(rawText, targetChatId = '') {
 
     return {
         counts: {
-            keywords: importedJson.keywords.length,
             rounds: importedJson.importedRounds?.length || importedJson.events.length,
             characters: importedJson.characters.main.length,
             arcs: importedJson.arcs.length,
@@ -1907,7 +1892,7 @@ const hideState = createHideStateController({
             ? '读取向量隐藏边界失败，已按有效总结边界恢复原文'
             : stage === 'save' ? memorySaveError(error) : '更新楼层显隐失败';
         xbLog.error(MODULE_ID, message, error);
-        if (stage !== 'save' || shouldNotifyMemoryFailure(error, getMemoryCommitState())) window.toastr?.warning(message, '剧情总结');
+        if (stage !== 'save' || shouldNotifyMemoryFailure(error, getMemoryCommitState())) window.toastr?.warning(message, '总结');
     },
 });
 
@@ -2126,32 +2111,6 @@ async function handleFrameMessage(event) {
     if (!isTrustedMessage(event, iframe, "TavernKitchen-StoryFrame")) return;
 
     const data = event.data;
-    if (data.type === 'KITCHEN_ARCHIVE_VIEW') {
-        const route = { story: 'memory', people: 'people', world: 'situation' }[data.view];
-        if (route) openKitchenTab(route);
-        return;
-    }
-    if (data.type === 'OPEN_KITCHEN_SETTINGS') {
-        openKitchenTab('memory-settings');
-        return;
-    }
-    if (data.type === 'SUMMARY_AGENT_SETTINGS') {
-        try {
-            let result;
-            if (data.action === 'load') result = await loadSharedAgentSettings();
-            else if (data.action === 'save') result = await saveSharedAgentSettings(data.payload);
-            else if (data.action === 'models') result = await pullModelsForProvider(data.payload);
-            else throw new Error('Unknown Agent settings action');
-            postToFrame({ type: 'SUMMARY_AGENT_SETTINGS_RESULT', requestId: data.requestId, result });
-        } catch (error) {
-            postToFrame({ type: 'SUMMARY_AGENT_SETTINGS_RESULT', requestId: data.requestId, error: error.message });
-        }
-        return;
-    }
-    if (data.type === 'TEXT_API_REQUEST') {
-        await handleTextApiRequest(data, 'summary', postToFrame);
-        return;
-    }
     const chatAction = Object.keys(MEMORY_CHAT_MESSAGES).find(action => action !== 'state' && MEMORY_CHAT_MESSAGES[action] === data.type);
     if (chatAction) {
         const requestIdentity = chatAction === 'query' ? memoryMaintenance.chat.identity : data.identity;
@@ -2197,11 +2156,6 @@ async function handleFrameMessage(event) {
             notifyStorySummaryChatState();
             break;
         }
-
-        case "SETTINGS_CLOSED":
-            if (getKitchenMount('memory')) openKitchenTab('memory');
-            removeBackupManagerModal();
-            break;
 
         case "REQUEST_GENERATE": {
             if (!isStorySummaryEnabledForCurrentChat()) {
@@ -2522,7 +2476,7 @@ async function handleFrameMessage(event) {
             await sendFrameBaseData(store, totalFloors);
             sendFrameFullData(store, totalFloors);
             notifyStorySummaryChatState();
-            await executeSlashCommand("/echo severity=info 剧情总结数据已清空");
+            await executeSlashCommand("/echo severity=info 总结数据已清空");
             break;
         }
 
@@ -2692,15 +2646,23 @@ async function handleFrameMessage(event) {
         }
 
         case "SAVE_PANEL_CONFIG":
-            if (data.config) {
+            if (data.config || data.promptChange) {
                 try {
                     const vectorChanged = Boolean(
-                        data.config.vector
+                        data.config?.vector
                         && JSON.stringify(getVectorConfig() || {}) !== JSON.stringify(data.config.vector || {})
                     );
                     const transition = await changePanelConfig(
                         'panel-save',
-                        () => saveSummaryPanelConfigVerified(data.config),
+                        () => {
+                            if (!data.promptChange) return saveSummaryPanelConfigVerified(data.config);
+                            const { level, value } = data.promptChange;
+                            if (!['round', 'stage', 'chapter'].includes(level) || typeof value !== 'string' || value.length > 12000) {
+                                throw new Error('无效的总结提示词。');
+                            }
+                            const current = getSummaryPanelConfig();
+                            return saveSummaryPanelConfigVerified({ ...current, prompts: { ...current.prompts, [level]: value } });
+                        },
                         vectorChanged,
                     );
                     const previousVectorConfig = transition.previousVectorConfig;
@@ -3603,7 +3565,7 @@ async function registerEvents() {
     registerAfterAiGateHandler();
 
     CacheRegistry.register(MODULE_ID, {
-        name: "剧情总结运行缓存",
+        name: "总结运行缓存",
         getSize: () => {
             const vectorStats = getRecallRuntimeStats();
             const vectorItems = vectorStats.reduce((sum, item) => (
@@ -4082,12 +4044,12 @@ export function openStoryMemory(floor = Math.max(0, getContext().chat.length - 1
     postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view: 'memory' });
 }
 export function openStoryMemorySettings(view = 'settings') {
-    memoryWorkspaceView = view === 'proofreading' ? view : 'memory-settings';
+    memoryWorkspaceView = view === 'proofreading' ? view : 'memory';
     openPanelForMessage(Math.max(0, getContext().chat.length - 1));
     postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view });
 }
 export function openStoryWorld(route = 'world') {
-    if (!['world', 'lore', 'people', 'relations'].includes(route)) return;
+    if (!['world', 'people', 'relations'].includes(route)) return;
     memoryWorkspaceView = route === 'world' ? 'situation' : route;
     openPanelForMessage(Math.max(0, getContext().chat.length - 1));
     postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view: route });
@@ -4127,15 +4089,16 @@ export async function summarizeFloorOnDemand(floor) {
         await ensureFloorSources();
         if (!isStorySummaryEnabledForCurrentChat() || identity !== getChatIdentity(getContext())) throw new Error('聊天已切换或剧情记录已关闭，本次总结未写入。');
         const preparedSources = await prepareMemorySources(source.start, floor);
-        const raw = await generateFloorSummary({ store: getPublishedSummaryStore(), floorText: text });
+        let raw;
+        try { raw = await generateFloorSummary({ store: getPublishedSummaryStore(), floorText: text }); }
+        catch (cause) {
+            if (isSummaryGenerationCancelledError(cause)) throw cause;
+            throw Object.assign(new Error(cause.message, { cause }), { summaryModelFailure: true });
+        }
         await validateMemorySources(preparedSources);
         if (!isStorySummaryEnabledForCurrentChat() || identity !== getChatIdentity(getContext())) throw new Error('聊天已切换或剧情记录已关闭，本次总结未写入。');
-        let extracted = extractFloorPayload(raw);
-        if (extracted.status === 'missing') {
-            const candidate = String(raw || '').trim().replace(/^```(?:json)?\s*|\s*```$/gi, '');
-            if (candidate.startsWith('{')) extracted = extractFloorPayload(`<kitchen_summary>${candidate}</kitchen_summary>`);
-        }
-        if (extracted.status !== 'ready') throw new Error(extracted.error || '总结格式有误，未写入。');
+        const extracted = extractGeneratedFloorPayload(raw);
+        if (extracted.status !== 'ready') throw Object.assign(new Error(extracted.error || '总结格式有误，未写入。'), { summaryModelFailure: true });
         return await mainReplySummary.update(floor, {
             payload: extracted.payload, reviewed: true, deleted: false, empty: false, omitted: false,
         }, source.digest, preparedSources);

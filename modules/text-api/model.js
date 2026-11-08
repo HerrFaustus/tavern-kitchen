@@ -1,3 +1,4 @@
+import { parseRequestExtras, supportsRequestExtras } from '../../shared/common/request-extras.js';
 import { PROVIDER_OPTIONS } from '../agent-core/provider-resolution.js';
 import { normalizeModelListAuth } from '../agent-core/model-list-auth.js';
 import { TEXT_API_COPY as COPY } from './copy.js';
@@ -10,7 +11,7 @@ export const HOST_PROVIDER = 'sillytavern-current';
 
 export function createPreset(id, name, input = {}) {
     return {
-        id, name, kind: input.kind || 'text', toolMode: input.toolMode || 'native', provider: input.provider ?? HOST_PROVIDER,
+        id, name, ...(input.requestExtras && supportsRequestExtras(input.provider) && {requestExtras: structuredClone(input.requestExtras)}), kind: input.kind || 'text', toolMode: input.toolMode || 'native', provider: input.provider ?? HOST_PROVIDER,
         baseUrl: input.baseUrl ?? '', apiKey: input.apiKey ?? '', model: input.model ?? '',
         prefixMode: input.prefixMode ?? 'auto', customPrefix: input.customPrefix ?? '',
         stream: input.stream ?? true, temperature: input.temperature ?? null,
@@ -30,6 +31,7 @@ export function assertPreset(preset) {
         || Object.values(preset.sampling || {}).some(entry => entry?.enabled && !Number.isFinite(entry.value))) {
         throw new Error(COPY.invalid);
     }
+    if (preset.requestExtras) parseRequestExtras(preset);
     return preset;
 }
 

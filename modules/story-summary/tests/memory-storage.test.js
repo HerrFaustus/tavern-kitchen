@@ -150,7 +150,7 @@ async function importFixture() {
 function manualPanelEntry(errors, execution = null) {
     return entry(['handleFrameMessage', 'buildFramePayload', 'cancelActiveSummaryExecution'], {
         ...mod, structuredClone, document: { getElementById: () => ({}) }, isTrustedMessage: () => true,
-        getContext: () => host.context, getChatIdentity, VALID_SECTIONS: ['keywords', 'facts'],
+        getContext: () => host.context, getChatIdentity, VALID_SECTIONS: ['characters', 'facts'],
         applySummarySectionEdit, mergeEditedFactsWithTimestamps, getCurrentFloorHint: () => host.context.chat.length - 1,
         cancelRecallAndClearPrompt() {}, memoryMaintenance: { cancel: () => assert.fail('manual edit cancelled maintenance') },
         activeSummaryExecution: execution, cancelPendingHide() {}, refreshEntityLexiconAndWarmup() {},
@@ -242,12 +242,12 @@ for (const preceding of ['source-sync', 'panel-edit']) {
         } else {
             first = editSection(panel, 'facts', [{ s:'同行者', p:'衣着', o:'灰斗篷' }]);
         }
-        const second = editSection(panel, 'keywords', [{ text: '新的关键词', weight: '一般' }]);
+        const second = editSection(panel, 'facts', [{ s: '主角', p: '当前情绪', o: '平静' }]);
         try { await nextTurn(); }
         finally { release(); }
         await Promise.all([blocking, first, second]);
         assert.deepEqual(errors, []);
-        assert.deepEqual(disk().storySummary.json.keywords, [{ text: '新的关键词', weight: '一般' }]);
+        assert.ok(disk().storySummary.json.facts.some(fact => fact.s === '主角' && fact.o === '平静'));
         if (preceding === 'source-sync') {
             assert.equal(disk().stateAtoms.some(atom => atom.floor === 1), false);
             assert.equal(disk().l0Index.byFloor[1], undefined);
@@ -266,7 +266,7 @@ test('queued manual summary edit stays with its original character', async () =>
     let release;
     const blocked = new Promise(resolve => { release = resolve; });
     const blocking = vectorWrites.runVectorWriteTask({ scope: vectorWrites.VECTOR_WRITE_SCOPES.IO }, () => blocked);
-    const editing = editSection(panel, 'keywords', [{ text: '旧聊天的修改', weight: '一般' }]);
+    const editing = editSection(panel, 'facts', [{ s: '主角', p: '当前情绪', o: '旧聊天的修改' }]);
     try {
         await nextTurn();
         host.context = { ...host.context, characterId: 1,

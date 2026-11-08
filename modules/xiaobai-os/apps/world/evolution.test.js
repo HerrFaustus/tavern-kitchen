@@ -89,6 +89,49 @@ test('evolution switches persist independently across reloads', async () => {
     assert.equal(reloaded.apps.world.peopleEvolution, false);
     assert.equal(reloaded.apps.world.subscribed, true);
 });
+
+test('inline situation switches accept only the active frame and restore saved state after failure', async t => {
+    const { document } = parseHTML('<html><body><section></section></body></html>');
+    const previous = { document: globalThis.document, window: globalThis.window };
+    const listeners = new Set(), messages = [];
+    globalThis.document = document;
+    globalThis.window = {
+        location: { origin: 'http://kitchen.test' },
+        addEventListener(type, listener) { if (type === 'message') listeners.add(listener); },
+        removeEventListener(type, listener) { if (type === 'message') listeners.delete(listener); },
+    };
+    let stop;
+    t.after(() => { stop?.(); Object.assign(globalThis, previous); });
+    const state = { enabled: true, apps: { world: { subscribed: false, sceneryEvolution: false } } };
+    let fail = false;
+    const frame = { contentWindow: { postMessage(message) { messages.push(structuredClone(message)); } } };
+    const preferences = {
+        read: () => state, subscribe: () => () => {},
+        async setWorldPreference(key, value) {
+            if (fail) throw new Error('保存失败');
+            state.apps.world[key] = value;
+        },
+    };
+    stop = mountEvolutionView(document.querySelector('section'), 'situation', preferences, frame);
+    const receive = [...listeners][0];
+    const event = value => ({
+        origin: window.location.origin, source: frame.contentWindow,
+        data: { source: 'TavernKitchen-StoryFrame', type: 'WORLD_EVOLUTION_CHANGE', key: 'subscribed', value },
+    });
+    receive({ ...event(true), source: {} });
+    assert.equal(state.apps.world.subscribed, false);
+    receive(event(true));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(messages.at(-1).settings.subscribed, true);
+    assert.equal(messages.at(-1).settings.pending, false);
+    fail = true;
+    receive(event(false));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(messages.at(-1).settings.subscribed, true);
+    assert.match(messages.at(-1).settings.error, /保存失败/);
+    stop();
+    assert.equal(listeners.size, 0);
+});
 import { registerSituationCatalog } from '../../../story-state/situation-links.js';
 import { createWorldMaintenanceSession } from './maintenance/session.js';
 

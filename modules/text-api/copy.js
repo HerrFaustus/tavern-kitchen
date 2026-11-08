@@ -1,6 +1,6 @@
 export const TEXT_API_COPY = Object.freeze({
     title: 'API 配置档案', host: '沿用酒馆', unset: '未选择配置',
-    features: { summary: '剧情总结', planner: '剧情规划', memory: '剧情校对', world: '世界与地图后台', l0: '召回语义整理', embedding: '向量嵌入', rerank: '召回重排' },
+    features: { summary: '总结', planner: '编剧', memory: '校对', world: '世界与地图后台', l0: '召回语义整理', embedding: '向量嵌入', rerank: '召回重排' },
     load: '加载中…', retry: '重试', save: '保存配置', saved: '已保存', saving: '保存中…',
     add: '新增配置', rename: '重命名配置', remove: '删除配置',
     name: '配置名称', duplicate: '已存在同名配置', emptyName: '请输入配置名称',
@@ -11,7 +11,7 @@ export const TEXT_API_COPY = Object.freeze({
     stream: '流式输出', temperature: '温度', maxTokens: '最大输出 Token',
     sampling: '生成参数', prefix: '路径前缀', autoPrefix: '自动', customPrefix: '自定义',
     reasoning: '思考模式', effort: '思考强度', budget: '思考 Token 预算',
-    inherit: '不发送', plannerKey: '剧情规划需要填写所选配置的 API Key',
+    inherit: '不发送', plannerKey: '编剧需要填写所选配置的 API Key',
     modelRequired: '请填写模型名称', urlRequired: '请填写 API 地址',
     unavailable: '配置尚未加载，请重试', invalid: 'API 配置配置格式无效',
     requestFailed: '请求失败',

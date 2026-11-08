@@ -49,10 +49,11 @@ ${ALIAS_PURPOSE_RULE}
 - 当前对话和已有总结能确认两种名称是同一角色时输出。${ALIAS_EVIDENCE_RULE}
 ${ALIAS_IDENTITY_RULE}
 - to 是已有总结中稳定使用的主名，from 是其他写法，evidence 简短说明依据。
+- 自动核对本轮原文、既有主名、世界人物稳定编号及已确认别名。同一人物复用已有身份，新出现的称号和别名归入该人物属性；明确同一身份时自动补充映射。同名、共用称号或身份未揭示时分别保留，以稳定编号区分，等待后续证据。
 - 例: {"to":"五条悟","from":["悟","Gojo Satoru"],"evidence":"当前中文称呼“悟”与既有日文名五条悟均指同一角色"}
 - 保存时，系统会把角色列表、事件参与者、事实的主体和关系对象统一改成主名；卡片正文和引语里的称呼保持原样。这里只给出映射。`;
 
-const summaryGuide = definePanelPrompt('memory-settings','summaryGuide','总结写作指引',`
+const summaryGuide = definePanelPrompt('memory','summaryGuide','总结写作指引',`
 Summary Specialist:
 Acknowledged. Now reviewing the incremental summarization specifications:
 

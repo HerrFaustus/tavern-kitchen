@@ -1,9 +1,7 @@
-import { mountTextApiSettings } from '../text-api/settings-ui.js';
 import { projectPersonalAgendas } from '../story-state/records.js';
 import { renderWorldAttributes, renderPersonalAgendas, renderPersonState, renderThreads } from '../story-state/view.js';
-import { buildAliasResolver } from './data/character-aliases.js';
+import { buildCharacterIdentity } from './data/character-aliases.js';
 import { WORKSPACE_COPY } from './workspace-copy.js';
-import { createSummaryAgentSettings } from './maintenance/api-settings.js';
 // story-summary-ui.js
 // iframe 内 UI 逻辑
 
@@ -29,18 +27,9 @@ const UNANNOTATED_LABEL = '未标注';
     let memoryMaintenancePage;
     let archiveView;
     let settingsDirty = false;
+    const dirtyFields = new Set();
     let settingsSnapshot;
-    let agentSettings;
-    let settingsPage = 'tab-summary';
     let settingsSaving = false;
-    const settingsScroll = new Map();
-    const textApiEditor = mountTextApiSettings(document.getElementById('summary-text-api'), { feature: 'summary', namespace: 'TavernKitchen-StoryFrame' });
-
-    const vectorProfileEditors = Object.fromEntries(['l0', 'embedding', 'rerank'].map(feature => [
-        'tab-' + feature + '-api', mountTextApiSettings(document.getElementById(feature + '-profile'),
-            { feature, namespace: 'TavernKitchen-StoryFrame' }),
-    ]));
-
     function formatVectorPackageCounts(result) {
         return `${result.stateVectorCount} 锚点向量、${result.chunkCount} 片段向量、${result.eventCount} 事件向量`;
     }
@@ -165,15 +154,8 @@ const UNANNOTATED_LABEL = '未标注';
     }
 
     const SECTION_META = {
-        keywords: { title: '编辑关键词', hint: '每行一个关键词，格式：关键词|权重（核心/重要/一般）' },
         characters: { title: '编辑人物关系', hint: '编辑时，每个要素都应完整' },
         facts: { title: '编辑事实图谱', hint: '每行一条：主体|谓词|值|趋势(可选)。删除用：主体|谓词|（留空值）' },
-        aliases: { title: '编辑别名映射', hint: '别名与角色主名必须不同；确认依据可留空' }
-    };
-
-    const TREND_COLORS = {
-        '破裂': '#444444', '厌恶': '#8b0000', '反感': '#cd5c5c',
-        '陌生': '#888888', '投缘': '#4a9a7e', '亲密': '#d87a7a', '交融': '#c71585'
     };
 
     const TREND_CLASS = {
@@ -232,8 +214,8 @@ const UNANNOTATED_LABEL = '未标注';
         }
     };
 
-    let situationFilter = '全部';
-    let summaryData = { keywords: [], rounds: [], characters: { main: [], relationships: [] }, arcs: [], facts: [], characterAliases: [] };
+    let evolutionSettings;
+    let summaryData = { rounds: [], characters: { main: [], relationships: [] }, arcs: [], facts: [], characterAliases: [] };
     let localGenerating = false;
     let vectorGenerating = false;
     let anchorGenerating = false;
@@ -243,14 +225,9 @@ const UNANNOTATED_LABEL = '未标注';
         rollbackWillResetBoundary: false,
         summarizedUpTo: 0,
     };
-    let relationChart = null;
-    let relationChartFullscreen = null;
     let currentEditSection = null;
     let currentEditBaseline = null;
     let currentCharacterId = null;
-    let allNodes = [];
-    let allLinks = [];
-    let activeRelationTooltip = null;
     let lastRecallLogText = '';
     let configSaveSeq = 0;
     let currentTimelineChatId = '';
@@ -526,7 +503,7 @@ const UNANNOTATED_LABEL = '未标注';
         if (panelConfigLoad.status !== 'ready') return Promise.resolve(false);
         try {
             const settingsOpen = $('settings-modal')?.classList.contains('active');
-            if (settingsOpen) {
+            if (settingsOpen && !options.promptChange) {
                 config.vector = getVectorConfig();
                 config.textFilterRules = collectFilterRules();
             }
@@ -559,12 +536,12 @@ const UNANNOTATED_LABEL = '未标注';
                 }
                 pendingConfigSaveRequests.set(requestId, {
                     resolve,
-                    statusId,
+                    statusId, promptChange: options.promptChange,
                     successMessage: options.successMessage || '配置已保存',
                     errorPrefix: options.errorPrefix || '保存失败：',
                     timeoutId,
                 });
-                postMsg('SAVE_PANEL_CONFIG', { config, requestId });
+                postMsg('SAVE_PANEL_CONFIG', options.promptChange ? { promptChange: options.promptChange, requestId } : { config, requestId });
             });
         } catch (e) {
             console.error('saveConfig error:', e);
@@ -906,52 +883,38 @@ const UNANNOTATED_LABEL = '未标注';
     // Settings Modal
     // ═══════════════════════════════════════════════════════════════════════════
 
-    function selectSettingsTab(targetId) {
-        settingsScroll.set(settingsPage, $('settings-modal').scrollTop);
-        settingsPage = targetId;
-        $$('.settings-tab').forEach(tab => {
-            tab.classList.toggle('active', tab.dataset.tab === targetId);
-            if (tab.dataset.tab === targetId) tab.setAttribute('aria-current', 'page'); else tab.removeAttribute('aria-current');
-        });
-        $$('.tab-pane').forEach(pane => pane.classList.toggle('active', pane.id === targetId));
-        const tab = document.querySelector(`.settings-tab[data-tab="${targetId}"]`);
-        const childPage = $(targetId).dataset.parent;
-        const assistant = targetId === 'tab-agent' || targetId === 'tab-agent-api';
-        $('settings-modal').classList.toggle('assistant-page', assistant);
-        $('settings-modal').classList.toggle('workspace-local', !!childPage);
-        $('assistant-page-title').hidden = false;
-        $('assistant-page-title').textContent = childPage ? $(targetId).dataset.title : targetId === 'tab-agent-api' ? WORKSPACE_COPY.agentApi : assistant ? MEMORY_COPY.tab : tab.textContent;
-        $('settings-close').setAttribute('aria-label', childPage || targetId === 'tab-agent-api' ? WORKSPACE_COPY.backParent : WORKSPACE_COPY.back);
-        $$('.settings-tab').forEach(item => { item.hidden = !!childPage || assistant || item.dataset.family !== tab.dataset.family; });
-        $('settings-save').parentElement.hidden = ['tab-agent-api', 'tab-models', 'tab-transfer', 'tab-backups', 'tab-clear'].includes(targetId);
-        $('settings-cancel').hidden = targetId === 'tab-agent';
-        $('settings-chat').hidden = targetId !== 'tab-agent';
-        vectorProfileEditors[targetId]?.refresh();
-        if (targetId === 'tab-vector') postMsg('REQUEST_RECALL_LOG');
-        if (targetId === 'tab-agent') memoryMaintenancePage.open();
-        if (targetId === 'tab-agent-api') void agentSettings.open();
-        if (targetId === 'tab-clear') syncCurrentChatSummaryControls();
-        $('settings-modal').scrollTop = settingsScroll.get(targetId) || 0;
+    function showSettingsOwner(proofreading) {
+        const modal = $('settings-modal');
+        modal.classList.toggle('assistant-page', proofreading);
+        for (const group of modal.querySelectorAll('.summary-local-group')) group.hidden = proofreading;
+        $('tab-agent').classList.toggle('active', proofreading);
+        $('settings-chat').hidden = !proofreading;
+        $('settings-cancel').hidden = proofreading;
+        const actions = modal.querySelector('.modal-foot');
+        if (proofreading) {
+            memoryMaintenancePage.controls.append(actions);
+            memoryMaintenancePage.open();
+        }
+        else {
+            modal.querySelector('.workspace-shell').append(actions);
+            memoryMaintenancePage.close();
+        }
     }
 
-    function markSettingsDirty() {
+    function markSettingsDirty(field = null) {
+        dirtyFields.add(field);
         settingsDirty = true;
         $('api-connect-status').textContent = WORKSPACE_COPY.dirty;
     }
 
-    function openSettings({ preserveTab = false, tab = 'tab-summary', fromWorkspace = false } = {}) {
-        if (document.documentElement.classList.contains('tk-embedded')) {
+    function openSettings({ preserveTab = false, tab = 'tab-summary' } = {}) {
+        const inline = $('settings-modal').parentElement === $('summary-options');
+        if (!inline && document.documentElement.classList.contains('tk-embedded')) {
             document.documentElement.dataset.kitchenView = 'settings';
-            if (!preserveTab && tab !== 'tab-agent' && !fromWorkspace) postMsg('OPEN_KITCHEN_SETTINGS');
         }
         settingsDirty = false;
+        dirtyFields.clear();
         settingsSnapshot = structuredClone(config);
-        if (!preserveTab) {
-            const assistant = tab === 'tab-agent';
-            $('settings-modal').classList.toggle('assistant-page', assistant);
-            $('assistant-page-title').hidden = !assistant;
-            $('assistant-page-title').textContent = MEMORY_COPY.tab;
-        }
         memoryMaintenancePage.setEnabled(config.memoryMaintenanceEnabled, config);
         if ($('trigger-notify-on-complete')) {
             $('trigger-notify-on-complete').checked = !!config.trigger.notifyOnComplete;
@@ -972,7 +935,6 @@ const UNANNOTATED_LABEL = '未标注';
 
         syncAutoSummaryControls();
 
-        if (!preserveTab) void textApiEditor.refresh();
         if (config.vector) loadVectorConfig(config.vector);
         renderFilterRules(Array.isArray(config.textFilterRules) ? config.textFilterRules : DEFAULT_FILTER_RULES);
         settingsOpenedWithServerConfig = panelConfigLoad.status === 'ready';
@@ -985,11 +947,11 @@ const UNANNOTATED_LABEL = '未标注';
         }
 
         $('settings-modal').classList.add('active');
-        document.querySelector('.archive').inert = true;
+        document.querySelector('.archive').inert = !inline;
 
         // Opening starts on Summary; recovery preserves the user's current tab.
         if (!preserveTab) {
-            selectSettingsTab(tab);
+            showSettingsOwner(tab === 'tab-agent');
         }
 
         postMsg('SETTINGS_OPENED');
@@ -1027,6 +989,26 @@ const UNANNOTATED_LABEL = '未标注';
     function fillBuiltInSummaryPromptFields() {
     }
 
+    async function saveLayerPrompt(level, reset = false) {
+        if (settingsSaving) return;
+        if (!settingsOpenedWithServerConfig) { retryPanelConfigLoad(); return; }
+        const field = $('prompt-' + level);
+        const value = reset || field.value.trim() === LAYER_PROMPTS[level] ? '' : field.value.trim();
+        settingsSaving = true;
+        const layout = $('settings-modal').querySelector('.workspace-layout');
+        layout.inert = true;
+        try {
+            const saved = await saveConfig({ promptChange: { level, value }, timeoutMs: 5000,
+                statusId: 'status-' + level, loadingMessage: '保存中…', successMessage: '已保存' });
+            if (!saved) return;
+            config.prompts[level] = settingsSnapshot.prompts[level] = value;
+            field.value = value || LAYER_PROMPTS[level];
+            dirtyFields.delete(field);
+            settingsDirty = dirtyFields.size > 0;
+            $('api-connect-status').textContent = settingsDirty ? WORKSPACE_COPY.dirty : '';
+        } finally { settingsSaving = false; layout.inert = false; }
+    }
+
     async function saveSettings() {
         if (settingsSaving) return false;
         if (!settingsOpenedWithServerConfig) {
@@ -1055,6 +1037,7 @@ const UNANNOTATED_LABEL = '未标注';
         const saved = await savePromise;
         if (saved) {
             settingsDirty = false;
+            dirtyFields.clear();
             settingsSnapshot = structuredClone(config);
         }
         else Object.assign(config, previousConfig);
@@ -1063,50 +1046,6 @@ const UNANNOTATED_LABEL = '未标注';
         $('settings-cancel').disabled = false;
         resetSettingsSaveUi();
         return saved;
-    }
-
-    async function closeSettings() {
-        if (settingsSaving) return;
-        const parentPage = $(settingsPage).dataset.parent;
-        if (parentPage) { selectSettingsTab(parentPage); return; }
-        if (settingsPage === 'tab-agent-api') { selectSettingsTab('tab-agent'); return; }
-        if (settingsDirty && !await showConfirm(WORKSPACE_COPY.discardTitle, WORKSPACE_COPY.discardDetail, WORKSPACE_COPY.discard, WORKSPACE_COPY.stay)) return;
-        if (settingsDirty) Object.assign(config, settingsSnapshot);
-        settingsDirty = false;
-        memoryMaintenancePage.close();
-        resetSettingsSaveUi();
-        settingsOpenedWithServerConfig = false;
-        $('settings-modal').classList.remove('active');
-        document.querySelector('.archive').inert = false;
-        postMsg('SETTINGS_CLOSED');
-    }
-
-    function renderKeywords(kw) {
-        summaryData.keywords = kw || [];
-        const wc = { '核心': 'p', '重要': 's', high: 'p', medium: 's' };
-        setHtml($('keywords-cloud'), kw.length
-            ? kw.map(k => `<span class="tag ${wc[k.weight] || wc[k.level] || ''}">${h(k.text)}</span>`).join('')
-            : '<div class="empty">暂无关键词</div>');
-    }
-
-    function getCssVar(name, fallback) {
-        const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-        return value || fallback;
-    }
-
-    function getRelationTheme() {
-        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-        return {
-            text: getCssVar('--txt', isDark ? '#e0e0e0' : '#333'),
-            textMuted: getCssVar('--txt3', isDark ? '#9a9a9a' : '#888'),
-            panel: getCssVar('--bg2', isDark ? '#1e1e1e' : '#fff'),
-            border: getCssVar('--bdr', isDark ? '#3a3a3a' : '#ddd'),
-            line: getCssVar('--bdr', isDark ? 'rgba(224,224,224,.32)' : '#d8d8d8'),
-            lineFocus: getCssVar('--txt3', isDark ? 'rgba(224,224,224,.58)' : '#aaa'),
-            nodeBorder: getCssVar('--bg', '#333'),
-            nodeShadow: getCssVar('--SmartThemeShadowColor', 'rgba(0,0,0,.25)'),
-            tooltipShadow: isDark ? '0 8px 22px rgba(0,0,0,.38)' : '0 4px 12px rgba(0,0,0,.15)',
-        };
     }
 
     function tlTotalPages() {
@@ -1226,185 +1165,23 @@ const UNANNOTATED_LABEL = '未标注';
         return typeof character === 'string' ? character : character.name;
     }
 
-    function hideRelationTooltip() {
-        if (activeRelationTooltip) {
-            activeRelationTooltip.remove();
-            activeRelationTooltip = null;
-        }
-    }
-
-    function showRelationTooltip(from, to, fromLabel, toLabel, fromTrend, toTrend, x, y, container) {
-        hideRelationTooltip();
-        const tip = document.createElement('div');
-        const mobile = innerWidth <= 768;
-        const fc = TREND_COLORS[fromTrend] || '#888';
-        const tc = TREND_COLORS[toTrend] || '#888';
-        const theme = getRelationTheme();
-
-        setHtml(tip, `<div style="line-height:1.8">
-            ${fromLabel ? `<div><small>${h(from)}→${h(to)}：</small> <span style="color:${fc}">${h(fromLabel)}</span> <span style="font-size:10px;color:${fc}">[${h(fromTrend)}]</span></div>` : ''}
-            ${toLabel ? `<div><small>${h(to)}→${h(from)}：</small> <span style="color:${tc}">${h(toLabel)}</span> <span style="font-size:10px;color:${tc}">[${h(toTrend)}]</span></div>` : ''}
-        </div>`);
-
-        tip.style.cssText = mobile
-            ? `position:absolute;left:8px;bottom:8px;background:${theme.panel};color:${theme.text};padding:10px 14px;border:1px solid ${theme.border};border-radius:6px;font-size:12px;z-index:100;box-shadow:${theme.tooltipShadow};max-width:calc(100% - 16px)`
-            : `position:absolute;left:${Math.max(80, Math.min(x, container.clientWidth - 80))}px;top:${Math.max(60, y)}px;transform:translate(-50%,-100%);background:${theme.panel};color:${theme.text};padding:10px 16px;border:1px solid ${theme.border};border-radius:6px;font-size:12px;z-index:1000;box-shadow:${theme.tooltipShadow};max-width:280px`;
-
-        container.style.position = 'relative';
-        container.appendChild(tip);
-        activeRelationTooltip = tip;
-    }
-
-    function renderRelations(data) {
+    function updateRelationships(data) {
         summaryData.characters = data || { main: [], relationships: [] };
-        const dom = $('relation-chart');
-        if (!archiveView.isPeopleVisible()) return;
-        if (!relationChart) relationChart = echarts.init(dom);
-        const theme = getRelationTheme();
-
-        const rels = data?.relationships || [];
-        const allNames = new Set(getArchiveCharacters(summaryData).map(character => character.name));
-        rels.forEach(r => { if (r.from) allNames.add(r.from); if (r.to) allNames.add(r.to); });
-
-        const degrees = {};
-        rels.forEach(r => {
-            degrees[r.from] = (degrees[r.from] || 0) + 1;
-            degrees[r.to] = (degrees[r.to] || 0) + 1;
-        });
-
-        const nodeColors = { main: getCssVar('--archive-accent', theme.text), sec: getCssVar('--archive-accent', theme.text), ter: theme.textMuted, qua: theme.textMuted };
-        const sortedDegs = Object.values(degrees).sort((a, b) => b - a);
-        const getPercentile = deg => {
-            if (!sortedDegs.length || deg === 0) return 100;
-            const rank = sortedDegs.filter(d => d > deg).length;
-            return (rank / sortedDegs.length) * 100;
-        };
-
-        allNodes = Array.from(allNames).map(name => {
-            const deg = degrees[name] || 0;
-            const pct = getPercentile(deg);
-            let col, fontWeight;
-            if (pct < 30) { col = nodeColors.main; fontWeight = '600'; }
-            else if (pct < 60) { col = nodeColors.sec; fontWeight = '500'; }
-            else if (pct < 90) { col = nodeColors.ter; fontWeight = '400'; }
-            else { col = nodeColors.qua; fontWeight = '400'; }
-            return {
-                id: name, name, symbol: 'circle',
-                symbolSize: Math.min(48, Math.max(28, deg * 3 + 24)),
-                draggable: true,
-                itemStyle: { color: col, borderColor: theme.nodeBorder, borderWidth: 2, shadowColor: theme.nodeShadow, shadowBlur: 6, shadowOffsetY: 2 },
-                label: { show: true, position: 'right', distance: 5, color: theme.text, fontSize: 13, fontWeight },
-                degree: deg
-            };
-        });
-
-        const relMap = new Map();
-        rels.forEach(r => {
-            const k = [r.from, r.to].sort().join('|||');
-            if (!relMap.has(k)) relMap.set(k, { from: r.from, to: r.to, fromLabel: '', toLabel: '', fromTrend: '', toTrend: '' });
-            const e = relMap.get(k);
-            if (r.from === e.from) { e.fromLabel = r.label || r.type || ''; e.fromTrend = r.trend || ''; }
-            else { e.toLabel = r.label || r.type || ''; e.toTrend = r.trend || ''; }
-        });
-
-        allLinks = Array.from(relMap.values()).map(r => {
-            const fc = TREND_COLORS[r.fromTrend] || '#b8b8b8';
-            const tc = TREND_COLORS[r.toTrend] || '#b8b8b8';
-            return {
-                source: r.from, target: r.to, fromName: r.from, toName: r.to,
-                fromLabel: r.fromLabel, toLabel: r.toLabel, fromTrend: r.fromTrend, toTrend: r.toTrend,
-                lineStyle: { width: 1, color: theme.line, curveness: 0, opacity: 1 },
-                label: {
-                    show: true, position: 'middle', distance: 0,
-                    formatter: '{a|◀}{b|▶}',
-                    rich: { a: { color: fc, fontSize: 10 }, b: { color: tc, fontSize: 10 } },
-                    align: 'center', verticalAlign: 'middle', offset: [0, -0.1]
-                },
-                emphasis: { lineStyle: { width: 1.5, color: theme.lineFocus }, label: { fontSize: 11 } }
-            };
-        });
-
-        if (!allNodes.length) { relationChart.clear(); return; }
-
-        const updateChart = (nodes, links, focusId = null) => {
-            const fadeOpacity = 0.2;
-            const processedNodes = focusId ? nodes.map(n => {
-                const rl = links.filter(l => l.source === focusId || l.target === focusId);
-                const rn = new Set([focusId]);
-                rl.forEach(l => { rn.add(l.source); rn.add(l.target); });
-                const isRelated = rn.has(n.id);
-                return { ...n, itemStyle: { ...n.itemStyle, opacity: isRelated ? 1 : fadeOpacity }, label: { ...n.label, opacity: isRelated ? 1 : fadeOpacity } };
-            }) : nodes;
-
-            const processedLinks = focusId ? links.map(l => {
-                const isRelated = l.source === focusId || l.target === focusId;
-                return { ...l, lineStyle: { ...l.lineStyle, opacity: isRelated ? 1 : fadeOpacity }, label: { ...l.label, opacity: isRelated ? 1 : fadeOpacity } };
-            }) : links;
-
-            relationChart.setOption({
-                backgroundColor: 'transparent',
-                tooltip: { show: false },
-                hoverLayerThreshold: Infinity,
-                series: [{
-                    type: 'graph', layout: 'force', roam: true, draggable: true,
-                    animation: true, animationDuration: 800, animationDurationUpdate: 300, animationEasingUpdate: 'cubicInOut',
-                    progressive: 0, hoverAnimation: false,
-                    data: processedNodes, links: processedLinks,
-                    force: { initLayout: 'circular', repulsion: 350, edgeLength: [80, 160], gravity: .12, friction: .6, layoutAnimation: true },
-                    label: { show: true }, edgeLabel: { show: true, position: 'middle' },
-                    emphasis: { disabled: true }
-                }]
-            });
-        };
-
-        updateChart(allNodes, allLinks);
-        setTimeout(() => relationChart.resize(), 0);
-
-        relationChart.off('click');
-        relationChart.on('click', p => {
-            if (p.dataType === 'node') {
-                hideRelationTooltip();
-                const id = p.data.id;
-                selectCharacter(id);
-                archiveView.showPerson();
-                updateChart(allNodes, allLinks, id);
-            } else if (p.dataType === 'edge') {
-                const d = p.data;
-                const e = p.event?.event;
-                if (e) {
-                    const rect = dom.getBoundingClientRect();
-                    showRelationTooltip(d.fromName, d.toName, d.fromLabel, d.toLabel, d.fromTrend, d.toTrend,
-                        e.offsetX || (e.clientX - rect.left), e.offsetY || (e.clientY - rect.top), dom);
-                }
-            }
-        });
-
-        relationChart.getZr().off('click');
-        relationChart.getZr().on('click', p => {
-            if (!p.target) {
-                hideRelationTooltip();
-                updateChart(allNodes, allLinks);
-            }
-        });
     }
 
     function selectCharacter(id) {
         const character = getArchiveCharacters(summaryData).find(entry => entry.id === id || entry.name === id);
         currentCharacterId = character?.id || null;
         renderCharacterProfile();
-        renderCharacterAliases(summaryData.characterAliases);
         archiveView.refreshRoster();
-        if (relationChart && character) {
-            const opt = relationChart.getOption();
-            const idx = opt?.series?.[0]?.data?.findIndex(node => node.name === character.name);
-            relationChart.dispatchAction({ type: 'downplay', seriesIndex: 0 });
-            if (idx >= 0) relationChart.dispatchAction({ type: 'highlight', seriesIndex: 0, dataIndex: idx });
-        }
+
     }
 
     function updateCharacterSelector() {
         const characters = getArchiveCharacters(summaryData);
-        const selected = characters.find(character => character.id === currentCharacterId);
+        const identity = buildCharacterIdentity(summaryData.entities, summaryData.characterAliases);
+        const selected = characters.find(character => character.id === currentCharacterId)
+            || (!identity.isAmbiguous(currentCharacterId) && characters.find(character => character.name === identity.resolveName(currentCharacterId)));
         selectCharacter(selected?.id || characters[0]?.id || null);
     }
 
@@ -1424,18 +1201,20 @@ const UNANNOTATED_LABEL = '未标注';
             c.append(group);
         };
 
+        const identity = buildCharacterIdentity(summaryData.entities, summaryData.characterAliases);
         const rels = summaryData.characters?.relationships || [];
 
         if (!currentCharacterId) {
-            setHtml(c, '<div class="empty">暂无角色数据</div>');
+            c.replaceChildren();
             renderUnassigned();
             return;
         }
 
         const character = getArchiveCharacters(summaryData).find(entry => entry.id === currentCharacterId);
         const name = character.name;
-        const outRels = rels.filter(r => r.from === name);
-        const inRels = rels.filter(r => r.to === name);
+        const resolve = value => identity.isAmbiguous(value) ? null : identity.resolveName(value);
+        const outRels = rels.filter(r => resolve(r.from) === name);
+        const inRels = rels.filter(r => resolve(r.to) === name);
 
         setHtml(c, `
             <div class="prof-name">${h(name)}</div>
@@ -1448,42 +1227,17 @@ const UNANNOTATED_LABEL = '未标注';
                     </div>`).join('')}
                 </div></div>`).join('')}
         `);
-        const aliases = buildAliasResolver(summaryData.characterAliases);
         const entities = summaryData.entities || [];
-        const candidates = entities.filter(entity => ['person','subject'].includes(entity.kind)
-            && [entity.name,...(entity.aliases || [])].some(alias => aliases.resolveName(alias) === aliases.resolveName(name)));
-        const person = candidates.length === 1 ? candidates[0] : undefined;
-        const matches = new Set([name,...(person?.aliases || []),person?.name].filter(Boolean).map(aliases.resolveName));
-        const resolve = value => matches.has(aliases.resolveName(value)) ? name : aliases.resolveName(value);
+        const person = entities.find(entity => entity.id === character.id) || identity.entityFor(name);
         const records = summaryData.storyRecords || [];
         const state = renderPersonState(c, records, name, resolve);
         renderPersonalAgendas(c, agendas, holder => resolve(holder) === name);
         renderUnassigned();
         const attributes = document.createElement('section');
-        renderWorldAttributes(attributes,entities,person);
+        renderWorldAttributes(attributes,entities,person,identity.aliasesFor(name,person));
         const title = c.querySelector('.prof-name');
         if (state) title.after(state);
         if (attributes.childElementCount) title.after(attributes);
-    }
-
-    function renderCharacterAliases(aliases) {
-        summaryData.characterAliases = aliases || [];
-        const list = $('aliases-list');
-        if (!list) return;
-        const name = getArchiveCharacters(summaryData).find(character => character.id === currentCharacterId)?.name;
-        const related = aliases.filter(alias => alias.to === name || alias.from === name);
-        if (!related.length) {
-            setHtml(list, `<div class="archive-muted">${ARCHIVE_COPY.noAliases}</div>`);
-            return;
-        }
-        setHtml(list, related.map(alias => `
-            <div class="alias-item">
-                <span class="alias-from">${h(alias.from || '')}</span>
-                <span class="alias-arrow" aria-hidden="true">→</span>
-                <span class="alias-to">${h(alias.to || '')}</span>
-                ${alias.evidence ? `<span class="alias-evidence">${h(alias.evidence)}</span>` : ''}
-            </div>
-        `).join(''));
     }
 
     function updateStats(s) {
@@ -1498,44 +1252,6 @@ const UNANNOTATED_LABEL = '未标注';
     // ═══════════════════════════════════════════════════════════════════════════
     // Modals
     // ═══════════════════════════════════════════════════════════════════════════
-
-    function openRelationsFullscreen() {
-        $('rel-fs-modal').classList.add('active');
-        const dom = $('relation-chart-fullscreen');
-        if (!relationChartFullscreen) relationChartFullscreen = echarts.init(dom);
-
-        if (!allNodes.length) {
-            relationChartFullscreen.clear();
-            return;
-        }
-
-        relationChartFullscreen.setOption({
-            tooltip: { show: false },
-            hoverLayerThreshold: Infinity,
-            series: [{
-                type: 'graph', layout: 'force', roam: true, draggable: true,
-                animation: true, animationDuration: 800, animationDurationUpdate: 300, animationEasingUpdate: 'cubicInOut',
-                progressive: 0, hoverAnimation: false,
-                data: allNodes.map(n => ({
-                    ...n,
-                    symbolSize: Array.isArray(n.symbolSize) ? [n.symbolSize[0] * 1.3, n.symbolSize[1] * 1.3] : n.symbolSize * 1.3,
-                    label: { ...n.label, fontSize: 14 }
-                })),
-                links: allLinks.map(l => ({ ...l, label: { ...l.label, fontSize: 18 } })),
-                force: { repulsion: 700, edgeLength: [150, 280], gravity: .06, friction: .6, layoutAnimation: true },
-                label: { show: true }, edgeLabel: { show: true, position: 'middle' },
-                emphasis: { disabled: true }
-            }]
-        });
-
-        setTimeout(() => relationChartFullscreen.resize(), 100);
-        postMsg('FULLSCREEN_OPENED');
-    }
-
-    function closeRelationsFullscreen() {
-        $('rel-fs-modal').classList.remove('active');
-        postMsg('FULLSCREEN_CLOSED');
-    }
 
     /**
      * 显示通用确认弹窗
@@ -1741,42 +1457,10 @@ const UNANNOTATED_LABEL = '未标注';
         };
     }
 
-    function renderCharacterAliasesEditor(aliases) {
-        const list = aliases?.length ? aliases : [{ from: '', to: '', evidence: '' }];
-        const es = $('editor-struct');
-        const renderItem = alias => `
-            <div class="struct-item alias-edit-item">
-                <div class="struct-row">
-                    <input type="text" class="alias-edit-from" placeholder="别名、称号或译名" value="${h(alias.from || '')}">
-                    <input type="text" class="alias-edit-to" placeholder="角色主名" value="${h(alias.to || '')}">
-                </div>
-                <div class="struct-row">
-                    <input type="text" class="alias-edit-evidence" placeholder="确认依据（可选）" value="${h(alias.evidence || '')}">
-                </div>
-                <div class="struct-actions"><span>别名映射</span></div>
-            </div>`;
-
-        setHtml(es, `
-            <div id="alias-edit-list">${list.map(renderItem).join('')}</div>
-            <div style="margin-top:8px"><button type="button" class="btn btn-sm" id="alias-add">＋ 新增映射</button></div>
-        `);
-        es.querySelectorAll('.alias-edit-item').forEach(addDeleteHandler);
-        $('alias-add').onclick = () => {
-            // renderItem already emits a .struct-item.alias-edit-item wrapper. Giving
-            // this outer element the same class nested the new row twice, so saveEditor's
-            // querySelectorAll('.alias-edit-item') read it twice and every save failed
-            // validation with "duplicate alias points at several characters".
-            const div = document.createElement('div');
-            setHtml(div, renderItem({ from: '', to: '', evidence: '' }));
-            addDeleteHandler(div);
-            $('alias-edit-list').appendChild(div);
-        };
-    }
-
     function openEditor(section) {
         archiveView.closeDialogs();
         currentEditSection = section;
-        currentEditBaseline = structuredClone(section === 'aliases' ? summaryData.characterAliases : summaryData[section]);
+        currentEditBaseline = structuredClone(summaryData[section]);
         if (section === 'facts') currentEditBaseline = currentEditBaseline.filter(fact => !fact.retracted);
         const meta = SECTION_META[section];
         const es = $('editor-struct');
@@ -1789,9 +1473,7 @@ const UNANNOTATED_LABEL = '未标注';
         es.classList.add('hidden');
         ta.classList.remove('hidden');
 
-        if (section === 'keywords') {
-            ta.value = summaryData.keywords.map(k => `${k.text}|${k.weight || '一般'}`).join('\n');
-        } else if (section === 'facts') {
+        if (section === 'facts') {
             // 按人物首次出现的插入顺序分组，同一人物的事实保持相邻
             const grouped = new Map();
             for (const f of (summaryData.facts || []).filter(f => !f.retracted)) {
@@ -1805,7 +1487,6 @@ const UNANNOTATED_LABEL = '未标注';
             ta.classList.add('hidden');
             es.classList.remove('hidden');
             if (section === 'characters') renderCharactersEditor(summaryData.characters || { main: [], relationships: [] });
-            else if (section === 'aliases') renderCharacterAliasesEditor(summaryData.characterAliases || []);
         }
 
         // Compare the same editable projection at open and save, not hidden
@@ -1828,13 +1509,7 @@ const UNANNOTATED_LABEL = '未标注';
         const ta = $('editor-ta');
         let parsed;
 
-        if (section === 'keywords') {
-            const oldMap = new Map(currentEditBaseline.map(k => [k.text, k]));
-            parsed = ta.value.trim().split('\n').filter(l => l.trim()).map(line => {
-                const [text, weight] = line.split('|').map(s => s.trim());
-                return preserveAddedAt({ text: text || '', weight: weight || '一般' }, oldMap.get(text));
-            });
-        } else if (section === 'characters') {
+        if (section === 'characters') {
             const oldMainMap = new Map(currentEditBaseline.main.map(m => [getCharName(m), m]));
             const mainNames = Array.from(es.querySelectorAll('.char-main-name')).map(i => i.value.trim()).filter(Boolean);
             const main = mainNames.map(n => preserveAddedAt({ name: n }, oldMainMap.get(n)));
@@ -1878,15 +1553,6 @@ const UNANNOTATED_LABEL = '未标注';
                     return fact;
                 })
                 .filter(Boolean);
-        } else if (section === 'aliases') {
-            parsed = Array.from(es.querySelectorAll('.alias-edit-item')).map(item => ({
-                from: item.querySelector('.alias-edit-from').value.trim(),
-                to: item.querySelector('.alias-edit-to').value.trim(),
-                evidence: item.querySelector('.alias-edit-evidence').value.trim(),
-            })).filter(alias => alias.from || alias.to || alias.evidence);
-            if (parsed.some(alias => !alias.from || !alias.to)) {
-                throw new Error('每条映射都要填写别名和角色主名');
-            }
         }
         return parsed;
     }
@@ -1902,11 +1568,9 @@ const UNANNOTATED_LABEL = '未标注';
             return;
         }
 
-        if (section === 'aliases') postMsg('UPDATE_CHARACTER_ALIASES', { aliases: parsed });
-        else postMsg('UPDATE_SECTION', { section, previous: currentEditBaseline, data: parsed });
+        postMsg('UPDATE_SECTION', { section, previous: currentEditBaseline, data: parsed });
 
-        if (section === 'keywords') renderKeywords(parsed);
-        else if (section === 'characters') renderRelations(parsed);
+        if (section === 'characters') updateRelationships(parsed);
         else if (section === 'facts') renderFacts(parsed);
 
         closeEditor();
@@ -1923,25 +1587,69 @@ const UNANNOTATED_LABEL = '未标注';
         if (!d || d.source !== 'TavernKitchen') return;
 
         switch (d.type) {
+            case 'WORLD_EVOLUTION_RECORDS': {
+                const container = $(d.section === 'people' ? 'people-developments' : 'situation-developments');
+                container.replaceChildren();
+                const news = d.news || [];
+                container.hidden = !news.length && !d.overview;
+                if (container.hidden) break;
+                const heading = document.createElement('h4');
+                heading.textContent = d.section === 'people' ? '幕后人物动向' : '幕后局势进展';
+                container.append(heading);
+                if (d.overview) {
+                    const overview = document.createElement('p'); overview.textContent = d.overview;
+                    container.append(overview);
+                }
+                for (const item of news) {
+                    const row = document.createElement('article'), title = document.createElement('strong');
+                    title.textContent = item.title;
+                    const body = document.createElement('p'); body.textContent = item.body;
+                    row.append(title, body);
+                    if (item.progress) {
+                        const proof = document.createElement('details'), label = document.createElement('summary');
+                        label.textContent = '推进依据 · 第 ' + (item.progress.floor + 1) + ' 楼';
+                        const text = document.createElement('p');
+                        text.textContent = item.progress.reason + ' · ' + item.progress.quote;
+                        proof.append(label, text); row.append(proof);
+                    }
+                    container.append(row);
+                }
+                break;
+            }
+            case 'WORLD_EVOLUTION_STATE':
+                evolutionSettings = d.settings;
+                renderFacts(summaryData.facts);
+                break;
+
             case 'KITCHEN_MEMORY_VIEW': {
+                const options = $('summary-options'), modal = $('settings-modal');
+                const summary = d.view === 'memory';
+                $('summary-controls').hidden = !summary;
+                $('people-controls').hidden = !['people','relations'].includes(d.view);
+                $('situation-controls').hidden = d.view !== 'world';
+                if (['world','people','relations'].includes(d.view)) postMsg('WORLD_EVOLUTION_REQUEST');
+                options.hidden = !summary;
+                if (summary) options.open = true;
                 document.documentElement.dataset.kitchenView = d.view === 'relations' ? 'people' : d.view;
+                if (summary && modal.parentElement !== options) {
+                    options.append(modal);
+                    if (modal.classList.contains('assistant-page')) showSettingsOwner(false);
+                } else if (!summary && modal.parentElement === options) $('summary-controls').after(modal);
                 const settingsView = ['settings', 'proofreading'].includes(d.view);
                 document.querySelector('.archive').inert = settingsView;
                 if (settingsView) {
                     document.documentElement.dataset.kitchenView = 'settings';
                     const proof = d.view === 'proofreading';
                     const tab = proof ? 'tab-agent' : 'tab-summary';
-                    if (!$('settings-modal').classList.contains('active')) openSettings({ tab, fromWorkspace: true });
-                    else if (proof !== (settingsPage === 'tab-agent' || settingsPage === 'tab-agent-api')) selectSettingsTab(tab);
+                    if (!$('settings-modal').classList.contains('active')) openSettings({ tab });
+                    else if (proof !== modal.classList.contains('assistant-page')) showSettingsOwner(proof);
                 } else {
                     const view = { memory: 'story', world: 'world', lore: 'world', people: 'people', relations: 'people' }[d.view];
                     if (view) archiveView.switchView(view, { notify: false });
+                    if (summary && options.open && !modal.classList.contains('active')) openSettings();
                 }
                 break;
             }
-            case 'SUMMARY_AGENT_SETTINGS_RESULT':
-                agentSettings.receive(d);
-                break;
             case 'CHAT_SUMMARY_STATE':
                 currentChatSummaryState = d.state;
                 syncCurrentChatSummaryControls();
@@ -1987,7 +1695,6 @@ const UNANNOTATED_LABEL = '未标注';
                         currentCharacterId = null;
                         tlCurrentPage = tlLoadPage();
                     }
-                    if (p.keywords) renderKeywords(p.keywords);
                     summaryData.storyRecords = p.storyRecords || [];
                     if (p.rounds) renderTimeline(p.rounds);
                     if (p.characters) summaryData.characters = p.characters;
@@ -1995,8 +1702,8 @@ const UNANNOTATED_LABEL = '未标注';
                     summaryData.playerName = p.playerName || '';
                     summaryData.legacyCharacterNames = p.legacyCharacterNames || [];
                     if (p.facts) renderFacts(p.facts);
-                    if (p.characterAliases) renderCharacterAliases(p.characterAliases);
-                    renderRelations(summaryData.characters);
+                    if (p.characterAliases) summaryData.characterAliases = p.characterAliases;
+                    updateRelationships(summaryData.characters);
                     $('stat-events').textContent = p.rounds?.length || 0;
                     if (p.lastSummarizedMesId != null) $('stat-summarized').textContent = p.lastSummarizedMesId + 1;
                     if (p.stats) updateStats(p.stats);
@@ -2026,17 +1733,15 @@ const UNANNOTATED_LABEL = '未标注';
                 $('stat-summarized').textContent = 0;
                 $('stat-pending').textContent = t;
                 $('summarized-count').textContent = 0;
-                summaryData = { keywords: [], rounds: [], characters: { main: [], relationships: [] }, arcs: [], facts: [], characterAliases: [] };
+                summaryData = { rounds: [], characters: { main: [], relationships: [] }, arcs: [], facts: [], characterAliases: [] };
                 currentTimelineChatId = '';
                 tlUnfilteredPage = null;
                 currentCharacterId = null;
                 archiveView.reset();
-                renderKeywords([]);
-                renderTimeline([]);
-                renderRelations(null);
+                        renderTimeline([]);
+                updateRelationships(null);
                 updateCharacterSelector();
                 renderFacts([]);
-                renderCharacterAliases([]);
                 archiveView.refresh();
                 break;
             }
@@ -2062,7 +1767,7 @@ const UNANNOTATED_LABEL = '未标注';
                     if (pending.timeoutId) clearTimeout(pending.timeoutId);
                     const statusEl = $(pending.statusId);
                     if (d.success) {
-                        if (d.config) applyConfig(d.config);
+                        if (d.config && !pending.promptChange) applyConfig(d.config);
                         setStatusText(statusEl, pending.successMessage, 'success');
                         pending.resolve(true);
                     } else {
@@ -2191,39 +1896,27 @@ const UNANNOTATED_LABEL = '未标注';
         $('editor-save').onclick = saveEditor;
 
         // Settings modal
-        $('archive-manage-open').onclick = () => { archiveView.closeDialogs(); openSettings(); };
+        $('summary-options').ontoggle = () => {
+            if (!$('summary-options').open || $('summary-options').hidden || $('settings-modal').classList.contains('active')) return;
+            openSettings();
+        };
+        $('tab-vector').ontoggle = () => { if ($('tab-vector').open) postMsg('REQUEST_RECALL_LOG'); };
+        $('tab-clear').ontoggle = () => { if ($('tab-clear').open) syncCurrentChatSummaryControls(); };
         $('settings-chat').textContent = MEMORY_CHAT_COPY.entry;
         $('settings-chat').onclick = () => memoryMaintenancePage.openChat();
-        $('settings-close').onclick = closeSettings;
         $('settings-cancel').onclick = () => {
             Object.assign(config, settingsSnapshot);
             openSettings({ preserveTab: true });
         };
         $('settings-config-retry').onclick = retryPanelConfigLoad;
         $('settings-save').onclick = saveSettings;
-        $$('[data-workspace-page]').forEach(button => { button.onclick = () => selectSettingsTab(button.dataset.workspacePage); });
-        $('settings-modal').addEventListener('input', event => {
-            if (event.target.closest('.text-api, #tab-agent-api')) return;
-            markSettingsDirty();
-        });
+        for (const id of ['settings-modal', 'tab-summary-prompts', 'tab-prompts']) {
+            $(id).addEventListener('input', event => { markSettingsDirty(event.target); });
+        }
 
-        // Settings tabs
-        $$('.settings-tab').forEach(tab => {
-            tab.onclick = () => {
-                const targetId = tab.dataset.tab;
-                if (!targetId) return;
-
-                selectSettingsTab(targetId);
-            };
-        });
-
-
-        for (const [level, fallback] of Object.entries(LAYER_PROMPTS)) {
-            $('reset-' + level).onclick = async () => {
-                $('prompt-' + level).value = fallback;
-                markSettingsDirty();
-                await saveSettings();
-            };
+        for (const level of Object.keys(LAYER_PROMPTS)) {
+            document.querySelector('[data-save-layer="' + level + '"]').onclick = () => saveLayerPrompt(level);
+            $('reset-' + level).onclick = () => saveLayerPrompt(level, true);
         }
         $('btn-reset-summary-style').onclick = async () => {
             $('summary-style').value = SUMMARY_EVENT_STYLE_RULES;
@@ -2255,7 +1948,7 @@ const UNANNOTATED_LABEL = '未标注';
                     postMsg('REQUEST_ROLLBACK_ONCE');
                 }
             } else if (action === 'clear') {
-                if (await showConfirm('清空全部', '确定要清空本聊天的所有总结、关键词及人物关系数据吗？聊天记录不会删除。此操作不可撤销。', '清空', '取消')) {
+                if (await showConfirm('清空全部', '确定要清空本聊天的所有总结及人物关系数据吗？聊天记录不会删除。此操作不可撤销。', '清空', '取消')) {
                     postMsg('REQUEST_CLEAR');
                 }
             }
@@ -2274,10 +1967,7 @@ const UNANNOTATED_LABEL = '未标注';
             e.target.value = c;
         };
 
-        // Fullscreen relations
-        $('btn-fullscreen-relations').onclick = openRelationsFullscreen;
-        $('rel-fs-backdrop').onclick = closeRelationsFullscreen;
-        $('rel-fs-close').onclick = closeRelationsFullscreen;
+
 
         // Vector UI
         initSummaryIOUI();
@@ -2344,12 +2034,6 @@ const UNANNOTATED_LABEL = '未标注';
             }
         });
 
-        // Resize
-        window.onresize = () => {
-            relationChart?.resize();
-            relationChartFullscreen?.resize();
-        };
-
         // Parent messages
         window.onmessage = handleParentMessage;
     }
@@ -2365,15 +2049,10 @@ const UNANNOTATED_LABEL = '未标注';
             onSelectCharacter: selectCharacter,
             onTimelineChange: options => renderTimeline(summaryData.rounds, options),
             onFactsChange: () => renderFacts(summaryData.facts),
-            onPeopleVisible: () => { renderRelations(summaryData.characters); relationChart?.resize(); },
             onEdit: openEditor, postMsg, setHtml, h,
         });
         $('settings-save').textContent = MEMORY_COPY.settingsSave;
-        const agentRoot = document.createElement('section');
-        agentRoot.id = 'tab-agent-api'; agentRoot.className = 'tab-pane xb-agent-settings-surface';
-        $('tab-agent').parentElement.append(agentRoot);
-        agentSettings = createSummaryAgentSettings(agentRoot, postMsg, setHtml);
-        memoryMaintenancePage = createMemoryMaintenancePage($('tab-agent'), postMsg, { openApi: () => selectSettingsTab('tab-agent-api') });
+        memoryMaintenancePage = createMemoryMaintenancePage($('tab-agent'), postMsg);
         loadConfig();
         tlPagingEnabled = localStorage.getItem(TL_PAGING_KEY) === '1';
 
@@ -2383,11 +2062,9 @@ const UNANNOTATED_LABEL = '未标注';
         $('stat-pending').textContent = '—';
         $('summarized-count').textContent = '0';
 
-        renderKeywords([]);
         renderTimeline([]);
         updateCharacterSelector();
         renderFacts([]);
-        renderCharacterAliases([]);
 
         bindEvents();
         syncCurrentChatSummaryControls();
@@ -2395,10 +2072,7 @@ const UNANNOTATED_LABEL = '未标注';
         // The host is the only appearance source; legacy local theme choices are ignored.
         document.documentElement.dataset.kitchenTheme = 'host';
         document.documentElement.classList.add('tk-follow-host');
-        document.addEventListener('kitchen-theme-change', () => {
-            hideRelationTooltip();
-            if (relationChart) renderRelations(summaryData.characters);
-        });
+
 
 
 
@@ -2415,6 +2089,46 @@ const UNANNOTATED_LABEL = '未标注';
     }
 
 
+    function appendEvolutionControls(group, scenery) {
+        const heading = group;
+        heading.classList.add('tk-situation-heading');
+        const label = document.createElement('label');
+        const toggle = document.createElement('input');
+        toggle.type = 'checkbox';
+        const key = scenery ? 'sceneryEvolution' : 'subscribed';
+        toggle.checked = evolutionSettings?.[key] === true;
+        toggle.disabled = !evolutionSettings?.enabled || evolutionSettings.pending;
+        label.append(toggle, scenery ? '风物随剧情演化' : '事态随剧情演化');
+        toggle.setAttribute('aria-label', scenery ? '风物随剧情演化' : '事态随剧情演化');
+        heading.append(label);
+        const change = (key, value) => {
+            evolutionSettings = { ...evolutionSettings, pending: true };
+            postMsg('WORLD_EVOLUTION_CHANGE', { key, value });
+            renderFacts(summaryData.facts);
+        };
+        toggle.onchange = () => change(key, toggle.checked);
+        if (scenery) {
+            const frequency = document.createElement('select');
+            frequency.setAttribute('aria-label', '街头偶遇频率');
+            for (const [value, text] of [['off','关闭'], ['occasional','偶尔'], ['lively','活跃']]) {
+                const option = document.createElement('option');
+                option.value = value; option.textContent = text;
+                option.selected = value === (evolutionSettings?.encounterFrequency || 'occasional');
+                frequency.append(option);
+            }
+            frequency.disabled = toggle.disabled;
+            frequency.onchange = () => change('encounterFrequency', frequency.value);
+            const field = document.createElement('label');
+            field.append('街头偶遇频率', frequency);
+            heading.append(field);
+        }
+        if (evolutionSettings?.error) {
+            const status = document.createElement('p');
+            status.setAttribute('role', 'alert'); status.textContent = evolutionSettings.error;
+            heading.append(status);
+        }
+    }
+
     function renderFacts(facts) {
         summaryData.facts = facts || [];
 
@@ -2422,25 +2136,32 @@ const UNANNOTATED_LABEL = '未标注';
         if (!container) return;
         container.parentElement.querySelector('.tk-story-situations')?.remove();
         const situationPage = document.documentElement.dataset.kitchenView === 'world';
-        container.hidden = situationPage && situationFilter === '风物';
-        if (situationPage || (document.documentElement.dataset.kitchenView !== 'lore' && summaryData.storyRecords?.some(record => record.kind === 'situation'))) {
+        container.hidden = false;
+        if (situationPage) {
             const situations = document.createElement('div'); situations.className = 'tk-story-situations';
             const records = summaryData.storyRecords || [];
-            for (const filter of ['全部', '事态', '风物']) {
-                const button = document.createElement('button');
-                button.type = 'button'; button.textContent = filter;
-                button.setAttribute('aria-pressed', String(filter === situationFilter));
-                button.className = filter === situationFilter ? 'btn btn-sm btn-p' : 'btn btn-sm';
-                button.onclick = () => { situationFilter = filter; renderFacts(summaryData.facts); };
-                situations.append(button);
+            for (const [scenery, title] of [[false, '事态'], [true, '风物']]) {
+                const group = document.createElement('div');
+                group.dataset.situationGroup = scenery ? 'scenery' : 'affairs';
+                const filtered = records.filter(record => record.kind !== 'situation' || scenery === ['scenery','encounter'].includes(record.flavor));
+                renderThreads(group, filtered, ['situation'], Infinity, { title });
+                situations.append(group);
             }
-            const filtered = records.filter(record => record.kind !== 'situation' || situationFilter === '全部'
-                || (situationFilter === '风物') === Boolean(record.flavor));
-            renderThreads(situations, filtered, ['situation']); container.before(situations);
+            container.before(situations);
+            for (const [id, scenery] of [['affair-settings', false], ['scenery-settings', true]]) {
+                const group = $(id); group.replaceChildren();
+                appendEvolutionControls(group, scenery);
+            }
         }
 
         archiveView.refreshIndexes();
         const stateFacts = archiveView.filteredFacts();
+        if (situationPage) {
+            $('archive-world-index').hidden = true;
+            $('archive-world-heading').hidden = true;
+            $('archive-world-hint').hidden = true;
+            container.hidden = stateFacts.length === 0;
+        }
 
         if (!stateFacts.length) {
             setHtml(container, `<div class="archive-empty">${archiveView.worldFacts().length ? ARCHIVE_COPY.noResults : document.documentElement.dataset.kitchenView === 'lore' ? '暂无设定记录' : ARCHIVE_COPY.noFacts}</div>`);

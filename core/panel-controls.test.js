@@ -19,7 +19,7 @@ test('panel controls show the bound model first and save and reset the actual re
     };
     mountPanelControls('map',bar,state,async (key,value) => {state.panelPrompts[key]=value;},async()=>repo);
     await setImmediate();
-    const select = bar.querySelector('.tk-panel-controls').firstElementChild.querySelector('select');
+    const select = bar.querySelector('.tk-panel-controls').querySelector('select');
     select.querySelector('option[value="world-model"]').selected = true;
     await select.onchange();
     assert.deepEqual(mutations,[['world',{type:'select',id:'world-model'}]]);

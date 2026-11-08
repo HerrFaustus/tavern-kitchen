@@ -1,18 +1,16 @@
 {
-  "buildId": "64ca2dd843263cee6198",
+  "buildId": "e55642ccdd923f3e5883",
   "entries": {
     "apps/debug-panel": {
       "file": "apps/debug-panel-D8bR9Oy2.js",
       "css": []
     },
     "apps/story-summary": {
-      "file": "apps/story-summary-B3D4v-jN.js",
-      "css": [
-        "assets/settings-ui-Bp9D6kSf.css"
-      ]
+      "file": "apps/story-summary-RurCLtSm.js",
+      "css": []
     },
     "apps/xiaobai-os": {
-      "file": "apps/xiaobai-os-BniX-COF.js",
+      "file": "apps/xiaobai-os-D60XHf-r.js",
       "css": [
         "assets/xiaobai-os-BSXWZSzi.css"
       ]
@@ -22,7 +20,7 @@
       "css": []
     },
     "runtime/agent-core": {
-      "file": "runtime/agent-core-BprhNIY2.js",
+      "file": "runtime/agent-core-DMlQiWfP.js",
       "css": []
     },
     "runtime/call-generate": {
@@ -34,7 +32,7 @@
       "css": []
     },
     "runtime/os-agent": {
-      "file": "runtime/os-agent-fnIBZZcC.js",
+      "file": "runtime/os-agent-D8vMaAKI.js",
       "css": []
     },
     "runtime/worldbook": {
@@ -48,21 +46,18 @@
       "dynamicImports": [],
       "css": []
     },
-    "apps/story-summary-B3D4v-jN.js": {
+    "apps/story-summary-RurCLtSm.js": {
       "imports": [
-        "shared/panel-policy-BFJhSW-5.js",
-        "shared/settings-ui-DJt2y-Vb.js",
-        "shared/domain-CyhWD4kH.js",
-        "shared/generation-rules-CTDehnUd.js",
-        "shared/viewport-B7C3hJJv.js",
-        "shared/error-guidance-Cpmi65bN.js"
+        "shared/rolldown-runtime-CRqgUL4m.js",
+        "shared/domain-hmI4DKO_.js",
+        "shared/generation-rules-8w8vFDQm.js",
+        "shared/viewport-CB_oIFoI.js",
+        "shared/error-guidance-C2BGPK8o.js"
       ],
       "dynamicImports": [],
-      "css": [
-        "assets/settings-ui-Bp9D6kSf.css"
-      ]
+      "css": []
     },
-    "apps/xiaobai-os-BniX-COF.js": {
+    "apps/xiaobai-os-D60XHf-r.js": {
       "imports": [
         "shared/async-errors-DrD0vbna.js",
         "shared/preload-helper-Ddh_c1lL.js",
@@ -72,9 +67,9 @@
         "shared/frame-bridge-B7v1o_ZS.js"
       ],
       "dynamicImports": [
-        "shared/AgentApiApp-DTjz2ZN5.js",
-        "shared/MapApp-CgKTBmHX.js",
-        "shared/WorldApp-QyIDVdpY.js"
+        "shared/AgentApiApp-BbT2csk0.js",
+        "shared/MapApp-C7mqf8p1.js",
+        "shared/WorldApp-DV0p18px.js"
       ],
       "css": [
         "assets/xiaobai-os-BSXWZSzi.css"
@@ -82,20 +77,20 @@
     },
     "host/plugin.js": {
       "imports": [
-        "shared/kitchen-workspace-BD2GLY2f.js",
+        "shared/kitchen-workspace-BaS2zs1n.js",
         "shared/preload-helper-Ddh_c1lL.js"
       ],
       "dynamicImports": [
-        "shared/kitchen-runtime-CI33Ck5O.js"
+        "shared/kitchen-runtime-C4QP3fnM.js"
       ],
       "css": []
     },
-    "runtime/agent-core-BprhNIY2.js": {
+    "runtime/agent-core-DMlQiWfP.js": {
       "imports": [
-        "shared/openai-url-utils-Ctow2h0W.js",
-        "shared/provider-config-CfaZDVme.js",
-        "shared/client-Dn4mG2-w.js",
-        "shared/protocol-BhkFYvUR.js"
+        "shared/provider-resolution-sTd_qUPG.js",
+        "shared/provider-config-CXMCrAcF.js",
+        "shared/client-CFWChOnp.js",
+        "shared/protocol-BYV0flJY.js"
       ],
       "dynamicImports": [],
       "css": []
@@ -116,9 +111,9 @@
       "dynamicImports": [],
       "css": []
     },
-    "runtime/os-agent-fnIBZZcC.js": {
+    "runtime/os-agent-D8vMaAKI.js": {
       "imports": [
-        "shared/browser-entry-MyeX_VxY.js"
+        "shared/browser-entry-CsSCO77H.js"
       ],
       "dynamicImports": [],
       "css": []
@@ -131,53 +126,39 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/AgentApiApp-DTjz2ZN5.js": {
+    "shared/AgentApiApp-BbT2csk0.js": {
       "imports": [
-        "shared/settings-ui-DJt2y-Vb.js",
-        "shared/runtime-core.esm-bundler-cPpmfXNb.js"
+        "shared/runtime-core.esm-bundler-cPpmfXNb.js",
+        "shared/provider-resolution-sTd_qUPG.js",
+        "shared/identifier-CI88MhZ6.js"
       ],
       "dynamicImports": [],
       "css": [
-        "assets/AgentApiApp-DK8_ylCM.css",
-        "assets/settings-ui-Bp9D6kSf.css"
+        "assets/AgentApiApp-CrmbVvKP.css"
       ]
     },
-    "shared/MapApp-CgKTBmHX.js": {
+    "shared/MapApp-C7mqf8p1.js": {
       "imports": [
         "shared/types-DTobQMoL.js",
         "shared/runtime-core.esm-bundler-cPpmfXNb.js",
         "shared/runtime-dom.esm-bundler-B7vEmPlR.js",
-        "shared/hierarchy-Dy5mpabT.js",
-        "shared/ModelProfileBinding-BKTCHaRd.js"
+        "shared/hierarchy-Dy5mpabT.js"
       ],
       "dynamicImports": [],
       "css": [
-        "assets/MapApp-DMMcanO4.css",
-        "assets/settings-ui-Bp9D6kSf.css"
+        "assets/MapApp-D6l3wvLh.css"
       ]
     },
-    "shared/ModelProfileBinding-BKTCHaRd.js": {
-      "imports": [
-        "shared/settings-ui-DJt2y-Vb.js",
-        "shared/runtime-core.esm-bundler-cPpmfXNb.js"
-      ],
-      "dynamicImports": [],
-      "css": [
-        "assets/settings-ui-Bp9D6kSf.css"
-      ]
-    },
-    "shared/WorldApp-QyIDVdpY.js": {
+    "shared/WorldApp-DV0p18px.js": {
       "imports": [
         "shared/async-errors-DrD0vbna.js",
         "shared/runtime-core.esm-bundler-cPpmfXNb.js",
         "shared/runtime-dom.esm-bundler-B7vEmPlR.js",
-        "shared/frame-bridge-B7v1o_ZS.js",
-        "shared/ModelProfileBinding-BKTCHaRd.js"
+        "shared/frame-bridge-B7v1o_ZS.js"
       ],
       "dynamicImports": [],
       "css": [
-        "assets/WorldApp-CCAm49Q-.css",
-        "assets/settings-ui-Bp9D6kSf.css"
+        "assets/WorldApp-CCAm49Q-.css"
       ]
     },
     "shared/abort-utils-C76zWFGO.js": {
@@ -190,39 +171,40 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/atom-extraction-DIoANX2H.js": {
+    "shared/atom-extraction-DR4TbvNN.js": {
       "imports": [
-        "shared/panel-policy-BFJhSW-5.js",
         "shared/constants-CF4HAj3B.js",
-        "shared/profiles-54fT91NB.js",
-        "shared/domain-CyhWD4kH.js",
-        "shared/generation-rules-CTDehnUd.js",
+        "shared/domain-hmI4DKO_.js",
+        "shared/panel-policy-B7trbgeC.js",
+        "shared/generation-rules-8w8vFDQm.js",
+        "shared/provider-resolution-sTd_qUPG.js",
         "shared/debug-core-BiaGo9yA.js",
-        "shared/tool-descriptions-CciG1UHP.js",
-        "shared/repository-COYHiZQP.js",
-        "shared/kitchen-runtime-CI33Ck5O.js",
-        "shared/server-storage-CnT207R1.js",
+        "shared/tool-descriptions-bR_oKIX2.js",
+        "shared/identifier-CI88MhZ6.js",
+        "shared/repository-CQJW2GpW.js",
+        "shared/kitchen-runtime-C4QP3fnM.js",
+        "shared/server-storage-CpwqPa7Y.js",
         "shared/json-candidate-CmEyWwSp.js",
-        "shared/involvement-Dd1OFF1E.js"
+        "shared/involvement-BcKC9Mz_.js"
       ],
       "dynamicImports": [],
       "css": []
     },
-    "shared/browser-entry-MyeX_VxY.js": {
+    "shared/browser-entry-CsSCO77H.js": {
       "imports": [
-        "shared/panel-policy-BFJhSW-5.js",
-        "shared/openai-url-utils-Ctow2h0W.js",
-        "shared/sampling-settings-DYZpvCS9.js",
-        "shared/provider-config-CfaZDVme.js",
-        "shared/client-Dn4mG2-w.js",
-        "shared/model-list-CYa28-CG.js"
+        "shared/constants-CF4HAj3B.js",
+        "shared/panel-policy-B7trbgeC.js",
+        "shared/provider-resolution-sTd_qUPG.js",
+        "shared/provider-config-CXMCrAcF.js",
+        "shared/client-CFWChOnp.js",
+        "shared/model-list-1oByltzL.js"
       ],
       "dynamicImports": [],
       "css": []
     },
-    "shared/client-Dn4mG2-w.js": {
+    "shared/client-CFWChOnp.js": {
       "imports": [
-        "shared/openai-url-utils-Ctow2h0W.js"
+        "shared/provider-resolution-sTd_qUPG.js"
       ],
       "dynamicImports": [],
       "css": []
@@ -242,15 +224,16 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/domain-CyhWD4kH.js": {
+    "shared/domain-hmI4DKO_.js": {
       "imports": [
-        "shared/panel-policy-BFJhSW-5.js",
+        "shared/rolldown-runtime-CRqgUL4m.js",
+        "shared/panel-policy-B7trbgeC.js",
         "shared/types-DTobQMoL.js"
       ],
       "dynamicImports": [],
       "css": []
     },
-    "shared/error-guidance-Cpmi65bN.js": {
+    "shared/error-guidance-C2BGPK8o.js": {
       "imports": [],
       "dynamicImports": [],
       "css": []
@@ -270,31 +253,31 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/gateway-Cd5pMtje.js": {
+    "shared/gateway-C__PIK0D.js": {
       "imports": [
         "shared/preload-helper-Ddh_c1lL.js",
-        "shared/openai-url-utils-Ctow2h0W.js",
-        "shared/repository-COYHiZQP.js",
-        "shared/server-storage-CnT207R1.js",
-        "shared/profile-runtime-Be8ldhjd.js"
+        "shared/provider-resolution-sTd_qUPG.js",
+        "shared/repository-CQJW2GpW.js",
+        "shared/server-storage-CpwqPa7Y.js",
+        "shared/profile-runtime-CXMvvgdo.js"
       ],
       "dynamicImports": [
-        "runtime/os-agent-fnIBZZcC.js"
+        "runtime/os-agent-D8vMaAKI.js"
       ],
       "css": []
     },
-    "shared/generation-host-CnCoXsl_.js": {
+    "shared/generation-host-DE2w-A8b.js": {
       "imports": [
-        "shared/kitchen-runtime-CI33Ck5O.js",
+        "shared/kitchen-runtime-C4QP3fnM.js",
         "shared/recall-policy-wraHLbFW.js"
       ],
       "dynamicImports": [],
       "css": []
     },
-    "shared/generation-rules-CTDehnUd.js": {
+    "shared/generation-rules-8w8vFDQm.js": {
       "imports": [
-        "shared/panel-policy-BFJhSW-5.js",
-        "shared/domain-CyhWD4kH.js"
+        "shared/domain-hmI4DKO_.js",
+        "shared/panel-policy-B7trbgeC.js"
       ],
       "dynamicImports": [],
       "css": []
@@ -306,40 +289,47 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/host-C5VWpu1r.js": {
+    "shared/host-BFB2_bPD.js": {
       "imports": [
-        "shared/profiles-54fT91NB.js",
-        "shared/domain-CyhWD4kH.js",
-        "shared/kitchen-runtime-CI33Ck5O.js",
-        "shared/notes-Dg66vS7R.js",
-        "shared/involvement-Dd1OFF1E.js",
+        "shared/event-manager-BErs-i52.js",
+        "shared/identifier-CI88MhZ6.js",
+        "shared/kitchen-runtime-C4QP3fnM.js",
+        "shared/notes-7THL7YKE.js"
+      ],
+      "dynamicImports": [],
+      "css": []
+    },
+    "shared/host-CT47oL4m.js": {
+      "imports": [
+        "shared/domain-hmI4DKO_.js",
+        "shared/identifier-CI88MhZ6.js",
+        "shared/kitchen-runtime-C4QP3fnM.js",
+        "shared/notes-7THL7YKE.js",
+        "shared/involvement-BcKC9Mz_.js",
         "shared/source-boundary-BefZjhFn.js"
       ],
       "dynamicImports": [],
       "css": []
     },
-    "shared/host-Dyld80aj.js": {
+    "shared/host-DfPQbYm-.js": {
       "imports": [
-        "shared/profiles-54fT91NB.js",
-        "shared/event-manager-BErs-i52.js",
-        "shared/repository-COYHiZQP.js",
-        "shared/kitchen-runtime-CI33Ck5O.js",
-        "shared/notes-Dg66vS7R.js"
+        "shared/kitchen-runtime-C4QP3fnM.js"
       ],
       "dynamicImports": [],
       "css": []
     },
-    "shared/host-XLujNxR0.js": {
+    "shared/identifier-CI88MhZ6.js": {
       "imports": [
-        "shared/kitchen-runtime-CI33Ck5O.js"
+        "shared/panel-policy-B7trbgeC.js",
+        "shared/provider-resolution-sTd_qUPG.js"
       ],
       "dynamicImports": [],
       "css": []
     },
-    "shared/involvement-Dd1OFF1E.js": {
+    "shared/involvement-BcKC9Mz_.js": {
       "imports": [
-        "shared/domain-CyhWD4kH.js",
-        "shared/kitchen-runtime-CI33Ck5O.js"
+        "shared/domain-hmI4DKO_.js",
+        "shared/kitchen-runtime-C4QP3fnM.js"
       ],
       "dynamicImports": [],
       "css": []
@@ -349,42 +339,43 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/kitchen-runtime-CI33Ck5O.js": {
+    "shared/kitchen-runtime-C4QP3fnM.js": {
       "imports": [
-        "shared/panel-policy-BFJhSW-5.js",
+        "shared/rolldown-runtime-CRqgUL4m.js",
         "shared/constants-CF4HAj3B.js",
         "shared/async-errors-DrD0vbna.js",
-        "shared/kitchen-workspace-BD2GLY2f.js",
+        "shared/kitchen-workspace-BaS2zs1n.js",
         "shared/preload-helper-Ddh_c1lL.js",
-        "shared/profiles-54fT91NB.js",
-        "shared/openai-url-utils-Ctow2h0W.js",
-        "shared/domain-CyhWD4kH.js",
+        "shared/domain-hmI4DKO_.js",
+        "shared/panel-policy-B7trbgeC.js",
         "shared/types-DTobQMoL.js",
         "shared/descriptor-BEqI4vD-.js",
-        "shared/client-Dn4mG2-w.js",
-        "shared/protocol-BhkFYvUR.js",
+        "shared/provider-resolution-sTd_qUPG.js",
+        "shared/client-CFWChOnp.js",
+        "shared/protocol-BYV0flJY.js",
         "shared/debug-core-BiaGo9yA.js",
         "shared/event-manager-BErs-i52.js",
-        "shared/tool-descriptions-CciG1UHP.js",
-        "shared/repository-COYHiZQP.js",
-        "shared/runtime-DrCpmmbH.js",
+        "shared/tool-descriptions-bR_oKIX2.js",
+        "shared/identifier-CI88MhZ6.js",
+        "shared/repository-CQJW2GpW.js",
+        "shared/runtime-Ci2rIKtq.js",
         "shared/hierarchy-Dy5mpabT.js"
       ],
       "dynamicImports": [
-        "shared/repository-COYHiZQP.js",
-        "shared/gateway-Cd5pMtje.js",
-        "shared/host-XLujNxR0.js",
-        "shared/profile-service-COh7HLKW.js",
-        "shared/story-summary-DjeGi9cJ.js",
-        "shared/streaming-generation-CzhTnMWa.js",
-        "shared/host-Dyld80aj.js",
-        "shared/host-C5VWpu1r.js",
-        "shared/generation-host-CnCoXsl_.js",
-        "shared/panel-prompt-catalog-CJ8M9DOd.js"
+        "shared/repository-CQJW2GpW.js",
+        "shared/gateway-C__PIK0D.js",
+        "shared/host-DfPQbYm-.js",
+        "shared/profile-service-CycdhULQ.js",
+        "shared/story-summary-CiIUfkla.js",
+        "shared/streaming-generation-Bd-cyQzL.js",
+        "shared/host-BFB2_bPD.js",
+        "shared/host-CT47oL4m.js",
+        "shared/generation-host-DE2w-A8b.js",
+        "shared/panel-prompt-catalog-DH3By6w5.js"
       ],
       "css": []
     },
-    "shared/kitchen-workspace-BD2GLY2f.js": {
+    "shared/kitchen-workspace-BaS2zs1n.js": {
       "imports": [
         "shared/constants-CF4HAj3B.js",
         "shared/async-errors-DrD0vbna.js"
@@ -392,51 +383,45 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/model-list-CYa28-CG.js": {
+    "shared/model-list-1oByltzL.js": {
       "imports": [
-        "shared/openai-url-utils-Ctow2h0W.js",
-        "shared/client-Dn4mG2-w.js"
+        "shared/provider-resolution-sTd_qUPG.js",
+        "shared/client-CFWChOnp.js"
       ],
       "dynamicImports": [],
       "css": []
     },
-    "shared/notes-Dg66vS7R.js": {
+    "shared/notes-7THL7YKE.js": {
       "imports": [
-        "shared/panel-policy-BFJhSW-5.js",
-        "shared/domain-CyhWD4kH.js",
-        "shared/kitchen-runtime-CI33Ck5O.js"
+        "shared/domain-hmI4DKO_.js",
+        "shared/panel-policy-B7trbgeC.js",
+        "shared/kitchen-runtime-C4QP3fnM.js"
       ],
       "dynamicImports": [],
       "css": []
     },
-    "shared/openai-compatible-replay-policy-DwQv0__w.js": {
+    "shared/openai-compatible-replay-policy-dcTyedAP.js": {
       "imports": [
-        "shared/openai-url-utils-Ctow2h0W.js"
+        "shared/provider-resolution-sTd_qUPG.js"
       ],
       "dynamicImports": [],
       "css": []
     },
-    "shared/openai-url-utils-Ctow2h0W.js": {
+    "shared/panel-policy-B7trbgeC.js": {
       "imports": [],
       "dynamicImports": [],
       "css": []
     },
-    "shared/panel-policy-BFJhSW-5.js": {
-      "imports": [],
-      "dynamicImports": [],
-      "css": []
-    },
-    "shared/panel-prompt-catalog-CJ8M9DOd.js": {
+    "shared/panel-prompt-catalog-DH3By6w5.js": {
       "imports": [
-        "shared/panel-policy-BFJhSW-5.js",
-        "shared/generation-rules-CTDehnUd.js",
-        "shared/provider-config-CfaZDVme.js",
-        "shared/browser-entry-MyeX_VxY.js",
-        "shared/tool-descriptions-CciG1UHP.js",
-        "shared/runtime-DrCpmmbH.js",
-        "shared/kitchen-runtime-CI33Ck5O.js",
-        "shared/notes-Dg66vS7R.js",
-        "shared/atom-extraction-DIoANX2H.js"
+        "shared/generation-rules-8w8vFDQm.js",
+        "shared/provider-config-CXMCrAcF.js",
+        "shared/browser-entry-CsSCO77H.js",
+        "shared/tool-descriptions-bR_oKIX2.js",
+        "shared/runtime-Ci2rIKtq.js",
+        "shared/kitchen-runtime-C4QP3fnM.js",
+        "shared/notes-7THL7YKE.js",
+        "shared/atom-extraction-DR4TbvNN.js"
       ],
       "dynamicImports": [],
       "css": []
@@ -446,47 +431,46 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/profile-runtime-Be8ldhjd.js": {
+    "shared/profile-runtime-CXMvvgdo.js": {
       "imports": [
         "shared/preload-helper-Ddh_c1lL.js",
-        "shared/profiles-54fT91NB.js",
-        "shared/openai-url-utils-Ctow2h0W.js",
-        "shared/runtime-DrCpmmbH.js"
+        "shared/provider-resolution-sTd_qUPG.js",
+        "shared/identifier-CI88MhZ6.js",
+        "shared/runtime-Ci2rIKtq.js"
       ],
       "dynamicImports": [
-        "shared/server-storage-CnT207R1.js"
+        "shared/server-storage-CpwqPa7Y.js"
       ],
       "css": []
     },
-    "shared/profile-service-COh7HLKW.js": {
+    "shared/profile-service-CycdhULQ.js": {
       "imports": [
-        "shared/kitchen-runtime-CI33Ck5O.js"
+        "shared/kitchen-runtime-C4QP3fnM.js"
       ],
       "dynamicImports": [],
       "css": []
     },
-    "shared/profiles-54fT91NB.js": {
+    "shared/protocol-BYV0flJY.js": {
       "imports": [
-        "shared/openai-url-utils-Ctow2h0W.js"
+        "shared/client-CFWChOnp.js"
       ],
       "dynamicImports": [],
       "css": []
     },
-    "shared/protocol-BhkFYvUR.js": {
+    "shared/provider-config-CXMCrAcF.js": {
       "imports": [
-        "shared/client-Dn4mG2-w.js"
+        "shared/rolldown-runtime-CRqgUL4m.js",
+        "shared/panel-policy-B7trbgeC.js",
+        "shared/error-guidance-C2BGPK8o.js",
+        "shared/provider-resolution-sTd_qUPG.js",
+        "shared/openai-compatible-replay-policy-dcTyedAP.js",
+        "shared/client-CFWChOnp.js"
       ],
       "dynamicImports": [],
       "css": []
     },
-    "shared/provider-config-CfaZDVme.js": {
-      "imports": [
-        "shared/panel-policy-BFJhSW-5.js",
-        "shared/openai-url-utils-Ctow2h0W.js",
-        "shared/error-guidance-Cpmi65bN.js",
-        "shared/openai-compatible-replay-policy-DwQv0__w.js",
-        "shared/client-Dn4mG2-w.js"
-      ],
+    "shared/provider-resolution-sTd_qUPG.js": {
+      "imports": [],
       "dynamicImports": [],
       "css": []
     },
@@ -495,28 +479,32 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/repository-COYHiZQP.js": {
+    "shared/repository-CQJW2GpW.js": {
       "imports": [
-        "shared/panel-policy-BFJhSW-5.js",
+        "shared/rolldown-runtime-CRqgUL4m.js",
         "shared/preload-helper-Ddh_c1lL.js",
-        "shared/profiles-54fT91NB.js"
+        "shared/identifier-CI88MhZ6.js"
       ],
       "dynamicImports": [
-        "shared/server-storage-CnT207R1.js"
+        "shared/server-storage-CpwqPa7Y.js"
       ],
       "css": []
     },
-    "shared/runtime-DrCpmmbH.js": {
+    "shared/rolldown-runtime-CRqgUL4m.js": {
+      "imports": [],
+      "dynamicImports": [],
+      "css": []
+    },
+    "shared/runtime-Ci2rIKtq.js": {
       "imports": [
-        "shared/panel-policy-BFJhSW-5.js",
         "shared/preload-helper-Ddh_c1lL.js",
-        "shared/profiles-54fT91NB.js",
-        "shared/openai-url-utils-Ctow2h0W.js",
-        "shared/model-list-CYa28-CG.js",
+        "shared/provider-resolution-sTd_qUPG.js",
+        "shared/model-list-1oByltzL.js",
+        "shared/identifier-CI88MhZ6.js",
         "shared/abort-utils-C76zWFGO.js"
       ],
       "dynamicImports": [
-        "shared/provider-config-CfaZDVme.js"
+        "shared/provider-config-CXMCrAcF.js"
       ],
       "css": []
     },
@@ -532,86 +520,66 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/sampling-settings-DYZpvCS9.js": {
+    "shared/server-storage-CpwqPa7Y.js": {
       "imports": [
-        "shared/constants-CF4HAj3B.js",
-        "shared/openai-url-utils-Ctow2h0W.js"
-      ],
-      "dynamicImports": [],
-      "css": []
-    },
-    "shared/server-storage-CnT207R1.js": {
-      "imports": [
-        "shared/panel-policy-BFJhSW-5.js",
+        "shared/rolldown-runtime-CRqgUL4m.js",
         "shared/async-errors-DrD0vbna.js",
         "shared/abort-utils-C76zWFGO.js"
       ],
       "dynamicImports": [],
       "css": []
     },
-    "shared/settings-ui-DJt2y-Vb.js": {
-      "imports": [
-        "shared/profiles-54fT91NB.js",
-        "shared/openai-url-utils-Ctow2h0W.js",
-        "shared/sampling-settings-DYZpvCS9.js"
-      ],
-      "dynamicImports": [],
-      "css": [
-        "assets/settings-ui-Bp9D6kSf.css"
-      ]
-    },
     "shared/source-boundary-BefZjhFn.js": {
       "imports": [],
       "dynamicImports": [],
       "css": []
     },
-    "shared/story-summary-DjeGi9cJ.js": {
+    "shared/story-summary-CiIUfkla.js": {
       "imports": [
-        "shared/panel-policy-BFJhSW-5.js",
         "shared/constants-CF4HAj3B.js",
         "shared/async-errors-DrD0vbna.js",
-        "shared/kitchen-workspace-BD2GLY2f.js",
+        "shared/kitchen-workspace-BaS2zs1n.js",
         "shared/preload-helper-Ddh_c1lL.js",
-        "shared/openai-url-utils-Ctow2h0W.js",
-        "shared/domain-CyhWD4kH.js",
-        "shared/generation-rules-CTDehnUd.js",
-        "shared/viewport-B7C3hJJv.js",
-        "shared/openai-compatible-replay-policy-DwQv0__w.js",
-        "shared/client-Dn4mG2-w.js",
-        "shared/model-list-CYa28-CG.js",
-        "shared/protocol-BhkFYvUR.js",
+        "shared/domain-hmI4DKO_.js",
+        "shared/panel-policy-B7trbgeC.js",
+        "shared/generation-rules-8w8vFDQm.js",
+        "shared/viewport-CB_oIFoI.js",
+        "shared/provider-resolution-sTd_qUPG.js",
+        "shared/openai-compatible-replay-policy-dcTyedAP.js",
+        "shared/client-CFWChOnp.js",
+        "shared/protocol-BYV0flJY.js",
         "shared/debug-core-BiaGo9yA.js",
         "shared/event-manager-BErs-i52.js",
-        "shared/tool-descriptions-CciG1UHP.js",
-        "shared/repository-COYHiZQP.js",
+        "shared/tool-descriptions-bR_oKIX2.js",
+        "shared/repository-CQJW2GpW.js",
         "shared/abort-utils-C76zWFGO.js",
-        "shared/kitchen-runtime-CI33Ck5O.js",
-        "shared/atom-extraction-DIoANX2H.js",
-        "shared/involvement-Dd1OFF1E.js",
-        "shared/profile-runtime-Be8ldhjd.js",
+        "shared/kitchen-runtime-C4QP3fnM.js",
+        "shared/atom-extraction-DR4TbvNN.js",
+        "shared/involvement-BcKC9Mz_.js",
+        "shared/profile-runtime-CXMvvgdo.js",
         "shared/recall-policy-wraHLbFW.js",
         "shared/source-boundary-BefZjhFn.js"
       ],
       "dynamicImports": [
-        "runtime/agent-core-BprhNIY2.js"
+        "runtime/agent-core-DMlQiWfP.js"
       ],
       "css": []
     },
-    "shared/streaming-generation-CzhTnMWa.js": {
+    "shared/streaming-generation-Bd-cyQzL.js": {
       "imports": [
         "shared/async-errors-DrD0vbna.js",
         "shared/debug-core-BiaGo9yA.js",
         "shared/abort-utils-C76zWFGO.js",
-        "shared/kitchen-runtime-CI33Ck5O.js",
+        "shared/kitchen-runtime-C4QP3fnM.js",
         "shared/json-candidate-CmEyWwSp.js"
       ],
       "dynamicImports": [],
       "css": []
     },
-    "shared/tool-descriptions-CciG1UHP.js": {
+    "shared/tool-descriptions-bR_oKIX2.js": {
       "imports": [
-        "shared/panel-policy-BFJhSW-5.js",
-        "shared/domain-CyhWD4kH.js"
+        "shared/domain-hmI4DKO_.js",
+        "shared/panel-policy-B7trbgeC.js"
       ],
       "dynamicImports": [],
       "css": []
@@ -621,10 +589,10 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/viewport-B7C3hJJv.js": {
+    "shared/viewport-CB_oIFoI.js": {
       "imports": [
-        "shared/domain-CyhWD4kH.js",
-        "shared/generation-rules-CTDehnUd.js"
+        "shared/domain-hmI4DKO_.js",
+        "shared/generation-rules-8w8vFDQm.js"
       ],
       "dynamicImports": [],
       "css": []

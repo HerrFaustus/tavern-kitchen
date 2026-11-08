@@ -1,6 +1,7 @@
 import type { XiaobaiOsSettingsRepository } from '../../host/settings-repository.js';
 import { readSituationCatalog, registerLinkedDevelopments } from '../../../story-state/situation-links.js';
 import type { WorldService } from './application/service.js';
+import { isTrustedMessage } from '../../../../core/iframe-messaging.js';
 
 let reader: WorldService | undefined;
 export function registerEvolutionReader(world: WorldService) {
@@ -12,7 +13,7 @@ export function registerEvolutionReader(world: WorldService) {
     return () => { disconnect(); if (reader === world) { reader = undefined; } };
 }
 
-export function mountEvolutionView(parent: HTMLElement, section: 'people' | 'situation', preferences: XiaobaiOsSettingsRepository) {
+export function mountEvolutionView(parent: HTMLElement, section: 'people' | 'situation', preferences: XiaobaiOsSettingsRepository, frame?: HTMLIFrameElement) {
     const people = section === 'people';
     const key = people ? 'peopleEvolution' : 'subscribed';
     const label = document.createElement('label');
@@ -38,15 +39,27 @@ export function mountEvolutionView(parent: HTMLElement, section: 'people' | 'sit
         encounterLabel.append('街头偶遇频率', frequency);
         parent.insertBefore(weatherLabel, status); parent.insertBefore(encounterLabel, status);
     }
+    const embedded = !!frame;
+    const inline = !people && embedded;
+    if (inline) { label.hidden = true; scenery.parentElement!.hidden = true; frequency.parentElement!.hidden = true; }
     let active = true, saving = false;
     const renderPreferences = () => {
         const settings = preferences.read();
+        if (inline) { frame!.contentWindow?.postMessage({
+            source: 'TavernKitchen', type: 'WORLD_EVOLUTION_STATE',
+            settings: { enabled: !!settings?.enabled, pending: saving,
+                subscribed: !!settings?.apps.world.subscribed,
+                sceneryEvolution: settings?.apps.world.sceneryEvolution === true,
+                encounterFrequency: settings?.apps.world.encounterFrequency || 'occasional',
+                error: status.textContent || '' },
+        }, window.location.origin); }
+
         toggle.checked = !!settings?.apps.world[key];
         scenery.checked = settings?.apps.world.sceneryEvolution === true;
         for (const option of frequency.options) { option.selected = option.value === (settings?.apps.world.encounterFrequency || 'occasional'); }
         scenery.disabled = frequency.disabled = saving || !settings?.enabled;
         toggle.disabled = saving || !settings?.enabled;
-        if (!settings?.enabled) { status.textContent = '请先在 API 设置中启用地图、世界与 API。'; }
+        if (!settings?.enabled) { status.textContent = '请先打开「API」或地图以启动工作台。'; }
     };
     const world = reader;
     const renderEntries = () => {
@@ -79,21 +92,54 @@ export function mountEvolutionView(parent: HTMLElement, section: 'people' | 'sit
             }
             entries.append(row);
         }
-        log.hidden = !entries.childElementCount;
+        log.hidden = embedded || !entries.childElementCount;
+        if (embedded) {
+            frame!.contentWindow?.postMessage({
+                source: 'TavernKitchen', type: 'WORLD_EVOLUTION_RECORDS', section: people ? 'people' : 'world',
+                overview: !people ? current?.world.overview || '' : '',
+                news: news.map(item => ({ title: item.title, body: item.body, progress: item.progress,
+                    situationTitle: item.situationId ? catalog.get(item.situationId) : undefined })),
+            }, window.location.origin);
+        }
     };
     const report = (error: unknown) => { if (active) { status.textContent = error instanceof Error ? error.message : String(error); } };
     const save = async (operation: () => Promise<unknown>) => {
-        saving = true; toggle.disabled = scenery.disabled = frequency.disabled = true; status.textContent = '';
+        saving = true; renderPreferences(); toggle.disabled = scenery.disabled = frequency.disabled = true; status.textContent = '';
         try { await operation(); }
         catch (error) { report(error); }
         finally { saving = false; if (active) { renderPreferences(); } }
     };
-    toggle.onchange = () => save(() => preferences.setWorldPreference(key, toggle.checked));
-    scenery.onchange = () => save(() => preferences.setWorldPreference('sceneryEvolution', scenery.checked));
-    frequency.onchange = () => save(() => preferences.setEncounterFrequency(frequency.value as 'off' | 'occasional' | 'lively'));
+    toggle.onchange = () => {
+        const value = toggle.checked;
+        return save(() => preferences.setWorldPreference(key, value));
+    };
+    scenery.onchange = () => {
+        const value = scenery.checked;
+        return save(() => preferences.setWorldPreference('sceneryEvolution', value));
+    };
+    frequency.onchange = () => {
+        const value = frequency.value as 'off' | 'occasional' | 'lively';
+        return save(() => preferences.setEncounterFrequency(value));
+    };
+    const receive = (event: MessageEvent) => {
+        if (!embedded || !active || !isTrustedMessage(event, frame, 'TavernKitchen-StoryFrame')) { return; }
+        if (event.data.type === 'WORLD_EVOLUTION_REQUEST') { renderPreferences(); renderEntries(); return; }
+        if (!inline || event.data.type !== 'WORLD_EVOLUTION_CHANGE' || saving || !preferences.read()?.enabled) { return; }
+        const { key: field, value } = event.data;
+        if (field === 'encounterFrequency' && ['off','occasional','lively'].includes(value)) {
+            save(() => preferences.setEncounterFrequency(value)).catch(report); return;
+        }
+        if (['subscribed','sceneryEvolution'].includes(field) && typeof value === 'boolean') {
+            save(() => preferences.setWorldPreference(field, value)).catch(report);
+        }
+    };
+    if (embedded) {
+        // eslint-disable-next-line no-restricted-syntax -- receive checks the live iframe, origin and source with isTrustedMessage before processing.
+        window.addEventListener('message', receive);
+    }
     renderPreferences(); renderEntries();
     const unsubscribe = preferences.subscribe(renderPreferences);
     const stop = world?.subscribe(renderEntries);
     world?.refreshCurrent().then(renderEntries).catch(report);
-    return () => { active = false; stop?.(); unsubscribe(); };
+    return () => { active = false; if (embedded) { window.removeEventListener('message', receive); } stop?.(); unsubscribe(); };
 }

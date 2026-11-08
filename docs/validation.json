@@ -1,25 +1,25 @@
 {
-  "version": "0.2.24",
-  "verified_at_utc": "2026-11-08T08:00:48Z",
-  "build_id": "64ca2dd843263cee6198",
+  "version": "0.2.25",
+  "verified_at_utc": "2026-11-08T18:25:28.559513+00:00",
+  "build_id": "e55642ccdd923f3e5883",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
   "quality": "passed",
   "unit_tests": {
-    "total": 1602,
-    "passed": 1602,
+    "total": 1612,
+    "passed": 1612,
     "failed": 0,
     "cancelled": 0,
     "skipped": 0
   },
   "memory_runtime": "passed",
-  "scope": "World initialization, editable prompts, hot panel settings and the extension drawer.",
+  "scope": "Native right drawer, unified four-part settings in a fixed lower third, simplified story and world views, automatic character identity.",
   "runtime_changes": true,
   "removed_source_paths": 1763,
   "removed_modules_in_build": 0,
   "browser_entries": 9,
-  "chunks": 62,
+  "chunks": 60,
   "host_static_validation": {
     "version": "1.19.0",
     "commit": "06bde939fb1e9c4c8d8641d810f0a916b5bce127"
@@ -661,5 +661,21 @@
       "world capacity partitioning",
       "live-host end-to-end evaluation"
     ]
+  },
+  "settings_layout": {
+    "lower_fraction": "1/3",
+    "order": [
+      "总开关",
+      "模型设置",
+      "功能设置",
+      "提示词设置"
+    ],
+    "default_open": [
+      true,
+      true,
+      true,
+      false
+    ],
+    "headless_verified": true
   }
 }

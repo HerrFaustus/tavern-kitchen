@@ -56,7 +56,7 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
     const involvementFor = (world, options) => readInvolvement(world, getMemorySnapshot(), getContext().name1, options);
     const disconnectFocus = registerInvolvement(key => key && captureStoryIdentity(getContext())?.key === key ? involvementFor(authority.read()?.state, {includeAgendas:true}) : []);
     const protagonist = createProtagonistView({ getInvolvement: involvementFor, getSnapshot: getMemorySnapshot, getPlayerName: () => getContext().name1 });
-    const views = { overview: protagonist, suspense: createSuspenseBook({ getSnapshot: getMemorySnapshot }) };
+    const views = { overview: protagonist, clues: createSuspenseBook({getSnapshot:getMemorySnapshot, clues:true}), suspense: createSuspenseBook({ getSnapshot: getMemorySnapshot }) };
     let disposed = false, scheduled = false, epoch = 0;
     const observation = () => {
         const context = getContext(), chat = context.chat || [], snapshot = getMemorySnapshot();

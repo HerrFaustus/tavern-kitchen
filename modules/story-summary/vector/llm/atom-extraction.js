@@ -64,8 +64,8 @@ async function waitBeforeL0Retry(attempt, failure) {
     return true;
 }
 
-const atomGuide = definePanelPrompt('memory-settings','atomGuide','召回语义整理',SYSTEM_PROMPT);
-const atomFormat = definePanelPrompt('memory-settings','atomFormat','召回输出结构',OUTPUT_FORMAT);
+const atomGuide = definePanelPrompt('memory','atomGuide','召回语义整理',SYSTEM_PROMPT);
+const atomFormat = definePanelPrompt('memory','atomFormat','召回输出结构',OUTPUT_FORMAT);
 function previewText(text, maxLen = DEBUG_RAW_PREVIEW_LEN) {
     const raw = String(text ?? '').replace(/\s+/g, ' ').trim();
     if (!raw) return '(empty)';

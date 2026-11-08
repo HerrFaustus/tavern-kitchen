@@ -17,10 +17,8 @@ export const MEMORY_SAVE_ERRORS = Object.freeze({
 });
 
 export const MEMORY_COPY = Object.freeze({
-    tab: '剧情校对', toggle: '自动校对', scope: '所有聊天',
+    tab: '校对', toggle: '自动校对', scope: '所有聊天',
     behavior: '按当前聊天已完成的正文回复计数；到期校对并判断剧情是否已收束。未闭合时继续积累。',
-    apiHeading: '校对模型',
-    api: '在此选择剧情校对使用的 API 配置；配置库位于 设置 → API 配置。',
     heading: '校对记录', cancel: '停止（已完成部分保留）', repair: '重试更新', more: '更早记录',
     empty: '还没有校对记录', emptyEnabled: '自动校对完成后，维护成果会出现在这里。',
     emptyDisabled: '自动校对未开启。', loading: '正在读取…',
@@ -59,7 +57,7 @@ export const MEMORY_COPY = Object.freeze({
         note: '显示当前聊天原文；若后来编辑过，内容可能与维护时不同。',
         loading: '正在读取原文…', unavailable: '这段原文已无法查看，可能已删除或对应校对记录已撤销。',
         roles: { user: '用户', assistant: '角色', system: '系统' } },
-    collections: { events: '事件', facts: '持续事实', characters: '人物', arcs: '弧光', keywords: '关键词', characterAliases: '别名', anchors: '逐楼锚点', storyRecords: '剧情状态' },
+    collections: { events: '事件', facts: '持续事实', characters: '人物', arcs: '弧光', characterAliases: '别名', anchors: '逐楼锚点', storyRecords: '剧情状态' },
     anchorStates: { missing: '未生成', fail: '提取失败' },
     states: { idle: '', queued: '等待前一轮结束', running: '正在检查记忆…', saving: '正在保存修改…', indexing: '修改已保存，正在更新记忆检索…',
         ...MEMORY_RESULT_COPY,
@@ -69,7 +67,7 @@ export const MEMORY_COPY = Object.freeze({
         source_invalid: MEMORY_DATA_COPY.sourceInvalid, history_invalid: MEMORY_DATA_COPY.historyInvalid },
     indexPending: '修改已保存，部分内容还不能用于记忆检索。重试只更新检索，不会重新维护。',
     errors: { not_configured: '请先在 Agent API 中设置模型和服务地址。', no_boundary: '当前聊天还没有可维护的总结。',
-        agent_auth: '共享 Agent API 的凭据不可用，请在 Agent API 设置中更新。',
+        agent_auth: '共享 Agent API 的凭据不可用，请在「API」中更新对应配置。',
         agent_balance: '共享 Agent API 余额不足。', agent_rate: '共享 Agent API 暂时限流。',
         agent_model: '共享 Agent API 当前不提供所选模型。',
         conflict: '聊天已切换，或总结已被替换、回退；维护已停止，此前保存的部分保留。',

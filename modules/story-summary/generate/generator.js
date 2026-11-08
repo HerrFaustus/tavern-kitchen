@@ -14,6 +14,8 @@ import {
 } from "../data/store.js";
 import { commitSummaryMemory, readSummaryMemory, waitForMemoryCommit, getMemoryCommitState } from '../data/memory-commit.js';
 import { memorySaveError } from '../data/memory-copy.js';
+import { panelEnabled } from '../../../core/panel-policy.js';
+import { plotLinePrompt, readPlotLines } from '../../story-state/plot-lines.js';
 import { prepareMemoryTags } from '../data/memory-tags.js';
 import { SUMMARY_FEEDBACK_COPY } from '../feedback-copy.js';
 import { summaryFailureReason } from '../summary-failure.js';
@@ -62,10 +64,6 @@ export function formatExistingSummaryForAI(store) {
         parts.push(aliasTable);
     }
 
-
-    if (data.keywords?.length) {
-        parts.push(`\n【关键词】${data.keywords.map(k => k.text).join("、")}`);
-    }
 
     return parts.join("\n") || "（空白，这是首次总结）";
 }
@@ -152,6 +150,7 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
     try {
         preparedSources = await prepareMemorySources(lastSummarized + 1, slice.endMesId, { unified: true });
         raw = await generateSummary({
+            linePrompt: plotLinePrompt(store.summaryHistory, preparedSources?.updateContext?.world?.storyRecords ?? store.json?.storyRecords),
             existingSummary,
             existingFacts,
             newHistoryText: slice.text,
@@ -257,6 +256,7 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
         draw: control.draw && livePreferences?.encounterFrequency !== 'off' }, slice.endMesId,
         ambientContext.world.storyRecords.filter(record => record.kind === 'situation').map(record => record.id), ambientContext.world.entities);
     Object.assign(next.storySummary.summaryHistory.at(-1), { ...(involvement.length && { involvement }), ...(ambient && { ambient }), summary: narrativeSummary,
+        ...((decoded.plotLines?.length && panelEnabled('clues')) ? {plotLines:readPlotLines(decoded.plotLines,narrativeSummary)} : {}),
         memoryTags, ...(!preparedSources && { roundSource }), ...(worldUpdate && { worldUpdate }) });
 
     onProgress?.({ stage: 'saving' });

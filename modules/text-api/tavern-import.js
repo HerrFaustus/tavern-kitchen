@@ -28,6 +28,11 @@ export async function snapshotTavernApi({ mainApi, settings, model, findSecret, 
         }
     }
     const preset = createPreset('', '', { provider, baseUrl, apiKey,
+        ...(source === 'custom' && {
+            requestExtras: {includeHeaders: settings.custom_include_headers || '',
+                includeBody: connectionOnly ? '' : settings.custom_include_body || '',
+                excludeBody: connectionOnly ? '' : settings.custom_exclude_body || ''},
+        }),
         model: connectionOnly ? '' : String(model || ''),
         temperature: connectionOnly ? null : settings.temp_openai,
         maxTokens: connectionOnly ? null : settings.openai_max_tokens,
@@ -35,7 +40,6 @@ export async function snapshotTavernApi({ mainApi, settings, model, findSecret, 
     });
     return { preset, message: [connectionOnly ? '连接已复制，请选择模型并保存。' : '已复制酒馆主接口的连接、模型与生成参数。',
         !apiKey ? '宿主未返回可复制的密钥，请补填 API Key（无鉴权本地接口可留空）。' : '',
-        source === 'custom' && (settings.custom_include_headers || settings.custom_include_body || settings.custom_exclude_body) ? '自定义请求头和请求体扩展未复制，请检查此接口是否依赖这些设置。' : '',
     ].filter(Boolean).join(' ') };
 }
 export async function importCurrentTavernApi(connectionOnly = false) {

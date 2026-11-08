@@ -153,7 +153,7 @@ export function reviseFloorMemory(previous, chat, floor, edit, merge, filterRule
         }
         const batch = createSummaryBatch(end, original.endMesId, undo, original.policy || memoryPolicy(filterRules));
         if (original.sourceReceipt) batch.sourceReceipt = clone(original.sourceReceipt);
-        for (const key of ['summary', 'roundVersion', 'roundSource', 'memoryTags', 'roundRevisions', 'reviewLayers', 'layers', 'legacyRoundChanges', 'legacyRoundBase']) {
+        for (const key of ['summary', 'roundVersion', 'roundSource', 'plotLines', 'memoryTags', 'roundRevisions', 'reviewLayers', 'layers', 'legacyRoundChanges', 'legacyRoundBase']) {
             if (original[key] !== undefined) batch[key] = clone(original[key]);
         }
         if (current) {
@@ -163,6 +163,8 @@ export function reviseFloorMemory(previous, chat, floor, edit, merge, filterRule
                 const prior = reviewedRounds(history).find(row => row.endMesId === original.endMesId);
                 batch.roundVersion = (prior?.roundVersion || original.roundVersion || 0) + 1;
             }
+            if (current.payload.plotLines) batch.plotLines = clone(current.payload.plotLines);
+            else delete batch.plotLines;
             if (current.payload.memoryTags) batch.memoryTags = clone(current.payload.memoryTags);
             if (!batch.sourceReceipt) batch.roundSource = captureRangeSource(chat, current.source.start, current.floor);
         }

@@ -29,7 +29,7 @@ export {registerGenerateInterceptor,unregisterGenerateInterceptor} from './share
     t.after(() => { dispose(); mod.unregisterGenerateInterceptor('probe-before'); mod.unregisterGenerateInterceptor('probe-memory'); });
     const aborted = [];
     await globalThis.tavernKitchenGenerateInterceptor([], 0, value => aborted.push(value), 'normal');
-    assert.deepEqual(order, ['before', 'opening', 'world', 'memory']);
+    assert.deepEqual(order, ['before', 'world', 'memory']);
     assert.equal(prompts.tavernKitchenWorldAuthority.value, '已确认：金币70');
     assert.equal(prompts.tavernKitchenWorldAuthority.depth, 1);
     await globalThis.tavernKitchenGenerateInterceptor([], 0, value => aborted.push(value), 'quiet');
@@ -38,6 +38,6 @@ export {registerGenerateInterceptor,unregisterGenerateInterceptor} from './share
     dispose.clear(); assert.equal(prompts.tavernKitchenWorldAuthority, undefined);
     order.length = 0; failed = true;
     await globalThis.tavernKitchenGenerateInterceptor([], 0, value => aborted.push(value), 'normal');
-    assert.deepEqual(order, ['before', 'opening', 'world']); assert.deepEqual(aborted, [true]);
+    assert.deepEqual(order, ['before', 'world']); assert.deepEqual(aborted, [true]);
     assert.equal(prompts.tavernKitchenWorldAuthority, undefined); assert.deepEqual(errors, ['storage unavailable']);
 });

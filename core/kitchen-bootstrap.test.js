@@ -19,7 +19,11 @@ test('entry is mounted before a delayed runtime and survives late native buttons
     const characters = document.createElement('div'); characters.id = 'rightNavHolder';
     entry.parentElement.append(characters);
     await setImmediate();
-    assert.equal(entry.nextElementSibling, characters);
+    assert.equal(entry.previousElementSibling?.id, 'rightNavHolder');
+    const late = document.createElement('div');
+    entry.parentElement.append(late);
+    await setImmediate();
+    assert.equal(late.nextElementSibling?.id, 'tk-topbar');
     const replacement = document.createElement('div'); replacement.id = 'top-settings-holder';
     entry.parentElement.replaceWith(replacement);
     await setImmediate();

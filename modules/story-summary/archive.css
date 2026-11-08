@@ -6,7 +6,6 @@
     font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
 }
 .archive [hidden], .archive-drawer [hidden] { display: none !important; }
-#archive-profile-open { display: none; }
 .archive button, .archive-drawer button { cursor: pointer; font-family: inherit; }
 .archive button:disabled, .archive-drawer button:disabled { cursor: default; opacity: .5; }
 .archive button:focus-visible, .archive summary:focus-visible, .archive input:focus-visible,
@@ -69,17 +68,13 @@
 .archive-event-main p { margin: 8px 0; font-size: 14px; line-height: 1.95; color: var(--txt2); white-space: pre-wrap; overflow-wrap: anywhere; }
 .archive-event-meta { display: flex; align-items: center; gap: 4px 15px; flex-wrap: wrap; font-size: 11px; color: var(--txt3); }
 .archive-event-meta .archive-text { color: var(--archive-accent); min-height: 36px; }
-.archive-people-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); gap: 40px; }
-.archive-graph { min-width: 0; }
-#archive-people #relation-chart { height: clamp(340px, 46vw, 560px); min-height: 0; width: 100%; }
+.archive-people-layout { display: block; }
 .archive-roster { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
 .archive-person { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 7px 12px; border: 0; border-radius: 6px; color: var(--txt2); background: none; font-size: 13px; overflow-wrap: anywhere; text-align: left; }
 .archive-person[aria-pressed="true"] { color: var(--archive-accent); background: var(--archive-accent-soft); }
 .archive-person:hover { background: var(--bg3); }
 .archive-avatar { flex: 0 0 28px; width: 28px; height: 28px; border-radius: 50%; display: inline-grid; place-items: center; background: var(--bg3); color: var(--txt); }
-.archive-profile { min-width: 0; padding-left: 32px; border-left: 1px solid var(--bdr); }
-.archive-person-select { width: 100%; min-height: 44px; margin-bottom: 20px; padding: 8px 12px; border: 1px solid var(--bdr); border-radius: 6px; background: var(--bg); color: var(--txt); font: inherit; }
-.archive-person-select:focus-visible { outline: 2px solid var(--archive-accent); outline-offset: 3px; }
+.archive-profile { min-width: 0; }
 .archive-profile .prof-arc { padding: 0; margin-bottom: 24px; }
 .archive-profile .prof-name { font: 400 30px/1.5 'Noto Serif CJK SC', 'Songti SC', SimSun, serif; margin-bottom: 12px; }
 .archive-profile .prof-traj { font-size: 14px; line-height: 1.9; color: var(--txt2); margin-bottom: 22px; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -131,8 +126,8 @@
 @media (max-width: 1050px) {
     .archive { padding-inline: 28px; }
     .archive-story, .archive-world-layout { grid-template-columns: 150px minmax(0, 1fr); gap: 30px; }
-    .archive-people-layout { grid-template-columns: minmax(0, 1fr) minmax(260px, 1fr); gap: 24px; }
-    .archive-profile { padding-left: 24px; }
+
+
 }
 @media (max-width: 768px) {
     .archive { padding: 0 20px 32px; }
@@ -172,9 +167,7 @@
     .archive-event-main p { font-size: 14px; line-height: 1.9; }
     .archive-event-meta { gap: 3px 12px; font-size: 10px; }
     .archive-event-meta .archive-text { min-height: 36px; font-size: 11px; }
-    #archive-people #relation-chart { height: 330px; }
-    #archive-profile-home { display: none; }
-    #archive-profile-open { display: inline-block; }
+    #archive-profile-home { display: block; }
     .archive-roster { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
     .archive-person { min-height: 64px; border-radius: 0; border-bottom: 1px solid var(--bdr); padding: 10px 0; }
     .archive-person[aria-pressed="true"] { background: none; }

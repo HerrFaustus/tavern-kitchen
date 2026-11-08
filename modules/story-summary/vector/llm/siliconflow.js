@@ -1,3 +1,4 @@
+import { fetchWithExtras } from '../../../../shared/common/request-extras.js';
 // ═══════════════════════════════════════════════════════════════════════════
 // siliconflow.js - OpenAI-compatible Embedding + 多 Key 轮询
 //
@@ -114,7 +115,7 @@ export async function embed(texts, options = {}) {
                 error,
             );
         }
-        const response = await fetch(endpoint.href, {
+        const response = await fetchWithExtras(apiCfg)(endpoint.href, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${key}`,

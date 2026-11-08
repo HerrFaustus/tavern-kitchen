@@ -1,3 +1,4 @@
+import { fetchWithExtras } from '../../../shared/common/request-extras.js';
 import { definePanelPrompt } from '../../../core/panel-policy.js';
 import OpenAI from 'openai';
 import { buildSamplingParameters } from '../sampling.js';
@@ -602,11 +603,11 @@ export function buildNativeMessages(task, model = '', { preserveReasoningContent
     return normalizeFinalClaudeLikeMessageRole(normalizedMessages, model);
 }
 
-const toolRequirement0 = definePanelPrompt('proofreading|people|situation|map|settings','toolRequirement0','必须调用工具','本轮必须调用工具，不得只返回正文。');
-const toolRequirement1 = definePanelPrompt('proofreading|people|situation|map|settings','toolRequirement1','禁止调用工具','本轮不得调用工具，不得输出 <tool_call> 标签。');
-const toolRequirement2 = definePanelPrompt('proofreading|people|situation|map|settings','toolRequirement2','自由调用工具','请根据任务判断是否需要调用工具。');
-const toolRequirement3 = definePanelPrompt('proofreading|people|situation|map|settings','toolRequirement3','指定工具',`本轮必须调用工具 {{tool}}，不得调用其他工具，也不得只返回正文。`);
-const taggedFormat = definePanelPrompt('proofreading|people|situation|map|settings','taggedFormat','兼容接口工具调用格式',[
+const toolRequirement0 = definePanelPrompt('proofreading|people|situation|map','toolRequirement0','必须调用工具','本轮必须调用工具，不得只返回正文。');
+const toolRequirement1 = definePanelPrompt('proofreading|people|situation|map','toolRequirement1','禁止调用工具','本轮不得调用工具，不得输出 <tool_call> 标签。');
+const toolRequirement2 = definePanelPrompt('proofreading|people|situation|map','toolRequirement2','自由调用工具','请根据任务判断是否需要调用工具。');
+const toolRequirement3 = definePanelPrompt('proofreading|people|situation|map','toolRequirement3','指定工具',`本轮必须调用工具 {{tool}}，不得调用其他工具，也不得只返回正文。`);
+const taggedFormat = definePanelPrompt('proofreading|people|situation|map','taggedFormat','兼容接口工具调用格式',[
         '如果你需要调用工具，不要使用原生 tool calling 字段。',
         '{{choice}}',
         'Each tool call is one complete JSON object enclosed by <tool_call> and </tool_call>.',
@@ -997,6 +998,7 @@ export class OpenAICompatibleAdapter {
         this.auth = resolveAgentAuth('openai-compatible', config.apiKey);
         this.client = new OpenAI({
             ...this.auth.sdkOptions,
+            ...(config.requestExtras && {fetch: fetchWithExtras(config)}),
             baseURL: String(config.baseUrl || 'https://api.openai.com/v1').replace(/\/$/, ''),
             timeout: Number(config.timeoutMs) || 15 * 60 * 1000,
             maxRetries: 0,
@@ -1087,7 +1089,7 @@ export class OpenAICompatibleAdapter {
 
     async streamNativeChatCompletions(task, body, effectiveReasoning) {
         const url = `${String(this.config.baseUrl || 'https://api.openai.com/v1').replace(/\/$/, '')}/chat/completions`;
-        const response = await fetch(url, {
+        const response = await fetchWithExtras(this.config)(url, {
             method: 'POST',
             headers: this.auth.requestHeaders,
             body: JSON.stringify({

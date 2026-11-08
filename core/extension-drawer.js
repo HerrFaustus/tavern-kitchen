@@ -37,39 +37,3 @@ export function createExtensionDrawer({ doc = document, onOpen = () => {} } = {}
     container.append(drawer);
     return container;
 }
-
-export function createPanelSettings({ doc = document, enabled, panels, onPanelChange, onToggleEnabled }) {
-    const content = doc.createElement('details');
-    content.className = 'tk-panel-settings';
-    const summary = doc.createElement('summary');
-    summary.textContent = '面板设置';
-    content.append(summary);
-    if (enabled !== undefined) {
-        const toggle = doc.createElement('label');
-        toggle.className = 'tk-extension-toggle';
-        const input = doc.createElement('input');
-        input.type = 'checkbox';
-        input.checked = !!enabled;
-        input.addEventListener('change', () => onToggleEnabled(input.checked,input));
-        const text = doc.createElement('span');
-        text.textContent = '启用酒馆后厨';
-        toggle.append(input, text);
-        content.append(toggle);
-    }
-    for (const {id,label,checked} of panels) {
-        const line = doc.createElement('label'); line.className = 'tk-extension-toggle';
-        const input = doc.createElement('input'); input.type = 'checkbox'; input.checked = checked;
-        input.dataset.panel = id;
-        input.addEventListener('change',() => onPanelChange(id,input.checked,input));
-        line.append(input,doc.createTextNode(label)); content.append(line);
-    }
-    const credits = doc.createElement('a');
-    credits.href = 'https://github.com/RT15548/LittleWhiteBox';
-    credits.target = '_blank';
-    credits.rel = 'noopener noreferrer';
-    credits.textContent = '项目致谢 · Based on LittleWhiteBox by biex';
-    const creditLine = doc.createElement('p');
-    creditLine.append(credits);
-    content.append(creditLine);
-    return content;
-}

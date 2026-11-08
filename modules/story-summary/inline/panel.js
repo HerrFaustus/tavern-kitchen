@@ -10,11 +10,12 @@ const arrays = new Set(['participants', 'holders', 'causedBy', 'from']);
 const booleans = new Set(['isState', 'retracted']);
 const iconNames = { 人物: 'user', 认知: 'brain', 场景: 'location-dot', 故事时钟: 'clock', 剧情: 'book-open',
     场景锚点: 'bookmark',
-    物品: 'box-open', 变量: 'sliders', 计划: 'list-check', 目标: 'bullseye', 悬念: 'circle-question', 局面: 'flag', 世界: 'globe' };
+    物品: 'box-open', 变量: 'sliders', 计划: 'list-check', 目标: 'bullseye', 悬念: 'circle-question', 局势: 'flag', 世界: 'globe' };
 
 export function createFloorPanel({ doc, floor, updateFloor, extractFloor, summarizeFloor, openMemory, schedule }) {
     const root = doc.createElement('article'); root.className = 'tk-floor-summary tk-fp';
     let model, expanded = false, editKey = null, busy = false, confirmingDelete = false, confirmingExtract = false, confirmingSummarize = false, working = '', signature = '', error = '';
+    let modelFailure = false;
     const run = (action, workingText = '') => observeBackgroundTask(act(action, workingText), { source: import.meta.url, operation: 'floor-edit' });
     function element(tag, cls, text) {
         const node = doc.createElement(tag); if (cls) node.className = cls; if (text !== undefined) node.textContent = text; return node;
@@ -70,7 +71,7 @@ export function createFloorPanel({ doc, floor, updateFloor, extractFloor, summar
     function renderSummarizeConfirmation() {
         summarizeConfirmation.replaceChildren(); summarizeConfirmation.hidden = !confirmingSummarize;
         if (!confirmingSummarize) return;
-        summarizeConfirmation.append(element('p', '', '重新总结会调用副 API 生成本楼摘要，并替换现有摘要与变化。继续？'),
+        summarizeConfirmation.append(element('p', '', '重新总结会调用当前总结模型 生成本楼摘要，并替换现有摘要与变化。继续？'),
             button('取消重新总结', () => { confirmingSummarize = false; renderSummarizeConfirmation(); }, 'menu_button'),
             button('确认重新总结', () => run(() => summarizeFloor(floor), '正在重新总结本楼…'), 'menu_button'));
     }
@@ -84,13 +85,16 @@ export function createFloorPanel({ doc, floor, updateFloor, extractFloor, summar
         notice.textContent = working || error || model?.error || (model?.entry?.omitted ? '此楼为番外，不计入剧情记忆。取消番外后恢复。'
             : model?.pending && model.payload.summary ? '以下内容尚未写入。可逐条审查、编辑，再确认写入。' : '');
         notice.hidden = !notice.textContent;
+        if (modelFailure && error && !busy) {
+            notice.append(button('重试', () => summarize.click(), 'menu_button'));
+        }
     }
     async function act(action, workingText) {
         if (busy) return;
-        busy = true; error = ''; working = workingText || ''; updateNotice();
+        busy = true; modelFailure = false; error = ''; working = workingText || ''; updateNotice();
         for (const node of root.querySelectorAll('button,input,textarea,select')) node.disabled = true;
         try { await action(); editKey = null; confirmingDelete = false; confirmingExtract = false; confirmingSummarize = false; signature = ''; }
-        catch (caught) { error = caught.message; expanded = true; }
+        catch (caught) { error = caught.message; modelFailure = caught.summaryModelFailure === true; confirmingSummarize = false; expanded = true; }
         finally { busy = false; working = ''; for (const node of root.querySelectorAll('button,input,textarea,select')) node.disabled = false;
             updateNotice(); updateExpanded(); schedule(); }
     }

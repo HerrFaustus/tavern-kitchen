@@ -6,16 +6,15 @@
 #tavern-kitchen-settings .tk-settings-notes { margin-block: 0.75rem; }
 #tavern-kitchen-settings .tk-settings-notes summary { cursor: pointer; font-size: 0.9em; opacity: 0.85; }
 #tavern-kitchen-extension .tk-extension-note { margin: 0 0 0.75rem; font-size: 0.9em; line-height: 1.6; opacity: 0.85; }
-#tk-workspace .tk-extension-toggle { display: flex; align-items: center; gap: 0.4rem; margin: 0 0 0.6rem; font-size: 0.9em; cursor: pointer; }
-#tk-workspace .tk-extension-toggle input { margin: 0; accent-color: var(--SmartThemeQuoteColor); }
 #tavern-kitchen-extension .menu_button { margin-block: 0.25rem; }
 #tavern-kitchen-settings small { margin-inline-start: 0.5rem; font-weight: normal; }
 
+#top-settings-holder > #tk-topbar { order: 2147483647; }
 #tk-topbar .tk-topbar-toggle { border: 0; padding: 0; margin: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
 #tk-topbar button:focus-visible { outline: 2px solid var(--SmartThemeQuoteColor); outline-offset: 3px; }
-/* The host's fillRight drawer supplies the desktop geometry, theme and animation. */
+/* Match the host's right gutter on desktop and its single-column drawer on mobile. */
 #tk-workspace { font: inherit; }
-#tk-workspace.openDrawer { display: flex; overflow: hidden; }
+#tk-workspace.openDrawer { display: flex; flex-direction: column; overflow: hidden; }
 #tk-workspace .tk-tabs { flex-wrap: wrap; }
 #tk-workspace .tk-planner-settings { display: grid; gap: .65em; padding: 5px; }
 #tk-workspace .tk-planner-settings label { display: grid; min-width: 0; gap: .2em; }
@@ -23,13 +22,14 @@
 #tk-workspace .tk-planner-settings textarea { resize: vertical; }
 #tk-workspace[hidden], #tk-workspace [hidden] { display: none !important; }
 #tk-workspace .tk-workspace-header { display: flex; align-items: center; justify-content: space-between; gap: 5px; padding: 0 2px; }
-#tk-workspace h2 { font: inherit; font-weight: 600; margin: 0; }
+#tk-workspace .tk-panel-page { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+#tk-workspace .tk-workspace-header h3 { margin: 0; }
 #tk-workspace .menu_button { width: max-content; max-width: 100%; white-space: nowrap; }
 #tk-workspace .tk-close { margin: 0; min-height: 28px; min-width: 28px; }
 #tk-workspace .tk-tabs, #tk-workspace .tk-subnav { display: flex; flex-shrink: 0; gap: 5px; padding: 0; }
-#tk-workspace .tk-tabs button { flex: 1 1 max-content; font: inherit; min-width: 0; min-height: 30px; padding-inline: 5px; white-space: nowrap; }
+#tk-workspace .tk-tabs button { flex: 0 1 auto; font: inherit; min-width: 0; min-height: 30px; padding-inline: 5px; white-space: nowrap; }
 #tk-workspace .tk-subnav { flex-wrap: wrap; gap: 0 5px; }
-#tk-workspace .tk-subnav button { flex: 1 0 auto; font: inherit; font-size: .9em; white-space: nowrap; min-height: 28px; margin: 0 0 5px; }
+#tk-workspace .tk-subnav button { flex: 0 1 auto; font: inherit; font-size: .9em; white-space: nowrap; min-height: 28px; margin: 0 0 5px; }
 #tk-workspace .tk-subnav-more { position: relative; flex: 1 0 auto; margin: 0 0 5px; }
 #tk-workspace .tk-subnav-more > summary { display: inline-flex; align-items: center; gap: 4px; font: inherit; font-size: .9em; white-space: nowrap; min-height: 28px; margin: 0; cursor: pointer; list-style: none; }
 #tk-workspace .tk-subnav-more > summary::-webkit-details-marker { display: none; }
@@ -38,10 +38,10 @@
 #tk-workspace .tk-subnav-more.is-active > summary { font-weight: 600; }
 #tk-workspace .tk-subnav-menu { position: absolute; z-index: 20; top: calc(100% - 2px); right: 0; display: flex; flex-direction: column; gap: 3px; min-width: 150px; padding: 5px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 8px; background: var(--SmartThemeBlurTintColor); box-shadow: 0 4px 18px #0003; }
 #tk-workspace .tk-subnav-menu button { flex: none; width: 100%; margin: 0; text-align: start; }
-#tk-workspace .tk-feature-switches { display: flex; flex-wrap: wrap; gap: 2px 14px; padding: 3px 2px 5px; border-bottom: 1px solid var(--SmartThemeBorderColor); }
+#tk-workspace .tk-feature-switches { display: flex; flex-wrap: wrap; gap: 2px 14px; padding: 4px 2px; border-top: 1px solid var(--SmartThemeBorderColor); }
 #tk-workspace .tk-feature-switch { display: flex; align-items: center; gap: 5px; margin: 0; font-size: .85em; cursor: pointer; }
 #tk-workspace .tk-feature-switch input { margin: 0; accent-color: var(--SmartThemeQuoteColor); }
-#tk-workspace .tk-tabs button[aria-selected="true"], #tk-workspace .tk-subnav button[aria-pressed="true"] { font-weight: 600; }
+#tk-workspace .tk-tabs button[aria-selected="true"], #tk-workspace .tk-subnav button[aria-pressed="true"] { font-weight: 600; border-color: currentColor; }
 #tk-workspace :focus-visible { outline: 2px solid var(--SmartThemeQuoteColor); outline-offset: -2px; }
 #tk-workspace .tk-workspace-body { flex: 1; position: relative; min-height: 0; }
 #tk-memory-mount { height: 100%; min-height: 0; }
@@ -123,6 +123,9 @@
 #tk-workspace #tavern-kitchen-settings h3 { margin: 0 0 16px; font-size: 16px; }
 #tk-workspace #tavern-kitchen-settings .checkbox_label { min-height: 36px; }
 #tk-workspace :is(button, [role="button"], summary, input, select, textarea) { transition-duration: var(--animation-duration-2x, 200ms) !important; transition-timing-function: ease-in-out !important; transition-delay: 0s !important; }
+@media (min-width: 1001px) {
+    #tk-workspace { right: 0; left: auto; width: calc((100dvw - var(--sheldWidth) - 2px) / 2); min-width: 0 !important; box-sizing: border-box; }
+}
 @media (max-width: 1000px) {
     #tk-workspace { inset-inline: 0; top: var(--topBarBlockSize); width: 100dvw; border-radius: 0 0 20px 20px; }
     #tk-workspace.openDrawer { height: calc(100dvh - 45px); }
@@ -182,12 +185,52 @@
 
 #tk-topbar[hidden], #tk-workspace .tk-tabs > [hidden] { display: none; }
 #tk-workspace .tk-feature-switches:has(.tk-panel-controls) { max-height: 46vh; overflow-y: auto; flex-shrink: 0; }
-#tk-workspace .tk-panel-controls { display: grid; gap: .35em; width: 100%; min-width: 0; }
+#tk-workspace .tk-panel-switch { min-width: 0; cursor: pointer; }
+#tk-workspace .tk-panel-controls { width: 100%; min-width: 0; }
 .tk-panel-controls label { display: grid; gap: .2em; margin-block: .35em; }
 .tk-panel-controls :is(select, textarea) { width: 100%; min-width: 0; }
 .tk-panel-controls textarea { resize: vertical; }
 .tk-panel-controls details > summary { cursor: pointer; }
 .tk-panel-controls small:empty { display: none; }
 
-#tk-workspace .tk-panel-settings { max-height: 45vh; overflow-y: auto; flex-shrink: 0; }
-#tk-workspace .tk-panel-settings summary { cursor: pointer; }
+#tk-workspace .tk-api-fields {
+    display: grid; gap: 4px 10px;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 13em), 1fr));
+}
+#tk-panel-overview { container-type: inline-size; }
+#tk-workspace .tk-protagonist-sheet { display: grid; gap: 10px; align-items: start; overflow-wrap: anywhere; }
+#tk-workspace .tk-protagonist-sheet > h3, #tk-workspace .tk-protagonist-sheet > p { grid-column: 1 / -1; }
+#tk-workspace .tk-protagonist-sheet section { min-width: 0; }
+#tk-workspace .tk-protagonist-sheet p { margin-block: 4px; line-height: 1.5; }
+#tk-workspace .tk-protagonist-sheet h4 { margin: 0 0 5px; }
+@container (min-width: 34rem) {
+    #tk-workspace .tk-protagonist-sheet { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+#tk-workspace .tk-panel-controls > summary { cursor: pointer; }
+#tk-workspace .tk-panel-controls label { font-weight: 600; }
+#tk-workspace .tk-panel-controls :is(select, textarea) { font-weight: normal; margin: 0; }
+#tk-workspace .tk-panel-controls .standoutHeader { margin-block: 5px; }
+#tk-workspace .tk-prompt-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+#tk-workspace .tk-workspace-header { padding-block: 4px; }
+
+#tk-workspace .tk-api-fields { display: block; }
+#tk-workspace .tk-api-fields label { display: flex; align-items: center; gap: 5px; margin: 2px 0; font-weight: normal; }
+#tk-workspace .tk-api-fields select { flex: 1; width: 0; }
+#tk-workspace .tk-subnav button:not(.active) { border-color: transparent; background: transparent; box-shadow: none; }
+
+#tk-workspace .tk-workspace-controls { flex: 0 0 auto; max-height: 50vh; overflow-y: auto; border-top: 1px solid var(--SmartThemeBorderColor); padding: 6px 2px; }
+#tk-workspace .tk-workspace-controls .tk-feature-switches { border-top: 0; max-height: none; overflow: visible; padding: 0; }
+#tk-workspace .tk-workspace-controls .tk-evolution { border-top: 0; max-height: none; overflow: visible; padding-inline: 0; }
+#tk-workspace .tk-module-actions { width: 100%; margin-block: 6px; }
+#tk-workspace .tk-workspace-controls .tk-panel-controls { margin-block-start: 6px; }
+.tk-module-settings { border-top: 1px solid var(--SmartThemeBorderColor, #8885); padding-block: 10px; margin-block-start: 12px; }
+.tk-module-settings > summary, .tk-module-settings > details > summary { cursor: pointer; }
+
+#tk-workspace .tk-panel-page { display: grid; grid-template-rows: auto minmax(0, 2fr) minmax(0, 1fr); }
+#tk-workspace .tk-panel-page.tk-controls-in-frame { grid-template-rows: auto minmax(0, 1fr); }
+#tk-workspace .tk-workspace-controls { height: 100%; max-height: none; min-height: 0; overflow-y: auto; box-sizing: border-box; }
+#tk-workspace .tk-workspace-body { overflow: hidden; }
+
+#tk-module-native-controls > h4 { margin: 0 0 8px; font-size: 1em; }
+#tk-module-native-controls > details { margin-block: 6px; }
+#tk-module-native-controls > details > summary { font-weight: 600; cursor: pointer; padding-block: 4px; }

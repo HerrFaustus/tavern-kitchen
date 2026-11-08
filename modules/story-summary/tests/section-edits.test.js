@@ -71,16 +71,16 @@ test('editor sends its opening projection even after a background refresh', () =
 test('an editor default does not become an unintended change', () => {
     const { document } = parseHTML('<div id="editor-struct"></div><textarea id="editor-ta"></textarea>'
         + '<div id="editor-title"></div><div id="editor-hint"></div><div id="editor-err"></div><div id="editor-modal"></div>');
-    const messages = [], summaryData = { keywords: [{ text: 'A' }] };
+    const messages = [], summaryData = { facts: [{ s: 'A', p: '状态', o: '等待' }] };
     const ui = uiEntry(['openEditor', 'closeEditor', 'readEditorData', 'saveEditor', 'preserveAddedAt'], {
         currentEditSection: null, currentEditBaseline: null, structuredClone, summaryData, archiveView: { closeDialogs() {} },
-        SECTION_META: { keywords: { title: '', hint: '' } }, $: id => document.getElementById(id),
-        postMsg: (type, data) => messages.push(structuredClone({ type, ...data })), renderKeywords() {},
+        SECTION_META: { facts: { title: '', hint: '' } }, $: id => document.getElementById(id),
+        postMsg: (type, data) => messages.push(structuredClone({ type, ...data })), renderFacts() {},
     });
-    ui.openEditor('keywords');
-    summaryData.keywords[0].weight = '核心';
+    ui.openEditor('facts');
+    summaryData.facts[0].o = '已出发';
     ui.saveEditor();
     const saved = messages.find(item => item.type === 'UPDATE_SECTION');
-    assert.deepEqual(applySummarySectionEdit('keywords', saved.previous, saved.data, summaryData.keywords),
-        [{ text: 'A', weight: '核心' }]);
+    assert.deepEqual(applySummarySectionEdit('facts', saved.previous, saved.data, summaryData.facts),
+        [{ s: 'A', p: '状态', o: '已出发' }]);
 });

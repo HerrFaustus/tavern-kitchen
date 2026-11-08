@@ -24,16 +24,9 @@
 .tk-embedded:not([data-kitchen-view="settings"]) #settings-modal { display: none !important; }
 .tk-embedded:not([data-kitchen-view="settings"]) body { overflow-y: auto; }
 .tk-embedded .archive-tabs { display: none; }
-.tk-embedded[data-kitchen-view="people"] .archive-people-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; }
+.tk-embedded[data-kitchen-view="people"] .archive-people-layout { display: block; }
 .tk-embedded[data-kitchen-view="people"] #archive-profile-home { display: block; }
-.tk-embedded[data-kitchen-view="people"] .archive-graph { grid-row: 2; padding-top: 24px; border-top: 1px solid var(--bdr); }
 .tk-embedded[data-kitchen-view="people"] .archive-profile { padding-left: 0; border-left: 0; }
-.tk-embedded[data-kitchen-view="people"] #archive-profile-open { display: none; }
-@media (min-width: 800px) {
-    .tk-embedded[data-kitchen-view="people"] .archive-people-layout { grid-template-columns: minmax(260px, 1fr) minmax(0, 1.3fr); }
-    .tk-embedded[data-kitchen-view="people"] #archive-profile-home { grid-column: 1; grid-row: 1; }
-    .tk-embedded[data-kitchen-view="people"] .archive-graph { grid-column: 2; grid-row: 1; padding-top: 0; border-top: 0; }
-}
 .tk-embedded[data-kitchen-view="settings"] .archive { display: none; }
 .tk-embedded[data-kitchen-view="settings"] .workspace-shell { padding-inline: 24px; }
 .tk-embedded #archive-manage-open { display: none; }
@@ -233,3 +226,20 @@
     .tk-embedded .agent-api-scroll, .tk-embedded .world-toolbar, .tk-embedded .world-listing, .tk-embedded.tk-follow-host .dice-app { padding-inline: 12px; }
     .tk-embedded .xb-agent-settings-surface :is(input, select, textarea) { font-size: 16px; }
 }
+
+.tk-module-settings { border-top: 1px solid var(--bdr, var(--SmartThemeBorderColor, #8885)); margin-block-start: 12px; padding-block: 10px; }
+.tk-module-settings > summary, .tk-module-settings > details > summary { cursor: pointer; }
+
+#tk-module-native-controls { height: auto; max-height: none; min-width: 0; margin: 0 0 8px; padding: 0; border: 0; overflow: visible; }
+#tk-module-native-controls .tk-panel-switch, #tk-module-native-controls .tk-feature-switch { display: flex; align-items: center; gap: 6px; }
+#tk-module-native-controls .tk-feature-switches { display: block; }
+#tk-module-native-controls .tk-panel-controls { width: 100%; min-width: 0; margin-block: 8px; }
+#tk-module-native-controls .tk-panel-controls label { display: grid; gap: 4px; margin-block: 6px; }
+#tk-module-native-controls .tk-panel-controls :is(select, textarea) { box-sizing: border-box; width: 100%; min-width: 0; font: inherit; }
+#tk-module-native-controls .tk-panel-controls textarea { resize: vertical; }
+#tk-module-native-controls .tk-panel-controls small:empty { display: none; }
+#tk-module-native-controls summary { cursor: pointer; }
+
+#tk-module-native-controls > h4 { margin: 0 0 8px; font-size: 1em; }
+#tk-module-native-controls > details { margin-block: 6px; }
+#tk-module-native-controls > details > summary { font-weight: 600; cursor: pointer; padding-block: 4px; }

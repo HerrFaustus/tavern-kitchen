@@ -22,7 +22,6 @@ const fields = {
         trend: { type: 'string', enum: RELATION_TRENDS },
     },
     characters: { name: { ...string, description: 'Established main character name.' } },
-    keywords: { text: { ...string, description: 'Story-wide keyword.' }, weight: { type: 'string', enum: ['核心', '重要', '一般'] } },
     characterAliases: {
         from: { ...string, description: 'One alternate written name.' }, to: { ...string, description: 'Established main name of the same person.' },
         evidence: { ...string, maxLength: 120, description: 'Short explanation of the identity match.' },

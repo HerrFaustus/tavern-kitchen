@@ -1,6 +1,5 @@
 // Load the owners before rendering editors, including features that have never run in this chat.
 import '../modules/agent-core/adapters/openai-compatible.js';
-import '../modules/agent-core/runtime/delegate-runner.js';
 import '../modules/story-planner/notes.js';
 import '../modules/story-summary/data/generation-rules.js';
 import '../modules/story-summary/generate/llm.js';

@@ -243,3 +243,35 @@ test('embedding and rerank use their own endpoints and retain non-chat model cho
     assert.equal(seen[2].url, 'https://fixture.test/v1/rerank');
     assert.deepEqual(seen[2].body.documents, ['connection test']);
 });
+
+test('profile extras reach the server on discovery and streamed and ordinary generation', async t => {
+    const wire = await service(t, 'openai-compatible');
+    const preset = createPreset('custom', 'custom', {provider:'openai-compatible', model:'fixture', baseUrl:wire.url,
+        temperature:0.8, requestExtras:{includeHeaders:'X-Test-Client: fixture', includeBody:'temperature: 0.2\ntop_p: 0.5', excludeBody:'- top_p'}});
+    await listTextModels(preset);
+    for (const stream of [true,false]) {
+        await generateText({...preset,stream}, {messages});
+    }
+    assert.equal(wire.requests.length, 3);
+    for (const request of wire.requests) assert.equal(request.headers['x-test-client'],'fixture');
+    for (const request of wire.requests.slice(1)) {
+        assert.equal(request.body.temperature,0.2);
+        assert.equal(Object.hasOwn(request.body,'top_p'),false);
+    }
+});
+
+test('Tavern proxy forwards configured extras to the upstream custom endpoint only', async t => {
+    const wire = await service(t, 'openai-compatible');
+    const hostClient = createHostChatCompletionsClient({requestHeadersProvider:() => ({'X-CSRF-Token':'fixture'}),
+        fetch:(url,options) => fetch(wire.url + url,options)});
+    const preset = createPreset('fixture','fixture',{provider:'sillytavern-openai-compatible',baseUrl:'https://upstream.test/v1',
+        model:'fixture',apiKey:'fixture-key',stream:false,requestExtras:{includeBody:'{"seed":12}',excludeBody:'- top_p',includeHeaders:'X-Example: session-1'}});
+    await generateText(preset,{messages},{createAdapter:config => createAgentAdapter(config,{hostClient})});
+    const [{body,headers}] = wire.requests;
+    assert.equal(body.chat_completion_source,'custom');
+    assert.equal(body.custom_url,preset.baseUrl);
+    assert.deepEqual(JSON.parse(body.custom_include_headers),{'x-example':'session-1',Authorization:'Bearer fixture-key'});
+    assert.deepEqual(JSON.parse(body.custom_include_body),{seed:12});
+    assert.deepEqual(JSON.parse(body.custom_exclude_body),['top_p']);
+    assert.equal(headers['x-example'],undefined);
+});

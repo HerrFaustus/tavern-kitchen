@@ -3,7 +3,7 @@ import { registerGenerateInterceptor, unregisterGenerateInterceptor, GENERATE_IN
 import { usesStoryRecall } from '../story-summary/generate/recall-policy.js';
 
 const ID = 'world-authority', KEY = 'tavernKitchenWorldAuthority';
-export function installWorldAuthorityGeneration({ getContext, prepare, initialize, onInitializationError, onError = error => console.error('[TavernKitchen] 世界状态读取失败', error) }) {
+export function installWorldAuthorityGeneration({ getContext, prepare, onError = error => console.error('[TavernKitchen] 世界状态读取失败', error) }) {
     let disposed = false;
     const clear = () => { delete extension_prompts[KEY]; };
     registerGenerateInterceptor(ID, async (_chat, _size, abort, type, run) => {
@@ -12,10 +12,6 @@ export function installWorldAuthorityGeneration({ getContext, prepare, initializ
         const owner = getContext().chatId;
         const query = (getContext().chat || []).slice(-3).map(message => message.mes || '').join('\n');
         try {
-            if (initialize && (!type || type === 'normal')) {
-                try { await initialize({signal:run?.signal}); }
-                catch (error) { onInitializationError?.(error); }
-            }
             if (run?.signal.aborted) return;
             if (getContext().chatId !== owner) { abort(true); return; }
             const value = await prepare(query);

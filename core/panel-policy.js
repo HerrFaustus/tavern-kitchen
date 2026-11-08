@@ -1,7 +1,15 @@
 let settings = {};
 const prompts = new Map();
 
-export function usePanelSettings(value) { settings = value; }
+let persistPrompt;
+export function usePanelSettings(value, savePrompt) {
+    settings = value;
+    persistPrompt = savePrompt;
+}
+export function savePanelPrompt(key, value) {
+    if (!persistPrompt) throw new Error('提示词配置尚未就绪');
+    return persistPrompt(key, value);
+}
 export function panelEnabled(panel) {
     return settings.enabled !== false && (settings.panels?.[panel] ?? (panel === 'planner' ? settings.enaPlanner?.enabled !== false : true));
 }

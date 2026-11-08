@@ -1,7 +1,7 @@
 import { nameKey } from './protagonist-identity.js';
 // Structured observations share the summary's transaction, provenance and undo.
 // This projection never predicts events, advances time, or calls a model.
-export const STORY_KINDS = { clock: '故事时钟', person: '人物', knowledge: '认知', plan: '计划', goal: '目标', suspense: '悬念', situation: '局面' };
+export const STORY_KINDS = { clock: '故事时钟', person: '人物', knowledge: '认知', plan: '计划', goal: '目标', suspense: '悬念', situation: '局势' };
 export const isPersonalAgenda = record => record.kind === 'plan' || record.kind === 'goal';
 export const PRESENCE = { present: '在场', nearby: '附近', away: '离场', unknown: '未知' };
 export const BELIEFS = { known: '已知', believed: '相信／误解', uncertain: '怀疑' };
@@ -159,6 +159,6 @@ ${CHARACTER_RECORD_RULES}
 {id:"person-固定标识",kind:"person",name:"人物",presence:"present|nearby|away|unknown",note:"在场度依据"}：四值分别表示在场、附近、离场、未知，选择其中一个。不要把回忆中提及等同于在场。根据正文明确的换场、同行、离开更新已建档人物的在场度；同区域和过往同场不能单独证明当前在场或知情。
 {id:"knowledge-固定标识",kind:"knowledge",person:"获知者",content:"知道/误以为的内容",certainty:"known|believed|uncertain",evidence:"从何人/何事获知",learnedAt:"故事时间或空"}：选择一种认知性质；保留错误信念，不把秘密传播给未获知者。认知单独记，不同时写成该角色已确认的世界事实。
 {id:"固定标识",kind:"plan|goal",holders:["人物规范名"],title:"简介（名称）",description:"具体内容",conditions:"条件约束，无则留空",statusNote:"目前做到哪一步，缺少依据留空",status:"open|done|cancelled|failed",reason:"结案原因或空",due:"故事期限或空"}：计划是已有明确行动的当下项目，例如明早两人合力把药送出城；目标是长期追求或议程，例如让城里人都能看得起病。仅在原文分别支持时记录两者。一人或多人共同持有，同一条目只用一个 id；受益人、知情者不自动成为持有人。主角的意图须由玩家明确表达或确认。到期、条件满足或某个计划完成，都不可自动判定目标完成。改期、进展、成员变化复用原 id，结案必须写明依据和原因。
-{id:"固定标识",kind:"suspense|situation",title:"标题",description:"内容",status:"open|done|cancelled|failed",reason:"结案原因或空",due:"故事期限或空"}：分别为悬念、局面。结案必须有依据和原因；未解决保持 open。不要为一次情绪自动建立永久局面。
+{id:"固定标识",kind:"suspense|situation",title:"标题",description:"内容",status:"open|done|cancelled|failed",reason:"结案原因或空",due:"故事期限或空"}：分别为悬念、局势。结案必须有依据和原因；未解决保持 open。不要为一次情绪自动建立永久局势。
 局势（situation）的 description 写局势概况，可补充文本 parties（涉及方及各方角色）、scope（影响范围）、impact（当前实际影响）、releaseCondition（正文明确的解除条件）。更新时沿用同一 id 并保留仍有效的词条；缺乏依据可留空。期限或解除条件满足不等于结案。
 人物名遵循已有规范名称；重要状态缺乏依据时保留未知，不补写故事。`;

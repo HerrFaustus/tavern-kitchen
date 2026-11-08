@@ -54,3 +54,20 @@ test('message annotations stay idempotent, render plain text and clear when chan
     snapshot = { ...snapshot, enabled: false }; panel.schedule(); await setTimeout(120);
     assert.equal(document.querySelectorAll('.tk-floor-summary').length, 0);
 });
+
+test('a failed model call retries the same floor', async () => {
+    const { document } = parseHTML('<html><body></body></html>');
+    const attempts = [];
+    const panel = createFloorPanel({ doc: document, floor: 1, schedule() {},
+        summarizeFloor: async floor => {
+            attempts.push(floor);
+            if (attempts.length === 1) throw Object.assign(new Error('接口未返回正文'), { summaryModelFailure: true });
+        } });
+    panel.refresh({ enabled: true, chat: [{ is_user: true, mes: '问' }, { mes: '答' }], store: null });
+    const find = text => [...panel.node.querySelectorAll('button')].find(b => b.textContent === text);
+    find('总结本楼').click(); await setTimeout(0);
+    assert.match(panel.node.querySelector('[role=status]').textContent, /接口未返回正文/);
+    assert.equal(find('查看总结模型'), undefined);
+    find('重试').click(); await setTimeout(0);
+    assert.deepEqual(attempts, [1, 1]); assert.equal(find('重试'), undefined);
+});

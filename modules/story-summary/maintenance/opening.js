@@ -13,7 +13,7 @@ export function buildMemoryOpening({ task, read, maxTokens }) {
     }) };
     const estimate = () => estimateConversationTokens({ messages: [{ role: 'user', content: JSON.stringify(opening) }] });
     let tokens = estimate();
-    for (const collection of ['facts', 'storyRecords', 'anchors', 'characters', 'keywords', 'characterAliases']) {
+    for (const collection of ['facts', 'storyRecords', 'anchors', 'characters', 'characterAliases']) {
         const directory = opening.memoryDirectory.find(item => item.collection === collection);
         let cursor;
         while (directory.next && tokens + 100 < maxTokens) {

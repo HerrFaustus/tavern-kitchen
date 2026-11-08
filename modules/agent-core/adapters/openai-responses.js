@@ -1,3 +1,4 @@
+import { fetchWithExtras } from '../../../shared/common/request-extras.js';
 import OpenAI from 'openai';
 import { buildSamplingParameters } from '../sampling.js';
 import { resolveAgentAuth } from '../provider-auth.js';
@@ -348,6 +349,7 @@ export class OpenAIResponsesAdapter {
         this.auth = resolveAgentAuth('openai-responses', config.apiKey);
         this.client = new OpenAI({
             ...this.auth.sdkOptions,
+            ...(config.requestExtras && {fetch: fetchWithExtras(config)}),
             baseURL: String(config.baseUrl || 'https://api.openai.com/v1').replace(/\/$/, ''),
             timeout: Number(config.timeoutMs) || 15 * 60 * 1000,
             maxRetries: 0,

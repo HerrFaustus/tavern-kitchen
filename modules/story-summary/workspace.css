@@ -101,3 +101,46 @@ body:has(.summary-workspace.active) { overflow: hidden; }
     .workspace-shell #tab-summary .settings-field { flex-basis: 100%; }
     .memory-chat-dialog { inset: auto; left: 0; top: var(--memory-chat-view-top); transform: none; width: 100%; height: var(--memory-chat-view-height); max-height: none; border: 0; border-radius: 0; }
 }
+
+#summary-options { margin: 0 5px 16px; }
+#summary-options[hidden] { display: none; }
+#summary-options > summary { cursor: pointer; padding-block: 6px; }
+html.tk-embedded[data-kitchen-view="memory"] #summary-options > #settings-modal.active {
+    display: block !important; position: static; min-height: 0; height: auto; overflow: visible;
+}
+html.tk-embedded[data-kitchen-view="memory"] body { overflow-y: auto; }
+#summary-options .workspace-shell { min-height: 0; }
+
+#settings-modal .workspace-layout { display: block; }
+.summary-local-group { margin-block: 6px; }
+.summary-local-group > summary { padding-block: 5px; cursor: pointer; }
+
+.tk-situation-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.tk-situation-heading label { display: inline-flex; align-items: center; gap: 6px; font-size: .85em; font-weight: normal; }
+.tk-story-situations article { margin-block: 16px 24px; overflow-wrap: anywhere; }
+.tk-story-situations article h5 { font-size: 1em; margin-block: 0 8px; }
+
+.tk-embedded[data-kitchen-view="world"] .archive-world-layout { display: block; }
+.tk-embedded[data-kitchen-view="world"] #archive-world-index { display: none; }
+
+#summary-controls, #situation-controls { margin-inline: 5px; }
+#summary-controls .archive-generate { margin-bottom: 6px; }
+#summary-controls #summary-options { margin: 0; }
+#situation-controls .tk-situation-heading { margin-block: 8px; }
+#summary-controls[hidden], #situation-controls[hidden] { display: none; }
+
+html.tk-embedded:is([data-kitchen-view="memory"],[data-kitchen-view="people"],[data-kitchen-view="relations"],[data-kitchen-view="world"]) body {
+    display: grid; grid-template-rows: minmax(0, 2fr) minmax(0, 1fr); height: 100dvh; margin: 0; overflow: hidden !important;
+}
+html.tk-embedded .archive { grid-row: 1; height: 100%; min-height: 0; overflow-y: auto; box-sizing: border-box; }
+#summary-controls, #situation-controls, #people-controls { grid-row: 2; min-height: 0; margin: 0 5px; overflow-y: auto; box-sizing: border-box; }
+#people-controls[hidden] { display: none; }
+html.tk-embedded[data-kitchen-view="settings"] body { height: 100dvh; margin: 0; overflow: hidden; }
+html.tk-embedded[data-kitchen-view="settings"] #settings-modal.active { position: static !important; height: 100%; overflow: hidden; }
+html.tk-embedded[data-kitchen-view="settings"] #settings-modal :is(.workspace-shell,.workspace-layout,.modal-body) { height: 100%; min-height: 0; padding-block: 0; box-sizing: border-box; }
+html.tk-embedded[data-kitchen-view="settings"] #tab-agent.active { display: grid; grid-template-rows: minmax(0, 2fr) minmax(0, 1fr); height: 100%; }
+.memory-record-view, .memory-controls { min-height: 0; overflow-y: auto; box-sizing: border-box; }
+.memory-controls { margin: 0; }
+.memory-controls .memory-settings { border-bottom: 0; }
+
+#tab-agent > .memory-controls { margin: 0; }

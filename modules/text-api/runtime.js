@@ -1,11 +1,11 @@
-import { definePanelPrompt } from '../../core/panel-policy.js';
+import { fetchWithExtras } from '../../shared/common/request-extras.js';
 import { getModelListApiPrefix, pullModelsForProvider } from '../agent-core/model-list.js';
 import { resolveRuntimeReasoning } from '../agent-core/reasoning-capabilities.js';
 import { getDefaultApiPrefix, resolveApiBaseUrl } from '../../shared/common/openai-url-utils.js';
 import { runWithAbortDeadline } from '../../shared/common/abort-utils.js';
 import { HOST_PROVIDER, assertPreset } from './model.js';
 import { TEXT_API_COPY as COPY } from './copy.js';
-import { CONNECTION_TEST_PROMPT } from './prompts.js';
+import { connectionProbe } from './prompts.js';
 
 export function resolveConnection(preset, { modelList = false } = {}) {
     const config = structuredClone(assertPreset(preset));
@@ -30,7 +30,7 @@ export async function listTextModels(preset, { signal, timeoutMs = 30000 } = {})
     try {
         return await runWithAbortDeadline(async () => {
             if (['embedding', 'rerank'].includes(preset.kind)) {
-                const response = await fetch(config.baseUrl.replace(/\/$/, '') + '/models', {
+                const response = await fetchWithExtras(config)(config.baseUrl.replace(/\/$/, '') + '/models', {
                     signal: controller.signal, headers: { Accept: 'application/json',
                         ...(config.apiKey ? { Authorization: 'Bearer ' + config.apiKey } : {}) },
                 });
@@ -97,7 +97,6 @@ export async function generateText(preset, { messages, signal, onDelta, onDispat
     }
 }
 
-const connectionProbe = definePanelPrompt('settings','connectionProbe','连接测试',CONNECTION_TEST_PROMPT);
 export async function testTextConnection(preset, options = {}, dependencies = {}) {
     if (['embedding', 'rerank'].includes(preset.kind)) {
         const config = resolveConnection(preset);
@@ -109,7 +108,7 @@ export async function testTextConnection(preset, options = {}, dependencies = {}
         try {
             return await runWithAbortDeadline(async () => {
                 const embedding = preset.kind === 'embedding';
-                const response = await fetch(config.baseUrl.replace(/\/$/, '') + (embedding ? '/embeddings' : '/rerank'), {
+                const response = await fetchWithExtras(config)(config.baseUrl.replace(/\/$/, '') + (embedding ? '/embeddings' : '/rerank'), {
                     method: 'POST', signal: controller.signal, headers: {
                         'Content-Type': 'application/json', ...(config.apiKey ? { Authorization: 'Bearer ' + config.apiKey } : {}),
                     }, body: JSON.stringify(embedding ? { model: config.model, input: ['connection test'] }

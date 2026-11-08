@@ -2,8 +2,6 @@ import { extension_prompts, extension_prompt_roles, extension_prompt_types } fro
 import { createModuleEvents, event_types } from '../../core/event-manager.js';
 import { GENERATE_INTERCEPTOR_ORDER, registerGenerateInterceptor, unregisterGenerateInterceptor } from '../../shared/common/generate-interceptor.js';
 import { generateFeatureText, resolveTextApi } from '../text-api/host.js';
-import { getTextApiRepository } from '../text-api/repository.js';
-import { acceptsProfile } from '../text-api/profiles.js';
 import { createPlanner } from './runtime.js';
 import { createNoteStore } from './storage.js';
 import { assertPlannerPresetReady } from './preset.js';
@@ -11,14 +9,14 @@ import { assertPlannerPresetReady } from './preset.js';
 import { createPlannerSettings } from './settings-view.js';
 
 const ID = 'kitchen-chapter-note';
-export function installPlanner({snapshot, getContext, settings, saveSettings}) {
-    let message = '等待正文生成', canRetry = false, renderStatus, view = 0;
+export function installPlanner({snapshot, getContext}) {
+    let message = '等待正文生成', canRetry = false, renderStatus;
     const status = (text, retryable = false) => {
         message = text;
         canRetry = retryable;
         renderStatus?.(message, canRetry);
     };
-    const writer = createPlanner({snapshot, store:createNoteStore(), preference:()=>settings.preference || '', status,
+    const writer = createPlanner({snapshot, store:createNoteStore(), status,
         async write(messages,signal) {
             const preset = await resolveTextApi('planner');
             assertPlannerPresetReady(preset);
@@ -29,7 +27,7 @@ export function installPlanner({snapshot, getContext, settings, saveSettings}) {
     const reset = () => { generation++; writer.cancel(); clear(); };
     const events = createModuleEvents(ID);
     events.on(event_types.GENERATION_STARTED, (_type,_options,dryRun) => { if (!dryRun) reset(); });
-    events.on(event_types.CHAT_CHANGED, () => { reset(); view++; status('等待正文生成'); });
+    events.on(event_types.CHAT_CHANGED, () => { reset(); status('等待正文生成'); });
     for (const event of [event_types.GENERATION_STOPPED,event_types.GENERATION_ENDED]) events.on(event,reset);
     registerGenerateInterceptor(ID, async (_chat,contextSize,_abort,type,run) => {
         clear();
@@ -49,34 +47,9 @@ export function installPlanner({snapshot, getContext, settings, saveSettings}) {
         } catch { status('本轮未读取到札记，正文继续'); }
     }, GENERATE_INTERCEPTOR_ORDER.STORY_PLANNER);
     return {
-        async open(root) {
-            const token = ++view;
-            const repository = await getTextApiRepository();
-            const api = await repository.load();
-            if (view !== token) return;
+        async open(root, controlsRoot) {
             renderStatus = createPlannerSettings(root, {
-                apiInHeader:true,
-                presets: api.presets.filter(preset => acceptsProfile('planner', preset)),
-                selected: api.bindings.planner,
-                preference: settings.preference,
-                async save(model, preference) {
-                    if (model === '') {
-                        status('请先在 API 设置中创建并选择独立文本配置', canRetry);
-                        return;
-                    }
-                    const before = settings.preference;
-                    try {
-                        if (model !== undefined) await repository.mutate('planner', { type: 'select', id: model });
-                        settings.preference = preference;
-                        await saveSettings();
-                        reset();
-                        writer.retry();
-                        status('配置已保存，下次审稿使用');
-                    } catch {
-                        settings.preference = before;
-                        status('保存失败，请重新打开核对配置', canRetry);
-                    }
-                },
+                controlsRoot,
                 retry() {
                     writer.retry();
                     status('将在下次需要审稿时重试');
@@ -84,6 +57,6 @@ export function installPlanner({snapshot, getContext, settings, saveSettings}) {
             });
             renderStatus(message, canRetry);
         },
-        dispose() { renderStatus = null; reset(); view++; events.cleanup(); unregisterGenerateInterceptor(ID); },
+        dispose() { renderStatus = null; reset(); events.cleanup(); unregisterGenerateInterceptor(ID); },
     };
 }

@@ -1,3 +1,4 @@
+import { fetchWithExtras } from '../../../../shared/common/request-extras.js';
 import { definePanelPrompt } from '../../../../core/panel-policy.js';
 // ═══════════════════════════════════════════════════════════════════════════
 // vector/llm/llm-service.js - L0 前端直连 Chat Completions
@@ -13,8 +14,8 @@ const DEFAULT_L0_API_URL = 'https://api.siliconflow.cn/v1';
 
 let l0KeyIndex = 0;
 
-const probeSystem = definePanelPrompt('memory-settings','probeSystem','接口测试任务','你是一个测试助手。请只输出 OK。');
-const probeUser = definePanelPrompt('memory-settings','probeUser','接口测试输入','只输出 OK');
+const probeSystem = definePanelPrompt('memory','probeSystem','接口测试任务','你是一个测试助手。请只输出 OK。');
+const probeUser = definePanelPrompt('memory','probeUser','接口测试输入','只输出 OK');
 function getL0ApiConfig() {
     const cfg = getVectorConfig() || {};
     return cfg.l0Api || {
@@ -29,6 +30,7 @@ function normalizeL0ApiConfig(apiConfig = null) {
     const fallback = getL0ApiConfig();
     const next = apiConfig || {};
     return {
+        requestExtras: (apiConfig || fallback).requestExtras,
         provider: String(next.provider || fallback.provider || 'siliconflow').trim(),
         url: String(next.url || fallback.url || DEFAULT_L0_API_URL).trim(),
         key: String(next.key || fallback.key || '').trim(),
@@ -146,7 +148,7 @@ export async function callLLM(messages, options = {}) {
     }, timeout);
 
     try {
-        const response = await fetch(`${baseUrl}/chat/completions`, {
+        const response = await fetchWithExtras(apiCfg)(`${baseUrl}/chat/completions`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${apiKey}`,

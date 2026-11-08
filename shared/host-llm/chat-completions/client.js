@@ -1,3 +1,4 @@
+import { parseRequestExtras } from '../../common/request-extras.js';
 import { readSseEventsFromResponse } from './sse.js';
 import { resolveModelFamily } from '../model-family.js';
 import { getHostRequestHeaders } from '../../host-request-headers.js';
@@ -189,6 +190,19 @@ function buildHostChatCompletionsFields(config = {}, source = HOST_CHAT_COMPLETI
     const apiKey = String(config.apiKey || '').trim();
     const defaultReverseProxy = HOST_CHAT_COMPLETIONS_DEFAULT_REVERSE_PROXY[source] || '';
     const reverseProxy = baseUrl || (apiKey ? defaultReverseProxy : '');
+    if (source === HOST_CHAT_COMPLETIONS_SOURCE_OPENAI && config.provider === 'sillytavern-openai-compatible' && config.requestExtras) {
+        const extra = parseRequestExtras(config);
+        if (Object.keys(extra).length) {
+            const headers = { authorization: apiKey ? 'Bearer ' + apiKey : '', ...extra.includeHeaders };
+            const {authorization, ...others} = headers;
+            return {
+                chat_completion_source: 'custom', custom_url: baseUrl,
+                custom_include_headers: JSON.stringify({ ...others, Authorization: authorization }),
+                ...(extra.includeBody && {custom_include_body: JSON.stringify(extra.includeBody)}),
+                ...(extra.excludeBody && {custom_exclude_body: JSON.stringify(extra.excludeBody)}),
+            };
+        }
+    }
     const fields = {
         chat_completion_source: source || HOST_CHAT_COMPLETIONS_SOURCE_OPENAI,
     };

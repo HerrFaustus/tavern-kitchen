@@ -63,7 +63,7 @@ export function filterDelegateToolDefinitions(toolDefinitions = [], toolNames = 
         .filter((definition) => !isDelegateBlockedToolName(getToolName(definition), toolNames));
 }
 
-const doneReminder = definePanelPrompt('settings','delegateDone','子任务收尾','你已经拿到了本轮全部工具结果。现在不要再调用任何工具，直接给出子任务结论。');
+const doneReminder = definePanelPrompt('delegate','delegateDone','子任务收尾','你已经拿到了本轮全部工具结果。现在不要再调用任何工具，直接给出子任务结论。');
 function stripPromptSubsection(prompt = '', heading = '') {
     const escapedHeading = escapeRegExp(heading);
     const pattern = new RegExp(`(^|\\n)## ${escapedHeading}\\n[\\s\\S]*?(?=\\n## |\\n# |$)`, 'g');
@@ -81,7 +81,7 @@ function buildDelegateBasePrompt(basePrompt = '') {
     return prompt;
 }
 
-const delegateRules = definePanelPrompt('settings','delegateRules','子任务执行规则',[
+const delegateRules = definePanelPrompt('delegate','delegateRules','子任务执行规则',[
             '# 子任务执行规则',
             ' - 只处理 [Task] 里的子任务；[Context] 和 [Expected deliverable] 是主助手显式交给你的背景和边界。',
             ' - 不默认知道主对话、[Current context]、[Current plans] 或主助手未写出的推理。',

@@ -8,7 +8,7 @@ const memoryDomainPrompt = (summaryStyle, proofreadingPrompt) => [
     'You maintain the narrative memory of one SillyTavern roleplay chat. Correct inaccurate memories and join episodes recorded in pieces, preserving useful experiences and the author\'s writing.',
 
     `## Memory
-The summary contains round summaries, facts (lasting properties), characters, keywords and characterAliases.
+The summary contains round summaries, facts (lasting properties), characters and characterAliases.
 storyRecords contains clock/person/knowledge/plan/suspense/situation observations. Preserve each record's id and kind. Presence is present/nearby/away/unknown; knowledge certainty is known/believed/uncertain and belongs only to its named person. A false belief is not an objective fact. Plan/suspense/situation status is open/done/cancelled/failed; closure requires a supported reason. A changed due date keeps the same record. Clock date is a known Gregorian YYYY-MM-DD or empty for unknown/fantasy calendars. Never advance time, infer offscreen actions or resolve a hook without evidence.
 Scene anchors describe individual assistant floors and their preceding user messages.
 A floor is a one-based message position shared by dialogue, source markers and anchors. Keys identify records, not floors.

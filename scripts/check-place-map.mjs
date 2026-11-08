@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -86,13 +86,18 @@ async function inspect() {
     const outbound = Array.from(document.querySelectorAll('article li button')).find(b=>b.textContent==='集市').parentElement.textContent;
     await click(labelled('查看旅舍'));
     await click(named('回到当前位置'));
-    return {nearby,beforeFestival,duringFestival,afterFestival,fromProse,fromFeatureLink,north,west,unknown,initial,collapsed,atmosphere,feature,edges,oneWay,mapNodes,destination,incoming,outbound,current:title(),player:state.map.atlas.actors[0].locationKey};
+    const controlHeight = document.querySelector('.place-index > footer').getBoundingClientRect().height;
+    const dataHeight = document.querySelector('.place-index > .tk-module-data').getBoundingClientRect().height;
+    const settingsOpen = !document.querySelector('.place-index > footer [data-setting-section="function"]').hidden;
+    return {controlRatio:controlHeight / (controlHeight + dataHeight),settingsOpen,nearby,beforeFestival,duringFestival,afterFestival,fromProse,fromFeatureLink,north,west,unknown,initial,collapsed,atmosphere,feature,edges,oneWay,mapNodes,destination,incoming,outbound,current:title(),player:state.map.atlas.actors[0].locationKey};
 }
 inspect().then(result=>fetch('/result',{method:'POST',body:JSON.stringify(result)}))
     .catch(error=>fetch('/result',{method:'POST',body:JSON.stringify(String(error))}));
 `);
 await build({configFile:false,root,define:{'process.env.NODE_ENV':'"production"'},plugins:[vue()],logLevel:'error',
     build:{outDir:path.join(temp,'build'),lib:{entry,name:'PlaceCheck',formats:['iife'],fileName:()=>'fixture.js'}}});
+const styles = readdirSync(path.join(temp,'build')).filter(file=>file.endsWith('.css'))
+    .map(file=>readFileSync(path.join(temp,'build',file),'utf8')).join('\n');
 const {promise,resolve,reject}=Promise.withResolvers();
 const server = http.createServer((req,res)=>{
     if (req.url === '/result' && req.method === 'POST') {
@@ -103,7 +108,7 @@ const server = http.createServer((req,res)=>{
         res.end(readFileSync(path.join(temp,'build/fixture.js')));
     } else {
         res.setHeader('Content-Type','text/html; charset=utf-8');
-        res.end('<meta charset="utf-8"><div id="app"></div><script src="/fixture.js"></script>');
+        res.end('<!doctype html><meta charset="utf-8"><style>html,body,#app{height:100%;margin:0}' + styles + '</style><div id="app"></div><script src="/fixture.js"></script>');
     }
 });
 await new Promise(ready=>server.listen(0,'127.0.0.1',ready));
@@ -115,6 +120,8 @@ try {
     const result=JSON.parse(await promise);
     assert.deepEqual(result.initial.slice(0,4).map(value=>value.replace(/\s+/g,'')),['▾世界群岛','▾地区北岸','▾地点旧渡口·当前位置','地点要素吊机']);
     assert.deepEqual([result.fromProse,result.fromFeatureLink,result.north,result.west,result.unknown],['集市','吊机','仓门','吊机','旧桶']);
+    assert.ok(Math.abs(result.controlRatio - 1 / 3) < .015, JSON.stringify(result));
+    assert.equal(result.settingsOpen,true);
     assert.equal(result.nearby,true);
     assert.equal(result.beforeFestival,true);
     assert.match(result.duringFestival,/河灯节.*灯摊占着青石坡/s);

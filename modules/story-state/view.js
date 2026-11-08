@@ -1,3 +1,4 @@
+import { collectPlotLines } from './plot-lines.js';
 import { nameKey, protagonistIdentity } from './protagonist-identity.js';
 import { isPersonalAgenda, projectPersonalAgendas, availableStoryRecords, characterStoryState, PRESENCE, BELIEFS, THREAD_STATUS, SITUATION_FIELDS, STORY_KINDS, storyRecordText, relativeStoryTime } from './records.js';
 import { FIELD_LABELS } from '../world-records/domain.js';
@@ -10,7 +11,7 @@ function source(record) {
     const start = (record._sourceStart ?? record._addedAt) + 1, end = record._addedAt + 1;
     return el('small', start === end ? `来源：第 ${end} 楼` : `来源：第 ${start}–${end} 楼`, 'tk-record-note');
 }
-function section(parent, title, className) { const node = el('section', undefined, className); node.append(el('h4', title)); parent.append(node); return node; }
+function section(parent, title, className) { const node = el('section', undefined, className); node.append(el('h4', title, 'standoutHeader')); parent.append(node); return node; }
 function line(parent, label, value) { if (value) { const row = el('p'); row.append(el('strong', `${label}：`), document.createTextNode(value)); parent.append(row); } }
 export function renderPersonState(parent, records, name, resolveName) {
     const state = characterStoryState(records, name, resolveName);
@@ -30,14 +31,14 @@ export function renderPersonalAgendas(parent, records, matches) {
         if (owned.some(record => record.kind === kind)) renderThreads(parent, owned, [kind]);
     }
 }
-export function renderThreads(parent, records, kinds = ['plan', 'suspense', 'situation'], limit = Infinity) {
-    const labels = { plan: '计划', goal:'目标', suspense: '悬念', situation: '局面' };
+export function renderThreads(parent, records, kinds = ['plan', 'suspense', 'situation'], limit = Infinity, options = {}) {
+    const labels = { plan: '计划', goal:'目标', suspense: '悬念', situation: '局势' };
     const clock = records.find(record => record.kind === 'clock');
     for (const kind of kinds) {
         const entries = records.filter(record => record.kind === kind), open = entries.filter(record => record.status === 'open');
-        const group = section(parent, labels[kind]);
+        const group = section(parent, options.title || labels[kind]);
         const append = (container, record) => {
-            const row = el('details'); row.dataset.recordId = record.id; row.append(el('summary', `${record.title} · ${THREAD_STATUS[record.status]}`));
+            const row = el(kind === 'situation' ? 'article' : 'details'); row.dataset.recordId = record.id; row.append(el(kind === 'situation' ? 'h5' : 'summary', `${record.title} · ${THREAD_STATUS[record.status]}`));
             if (kind === 'situation') {
                 const scenery = record.flavor === 'scenery' || record.flavor === 'encounter';
                 line(row, '类型', record.flavor === 'encounter' ? '风物 · 街头见闻' : scenery ? '风物' : '事态');
@@ -49,7 +50,7 @@ export function renderThreads(parent, records, kinds = ['plan', 'suspense', 'sit
                     line(row, '关联局势', record._relatedTitle || records.find(item => item.id === record.relatedId)?.title);
                 }
                 for (const [key, label] of Object.entries(SITUATION_FIELDS)) line(row, label, record[key]);
-                const history = el('details'); history.append(el('summary', '局势历史'));
+                const history = el('section'); history.append(el('h5', '局势历史'));
                 for (const step of record._history || []) {
                     const item = el('p', step.text); item.append(document.createTextNode(' '), source(step)); history.append(item);
                 }
@@ -70,10 +71,10 @@ export function renderThreads(parent, records, kinds = ['plan', 'suspense', 'sit
         shown.forEach(record => append(group, record));
         if (open.length > shown.length) group.append(el('p', `另有 ${open.length - shown.length} 项未结${labels[kind]}。`, 'tk-record-note'));
         const closed = entries.filter(record => record.status !== 'open');
-        if (closed.length) { const history = el('details'); history.append(el('summary', `已结 ${closed.length} 项`)); closed.forEach(record => append(history, record)); group.append(history); }
+        if (closed.length) { const history = el(kind === 'situation' ? 'section' : 'details'); history.append(el(kind === 'situation' ? 'h5' : 'summary', `已结 ${closed.length} 项`)); closed.forEach(record => append(history, record)); group.append(history); }
     }
 }
-export function createSuspenseBook({ getSnapshot }) {
+export function createSuspenseBook({ getSnapshot, clues = false }) {
     let root;
     return {
         mount(parent) {
@@ -88,15 +89,30 @@ export function createSuspenseBook({ getSnapshot }) {
                 root.append(el('p', '正在等待有效的剧情记忆。', 'tk-record-note'));
                 return;
             }
-            renderThreads(root, worldStoryRecords(world, availableStoryRecords(store)), ['suspense']);
+            const records = worldStoryRecords(world, availableStoryRecords(store));
+            if (clues) {
+                const lines = collectPlotLines(store.summaryHistory, records);
+                if (!lines.length) root.append(el('p', '当前还没有可追踪的剧情线。'));
+                for (const [status,label] of [['active','已出现'],['potential','潜在线'],['closed','已收束']]) {
+                    const items = lines.filter(item => item.status === status);
+                    if (!items.length) continue;
+                    const group = section(root,label);
+                    for (const item of items) {
+                        const row = el('details'); row.dataset.recordId = item.title;
+                        row.append(el('summary',item.title), el('p',item.reading));
+                        if (item.quote !== item.reading) row.append(el('blockquote',item.quote));
+                        row.append(source({_addedAt:item.floor})); group.append(row);
+                    }
+                }
+            } else renderThreads(root, records, ['suspense']);
             for (const item of root.querySelectorAll('details')) item.open = expanded.has(item.dataset.recordId);
         },
         isEditing: () => false,
-        empty() { root.replaceChildren(el('p', '选择一段对话后查看悬念。', 'tk-record-note')); },
+        empty() { root.replaceChildren(el('p', clues ? '选择一段对话后查看线索。' : '选择一段对话后查看悬念。', 'tk-record-note')); },
         reset() { root?.replaceChildren(); },
     };
 }
-export function renderWorldAttributes(root, entities, person) {
+export function renderWorldAttributes(root, entities, person, aliases = []) {
     const byId = new Map(entities.map(entity => [entity.id, entity.name]));
     const fields = Object.entries(person?.fields || {}).filter(([, record]) => record.nature === 'established_fact');
     const groups = new Map();
@@ -108,7 +124,10 @@ export function renderWorldAttributes(root, entities, person) {
         for (const key of keys) {
             const record = person?.fields?.[key];
             const raw = record?.nature === 'established_fact' ? record.value : null;
-            const value = raw && typeof raw === 'object' ? byId.get(raw.entityId) || JSON.stringify(raw) : raw;
+            let value = raw && typeof raw === 'object' ? byId.get(raw.entityId) || JSON.stringify(raw) : raw;
+            if (key === '别名') value = [...new Set([
+                ...(person?.aliases || []), ...aliases, ...(raw ? [String(raw)] : []),
+            ])].filter(name => name !== person?.name).join('、');
             if (value) line(group(label), key, value);
         }
     }
@@ -147,14 +166,14 @@ export function createProtagonistView({ getSnapshot, getPlayerName, getInvolveme
     let root;
     return {
         mount(parent) {
-            root ||= el('div', undefined, 'tk-world-records');
+            root ||= el('div', undefined, 'tk-world-records tk-protagonist-sheet');
             root.setAttribute('aria-label', '主角');
             if (root.parentElement !== parent) parent.append(root);
         },
         show(world) {
             const entities = world.entities;
             const { hero, names, title } = protagonistIdentity(entities, getPlayerName());
-            root.replaceChildren(el('h3', title || '主角', 'standoutHeader'));
+            root.replaceChildren(el('h3', title || '主角', 'margin0'));
             if (!hero && !names.size) {
                 root.append(el('p', '尚无法确定当前玩家对应的人物。', 'tk-record-note'));
                 return;

@@ -1,3 +1,4 @@
+import { parseRequestExtras } from '../../shared/common/request-extras.js';
 import { getDefaultApiPrefix, hasExplicitApiVersion, resolveApiBaseUrl } from '../../shared/common/openai-url-utils.js';
 import { extractModelListIds } from '../../shared/common/model-list.js';
 import {
@@ -170,6 +171,7 @@ async function pullAnthropicModels(baseUrl, providerConfig, options = {}) {
                 ...resolveAgentAuth(authProvider, providerConfig.apiKey).headers,
                 'anthropic-version': '2023-06-01',
                 Accept: 'application/json',
+                ...parseRequestExtras(providerConfig).includeHeaders,
             },
             signal: options.signal,
         }],
@@ -270,6 +272,7 @@ export async function pullModelsForProvider(providerConfig, options = {}) {
             headers: {
                 ...auth.headers,
                 Accept: 'application/json',
+                ...parseRequestExtras(providerConfig).includeHeaders,
             },
             signal: options.signal,
         }],

@@ -141,6 +141,7 @@ export function normalizeModelConfigs(modelConfigs = {}) {
             : {};
         const defaults = DEFAULT_MODEL_CONFIGS[provider];
         next[provider] = {
+            ...(source.requestExtras && { requestExtras: structuredClone(source.requestExtras) }),
             baseUrl: String(source.baseUrl ?? defaults.baseUrl ?? ''),
             model: String(source.model ?? defaults.model ?? ''),
             apiKey: normalizeAgentApiKey(source.apiKey ?? defaults.apiKey),

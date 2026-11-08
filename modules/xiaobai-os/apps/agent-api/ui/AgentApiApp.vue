@@ -19,17 +19,15 @@ onMounted(() => {
     });
     editor.refresh();
 });
-onBeforeUnmount(() => editor?.destroy());
+onBeforeUnmount(() => {
+    editor?.destroy();
+});
 </script>
 
 <template>
     <main class="agent-api-app">
         <div class="agent-api-scroll">
             <div class="agent-api-content">
-                <header class="agent-api-header">
-                    <h1>API 配置</h1>
-                    <p>集中管理 API 连接与模型配置；具体功能在对应板块中选择使用的配置。</p>
-                </header>
                 <section ref="root" class="agent-api-panel" aria-label="API 配置库" />
             </div>
         </div>

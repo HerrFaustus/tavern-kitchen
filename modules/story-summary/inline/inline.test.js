@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { setImmediate } from 'node:timers';
 import { parseHTML } from 'linkedom';
-import { buildFloorSummaryProtocol, extractFloorPayload, floorSource, prepareFloorPayload, stripFloorProtocol, isNarrativeReply } from './protocol.js';
+import { buildFloorSummaryProtocol, extractFloorPayload, extractGeneratedFloorPayload, floorSource, prepareFloorPayload, stripFloorProtocol, isNarrativeReply } from './protocol.js';
 import { createFloorSummaryController } from './controller.js';
 import { createFloorPanel } from './panel.js';
 import { installFloorDisplayFilter } from './host-regex.js';
@@ -15,6 +15,12 @@ import { memoryDigest } from '../data/memory-policy.js';
 const payload = { summary: '贝拉抵达渡口。', timeStart: '午后', timeEnd: '黄昏', date: '2026-10-30', location: '渡口',
     updates: { storyUpdates: [{ id: 'p1', kind: 'person', name: '贝拉', presence: 'present' }] } };
 const raw = value => `正文<kitchen_summary>${JSON.stringify(value)}</kitchen_summary>`;
+test('model-only summary accepts fenced JSON without accepting untagged chat text', () => {
+    assert.equal(extractGeneratedFloorPayload('```json\n' + JSON.stringify(payload) + '\n```').status, 'ready');
+    assert.equal(extractGeneratedFloorPayload(JSON.stringify(payload)).status, 'ready');
+    assert.equal(extractFloorPayload(JSON.stringify(payload)).status, 'missing');
+    assert.equal(extractGeneratedFloorPayload('普通叙事文本').status, 'invalid');
+});
 test('main reply payload is bounded and incomplete/duplicate/invalid blocks never become a summary', () => {
     assert.equal(extractFloorPayload('正文').status, 'missing');
     assert.equal(extractFloorPayload('<kitchen_summary>{"summary":"正在输出').status, 'incomplete');

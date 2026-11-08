@@ -4,7 +4,7 @@ import { parseHTML } from 'linkedom';
 import manifest from '../manifest.json' with { type: 'json' };
 import { setImmediate } from 'node:timers/promises';
 import { createKitchenWorkspace } from './kitchen-workspace.js';
-import { createExtensionDrawer, createPanelSettings } from './extension-drawer.js';
+import { createExtensionDrawer } from './extension-drawer.js';
 
 test('extension entry uses the native inline drawer and opens the workspace', () => {
     const { document } = parseHTML('<html><body><div id="extensions_settings"></div></body></html>');
@@ -26,31 +26,45 @@ test('extension entry uses the native inline drawer and opens the workspace', ()
     assert.equal(opened, 1);
 });
 
-test('the drawer opens panel settings when all features are disabled and a panel can be restored', async () => {
+test('each panel can be enabled in place, even when all panels are off', async () => {
     const { document, Event } = parseHTML('<html><body><div id="top-settings-holder"></div></body></html>');
-    const workspace = createKitchenWorkspace({ documentTarget:document });
-    let enabled = false;
-    const panelSettings = createPanelSettings({
-        doc:document, enabled:true, panels:[{id:'map',label:'地图',checked:false}],
-        onPanelChange(id, checked) { enabled = checked; configure(); },
-    });
+    const workspace = createKitchenWorkspace({documentTarget:document});
+    const enabled = new Set();
+    let opens = 0;
     function configure() {
-        workspace.configure({panelSettings, visiblePanel:id => id === 'map' && enabled, actions:{map(){}}});
+        workspace.configure({
+            visiblePanel:() => true,
+            actions:{map:() => { opens++; }},
+            panelSwitch:(id, label) => ({
+                enabled:enabled.has(id), label:'启用' + label,
+                change:checked => { if (checked) enabled.add(id); else enabled.delete(id); configure(); },
+            }),
+        });
     }
     configure();
-    const drawer = createExtensionDrawer({doc:document, onOpen:() => workspace.open()});
-    drawer.querySelector('button').click();
-    await setImmediate();
-    assert.equal(document.querySelector('#tk-workspace').classList.contains('openDrawer'), true);
-    assert.equal(panelSettings.open, true);
-    const checkbox = panelSettings.querySelector('[data-panel="map"]');
-    checkbox.checked = true;
-    checkbox.dispatchEvent(new Event('change'));
-    await setImmediate();
-    assert.equal(workspace.isActive('map'), true);
-    assert.equal(document.querySelector('.tk-workspace-body').hidden, false);
-    checkbox.checked = false;
-    checkbox.dispatchEvent(new Event('change'));
-    assert.equal(document.querySelector('.tk-workspace-body').hidden, true);
-    assert.equal(document.querySelector('#tk-topbar').hidden, false);
+    await workspace.open('map');
+    const page = document.querySelector('[role="tabpanel"]');
+    const toggle = () => page.querySelector('[data-panel="map"]');
+    const body = page.querySelector('.tk-workspace-body');
+    assert.ok(document.querySelector('#tk-workspace.fillRight'));
+    assert.equal(document.querySelector('.tk-panel-settings'), null);
+    assert.ok(body.nextElementSibling.classList.contains('tk-workspace-controls'));
+    assert.ok(body.nextElementSibling.contains(toggle()), 'module controls remain below its content when disabled');
+    assert.equal(body.contains(toggle()), false);
+    assert.equal(toggle().getAttribute('aria-label'), '启用地图');
+    assert.equal(body.hidden, true);
+    assert.equal(workspace.isActive('map'), false);
+    assert.equal(opens, 0);
+    for (const checked of [true,false,true]) {
+        toggle().checked = checked;
+        toggle().dispatchEvent(new Event('change'));
+        await setImmediate();
+        assert.equal(body.hidden, !checked);
+        assert.equal(workspace.isActive('map'), checked);
+        assert.equal(toggle().checked, checked);
+    }
+    assert.equal(opens, 2);
+    await workspace.open('people');
+    assert.equal(page.querySelector('[data-panel="people"]').checked, false);
+    assert.equal(body.hidden, true);
 });

@@ -7,7 +7,7 @@ import { createMemoryChatDialog } from './chat-ui.js';
 import { memoryChatErrorText } from './chat-copy.js';
 import { createMaintenanceRangeView } from './range-view.js';
 
-export function createMemoryMaintenancePage(root, send, { openApi } = {}) {
+export function createMemoryMaintenancePage(root, send) {
     let chatId = null;
     let next = null;
     let runIds = [];
@@ -15,6 +15,8 @@ export function createMemoryMaintenancePage(root, send, { openApi } = {}) {
     let sourceRequest = null;
     const chat = createMemoryChatDialog({ send });
     const authorization = element('section', 'memory-settings');
+    authorization.dataset.settingSection = 'function';
+    authorization.open = true;
     const label = element('label', 'memory-authorization');
     const toggle = element('input');
     toggle.type = 'checkbox';
@@ -30,13 +32,13 @@ export function createMemoryMaintenancePage(root, send, { openApi } = {}) {
     prompt.rows = 3; prompt.maxLength = 4000;
     prompt.placeholder = '例如：核对人物身份；任务有明确结果才收束阶段，保留跨阶段悬念。';
     instructions.append(prompt);
-    const api = button(copy.apiHeading, () => openApi(), 'memory-button memory-api');
     const settingsState = element('p', 'memory-settings-state');
     settingsState.setAttribute('role', 'status');
-    authorization.append(label, element('p', 'memory-hint', copy.behavior), frequency, instructions, api, settingsState);
+    authorization.append(label, element('p', 'memory-hint', copy.behavior), frequency, settingsState);
     const cancel = button(copy.cancel, () => send('MEMORY_MAINTENANCE_CANCEL'));
     const recordsHeading = element('div', 'memory-records-heading');
-    recordsHeading.append(element('h3', '', copy.heading), cancel);
+    recordsHeading.append(element('h3', '', copy.heading));
+    authorization.append(cancel);
     const state = element('p', 'memory-state');
     state.setAttribute('role', 'status');
     state.setAttribute('aria-live', 'polite');
@@ -45,15 +47,23 @@ export function createMemoryMaintenancePage(root, send, { openApi } = {}) {
     ranges.hidden = true;
     const index = element('div', 'memory-index-state');
     const repair = button(copy.repair, () => { repair.disabled = true; send('MEMORY_MAINTENANCE_REPAIR'); });
-    index.append(element('span', '', copy.indexPending), repair);
+    index.append(element('span', '', copy.indexPending));
+    authorization.append(repair);
     const list = element('div', 'memory-results');
     const empty = element('div', 'memory-empty');
     const emptyHint = element('p');
     empty.append(element('p', 'memory-empty-title', copy.empty), emptyHint);
     const more = button(copy.more, () => { more.disabled = true; send('MEMORY_MAINTENANCE_QUERY', { offset: next }); });
     more.classList.add('memory-more');
-    root.append(authorization, recordsHeading, ranges, state, index, list, empty, more);
-    cancel.hidden = index.hidden = more.hidden = true;
+    const records = element('section', 'memory-record-view');
+    const controls = element('footer', 'tk-module-settings memory-controls');
+    controls.dataset.kitchenControls = 'proofreading';
+    records.append(recordsHeading, ranges, state, index, list, empty, more);
+    const promptSettings = element('section', 'memory-prompt-settings');
+    promptSettings.dataset.settingSection = 'prompts'; promptSettings.append(instructions);
+    controls.append(authorization, promptSettings);
+    root.append(records, controls);
+    cancel.hidden = index.hidden = repair.hidden = more.hidden = true;
     const updateEmpty = () => { emptyHint.textContent = toggle.checked ? copy.emptyEnabled : copy.emptyDisabled; };
     toggle.onchange = () => { settingsState.textContent = ''; updateEmpty(); };
     updateEmpty();
@@ -269,6 +279,7 @@ export function createMemoryMaintenancePage(root, send, { openApi } = {}) {
     }
 
     return {
+        controls,
         setChat,
         setEnabled(enabled, config = {}) {
             toggle.checked = enabled === true; interval.value = String(config.proofreadingInterval || 5);
@@ -323,6 +334,7 @@ export function createMemoryMaintenancePage(root, send, { openApi } = {}) {
             repair.disabled = running || blocked;
             if (data.stateOnly) return;
             index.hidden = blocked || data.index?.status !== 'pending';
+            repair.hidden = index.hidden;
             if (data.total != null) {
                 runIds = data.runIds;
                 clearReceipts(new Set(runIds));

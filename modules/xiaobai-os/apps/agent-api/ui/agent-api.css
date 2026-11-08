@@ -4,8 +4,8 @@
 }
 .agent-api-scroll { height: 100%; padding: 16px; overflow: auto; }
 .agent-api-content { width: 100%; margin: 0; }
-.agent-api-header { margin-bottom: 16px; }
-.agent-api-header h1 { margin: 0 0 6px; font-size: 1.15em; font-weight: 600; }
-.agent-api-header p { margin: 0; opacity: .75; font-size: .9em; }
 .agent-api-panel [hidden] { display: none !important; }
 .agent-api-panel .text-api-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
+
+.agent-api-scroll { overflow: hidden; box-sizing: border-box; }
+.agent-api-content, .agent-api-panel { height: 100%; min-height: 0; }

@@ -2,8 +2,8 @@ import { MEMORY_COPY, MEMORY_SAVE_ERRORS, MEMORY_RESULT_COPY } from './copy.js';
 import { agentErrorGuidance } from '../../agent-core/runtime/error-guidance.js';
 
 export const MEMORY_CHAT_COPY = Object.freeze({
-    entry: '手动校对', title: '剧情校对', close: '关闭手动校对', back: '返回校对记录',
-    user: '你', assistant: '剧情校对', previousAnswer: '上一版回复', input: '输入要核对的问题…', send: '发送', stop: '停止当前回复',
+    entry: '手动校对', title: '校对', close: '关闭手动校对', back: '返回校对记录',
+    user: '你', assistant: '校对', previousAnswer: '上一版回复', input: '输入要核对的问题…', send: '发送', stop: '停止当前回复',
     regenerate: '重答上一条请求', regenerateHint: '基于当前状态重新处理，不回滚已保存的修改。',
     clear: '清空对话', clearTitle: '清空校对对话？', clearRunningTitle: '停止并清空对话？',
     clearDetail: '仅清空人工对话和输入，已保存的记忆修改、校对记录不受影响。',

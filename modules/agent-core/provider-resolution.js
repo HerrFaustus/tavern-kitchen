@@ -96,6 +96,7 @@ export function resolveActiveProviderConfig(configValue = {}, options = {}) {
             toolMode: providerConfig.toolMode || 'native',
             reasoning: resolveRuntimeReasoning(context, providerConfig.reasoning),
             sampling: providerConfig.sampling,
+            ...(providerConfig.requestExtras && {requestExtras: providerConfig.requestExtras}),
         };
     }
 
@@ -132,5 +133,6 @@ export function resolveActiveProviderConfig(configValue = {}, options = {}) {
         toolMode: providerConfig.toolMode || 'native',
         reasoning: resolveRuntimeReasoning(context, providerConfig.reasoning),
         sampling: providerConfig.sampling,
+        ...(providerConfig.requestExtras && {requestExtras: providerConfig.requestExtras}),
     };
 }

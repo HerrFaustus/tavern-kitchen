@@ -496,11 +496,6 @@ export function mergeNewData(oldJson, parsed, endMesId, options = {}) {
 
     merged.facts ||= [];
 
-    if (incoming.keywords?.length) {
-        merged.keywords = incoming.keywords.map(k => ({ ...k, _addedAt: endMesId }));
-    }
-
-
     // newCharacters
     const existingMain = new Set(
         (merged.characters.main || [])

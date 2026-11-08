@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
     applyCharacterAliasUpdates,
     buildAliasResolver,
+    buildCharacterIdentity,
     canonicalizeIncrementalSummaryData,
     formatCharacterAliasTableForAI,
     mergeCharacterAliasEdges,
@@ -11,6 +12,34 @@ import {
     replaceCharacterAliases,
     sanitizeCharacterAliasUpdates,
 } from '../data/character-aliases.js';
+import { getArchiveCharacters } from '../archive-view.js';
+
+test('confirmed world aliases and legacy names automatically share the stable character identity', () => {
+    const person = { id: 'person-lin', kind: 'person', name: '林舟', aliases: ['银鸦'] };
+    const data = {
+        entities: [person], characterAliases: [{ from: '阿舟', to: '银鸦', evidence: '身份已揭示' }],
+        characters: { main: ['阿舟', '银鸦'], relationships: [] },
+    };
+    const identity = buildCharacterIdentity(data.entities, data.characterAliases);
+    assert.equal(identity.resolveName('阿舟'), '林舟');
+    assert.equal(identity.entityFor('阿舟'), person);
+    assert.deepEqual(identity.aliasesFor('林舟'), ['银鸦', '阿舟']);
+    assert.deepEqual(getArchiveCharacters(data), [{ id: 'person-lin', name: '林舟' }]);
+});
+
+test('shared titles and identical main names retain separate stable pointers', () => {
+    const entities = [
+        { id: 'north-lin', kind: 'person', name: '林舟', aliases: ['会长'] },
+        { id: 'south-lin', kind: 'person', name: '林舟', aliases: ['会长'] },
+    ];
+    const identity = buildCharacterIdentity(entities);
+    assert.equal(identity.entityFor('会长'), undefined);
+    assert.equal(identity.entityFor('林舟'), undefined);
+    assert.equal(identity.isAmbiguous('林舟'), true);
+    assert.deepEqual(identity.aliasesFor('林舟', entities[0]), []);
+    assert.deepEqual(getArchiveCharacters({ entities, characterAliases: [], characters: { main: ['会长'], relationships: [] } }),
+        entities.map(({ id, name }) => ({ id, name })));
+});
 
 function baseSummary() {
     return {

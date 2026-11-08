@@ -1,5 +1,7 @@
 import { getRequestHeaders } from '../../../../../../script.js';
 import { setHostChatCompletionsRequestHeadersProvider } from '../../shared/host-llm/chat-completions/client.js';
+import { savePanelPrompt } from '../../core/panel-policy.js';
+import { connectionProbe } from './prompts.js';
 import { HOST_PROVIDER } from './model.js';
 import { getTextApiRepository } from './repository.js';
 import { listTextModels, testTextConnection } from './runtime.js';
@@ -7,7 +9,16 @@ import { importCurrentTavernApi } from './tavern-import.js';
 import { createIdentifier } from '../../shared/common/identifier.js';
 export async function handleProfileRequest(data, signal) {
     const repository = await getTextApiRepository();
-    if (data.action === 'load') return repository.load();
+    if (data.action === 'load') {
+        const settings = await repository.load();
+        return data.feature === 'library' ? { ...settings, testMessage: connectionProbe() } : settings;
+    }
+    if (data.action === 'save-test-message' && data.feature === 'library') {
+        const value = data.message;
+        if (value !== null && (typeof value !== 'string' || !value.trim())) throw new Error('请输入测试消息');
+        await savePanelPrompt('connectionProbe', value ?? undefined);
+        return connectionProbe();
+    }
     if (data.action === 'mutate') return repository.mutate(data.feature || 'library', data.mutation);
     setHostChatCompletionsRequestHeadersProvider(() => getRequestHeaders());
     if (data.action === 'models') return listTextModels(data.preset, { signal });

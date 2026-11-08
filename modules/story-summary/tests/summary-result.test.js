@@ -11,9 +11,9 @@ test('retired event outputs cannot create records', () => {
 
 test('omitted update collections and empty events are legitimate; populated collections must be well formed', () => {
     assert.deepEqual(prepare({ events: [] }), {
-        factUpdates: [], keywords: [], newCharacters: [], characterAliasUpdates: [],
+        factUpdates: [], newCharacters: [], characterAliasUpdates: [],
     });
-    for (const field of ['factUpdates', 'keywords', 'newCharacters', 'characterAliasUpdates']) {
+    for (const field of ['factUpdates', 'newCharacters', 'characterAliasUpdates']) {
         for (const value of [null, {}, '[]', [null]]) {
             assert.throws(() => prepare({ events: [], [field]: value }), error => error.message.startsWith(field));
         }
@@ -25,7 +25,7 @@ test('old arc output is ignored without modifying the input', () => {
     const batch = {arcUpdates:[arc],keywords:[{text:'钥匙',weight:'重要'}]};
     const result = prepare(batch);
     assert.equal(result.arcUpdates, undefined);
-    assert.equal(result.keywords[0].text,'钥匙');
+    assert.equal(result.keywords,undefined);
     assert.equal(batch.arcUpdates[0].progress,70);
 });
 
@@ -66,7 +66,7 @@ test('fact, character, keyword and alias updates project only valid update data'
     ]);
     assert.deepEqual(result.characterAliasUpdates, [alias]);
     assert.deepEqual(result.newCharacters, ['李玄清']);
-    assert.deepEqual(result.keywords, [{ text: '钥匙', weight: '核心' }]);
+    assert.equal(result.keywords, undefined);
     for (const fact of [{ s: {}, p: '位置', o: '家' }, { s: '小红', p: '位置' },
         { s: '小红', p: '位置', o: '家', isState: 'false' }, { s: '小红', p: '位置', retracted: 'true' }]) {
         assert.throws(() => prepare({ events: [], factUpdates: [fact] }), /factUpdates\[0\]/);

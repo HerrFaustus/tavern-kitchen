@@ -18,22 +18,20 @@ async function inspect(doc, width) {
     const panel = doc.querySelector('#tk-workspace');
     const controls = doc.createElement('div');
     panel.append(controls);
-    let saved, retries = 0;
+    let retries = 0;
     const update = createPlannerSettings(controls, {
-        presets: [{ id: 'fixture', name: '后台作家' }], selected: 'fixture', preference: '慢节奏',
-        save: (...values) => { saved = values; }, retry: () => { retries++; },
+        retry: () => { retries++; },
     });
-    const [save, retry] = controls.querySelectorAll('button');
+    const retry = controls.querySelector('button');
     update('等待正文生成', false);
     const initiallyHidden = retry.hidden;
-    await save.onclick();
     update('札记未能发布', true);
     retry.click();
     const box = element => {
         const { x, y, width, height } = element.getBoundingClientRect();
         return [x, y, width, height].map(Math.round);
     };
-    return { width, native: box(reference), kitchen: box(panel), saved, retries,
+    return { width, native: box(reference), kitchen: box(panel), fields: controls.querySelectorAll('textarea, select').length, retries,
         retryVisible: initiallyHidden && !retry.hidden, fits: controls.scrollWidth <= controls.clientWidth };
 }
 
@@ -76,8 +74,10 @@ try {
     assert.equal(results.length, widths.length, JSON.stringify(results));
     for (const row of results) {
         console.log(row);
-        assert.deepEqual(row.kitchen, row.native);
-        assert.deepEqual(row.saved, ['fixture', '慢节奏']);
+        assert.equal(row.kitchen[0] + row.kitchen[2], row.width);
+        assert.equal(row.kitchen[2], row.native[2]);
+        if (row.width > 1000) assert.ok(row.kitchen[0] >= (row.width + 800) / 2);
+        assert.equal(row.fields, 0);
         assert.ok(row.retryVisible && row.retries === 1 && row.fits);
     }
 } finally {

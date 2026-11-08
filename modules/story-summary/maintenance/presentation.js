@@ -7,7 +7,7 @@ const displayFields = {
     events: ['title', 'timeLabel', 'summary', 'participants', 'causedBy', 'memoryRole'],
     facts: ['s', 'p', 'o', 'since', 'retracted', 'trend', '_isState'],
     characters: ['name'], arcs: ['name', 'trajectory', 'progress', 'moments'],
-    keywords: ['text', 'weight'], characterAliases: ['from', 'to', 'evidence'],
+    characterAliases: ['from', 'to', 'evidence'],
     anchors: ['semantic', 'where', 'edges'],
 };
 
@@ -18,7 +18,6 @@ export function memoryLabel(collection, value) {
     if (collection === 'events') return value.title;
     if (collection === 'facts') return [value.s, value.p].filter(Boolean).join(' · ');
     if (collection === 'anchors') return copy.floor(value.floor + 1);
-    if (collection === 'keywords') return value.text;
     if (collection === 'characterAliases') return [value.from, value.to].join(' → ');
     return value.name;
 }

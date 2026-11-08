@@ -6,10 +6,9 @@ import * as hostScript from '../../../../../script.js';
 import { getCurrentUserHandle } from '../../../../user.js';
 import { EXT_ID } from './constants.js';
 import { buildEntryUrl } from './build-assets.js';
-import { KITCHEN_ROUTES } from './kitchen-workspace.js';
-import { panelEnabled, usePanelSettings } from './panel-policy.js';
+import { panelEnabled, usePanelSettings, savePanelPrompt } from './panel-policy.js';
 import { mountPanelControls } from './panel-controls.js';
-import { createExtensionDrawer, createPanelSettings } from './extension-drawer.js';
+import { createExtensionDrawer } from './extension-drawer.js';
 import { createDefaultXiaobaiOsSettings, prepareXiaobaiOsSettings, initXiaobaiOs, cleanupXiaobaiOs, setXiaobaiOsEnabled, mountWorldEvolution, openXiaobaiOs } from '../modules/xiaobai-os/index.js';
 import { createOpeningHost } from '../modules/world-records/opening-host.js';
 import { requireTurnRuntime } from '../modules/world-records/turn-runtime.js';
@@ -24,7 +23,7 @@ const settings = extension_settings[EXT_ID] ??= {
 (settings.storySummary ??= {}).enabled = true;
 settings.enabled ??= true;
 settings.enaPlanner ??= {enabled:false};
-usePanelSettings(settings);
+usePanelSettings(settings, (key,value) => enqueue(() => saveValue(settings.panelPrompts ??= {},key,value)));
 window.isTavernKitchenEnabled = settings.enabled;
 let clearWorldPrompt, stopWorld, floorPanels;
 let settingsQueue = Promise.resolve();
@@ -72,7 +71,7 @@ const featureReady = new Promise(resolve => { readyResolve = resolve; });
 let startupError;
 async function requireFeatures() {
     await featureReady;
-    if (!settings.enabled) throw new Error('后厨已停用，请在后厨的面板设置中启用。');
+    if (!settings.enabled) throw new Error('后厨已停用，请在任一功能面板恢复酒馆后厨。');
     if (startupError) throw startupError;
 }
 
@@ -98,20 +97,17 @@ function mountExtensionDrawer() {
     host.append(createExtensionDrawer({onOpen: () => kitchen.open()}));
 }
 
-let panelSettings;
 function configureWorkspace() {
     mountExtensionDrawer();
-    panelSettings ??= createPanelSettings({
-        enabled: settings.enabled !== false,
-        panels:Object.values(KITCHEN_ROUTES).flat().map(([id,label]) => ({id,label,checked:settings.panels?.[id] ?? (id === 'planner' ? !!settings.enaPlanner.enabled : true)})),
-        onPanelChange:(id,value,input) => { void enqueue(() => updatePanel(id,value)).catch(error => { input.checked = settings.panels?.[id] ?? (id !== 'planner' || !!settings.enaPlanner.enabled); configureWorkspace(); showError(error); }); },
-        onToggleEnabled:(value,input) => { void enqueue(() => updatePanel('enabled',value)).catch(error => { input.checked = settings.enabled !== false; configureWorkspace(); showError(error); }); },
-    });
     const actions = {
         opening: async () => { await requireFeatures(); },
         overview: async () => {
             await requireFeatures();
             if (kitchen.isActive('overview')) await worldArchive.open('overview');
+        },
+        clues: async () => {
+            await requireFeatures();
+            if (kitchen.isActive('clues')) await worldArchive.open('clues');
         },
         suspense: async () => {
             await requireFeatures();
@@ -129,25 +125,19 @@ function configureWorkspace() {
             if (!memory) throw new Error('剧情记忆尚未准备好，请刷新后重试。');
             memory.openStoryMemorySettings('proofreading');
         },
-        'memory-settings': async () => {
-            await requireFeatures();
-            if (!kitchen.isActive('memory-settings')) return;
-            if (!memory) throw new Error('剧情记忆尚未准备好，请刷新后重试。');
-            memory.openStoryMemorySettings();
-        },
         planner: async () => {
             await requireFeatures();
             if (!kitchen.isActive('planner')) return;
-            if (!planner) throw new Error('剧情规划尚未启用，请在后厨的面板设置中勾选剧情规划。');
-            await planner.open(kitchen.getMount('planner'));
+            if (!planner) throw new Error('请在本面板下方启用编剧。');
+            await planner.open(kitchen.getMount('planner'), kitchen.getControls());
         },
     };
-    for (const id of ['situation', 'lore', 'people', 'relations']) actions[id] = async () => {
+    for (const id of ['situation', 'people', 'relations']) actions[id] = async () => {
         await requireFeatures();
         if (!kitchen.isActive(id)) return;
         if (!memory) throw new Error('剧情记忆尚未准备好，请刷新后重试。');
         memory.openStoryWorld(id === 'situation' ? 'world' : id);
-        if (id === 'people' || id === 'situation') kitchen.showEvolution(parent => mountWorldEvolution(parent, id));
+        if (id === 'people' || id === 'situation') kitchen.showEvolution(parent => mountWorldEvolution(parent, id, kitchen.getMount(id)?.querySelector('iframe')), id === 'people');
     };
     for (const id of ['map', 'settings', 'agent-api']) actions[id] = async () => {
         await requireFeatures();
@@ -157,9 +147,17 @@ function configureWorkspace() {
         if (!await openXiaobaiOs(appId)) throw new Error('此板块尚未准备好，请重试。');
     };
     kitchen.configure({
-        actions, panelSettings, visiblePanel:panelEnabled,
-        configurePanel:(id,bar) => mountPanelControls(id,bar,settings,
-            (key,value) => enqueue(() => saveValue(settings.panelPrompts ??= {},key,value))),
+        actions, visiblePanel:() => true,
+        panelSwitch:(id,label) => {
+            const paused = settings.enabled === false;
+            const key = paused ? 'enabled' : id;
+            return {
+                enabled:panelEnabled(id),
+                label:paused ? '恢复酒馆后厨（已整体停用）' : '启用' + label,
+                change:value => enqueue(() => updatePanel(key,value)),
+            };
+        },
+        configurePanel:(id,bar) => mountPanelControls(id,bar,settings,savePanelPrompt,undefined,kitchen.getSettingSections()),
         initializeWorld:async () => { await requireFeatures(); return worldArchive.initialize({manual:true}); },
         toggleDrawer: hostScript.doNavbarIconClick,
     });
@@ -182,8 +180,7 @@ async function startWorld() {
         getMount: id => kitchen.getMount(id), isVisible: id => kitchen.isActive(id), onError: showError,
         onAuthorityChange: () => { removeWorldGeneration?.clear(); memory?.invalidateWorldContext(); } });
     const { installWorldAuthorityGeneration } = await import('../modules/world-records/generation-host.js');
-    removeWorldGeneration = installWorldAuthorityGeneration({ getContext, prepare:query => settings.enabled ? worldArchive.prepare(query) : '', initialize:options => panelEnabled('opening') ? worldArchive.initialize(options) : undefined,
-        onInitializationError:error => window.toastr?.warning('世界初始化未完成，可在世界栏重试。' + error.message), onError: showError });
+    removeWorldGeneration = installWorldAuthorityGeneration({ getContext, prepare:query => settings.enabled ? worldArchive.prepare(query) : '', onError: showError });
     stopWorld = () => {
         worldArchive.initialize?.cancel?.();
         removeWorldGeneration();

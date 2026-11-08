@@ -1,4 +1,5 @@
-import { definePanelPrompt } from '../../core/panel-policy.js';
+import { collectPlotLines } from '../story-state/plot-lines.js';
+import { definePanelPrompt, panelEnabled } from '../../core/panel-policy.js';
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
 import { summaryLayers } from '../story-summary/data/summary-layers.js';
 import { captureRangeSource } from '../story-summary/data/turn-source.js';
@@ -9,18 +10,20 @@ export const WRITER = `你是后台唯一的作家。写创作札记，按情境
 全局稿是给作家自己的创作短论，关注长期问题、作品尺度、人物关系与重议条件。容量参考 1000–3000 中文字。
 章节稿是直接给正文写手阅读的成品，只写当前已成立的核心事实、各方认知、约束和资源、人物自身动能及可观察的结束标志。写透有依据的动机与代价，不重复世界百科。容量参考 2000–5000 中文字，材料少时可以很短。不得包含未向当前视角公开的谜底、后台秘密、弃案或未来反转。人物不会随玩家无故换场；没有必要呼应主线时允许平淡度过。本章札记中不写写作指令、讲解、推理或给玩家的选项。
 把动能写成“谁因为什么处境愿意付出什么代价”。只有行动条件已经具备，压力才会产生可观察的迹象。玩家若离开现场，让事情保有原来的地点、知情范围和影响范围。结束标志写成局面何时失去原有张力，可以有多种结果。没有公开线索的真相仅留在全局稿。玩家提出未预想的路线时，按眼下的条件、资源和代价重新估量；玩家若已查明谜底，立即更新知情边界。不得把原有线索挪到玩家的新去处，也不得补造障碍迫使回头。新构思或备选后果不得冒充已经发生的事实。
-返回一个 JSON 对象，global 和 chapter 各含 text 及 dependencies。只在首次或全局前提失效时提交 global，其余仅提交 chapter。dependencies 是少量决定本稿能否成立的前提，可引用输入中现有的 {entityId,field} 或 {recordId}。只有该项变化确实足以使本层创作前提失效时才登记。严禁虚构引用。`;
+返回一个 JSON 对象，global 和 chapter 各含 text 及 dependencies。只在首次或全局前提失效时提交 global，其余仅提交 chapter。dependencies 是少量决定本稿能否成立的前提，可引用输入中现有的 {entityId,field} 、{recordId} 或 {lineTitle}。plotLines 是线索板的当前读法，potential 仅代表一种未证实的联系，不得写成谜底或必经事件；closed 只能作背景。只有该项变化确实足以使本层创作前提失效时才登记。严禁虚构引用。`;
 
 export function plannerSnapshot(world, memory, chat, identity) {
     if (!world || !identity || !memory?.enabled || memory.invalidFrom != null || memory.store?.summaryInvalid || memory.store?.sourceInvalidFromFloor != null) return null;
     const layers = summaryLayers(memory.store?.summaryHistory || []);
     const last = layers.parents.filter(unit => unit.level === 'chapter').at(-1);
     const records = worldStoryRecords(world, memory.store?.json?.storyRecords || []);
-    return { world, records, layers, chat, owner: JSON.stringify([identity,world.worldId,world.branchId]),
+    const plotLines = panelEnabled('clues') ? collectPlotLines(memory.store?.summaryHistory, records) : [];
+    return { world, records, layers, chat, plotLines, lineState:plotLines.length ? memoryDigest(plotLines.map(({title,status}) => [title,status]).sort((a,b) => a[0].localeCompare(b[0]))) : '', owner: JSON.stringify([identity,world.worldId,world.branchId]),
         boundary: last ? memoryDigest([last.start,last.end,last.sourceId,last.text]) : 'opening' };
 }
 
 function valueOf(ref, snapshot) {
+    if (ref.lineTitle) return snapshot.plotLines?.find(line => line.title === ref.lineTitle);
     if (ref.recordId) {
         const record = snapshot.records.find(item => item.id === ref.recordId);
         if (!record) return undefined;
@@ -33,7 +36,7 @@ function valueOf(ref, snapshot) {
 function readNote(raw, snap, limit) {
     if (typeof raw?.text !== 'string' || !raw.text.trim() || raw.text.length > limit || !Array.isArray(raw.dependencies) || raw.dependencies.length > 40) throw new Error('札记格式无效');
     const dependencies = raw.dependencies.map(item => {
-        const ref = typeof item?.recordId === 'string' ? {recordId:item.recordId} : {entityId:item?.entityId, field:item?.field};
+        const ref = typeof item?.lineTitle === 'string' ? {lineTitle:item.lineTitle} : typeof item?.recordId === 'string' ? {recordId:item.recordId} : {entityId:item?.entityId, field:item?.field};
         const value = valueOf(ref,snap);
         if (value === undefined) throw new Error('札记前提无法核对');
         return {...ref, digest: memoryDigest(value)};
@@ -56,6 +59,7 @@ export function reviewReason(previous,snap) {
     if (!previous) return 'opening';
     if (!valid(previous.global,snap)) return 'global-change';
     if (previous.boundary !== snap.boundary) return 'chapter';
+    if ((previous.lineState || '') !== (snap.lineState || '')) return 'chapter-change';
     return valid(previous.chapter,snap) ? '' : 'chapter-change';
 }
 export function publishNotes(raw,previous,snap,reason) {
@@ -67,14 +71,14 @@ export function publishNotes(raw,previous,snap,reason) {
         if (isPrivateStoryField(key) && typeof record.value === 'string' && record.value.trim() && chapter.text.includes(record.value.trim())) throw new Error('章节稿含管理员私有资料');
     }
     const end = snap.chat.length - 1, source = prefix(snap.chat,end);
-    return {owner:snap.owner, boundary:snap.boundary, basis:snap.world.version, end, source, reason, global, chapter,
-        id:memoryDigest([snap.owner,snap.boundary,source,snap.world.version,previous?.id || '',reason])};
+    return {owner:snap.owner, boundary:snap.boundary, basis:snap.world.version, lineState:snap.lineState, end, source, reason, global, chapter,
+        id:memoryDigest([snap.owner,snap.boundary,source,snap.world.version,snap.plotLines,previous?.id || '',reason])};
 }
 const writerPrompt = definePanelPrompt('planner','writerPrompt','作家札记',WRITER);
 
-export function writerInput(snap,previous,reason,preference) {
-    const body = JSON.stringify({reason,preference, previousGlobal:previous?.global.text, previousChapter:previous?.chapter.text,
-        cast:snap.cast, world:snap.world.entities, records:snap.records, chapterHistory:snap.layers.parents.filter(unit=>unit.level==='chapter').map(unit=>unit.text),
+export function writerInput(snap,previous,reason) {
+    const body = JSON.stringify({reason, previousGlobal:previous?.global.text, previousChapter:previous?.chapter.text,
+        plotLines:snap.plotLines, cast:snap.cast, world:snap.world.entities, records:snap.records, chapterHistory:snap.layers.parents.filter(unit=>unit.level==='chapter').map(unit=>unit.text),
         recentSummaries:snap.layers.leaves.slice(-10).map(unit=>unit.text),
         recent:snap.chat.slice(-10).map(msg=>({name:msg.name,role:msg.is_user?'player':'story',text:msg.mes}))});
     if (body.length > 180000) throw new Error('作家材料超出单次预算');

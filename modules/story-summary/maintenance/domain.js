@@ -6,13 +6,14 @@ import { MemoryMaintenanceError, requireMemory } from './errors.js';
 import { eventSourceRange } from './records.js';
 import { parseStoryUpdates, STORY_FIELDS } from '../../story-state/records.js';
 
-export const MEMORY_COLLECTIONS = Object.freeze(['events', 'facts', 'characters', 'keywords', 'characterAliases', 'anchors', 'storyRecords']);
+export const MEMORY_COLLECTIONS = Object.freeze(['events', 'facts', 'characters', 'characterAliases', 'anchors', 'storyRecords']);
 // Maintenance withdraws a fact by deleting it; retraction is a generation protocol.
 export const EDITABLE_FIELDS = Object.freeze({
     events: ['title', 'timeLabel', 'summary', 'participants', 'causedBy', 'memoryRole'],
     facts: ['s', 'p', 'o', 'trend', '_isState'],
     characters: ['name'],
     arcs: ['name', 'trajectory', 'progress', 'moments'],
+    // Historical edits and receipts still require their original field projection.
     keywords: ['text', 'weight'],
     characterAliases: ['from', 'to', 'evidence'],
     anchors: ['semantic', 'edges', 'where'],
@@ -46,9 +47,9 @@ function setItems(memory, collection, items) {
 }
 
 export function memoryKey(collection, item) {
+    if (collection === 'keywords') return item.text;
     if (collection === 'anchors') return item.atomId;
     if (collection === 'events' || collection === 'facts' || collection === 'storyRecords') return item.id;
-    if (collection === 'keywords') return item.text;
     if (collection === 'characterAliases') return item.from;
     return typeof item === 'string' ? item : item.name;
 }
@@ -111,8 +112,6 @@ export function validateRecord(collection, value, cutoff) {
         requireMemory(text(value.name) && text(value.trajectory) && Number.isFinite(value.progress)
             && value.progress >= 0 && value.progress <= 1 && Array.isArray(value.moments)
             && value.moments.every(moment => typeof moment === 'string' || text(moment?.text)), 'invalid_record');
-    } else if (collection === 'keywords') {
-        requireMemory(text(value.text) && ['核心', '重要', '一般'].includes(value.weight), 'invalid_record');
     } else if (collection === 'characterAliases') {
         requireMemory(text(value.from) && text(value.to) && value.from !== value.to
             && typeof value.evidence === 'string' && value.evidence.length <= 120, 'invalid_record');

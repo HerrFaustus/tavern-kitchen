@@ -15,7 +15,7 @@ test('the real settings page presents raw retrieval without an anchor prerequisi
     const ui = uiEntry(['updateAnchorStats'], { $: id => document.getElementById(id) });
     ui.updateAnchorStats({ extracted: 0, total: 100, pending: 100 });
     assert.ok(document.getElementById('vector-empty-l0-warning').classList.contains('hidden'));
-    assert.match(document.querySelector('[data-workspace-page="tab-rerank-api"]').textContent, /可选/);
+    assert.equal(document.querySelector('[data-workspace-page]'), null);
 });
 
 test('summary and vector settings need no activation or range controls', () => {
@@ -34,24 +34,43 @@ test('summary and vector settings need no activation or range controls', () => {
     assert.equal(collected.embeddingApi.key, 'fixture-only');
 });
 
-test('plot settings opens all three summary prompt editors together', () => {
+test('plot settings offers three independently folded summary prompts', () => {
     const { document } = parseHTML(readFileSync(new URL('../story-summary.html', import.meta.url), 'utf8'));
     const $ = id => document.getElementById(id);
-    const ui = uiEntry(['selectSettingsTab'], {
-        $, $$: selector => document.querySelectorAll(selector), document, settingsPage: 'tab-summary',
-        settingsScroll: new Map(), vectorProfileEditors: {}, WORKSPACE_COPY: { back: '返回' },
-    });
-    const button = document.querySelector('[data-family="settings"][data-tab="tab-summary-prompts"]');
-    ui.selectSettingsTab(button.dataset.tab);
-    assert.equal(button.hidden, false);
-    assert.equal(button.getAttribute('aria-current'), 'page');
-    assert.equal($('assistant-page-title').textContent, '总结提示词');
     const page = $('tab-summary-prompts');
-    assert.equal(page.classList.contains('active'), true);
+    assert.equal(page.tagName, 'DETAILS');
+    assert.equal(document.querySelector('.settings-tab, #tab-agent-api, #summary-text-api'), null);
     for (const level of ['round', 'stage', 'chapter']) {
-        assert.ok(page.querySelector('textarea#prompt-' + level));
+        assert.equal(page.querySelector('textarea#prompt-' + level).closest('details').hasAttribute('open'), false);
+        assert.ok(page.querySelector('[data-save-layer="' + level + '"]'));
         assert.equal(page.querySelector('#reset-' + level).textContent, '恢复默认并保存');
     }
     assert.equal($('settings-save').parentElement.hidden, false);
     assert.equal($('update-messages'), null);
+});
+
+test('a layer save submits only its prompt and preserves a sibling draft through save and reset failures', async () => {
+    const { document } = parseHTML(readFileSync(new URL('../story-summary.html', import.meta.url), 'utf8'));
+    const $ = id => document.getElementById(id);
+    const round = $('prompt-round'), stage = $('prompt-stage');
+    round.value = '新本轮'; stage.value = '篇目草稿';
+    const config = { prompts: { round: '旧本轮', stage: '旧篇目' } };
+    const writes = [], dirtyFields = new Set([stage, round]);
+    let success = true;
+    const ui = uiEntry(['saveLayerPrompt'], { $, settingsSaving: false, settingsOpenedWithServerConfig: true,
+        config, settingsSnapshot: structuredClone(config), settingsDirty: true, dirtyFields,
+        LAYER_PROMPTS: { round: '默认本轮' }, WORKSPACE_COPY: { dirty: '待保存' },
+        saveConfig: async ({ promptChange }) => { writes.push(JSON.stringify(promptChange)); return success; } });
+    await ui.saveLayerPrompt('round');
+    assert.deepEqual(JSON.parse(writes[0]), { level: 'round', value: '新本轮' });
+    assert.equal(stage.value, '篇目草稿');
+    assert.equal(config.prompts.stage, '旧篇目');
+    assert.deepEqual([...dirtyFields], [stage]);
+    success = false;
+    await ui.saveLayerPrompt('round', true);
+    assert.equal(round.value, '新本轮');
+    success = true;
+    await ui.saveLayerPrompt('round', true);
+    assert.equal(config.prompts.round, '');
+    assert.equal(round.value, '默认本轮');
 });

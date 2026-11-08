@@ -1,3 +1,4 @@
+import { fetchWithExtras } from '../../../shared/common/request-extras.js';
 import { resolveApiBaseUrl, joinApiUrl } from '../../../shared/common/openai-url-utils.js';
 import Anthropic from '@anthropic-ai/sdk';
 import { buildSamplingParameters } from '../sampling.js';
@@ -285,6 +286,7 @@ export class AnthropicAdapter {
         this.auth = resolveAgentAuth('anthropic', config.apiKey);
         this.client = new Anthropic({
             ...this.auth.sdkOptions,
+            ...(config.requestExtras && {fetch: fetchWithExtras(config)}),
             baseURL: normalizeAnthropicSdkBaseUrl(config.baseUrl),
             timeout: Number(config.timeoutMs) || 15 * 60 * 1000,
             maxRetries: 0,

@@ -226,6 +226,37 @@ export function canonicalizeIncrementalSummaryData(parsed, aliases) {
     return parsed;
 }
 
+/** Join confirmed world identities with the automatic vocabulary from older chats. */
+export function buildCharacterIdentity(entities = [], aliases = []) {
+    const legacy = buildAliasResolver(aliases);
+    const people = entities.filter(entity => entity.kind === 'person' || entity.kind === 'subject');
+    const owners = new Map();
+    for (const person of people) for (const name of [person.name, ...(person.aliases || [])]) {
+        for (const value of [name, legacy.resolveName(name)]) {
+            const key = normalizeAliasNameKey(value);
+            if (!key) continue;
+            if (!owners.has(key)) owners.set(key, new Set());
+            owners.get(key).add(person);
+        }
+    }
+    const candidates = name => new Set([
+        ...(owners.get(normalizeAliasNameKey(name)) || []),
+        ...(owners.get(normalizeAliasNameKey(legacy.resolveName(name))) || []),
+    ]);
+    const entityFor = name => {
+        const matches = candidates(name);
+        return matches.size === 1 ? [...matches][0] : undefined;
+    };
+    const isAmbiguous = name => candidates(name).size > 1;
+    const resolveName = name => entityFor(name)?.name || (isAmbiguous(name) ? cleanName(name) : legacy.resolveName(name));
+    const aliasesFor = (name, person = entityFor(name)) => dedupeByKey([
+        ...(person?.aliases || []),
+        ...legacy.aliases.filter(alias => person ? entityFor(alias.from) === person
+            : !isAmbiguous(alias.from) && normalizeAliasNameKey(resolveName(alias.to)) === normalizeAliasNameKey(resolveName(name))).map(alias => alias.from),
+    ].filter(alias => !isAmbiguous(alias) && normalizeAliasNameKey(alias) !== normalizeAliasNameKey(name)), normalizeAliasNameKey);
+    return { entityFor, isAmbiguous, resolveName, aliasesFor };
+}
+
 export function buildAliasResolver(aliases) {
     const normalized = normalizeCharacterAliases(aliases);
     const edgeByFrom = new Map();
