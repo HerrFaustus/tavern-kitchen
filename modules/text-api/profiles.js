@@ -4,7 +4,7 @@ import { resolveApiBaseUrl } from '../../shared/common/openai-url-utils.js';
 
 export const PROFILE_FEATURES = Object.freeze({
     summary: '剧情总结', planner: '剧情规划', memory: '剧情校对',
-    world: '世界与地图后台', l0: '召回语义整理', embedding: '向量嵌入', rerank: '召回重排',
+    world: '世界与地图后台', opening:'世界初始化', l0: '召回语义整理', embedding: '向量嵌入', rerank: '召回重排',
 });
 export function acceptsProfile(feature, preset) {
     const kind = preset.kind || 'text';

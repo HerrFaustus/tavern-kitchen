@@ -1,3 +1,4 @@
+import { definePanelPrompt } from '../../../../core/panel-policy.js';
 // ============================================================================
 // atom-extraction.js - L0 场景锚点提取（v2 - 场景摘要 + 图结构）
 //
@@ -63,6 +64,8 @@ async function waitBeforeL0Retry(attempt, failure) {
     return true;
 }
 
+const atomGuide = definePanelPrompt('memory-settings','atomGuide','召回语义整理',SYSTEM_PROMPT);
+const atomFormat = definePanelPrompt('memory-settings','atomFormat','召回输出结构',OUTPUT_FORMAT);
 function previewText(text, maxLen = DEBUG_RAW_PREVIEW_LEN) {
     const raw = String(text ?? '').replace(/\s+/g, ' ').trim();
     if (!raw) return '(empty)';
@@ -175,14 +178,14 @@ export async function extractAtomsForRound(userMessage, aiMessage, aiFloor, opti
     const aiName = String(aiMessage.name || '').trim();
     parts.push(`<assistant${aiName ? ` name="${escapeNameAttribute(aiName)}"` : ''}>\n${aiText}\n</assistant>`);
 
-    const input = `<round>\n${parts.join('\n')}\n</round>\n\n${OUTPUT_FORMAT}`;
+    const input = `<round>\n${parts.join('\n')}\n</round>\n\n${atomFormat()}`;
 
     for (let attempt = 0; attempt < L0_MAX_ATTEMPTS; attempt++) {
         if (isCancelled()) return [];
 
         try {
             const response = await callLLM([
-                { role: 'system', content: SYSTEM_PROMPT },
+                { role: 'system', content: atomGuide() },
                 { role: 'user', content: input },
             ], {
                 temperature: 0.3,

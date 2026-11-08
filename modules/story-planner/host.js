@@ -55,17 +55,18 @@ export function installPlanner({snapshot, getContext, settings, saveSettings}) {
             const api = await repository.load();
             if (view !== token) return;
             renderStatus = createPlannerSettings(root, {
+                apiInHeader:true,
                 presets: api.presets.filter(preset => acceptsProfile('planner', preset)),
                 selected: api.bindings.planner,
                 preference: settings.preference,
                 async save(model, preference) {
-                    if (!model) {
+                    if (model === '') {
                         status('请先在 API 设置中创建并选择独立文本配置', canRetry);
                         return;
                     }
                     const before = settings.preference;
                     try {
-                        await repository.mutate('planner', { type: 'select', id: model });
+                        if (model !== undefined) await repository.mutate('planner', { type: 'select', id: model });
                         settings.preference = preference;
                         await saveSettings();
                         reset();

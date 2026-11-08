@@ -1,3 +1,4 @@
+import { definePanelPrompt } from '../../core/panel-policy.js';
 import { getModelListApiPrefix, pullModelsForProvider } from '../agent-core/model-list.js';
 import { resolveRuntimeReasoning } from '../agent-core/reasoning-capabilities.js';
 import { getDefaultApiPrefix, resolveApiBaseUrl } from '../../shared/common/openai-url-utils.js';
@@ -96,6 +97,7 @@ export async function generateText(preset, { messages, signal, onDelta, onDispat
     }
 }
 
+const connectionProbe = definePanelPrompt('settings','connectionProbe','连接测试',CONNECTION_TEST_PROMPT);
 export async function testTextConnection(preset, options = {}, dependencies = {}) {
     if (['embedding', 'rerank'].includes(preset.kind)) {
         const config = resolveConnection(preset);
@@ -123,7 +125,7 @@ export async function testTextConnection(preset, options = {}, dependencies = {}
         finally { options.signal?.removeEventListener('abort', abort); }
     }
     const result = await generateText(preset, {
-        ...options, messages: [{ role: 'user', content: CONNECTION_TEST_PROMPT }],
+        ...options, messages: [{ role: 'user', content: connectionProbe() }],
     }, dependencies);
     if (!String(result.text || '').trim()) throw new Error(COPY.emptyResponse);
     return { ok: true };

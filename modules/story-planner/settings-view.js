@@ -1,4 +1,4 @@
-export function createPlannerSettings(root, { presets, selected, preference, save, retry }) {
+export function createPlannerSettings(root, { presets, selected, preference, save, retry, apiInHeader = false }) {
     const doc = root.ownerDocument;
     const panel = doc.createElement('section');
     panel.className = 'tk-planner-settings';
@@ -9,7 +9,8 @@ export function createPlannerSettings(root, { presets, selected, preference, sav
         panel.append(label);
         return control;
     }
-    const model = field('后台作家模型', doc.createElement('select'));
+    const model = doc.createElement('select');
+    if (!apiInHeader) field('后台作家模型',model);
     for (const { name, id } of [{ name: '选择独立模型配置', id: '' }, ...presets]) {
         const option = doc.createElement('option');
         option.value = id;
@@ -34,7 +35,7 @@ export function createPlannerSettings(root, { presets, selected, preference, sav
     const saveButton = button('保存配置');
     saveButton.onclick = async () => {
         saveButton.disabled = true;
-        try { await save(model.value, pref.value.trim()); }
+        try { await save(apiInHeader ? undefined : model.value, pref.value.trim()); }
         finally { saveButton.disabled = false; }
     };
     const footer = doc.createElement('div');

@@ -1,3 +1,4 @@
+import { panelEnabled } from '../../../../../core/panel-policy.js';
 import type { MapService } from '../application/service.js';
 import type { MapSettings } from '../types.js';
 import type { MaintenanceMode, MaintenanceParticipant } from '../../../capabilities/maintenance/registry.js';
@@ -19,7 +20,7 @@ export function createMapMaintenanceParticipant({
         id: 'map',
         isEnabled(mode: MaintenanceMode) {
             const settings = readSettings();
-            return mode !== 'automatic' || settings?.autoMaintenance === true;
+            return panelEnabled('map') && (mode !== 'automatic' || settings?.autoMaintenance === true);
         },
         async createSession(source: AcceptedTurnSource, mode: MaintenanceMode) {
             await map.refreshCurrent();

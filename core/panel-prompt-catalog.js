@@ -1,0 +1,23 @@
+// Load the owners before rendering editors, including features that have never run in this chat.
+import '../modules/agent-core/adapters/openai-compatible.js';
+import '../modules/agent-core/runtime/delegate-runner.js';
+import '../modules/story-planner/notes.js';
+import '../modules/story-summary/data/generation-rules.js';
+import '../modules/story-summary/generate/llm.js';
+import '../modules/story-summary/inline/protocol.js';
+import '../modules/story-summary/maintenance/prompt.js';
+import '../modules/story-summary/maintenance/tools.js';
+import '../modules/xiaobai-os/apps/map/tools/tool-contract.js';
+import '../modules/xiaobai-os/host/prompt-context/format.js';
+import '../modules/xiaobai-os/capabilities/maintenance/job-executor.js';
+import '../modules/story-summary/vector/llm/atom-extraction.js';
+import '../modules/story-summary/vector/llm/llm-service.js';
+import '../modules/text-api/runtime.js';
+import '../modules/world-records/opening.js';
+import '../modules/xiaobai-os/agent/browser-entry.js';
+import '../modules/xiaobai-os/apps/map/maintenance/prompt.js';
+import '../modules/xiaobai-os/apps/map/management/participant.js';
+import '../modules/xiaobai-os/apps/world/maintenance/prompt.js';
+import '../modules/xiaobai-os/apps/world/maintenance/session.js';
+import '../modules/xiaobai-os/apps/world/management/participant.js';
+import '../modules/xiaobai-os/capabilities/maintenance/provider-tool-loop.js';

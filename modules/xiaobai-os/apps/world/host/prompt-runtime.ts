@@ -1,3 +1,4 @@
+import { panelEnabled } from '../../../../../core/panel-policy.js';
 import { buildWorldStoryPrompt } from './story-projection.js';
 import type { XiaobaiOsAppRuntime } from '../../../types.js';
 import type { WorldService } from '../application/service.js';
@@ -32,7 +33,7 @@ export function createWorldPromptRuntime(dependencies: {
                     try {
                         const current = world.readCurrent();
                         // Read only the confirmed snapshot; never wait for maintenance or a save.
-                        if (settings.read()!.apps.world.injectToStory && current.chatIdentity && current.chatIdentity === getChatIdentity()) {
+                        if (panelEnabled('situation') && settings.read()!.apps.world.injectToStory && current.chatIdentity && current.chatIdentity === getChatIdentity()) {
                             setPrompt(buildWorldStoryPrompt(current.world));
                         }
                     } catch (error) { console.error('[TavernKitchen] World background unavailable', error); }

@@ -167,4 +167,6 @@ export function mapTools(saveDescription: string): readonly MaintenanceFunctionD
     },
 ]); }
 
-export const MAP_MAINTENANCE_TOOLS = mapTools('Edits update the draft; the app saves after the run. Returns {ok,status,changed,applied,skipped,warnings,hint?,data?}. status is updated, unchanged (already matches; success), partial or failed.');
+import { editableToolDescriptions } from '../../../../../core/tool-descriptions.js';
+
+export const MAP_MAINTENANCE_TOOLS = mapTools('Edits update the draft; the app saves after the run. Returns {ok,status,changed,applied,skipped,warnings,hint?,data?}. status is updated, unchanged (already matches; success), partial or failed.').map(tool => editableToolDescriptions('map','mapMaintenanceTool',tool));

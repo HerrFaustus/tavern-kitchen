@@ -6,8 +6,8 @@
 #tavern-kitchen-settings .tk-settings-notes { margin-block: 0.75rem; }
 #tavern-kitchen-settings .tk-settings-notes summary { cursor: pointer; font-size: 0.9em; opacity: 0.85; }
 #tavern-kitchen-extension .tk-extension-note { margin: 0 0 0.75rem; font-size: 0.9em; line-height: 1.6; opacity: 0.85; }
-#tavern-kitchen-extension .tk-extension-toggle { display: flex; align-items: center; gap: 0.4rem; margin: 0 0 0.6rem; font-size: 0.9em; cursor: pointer; }
-#tavern-kitchen-extension .tk-extension-toggle input { margin: 0; accent-color: var(--SmartThemeQuoteColor); }
+#tk-workspace .tk-extension-toggle { display: flex; align-items: center; gap: 0.4rem; margin: 0 0 0.6rem; font-size: 0.9em; cursor: pointer; }
+#tk-workspace .tk-extension-toggle input { margin: 0; accent-color: var(--SmartThemeQuoteColor); }
 #tavern-kitchen-extension .menu_button { margin-block: 0.25rem; }
 #tavern-kitchen-settings small { margin-inline-start: 0.5rem; font-weight: normal; }
 
@@ -179,3 +179,15 @@
 #tk-workspace .tk-evolution { flex: 0 0 auto; padding: 6px 4px; max-height: 32%; overflow: auto; border-top: 1px solid var(--SmartThemeBorderColor); }
 #tk-workspace .tk-evolution label { display: inline-flex; align-items: center; gap: 6px; }
 #tk-workspace .tk-evolution small { display: block; }
+
+#tk-topbar[hidden], #tk-workspace .tk-tabs > [hidden] { display: none; }
+#tk-workspace .tk-feature-switches:has(.tk-panel-controls) { max-height: 46vh; overflow-y: auto; flex-shrink: 0; }
+#tk-workspace .tk-panel-controls { display: grid; gap: .35em; width: 100%; min-width: 0; }
+.tk-panel-controls label { display: grid; gap: .2em; margin-block: .35em; }
+.tk-panel-controls :is(select, textarea) { width: 100%; min-width: 0; }
+.tk-panel-controls textarea { resize: vertical; }
+.tk-panel-controls details > summary { cursor: pointer; }
+.tk-panel-controls small:empty { display: none; }
+
+#tk-workspace .tk-panel-settings { max-height: 45vh; overflow-y: auto; flex-shrink: 0; }
+#tk-workspace .tk-panel-settings summary { cursor: pointer; }

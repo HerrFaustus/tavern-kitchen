@@ -1,25 +1,25 @@
 {
-  "version": "0.2.23",
-  "verified_at_utc": "2026-11-07T11:42:28Z",
-  "build_id": "2e298043fe2ccce80e71",
+  "version": "0.2.24",
+  "verified_at_utc": "2026-11-08T08:00:48Z",
+  "build_id": "64ca2dd843263cee6198",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
   "quality": "passed",
   "unit_tests": {
-    "total": 1592,
-    "passed": 1592,
+    "total": 1602,
+    "passed": 1602,
     "failed": 0,
     "cancelled": 0,
     "skipped": 0
   },
   "memory_runtime": "passed",
-  "scope": "Offline project checks for the hierarchical map, local scenery and removal of the standalone scene record.",
+  "scope": "World initialization, editable prompts, hot panel settings and the extension drawer.",
   "runtime_changes": true,
   "removed_source_paths": 1763,
   "removed_modules_in_build": 0,
   "browser_entries": 9,
-  "chunks": 55,
+  "chunks": 62,
   "host_static_validation": {
     "version": "1.19.0",
     "commit": "06bde939fb1e9c4c8d8641d810f0a916b5bce127"
@@ -96,7 +96,7 @@
     ],
     "verified_version": "0.1.9"
   },
-  "ui_review": "0.2.22 actual settings HTML and Linkedom: no module/chat/vector activation or summary-range controls; vector parameters visible; legacy disabled vector config loads and is collected as enabled without missing-node errors; recent prose visibility controls remain. Production config and panel provider normalization preserve existing selections. Existing world proposal DOM tests remain. No new screenshots, layout-engine or live-host verification; browser use remains disabled in Work settings. Older browser fixtures retain their original scope.",
+  "ui_review": "Headless Edge at widths 1280 and 390 verified drawer content, tutorial placeholder, entry and panel recovery without a reload.",
   "local_variable_regression": {
     "version": "0.2.15",
     "new_tests": 24,
@@ -287,7 +287,7 @@
     },
     "errors": []
   },
-  "modules": 738,
+  "modules": 748,
   "phone_removal_fixture": {
     "version": "0.2.3",
     "desktop": [

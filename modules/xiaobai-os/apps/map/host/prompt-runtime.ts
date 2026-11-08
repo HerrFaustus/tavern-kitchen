@@ -1,3 +1,4 @@
+import { panelEnabled } from '../../../../../core/panel-policy.js';
 import { buildMapPromptBlock } from '../../../domains/map/projection.js';
 import type { MapDomainV1 } from '../../../domains/map/types.js';
 import type { XiaobaiOsAppRuntime } from '../../../types.js';
@@ -50,7 +51,7 @@ export function createMapPromptRuntime({
         clearPrompt();
         try {
             const map = readCurrentMap();
-            if (!map) {return;}
+            if (!map || !panelEnabled('map')) {return;}
             const prompt = buildMapPromptBlock(map, turnText(chat, generationType));
             if (prompt) {setPrompt(prompt);}
         } catch (error) {

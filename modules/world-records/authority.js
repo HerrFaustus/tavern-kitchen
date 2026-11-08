@@ -1,7 +1,8 @@
+import { indexGeography } from '../story-state/regional-proximity.js';
 import { protagonistIdentity } from '../story-state/protagonist-identity.js';
 import { FIELD_LABELS } from './domain.js';
 import { worldStoryRecords } from './world-story-state.js';
-import { storyContextLines } from '../story-state/records.js';
+import { storyContextLines, storyRecordText } from '../story-state/records.js';
 
 const normalize = value => String(value || '').trim().normalize('NFKC').toLocaleLowerCase();
 const cache = new WeakMap();
@@ -41,11 +42,18 @@ export function isPrivateStoryField(field) {
 }
 
 /** Bounded whole records; hidden fields never revive older contradictory facts. */
-export function buildAuthorityContext(state, query = '', maxChars = 4000, playerName = '') {
+export function buildAuthorityContext(state, query = '', maxChars = 4000, playerName = '', involvement = []) {
     if (!state) return '';
     const { entities } = authorityIndex(state), context = normalize(query);
     const candidates = state.entities.filter(entity => Object.values(entity.fields).some(established));
     const relevant = entity => [entity.name, ...entity.aliases].some(name => normalize(name) && context.includes(normalize(name)));
+    const player = protagonistIdentity(state.entities, playerName);
+    const geo = indexGeography(state.entities,state.modules?.map?.atlas || {});
+    const here = geo.ancestry('entity:' + player.hero?.fields?.location?.value?.entityId);
+    const region = here.find(p => p.scale === 'region') || here.find(p => ['city','district'].includes(p.scale)) || here[0];
+    const local = id => !!region && geo.ancestry(id).some(place => place.id === region.id);
+    const near = new Set(involvement.filter(row => row.near).map(row => row.key));
+    const inFocus = entity => entity === player.hero || near.has('person/'+entity.id) || relevant(entity) || local('entity:' + (entity.kind === 'place' ? entity.id : entity.fields.location?.value?.entityId));
     const sorted = candidates.map((entity, order) => ({ entity, order, hit: relevant(entity) }))
         .sort((a, b) => Number(b.hit) - Number(a.hit) || a.order - b.order);
     const lines = [];
@@ -53,6 +61,7 @@ export function buildAuthorityContext(state, query = '', maxChars = 4000, player
     let used = opening.length;
     for (const { entity } of sorted) for (const [field, record] of Object.entries(entity.fields)) {
         if (!established(record) || isPrivateStoryField(field)) continue;
+        if (record.source?.module === 'world-opening' && !inFocus(entity)) continue;
         const raw = record.value;
         const value = raw && typeof raw === 'object' && !Array.isArray(raw) && typeof raw.entityId === 'string'
             ? { ...raw, name: entities.get(raw.entityId)?.name || raw.entityId } : raw;
@@ -64,8 +73,11 @@ export function buildAuthorityContext(state, query = '', maxChars = 4000, player
     const focus = [...new Set([...state.entities.map(entity => entity.name),
         ...records.flatMap(record => [record.name, record.person, ...(record.participants || []), ...(record.holders || [])])]
         .filter(name => normalize(name) && context.includes(normalize(name))))];
-    const player = protagonistIdentity(state.entities, playerName);
-    for (const story of storyContextLines(records, [...focus,...player.names])) {
+    const openingIds = new Set((state.modules?.story?.records || []).filter(item => item.source.module === 'world-opening').map(item => item.record.id));
+    const visible = records.filter(record => !openingIds.has(record.id) || near.has('situation/'+record.id) || context.includes(normalize(record.title)) || record.scope &&
+        (context.includes(normalize(record.scope)) || local(geo.resolve(record.scope))));
+    const scenery = visible.filter(record => openingIds.has(record.id) && record.flavor === 'scenery').map(storyRecordText);
+    for (const story of [...storyContextLines(visible, [...focus,...player.names]),...scenery]) {
         const line = JSON.stringify({ story });
         if (used + line.length + 1 > maxChars) continue;
         lines.push(line); used += line.length + 1;

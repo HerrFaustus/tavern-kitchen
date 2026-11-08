@@ -36,6 +36,7 @@ import { createModuleEvents } from "../../core/event-manager.js";
 import { postToIframe, isTrustedMessage } from "../../core/iframe-messaging.js";
 import { createMessageButtonOwnership } from "../../core/message-button-ownership.js";
 import { STORY_SUMMARY_TOGGLE_EVENT } from './runtime-events.js';
+import { panelEnabled } from '../../core/panel-policy.js';
 import { isXiaobaiMasterEnabled } from './runtime-gate.js';
 import { initChatDeletionLifecycle } from './chat-deletion-lifecycle.js';
 import { createMemoryMaintenanceHost } from './maintenance/host.js';
@@ -62,7 +63,6 @@ import {
 
 // config/store
 import {
-    getSummaryPrompts,
     getSettings,
     getSummaryPanelConfig,
     getVectorConfig,
@@ -220,7 +220,7 @@ const summaryDiagnostics = createSummaryDiagnostics();
 const memoryMaintenance = createMemoryMaintenanceHost({
     generateReviewedLayer,
     readSummaryDiagnostics: args => summaryDiagnostics.read(getChatIdentity(getContext()), args),
-    isEnabled: () => isStorySummaryEnabledForCurrentChat(),
+    isEnabled: () => panelEnabled('proofreading') && isXiaobaiMasterEnabled() && Boolean(getContext()?.chatId),
     invalidateRecall: () => {
         recallReuse.invalidate();
     },
@@ -258,7 +258,7 @@ let floorSummaryRequest = null;
 
 function getStorySummaryEnablement() {
     const context = getContext();
-    const globalEnabled = Boolean(getSettings().storySummary?.enabled);
+    const globalEnabled = Boolean(getSettings().storySummary?.enabled) && panelEnabled('memory');
     const hasChat = Boolean(context?.chatId);
     // Legacy per-chat disabled flags remain in the archive but no longer gate memory.
     const chatEnabled = true;
@@ -1282,7 +1282,7 @@ function createSummaryBtn(mesId) {
     btn.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
-        if (!getSettings().storySummary?.enabled) return;
+        if (!isStorySummaryEnabledForCurrentChat()) return;
         currentMesId = Number(mesId);
         memoryWorkspaceView = 'memory';
         openPanelForMessage(currentMesId);
@@ -1293,7 +1293,7 @@ function createSummaryBtn(mesId) {
 
 function addSummaryBtnToMessage(mesId) {
     if (!messageButtonOwnership.ownsButtons()) return;
-    if (!getSettings().storySummary?.enabled) return;
+    if (!isStorySummaryEnabledForCurrentChat()) return;
     const msg = document.querySelector(`#chat .mes[mesid="${mesId}"]`);
     if (!msg || msg.querySelector(".tavernKitchen-story-summary-btn")) return;
 
@@ -1308,7 +1308,7 @@ export function configureStorySummaryRuntime({ ownsMessageButtons: nextOwnership
 }
 
 export function mountStorySummaryButton(message, mesId) {
-    if (!getSettings().storySummary?.enabled || message.querySelector('.tavernKitchen-story-summary-btn')) return;
+    if (!isStorySummaryEnabledForCurrentChat() || message.querySelector('.tavernKitchen-story-summary-btn')) return;
     const button = createSummaryBtn(mesId);
     if (!window.registerButtonToSubContainer?.(mesId, button)) {
         message.querySelector('.flex-container.flex1.alignitemscenter')?.appendChild(button);
@@ -1318,7 +1318,7 @@ export function mountStorySummaryButton(message, mesId) {
 
 function initButtonsForAll() {
     if (!messageButtonOwnership.ownsButtons()) return;
-    if (!getSettings().storySummary?.enabled) return;
+    if (!isStorySummaryEnabledForCurrentChat()) return;
     $("#chat .mes").each((_, el) => {
         const mesId = el.getAttribute("mesid");
         if (mesId != null) addSummaryBtnToMessage(mesId);
@@ -1327,7 +1327,7 @@ function initButtonsForAll() {
 
 function initButtonForLatestMessage() {
     if (!messageButtonOwnership.ownsButtons()) return;
-    if (!getSettings().storySummary?.enabled) return;
+    if (!isStorySummaryEnabledForCurrentChat()) return;
     const { chat } = getContext();
     const mesId = Array.isArray(chat) ? chat.length - 1 : null;
     if (mesId != null && mesId >= 0) addSummaryBtnToMessage(mesId);
@@ -1355,7 +1355,6 @@ async function sendSavedConfigToFrame() {
         postToFrame({
             type: "LOAD_PANEL_CONFIG",
             config: savedConfig,
-            builtInSummaryPrompts: getSummaryPrompts(savedConfig),
         });
     } catch (e) {
         xbLog.warn(MODULE_ID, SUMMARY_FEEDBACK_COPY.configLoad.failed, e);
@@ -1426,7 +1425,7 @@ async function sendFrameBaseData(store, totalFloors) {
 }
 
 function sendFrameFullData(store, totalFloors) {
-    if (store?.json) {
+    if (store?.json || worldAuthorityForContext(getContext())?.sources?.['world-opening']) {
         postToFrame({
             type: "SUMMARY_FULL_DATA",
             payload: buildFramePayload(store),
@@ -1437,6 +1436,7 @@ function sendFrameFullData(store, totalFloors) {
 }
 
 function buildFramePayload(store) {
+    if (!store?.json && worldAuthorityForContext(getContext())?.sources?.['world-opening']) store = {json:{},summaryHistory:[]};
     const json = authorityStoryStore(store, getContext(), true)?.json || {};
     const facts = json.facts || [];
     const entities = (worldAuthorityForContext(getContext())?.entities || []).map(({id,kind,name,aliases,fields}) => ({id,kind,name,aliases,fields}));
@@ -4033,6 +4033,23 @@ $(document).on(STORY_SUMMARY_TOGGLE_EVENT, observeAsyncCallback(async (_e, enabl
 // 初始化
 // ═══════════════════════════════════════════════════════════════════════════
 
+export async function refreshPanelState(id) {
+    if (!panelEnabled('proofreading')) { memoryMaintenance.cancel(); memoryMaintenance.chat.reset({preview:false}); }
+    if (id === 'proofreading') return;
+    if (!panelEnabled('memory')) {
+        messageButtonOwnership.runOwnedCleanup(() => $('.tavernKitchen-story-summary-btn').remove());
+    }
+    if (!isXiaobaiMasterEnabled()) {
+        cancelActiveSummaryExecution();
+        cancelRecallAndClearPrompt('disabled');
+        await unregisterEvents();
+    } else {
+        if (!panelEnabled('memory')) { cancelActiveSummaryExecution(); cancelRecallAndClearPrompt('disabled'); }
+        await initializeStorySummary();
+    }
+    notifyStorySummaryChatState();
+}
+
 function reportStartupFailure(error) {
     const shouldNotify = Boolean(getSettings().storySummary?.enabled) && shouldNotifyMemoryFailure(error, getMemoryCommitState());
     notifySummaryStartupFailure(error, shouldNotify);
@@ -4075,6 +4092,10 @@ export function openStoryWorld(route = 'world') {
     openPanelForMessage(Math.max(0, getContext().chat.length - 1));
     postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view: route });
 }
+export function getWorldMemorySnapshot() {
+    const snapshot = getFloorSummarySnapshot();
+    return {...snapshot,enabled:isXiaobaiMasterEnabled() && Boolean(getContext()?.chatId)};
+}
 export function getFloorSummarySnapshot() {
     const store = getPublishedSummaryStore();
     const invalid = store?.summaryHistory?.find(batch => batch.floorEntry && !isFloorEntryCurrent(batch.floorEntry, getContext().chat));
@@ -4104,11 +4125,11 @@ export async function summarizeFloorOnDemand(floor) {
     const identity = getChatIdentity(getContext());
     try {
         await ensureFloorSources();
-        if (identity !== getChatIdentity(getContext())) throw new Error('聊天已切换，本次总结未写入。');
+        if (!isStorySummaryEnabledForCurrentChat() || identity !== getChatIdentity(getContext())) throw new Error('聊天已切换或剧情记录已关闭，本次总结未写入。');
         const preparedSources = await prepareMemorySources(source.start, floor);
         const raw = await generateFloorSummary({ store: getPublishedSummaryStore(), floorText: text });
         await validateMemorySources(preparedSources);
-        if (identity !== getChatIdentity(getContext())) throw new Error('聊天已切换，本次总结未写入。');
+        if (!isStorySummaryEnabledForCurrentChat() || identity !== getChatIdentity(getContext())) throw new Error('聊天已切换或剧情记录已关闭，本次总结未写入。');
         let extracted = extractFloorPayload(raw);
         if (extracted.status === 'missing') {
             const candidate = String(raw || '').trim().replace(/^```(?:json)?\s*|\s*```$/gi, '');

@@ -19,7 +19,7 @@ import { captureRangeSource, isRangeSourceCurrent } from '../story-summary/data/
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
 import { buildUpdateContext, UPDATE_PREFIX } from './update-context.js';
 
-export function createWorldArchive({ getContext, getAccountId = () => 'default-user', getMemorySnapshot, getAmbientPreferences, getMount, isVisible, onError, onAuthorityChange = () => {} }) {
+export function createWorldArchive({ getContext, createOpening, getAccountId = () => 'default-user', getMemorySnapshot, getAmbientPreferences, getMount, isVisible, onError, onAuthorityChange = () => {} }) {
     const sourceIdentity = () => storyIdentityKey(captureStoryIdentity(getContext()));
     const identity = () => { const story = sourceIdentity(); return story ? JSON.stringify([getAccountId(), story]) : ''; };
     const storage = createWorldStorage();
@@ -38,6 +38,7 @@ export function createWorldArchive({ getContext, getAccountId = () => 'default-u
         authority?.publish(state, owner);
         publishWorldBridgeState(sourceIdentity(), owner, state);
     } });
+    const initialize = createOpening?.({getContext,identity,service});
     const unregisterBridge = registerWorldBridge(() => ({ storyIdentity: sourceIdentity(), identity: identity(), service }));
     authority = createAuthorityRuntime({ getIdentity: identity, getStoryIdentity: sourceIdentity, sync: async () => {
         const state = await sync(); if (state) service.assertSourcesConsistent(state); return state;
@@ -134,6 +135,7 @@ export function createWorldArchive({ getContext, getAccountId = () => 'default-u
         });
     });
     return {
+        initialize,
         plannerSnapshot() {
             const ctx = getContext();
             const snap = plannerSnapshot(authority.read()?.state, getMemorySnapshot(), ctx.chat || [], identity());
@@ -145,7 +147,7 @@ export function createWorldArchive({ getContext, getAccountId = () => 'default-u
             return snap;
         },
         async prepare(query) {
-            const factText = await authority.prepare(query, getContext().name1);
+            const factText = await authority.prepare(query, getContext().name1, state => involvementFor(state));
             const state = authority.read()?.state, memory = getMemorySnapshot();
             if (!state || !memory?.enabled || memory.invalidFrom != null) return factText;
             const local = ambientPrompt(memory.store, state, worldStoryRecords(state, availableStoryRecords(memory.store)), getAmbientPreferences?.() || {});

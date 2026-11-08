@@ -1,3 +1,4 @@
+import { definePanelPrompt } from '../../../core/panel-policy.js';
 import OpenAI from 'openai';
 import { buildSamplingParameters } from '../sampling.js';
 import { resolveAgentAuth } from '../provider-auth.js';
@@ -601,6 +602,20 @@ export function buildNativeMessages(task, model = '', { preserveReasoningContent
     return normalizeFinalClaudeLikeMessageRole(normalizedMessages, model);
 }
 
+const toolRequirement0 = definePanelPrompt('proofreading|people|situation|map|settings','toolRequirement0','必须调用工具','本轮必须调用工具，不得只返回正文。');
+const toolRequirement1 = definePanelPrompt('proofreading|people|situation|map|settings','toolRequirement1','禁止调用工具','本轮不得调用工具，不得输出 <tool_call> 标签。');
+const toolRequirement2 = definePanelPrompt('proofreading|people|situation|map|settings','toolRequirement2','自由调用工具','请根据任务判断是否需要调用工具。');
+const toolRequirement3 = definePanelPrompt('proofreading|people|situation|map|settings','toolRequirement3','指定工具',`本轮必须调用工具 {{tool}}，不得调用其他工具，也不得只返回正文。`);
+const taggedFormat = definePanelPrompt('proofreading|people|situation|map|settings','taggedFormat','兼容接口工具调用格式',[
+        '如果你需要调用工具，不要使用原生 tool calling 字段。',
+        '{{choice}}',
+        'Each tool call is one complete JSON object enclosed by <tool_call> and </tool_call>.',
+        'The object contains name (a tool name from the list below) and arguments (a JSON object matching that tool\'s parameter schema).',
+        'For multiple calls in one reply, close the current </tool_call> before opening the next <tool_call>.',
+        '在输出第一个 <tool_call> 之前，可根据任务复杂度决定是否需要先说明：简单查询可直接输出 <tool_call>；复杂任务可先简要说明你准备查什么或怎么查。',
+        '一旦开始输出第一个 <tool_call>，就不要再继续输出面向用户的正文、解释、总结或补充；把本轮需要的 tool_call 连续输出完就结束。',
+        '{{tools}}',
+    ].filter(Boolean).join('\n\n'));
 function buildTaggedProtocolPrompt(task) {
     const toolDescriptions = (task.tools || []).map((tool) => [
         `- ${tool.function.name}: ${tool.function.description || ''}`.trim(),
@@ -609,24 +624,14 @@ function buildTaggedProtocolPrompt(task) {
 
     const toolChoice = String(task.toolChoice || 'auto').trim() || 'auto';
     const toolChoiceInstruction = toolChoice === 'required'
-        ? '本轮必须调用工具，不得只返回正文。'
+        ? toolRequirement0({tool:toolChoice})
         : toolChoice === 'none'
-            ? '本轮不得调用工具，不得输出 <tool_call> 标签。'
+            ? toolRequirement1({tool:toolChoice})
             : toolChoice === 'auto'
-                ? '请根据任务判断是否需要调用工具。'
-                : `本轮必须调用工具 ${toolChoice}，不得调用其他工具，也不得只返回正文。`;
+                ? toolRequirement2({tool:toolChoice})
+                : toolRequirement3({tool:toolChoice});
 
-    return [
-        task.systemPrompt || '',
-        '如果你需要调用工具，不要使用原生 tool calling 字段。',
-        toolChoiceInstruction,
-        'Each tool call is one complete JSON object enclosed by <tool_call> and </tool_call>.',
-        'The object contains name (a tool name from the list below) and arguments (a JSON object matching that tool\'s parameter schema).',
-        'For multiple calls in one reply, close the current </tool_call> before opening the next <tool_call>.',
-        '在输出第一个 <tool_call> 之前，可根据任务复杂度决定是否需要先说明：简单查询可直接输出 <tool_call>；复杂任务可先简要说明你准备查什么或怎么查。',
-        '一旦开始输出第一个 <tool_call>，就不要再继续输出面向用户的正文、解释、总结或补充；把本轮需要的 tool_call 连续输出完就结束。',
-        toolDescriptions ? `可用工具:\n${toolDescriptions}` : '',
-    ].filter(Boolean).join('\n\n');
+    return [task.systemPrompt,taggedFormat({choice:toolChoiceInstruction,tools:toolDescriptions ? '可用工具:\n'+toolDescriptions : ''}).trimEnd()].filter(Boolean).join('\n\n');
 }
 
 export function buildTaggedMessages(task, model = '') {

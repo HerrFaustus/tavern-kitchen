@@ -6,9 +6,12 @@ import * as hostScript from '../../../../../script.js';
 import { getCurrentUserHandle } from '../../../../user.js';
 import { EXT_ID } from './constants.js';
 import { buildEntryUrl } from './build-assets.js';
-import { createExtensionDrawer } from './extension-drawer.js';
-import { createDefaultXiaobaiOsSettings, prepareXiaobaiOsSettings, initXiaobaiOs, mountWorldEvolution, openXiaobaiOs } from '../modules/xiaobai-os/index.js';
-import { observeAsyncCallback } from '../shared/common/async-errors.js';
+import { KITCHEN_ROUTES } from './kitchen-workspace.js';
+import { panelEnabled, usePanelSettings } from './panel-policy.js';
+import { mountPanelControls } from './panel-controls.js';
+import { createExtensionDrawer, createPanelSettings } from './extension-drawer.js';
+import { createDefaultXiaobaiOsSettings, prepareXiaobaiOsSettings, initXiaobaiOs, cleanupXiaobaiOs, setXiaobaiOsEnabled, mountWorldEvolution, openXiaobaiOs } from '../modules/xiaobai-os/index.js';
+import { createOpeningHost } from '../modules/world-records/opening-host.js';
 import { requireTurnRuntime } from '../modules/world-records/turn-runtime.js';
 const { saveSettings } = hostScript;
 
@@ -19,7 +22,44 @@ const settings = extension_settings[EXT_ID] ??= {
     xiaobaiOs: createDefaultXiaobaiOsSettings(),
 };
 (settings.storySummary ??= {}).enabled = true;
+settings.enabled ??= true;
+settings.enaPlanner ??= {enabled:false};
+usePanelSettings(settings);
 window.isTavernKitchenEnabled = settings.enabled;
+let clearWorldPrompt, stopWorld, floorPanels;
+let settingsQueue = Promise.resolve();
+function enqueue(work) {
+    const next = settingsQueue.then(work);
+    settingsQueue = next.then(() => undefined, () => undefined);
+    return next;
+}
+async function saveValue(target,key,value) {
+    const previous = target[key];
+    if (value === undefined) delete target[key]; else target[key] = value;
+    try { if (await saveSettings() === false) throw new Error('酒馆未能保存设置，请重试。'); }
+    catch (error) { if (previous === undefined) delete target[key]; else target[key] = previous; throw error; }
+}
+async function updatePanel(id,enabled) {
+    await featureReady;
+    const master = id === 'enabled';
+    await saveValue(master ? settings : (settings.panels ??= {}),id,enabled);
+    window.isTavernKitchenEnabled = settings.enabled;
+    if (master && enabled) await startWorld();
+    if (master && !enabled) { stopWorld?.(); cleanupXiaobaiOs(); }
+    if (master || id === 'opening') worldArchive?.initialize?.cancel?.();
+    if (master || id === 'memory' || id === 'proofreading') await memory?.refreshPanelState(id);
+    if (master || id === 'planner') await syncPlanner();
+    configureWorkspace();
+    clearWorldPrompt?.();
+    if (master || id === 'memory') floorPanels?.schedule();
+    if (master && enabled && settings.xiaobaiOs?.enabled) await initXiaobaiOs();
+}
+async function syncPlanner() {
+    if (!panelEnabled('planner')) { planner?.dispose(); planner = null; return; }
+    if (planner || !worldArchive) return;
+    const { installPlanner } = await import('../modules/story-planner/host.js');
+    planner = installPlanner({snapshot:worldArchive.plannerSnapshot,getContext,settings:settings.enaPlanner,saveSettings});
+}
 const cleanups = new Map();
 window.registerKitchenModuleCleanup = (id, cleanup) => cleanups.set(id, cleanup);
 
@@ -32,7 +72,7 @@ const featureReady = new Promise(resolve => { readyResolve = resolve; });
 let startupError;
 async function requireFeatures() {
     await featureReady;
-    if (!settings.enabled) throw new Error('后厨已停用，请在扩展设置中启用并刷新。');
+    if (!settings.enabled) throw new Error('后厨已停用，请在后厨的面板设置中启用。');
     if (startupError) throw startupError;
 }
 
@@ -55,45 +95,20 @@ async function loadBridge(entry, id) {
 function mountExtensionDrawer() {
     const host = document.getElementById('extensions_settings') || document.getElementById('extensions_settings2');
     if (!host || document.getElementById('tavern-kitchen-extension')) return;
-    host.append(createExtensionDrawer({
-        enabled: settings.enabled !== false,
-        onToggleEnabled(enabled) {
-            const previous = settings.enabled;
-            settings.enabled = enabled;
-            Promise.resolve(saveSettings()).then(() => location.reload()).catch(error => {
-                settings.enabled = previous;
-                showError(error);
-            });
-        },
-        onOpen: () => kitchen.open('settings'),
-    }));
+    host.append(createExtensionDrawer({onOpen: () => kitchen.open()}));
 }
 
-function featureSwitch(key, label) {
-    return { key, label, checked: !!settings[key]?.enabled };
-}
-function buildFeatureSwitches() {
-    const planner = featureSwitch('enaPlanner', '启用剧情规划');
-    const os = featureSwitch('xiaobaiOs', '启用地图、世界与 API');
-    return {
-        planner: [planner],
-        map: [os], settings: [os],
-    };
-}
-async function toggleFeature(key, enabled) {
-    const previous = !!settings[key]?.enabled;
-    try {
-        (settings[key] ??= {}).enabled = enabled;
-        await saveSettings();
-        location.reload();
-    } catch (error) {
-        (settings[key] ??= {}).enabled = previous;
-        showError(error);
-    }
-}
+let panelSettings;
 function configureWorkspace() {
     mountExtensionDrawer();
+    panelSettings ??= createPanelSettings({
+        enabled: settings.enabled !== false,
+        panels:Object.values(KITCHEN_ROUTES).flat().map(([id,label]) => ({id,label,checked:settings.panels?.[id] ?? (id === 'planner' ? !!settings.enaPlanner.enabled : true)})),
+        onPanelChange:(id,value,input) => { void enqueue(() => updatePanel(id,value)).catch(error => { input.checked = settings.panels?.[id] ?? (id !== 'planner' || !!settings.enaPlanner.enabled); configureWorkspace(); showError(error); }); },
+        onToggleEnabled:(value,input) => { void enqueue(() => updatePanel('enabled',value)).catch(error => { input.checked = settings.enabled !== false; configureWorkspace(); showError(error); }); },
+    });
     const actions = {
+        opening: async () => { await requireFeatures(); },
         overview: async () => {
             await requireFeatures();
             if (kitchen.isActive('overview')) await worldArchive.open('overview');
@@ -123,7 +138,7 @@ function configureWorkspace() {
         planner: async () => {
             await requireFeatures();
             if (!kitchen.isActive('planner')) return;
-            if (!planner) throw new Error('剧情规划尚未启用，请在规划板块中开启并刷新。');
+            if (!planner) throw new Error('剧情规划尚未启用，请在后厨的面板设置中勾选剧情规划。');
             await planner.open(kitchen.getMount('planner'));
         },
     };
@@ -137,17 +152,47 @@ function configureWorkspace() {
     for (const id of ['map', 'settings', 'agent-api']) actions[id] = async () => {
         await requireFeatures();
         if (!kitchen.isActive(id)) return;
-        if (!settings.xiaobaiOs?.enabled) throw new Error('地图、世界与 API 尚未启用，请在对应板块中开启并刷新。');
+        if (!settings.xiaobaiOs?.enabled) await setXiaobaiOsEnabled(true);
         const appId = id === 'settings' || id === 'agent-api' ? 'agent-api' : id;
         if (!await openXiaobaiOs(appId)) throw new Error('此板块尚未准备好，请重试。');
     };
     kitchen.configure({
-        actions, featureSwitches: buildFeatureSwitches(),
-        onToggleFeature: (key, enabled) => observeAsyncCallback(toggleFeature(key, enabled), { source: import.meta.url, operation: 'toggle-feature' }),
+        actions, panelSettings, visiblePanel:panelEnabled,
+        configurePanel:(id,bar) => mountPanelControls(id,bar,settings,
+            (key,value) => enqueue(() => saveValue(settings.panelPrompts ??= {},key,value))),
+        initializeWorld:async () => { await requireFeatures(); return worldArchive.initialize({manual:true}); },
         toggleDrawer: hostScript.doNavbarIconClick,
     });
+}
+function installChatListener() {
     const events = createModuleEvents('kitchen-workspace');
     events.on(event_types.CHAT_CHANGED, () => { kitchen.reset(); worldArchive?.reset(); });
+}
+
+async function startWorld() {
+    if (worldArchive) return;
+    const { createWorldArchive } = await import('../modules/world-records/host.js');
+    let removeWorldGeneration;
+    worldArchive = createWorldArchive({ getContext, createOpening:createOpeningHost, getAmbientPreferences: () => settings.xiaobaiOs?.enabled ? {
+            ...settings.xiaobaiOs.apps?.world,
+            peopleEvolution:panelEnabled('people') && settings.xiaobaiOs.apps?.world?.peopleEvolution,
+            subscribed:panelEnabled('situation') && settings.xiaobaiOs.apps?.world?.subscribed,
+            encounterFrequency:panelEnabled('situation') ? settings.xiaobaiOs.apps?.world?.encounterFrequency : 'off',
+        } : { encounterFrequency: 'off' }, getAccountId: getCurrentUserHandle, getMemorySnapshot: () => memory?.getWorldMemorySnapshot(),
+        getMount: id => kitchen.getMount(id), isVisible: id => kitchen.isActive(id), onError: showError,
+        onAuthorityChange: () => { removeWorldGeneration?.clear(); memory?.invalidateWorldContext(); } });
+    const { installWorldAuthorityGeneration } = await import('../modules/world-records/generation-host.js');
+    removeWorldGeneration = installWorldAuthorityGeneration({ getContext, prepare:query => settings.enabled ? worldArchive.prepare(query) : '', initialize:options => panelEnabled('opening') ? worldArchive.initialize(options) : undefined,
+        onInitializationError:error => window.toastr?.warning('世界初始化未完成，可在世界栏重试。' + error.message), onError: showError });
+    stopWorld = () => {
+        worldArchive.initialize?.cancel?.();
+        removeWorldGeneration();
+        worldArchive.dispose();
+        worldArchive = null; clearWorldPrompt = null; stopWorld = null;
+    };
+    window.registerKitchenModuleCleanup('world-records',() => stopWorld?.());
+    
+    clearWorldPrompt = removeWorldGeneration.clear;
 }
 
 export async function startKitchen(workspace) {
@@ -156,26 +201,20 @@ export async function startKitchen(workspace) {
     try {
     await prepareXiaobaiOsSettings();
     configureWorkspace();
-    if (!settings.enabled) return;
+    installChatListener();
     for (const [entry, id] of [
         ['runtime/call-generate', 'tk-call-generate'],
         ['runtime/worldbook', 'tk-worldbook'],
         ['runtime/context', 'tk-context'],
     ]) await loadBridge(entry, id);
-    const { createWorldArchive } = await import('../modules/world-records/host.js');
-    let removeWorldGeneration;
-    worldArchive = createWorldArchive({ getContext, getAmbientPreferences: () => settings.xiaobaiOs?.enabled ? settings.xiaobaiOs.apps?.world || {} : { encounterFrequency: 'off' }, getAccountId: getCurrentUserHandle, getMemorySnapshot: () => memory?.getFloorSummarySnapshot(),
-        getMount: id => kitchen.getMount(id), isVisible: id => kitchen.isActive(id), onError: showError,
-        onAuthorityChange: () => { removeWorldGeneration?.clear(); memory?.invalidateWorldContext(); } });
-    const { installWorldAuthorityGeneration } = await import('../modules/world-records/generation-host.js');
-    removeWorldGeneration = installWorldAuthorityGeneration({ getContext, prepare: worldArchive.prepare, onError: showError });
-    window.registerKitchenModuleCleanup('world-records', () => { removeWorldGeneration(); worldArchive.dispose(); });
-    
+    await import('./panel-prompt-catalog.js');
+    if (settings.enabled) await startWorld();
     memory = await import('../modules/story-summary/story-summary.js');
     const panels = installFloorSummaries({ getSnapshot: memory.getFloorSummarySnapshot,
         updateFloor: memory.updateFloorSummary, extractFloor: memory.extractMainReplySummary,
         summarizeFloor: memory.summarizeFloorOnDemand,
         openMemory: floor => memory.openStoryMemory(floor) });
+    floorPanels = panels;
     const floorEvents = createModuleEvents('kitchen-floor-summaries');
     floorEvents.on(event_types.CHAT_CHANGED, panels.reset);
     for (const key of ['CHARACTER_MESSAGE_RENDERED', 'USER_MESSAGE_RENDERED', 'MESSAGE_SWIPED', 'MESSAGE_EDITED', 'MESSAGE_DELETED', 'MESSAGE_UPDATED', 'MORE_MESSAGES_LOADED']) {
@@ -183,11 +222,9 @@ export async function startKitchen(workspace) {
     }
     window.registerKitchenModuleCleanup('kitchen-floor-summaries', () => { panels.dispose(); floorEvents.cleanup(); });
     
-    if (settings.enaPlanner?.enabled) {
-        const { installPlanner } = await import('../modules/story-planner/host.js');
-        planner = installPlanner({snapshot:worldArchive.plannerSnapshot, getContext, settings:settings.enaPlanner, saveSettings});
-        window.registerKitchenModuleCleanup('story-planner',planner.dispose);
-    }
-    if (settings.xiaobaiOs?.enabled) await initXiaobaiOs();
+    await syncPlanner();
+    window.registerKitchenModuleCleanup('story-planner',() => planner?.dispose());
+    if (settings.enabled && settings.xiaobaiOs?.enabled) await initXiaobaiOs();
+    configureWorkspace();
     } catch (error) { startupError = error; throw error; } finally { readyResolve(); }
 }

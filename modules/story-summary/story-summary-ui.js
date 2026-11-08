@@ -20,7 +20,7 @@ import { DEFAULT_MEMORY_MAINTENANCE_ENABLED, normalizeProofreading } from './mai
 import { SUMMARY_FEEDBACK_COPY } from './feedback-copy.js';
 import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
 import { LAYER_PROMPTS } from './data/summary-layers.js';
-import { SUMMARY_EVENT_STYLE_RULES, resolveSummaryStyle, buildSummaryAssistantDocPrompt } from './data/generation-rules.js';
+import { SUMMARY_EVENT_STYLE_RULES, resolveSummaryStyle } from './data/generation-rules.js';
 
 const UNANNOTATED_LABEL = '未标注';
 
@@ -62,17 +62,6 @@ const UNANNOTATED_LABEL = '未标注';
     
 
 
-    const EMPTY_BUILTIN_SUMMARY_PROMPTS = Object.freeze({
-        summarySystemPrompt: '',
-        summaryAssistantDocPrompt: '',
-        summaryAssistantAskSummaryPrompt: '',
-        summaryAssistantAskContentPrompt: '',
-        summaryMetaProtocolStartPrompt: '',
-        summaryUserJsonFormatPrompt: '',
-        summaryAssistantCheckPrompt: '',
-        summaryUserConfirmPrompt: '',
-        summaryUserGeneratePrompt: '',
-    });
 
     // ═══════════════════════════════════════════════════════════════════════════
     // DOM Helpers
@@ -245,7 +234,6 @@ const UNANNOTATED_LABEL = '未标注';
 
     let situationFilter = '全部';
     let summaryData = { keywords: [], rounds: [], characters: { main: [], relationships: [] }, arcs: [], facts: [], characterAliases: [] };
-    let builtInSummaryPrompts = { ...EMPTY_BUILTIN_SUMMARY_PROMPTS };
     let localGenerating = false;
     let vectorGenerating = false;
     let anchorGenerating = false;
@@ -533,13 +521,6 @@ const UNANNOTATED_LABEL = '未标注';
         syncVectorBoundaryControl(config.vector?.enabled, config.ui.hideSummarized);
     }
 
-    function applyBuiltInSummaryPrompts(prompts) {
-        const next = prompts && typeof prompts === 'object' ? prompts : {};
-        builtInSummaryPrompts = {
-            ...EMPTY_BUILTIN_SUMMARY_PROMPTS,
-            ...next,
-        };
-    }
 
     function saveConfig(options = {}) {
         if (panelConfigLoad.status !== 'ready') return Promise.resolve(false);
@@ -1044,15 +1025,6 @@ const UNANNOTATED_LABEL = '未标注';
     }
 
     function fillBuiltInSummaryPromptFields() {
-        $('summary-system-prompt').value = builtInSummaryPrompts.summarySystemPrompt;
-        $('summary-assistant-doc-prompt').value = buildSummaryAssistantDocPrompt(config.prompts.summaryStyle);
-        $('summary-assistant-ask-summary-prompt').value = builtInSummaryPrompts.summaryAssistantAskSummaryPrompt;
-        $('summary-assistant-ask-content-prompt').value = builtInSummaryPrompts.summaryAssistantAskContentPrompt;
-        $('summary-meta-protocol-start-prompt').value = builtInSummaryPrompts.summaryMetaProtocolStartPrompt;
-        $('summary-user-json-format-prompt').value = builtInSummaryPrompts.summaryUserJsonFormatPrompt;
-        $('summary-assistant-check-prompt').value = builtInSummaryPrompts.summaryAssistantCheckPrompt;
-        $('summary-user-confirm-prompt').value = builtInSummaryPrompts.summaryUserConfirmPrompt;
-        $('summary-user-generate-prompt').value = builtInSummaryPrompts.summaryUserGeneratePrompt;
     }
 
     async function saveSettings() {
@@ -2071,7 +2043,6 @@ const UNANNOTATED_LABEL = '未标注';
 
             case 'LOAD_PANEL_CONFIG':
                 showPanelConfigLoadState('ready');
-                applyBuiltInSummaryPrompts(d.builtInSummaryPrompts);
                 if (d.config) applyConfig(d.config);
                 if ($('settings-modal')?.classList.contains('active') && !settingsOpenedWithServerConfig) {
                     openSettings({ preserveTab: true });
@@ -2247,9 +2218,6 @@ const UNANNOTATED_LABEL = '未标注';
         });
 
 
-        $('summary-style').addEventListener('input', () => {
-            $('summary-assistant-doc-prompt').value = buildSummaryAssistantDocPrompt($('summary-style').value);
-        });
         for (const [level, fallback] of Object.entries(LAYER_PROMPTS)) {
             $('reset-' + level).onclick = async () => {
                 $('prompt-' + level).value = fallback;
@@ -2257,10 +2225,10 @@ const UNANNOTATED_LABEL = '未标注';
                 await saveSettings();
             };
         }
-        $('btn-reset-summary-style').onclick = () => {
+        $('btn-reset-summary-style').onclick = async () => {
             $('summary-style').value = SUMMARY_EVENT_STYLE_RULES;
-            $('summary-assistant-doc-prompt').value = buildSummaryAssistantDocPrompt();
             markSettingsDirty();
+            await saveSettings();
         };
 
         // Trigger timing

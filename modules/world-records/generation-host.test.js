@@ -22,13 +22,14 @@ export {registerGenerateInterceptor,unregisterGenerateInterceptor} from './share
     let reads = 0, failed = false; const errors = [], order = [];
     mod.registerGenerateInterceptor('probe-before', () => order.push('before'), 100);
     const dispose = mod.installWorldAuthorityGeneration({ getContext: () => ({ chat: [{ mes: '铁匠' }] }),
+        initialize: async () => { order.push('opening'); },
         prepare: async query => { reads++; order.push('world'); assert.equal(query, '铁匠'); if (failed) throw Error('storage unavailable'); return '已确认：金币70'; },
         onError: error => errors.push(error.message) });
     mod.registerGenerateInterceptor('probe-memory', () => order.push('memory'), 200);
     t.after(() => { dispose(); mod.unregisterGenerateInterceptor('probe-before'); mod.unregisterGenerateInterceptor('probe-memory'); });
     const aborted = [];
     await globalThis.tavernKitchenGenerateInterceptor([], 0, value => aborted.push(value), 'normal');
-    assert.deepEqual(order, ['before', 'world', 'memory']);
+    assert.deepEqual(order, ['before', 'opening', 'world', 'memory']);
     assert.equal(prompts.tavernKitchenWorldAuthority.value, '已确认：金币70');
     assert.equal(prompts.tavernKitchenWorldAuthority.depth, 1);
     await globalThis.tavernKitchenGenerateInterceptor([], 0, value => aborted.push(value), 'quiet');
@@ -37,6 +38,6 @@ export {registerGenerateInterceptor,unregisterGenerateInterceptor} from './share
     dispose.clear(); assert.equal(prompts.tavernKitchenWorldAuthority, undefined);
     order.length = 0; failed = true;
     await globalThis.tavernKitchenGenerateInterceptor([], 0, value => aborted.push(value), 'normal');
-    assert.deepEqual(order, ['before', 'world']); assert.deepEqual(aborted, [true]);
+    assert.deepEqual(order, ['before', 'opening', 'world']); assert.deepEqual(aborted, [true]);
     assert.equal(prompts.tavernKitchenWorldAuthority, undefined); assert.deepEqual(errors, ['storage unavailable']);
 });

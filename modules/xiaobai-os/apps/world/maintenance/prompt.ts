@@ -1,6 +1,7 @@
+import { definePanelPrompt } from '../../../../../core/panel-policy.js';
 import type { MaintenanceMode } from '../../../capabilities/maintenance/registry.js';
 
-export function buildWorldMaintenancePrompt(mode: MaintenanceMode): string {
+function worldPrompt(mode: MaintenanceMode): string {
     return [
         '# World domain',
         'Maintain a small living publication about events beyond the player’s present scene. It is enjoyable background reading, not an assignment board or a plan for the next scene.',
@@ -46,3 +47,7 @@ export function buildWorldMaintenancePrompt(mode: MaintenanceMode): string {
             : 'Review the accepted turn for wider-world changes. An existing publication may remain unchanged.',
     ].join('\n');
 }
+
+const worldUpdate = definePanelPrompt('situation|people','worldUpdate','世界整理',worldPrompt('automatic'));
+const worldRebuild = definePanelPrompt('situation|people','worldRebuild','世界重建',worldPrompt('rebuild'));
+export function buildWorldMaintenancePrompt(mode:MaintenanceMode) { return mode === 'rebuild' ? worldRebuild() : worldUpdate(); }

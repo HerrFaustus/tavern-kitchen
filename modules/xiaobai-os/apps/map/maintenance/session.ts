@@ -1,3 +1,4 @@
+import { panelEnabled } from '../../../../../core/panel-policy.js';
 import type { AcceptedTurnSource } from '../../../capabilities/maintenance/accepted-turn-source.js';
 import type {
     MaintenanceMode,
@@ -36,7 +37,7 @@ export function createMapMaintenanceSession(
     let committed = false;
 
     const assertActive = (): void => {
-        if (invalidated) { throw new Error('map_maintenance_session_invalid'); }
+        if (invalidated || !panelEnabled('map')) { throw new Error('map_maintenance_session_invalid'); }
         if (committed) { throw new Error('map_maintenance_session_committed'); }
     };
     const hasChanges = (): boolean => (

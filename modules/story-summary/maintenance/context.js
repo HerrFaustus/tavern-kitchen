@@ -2,7 +2,7 @@ import { resolveConversationTokens } from '../../agent-core/runtime/context-toke
 import { dropInvalidatedThinkingFromMessage } from '../../agent-core/runtime/protocol.js';
 import { recentTurnArchiveCounts, hasChatAnswer } from '../../agent-core/runtime/recent-turns.js';
 import { DEFAULT_MAX_TOKENS } from '../../agent-core/config.js';
-import { MEMORY_COMPACTION_PROMPT, getMemoryMaintenancePrompt } from './prompt.js';
+import { readMEMORY_COMPACTION_PROMPT, getMemoryMaintenancePrompt } from './prompt.js';
 import { MEMORY_TOOLS } from './tools.js';
 import { requireMemory } from './errors.js';
 
@@ -29,15 +29,15 @@ export function createMemoryContext({ config, signal, limits, countTokens = reso
             const message = end => [{ role: 'user', content: JSON.stringify({ workingNotes: notes,
                 workFragment: { from: offset, to: end, total: text.length, text: text.slice(offset, end) } }) }];
             let low = offset, high = text.length;
-            if ((await count(message(high), MEMORY_COMPACTION_PROMPT, [])).tokens <= limits.inputTokens) low = high;
+            if ((await count(message(high), readMEMORY_COMPACTION_PROMPT(), [])).tokens <= limits.inputTokens) low = high;
             while (low < high) {
                 const mid = Math.ceil((low + high) / 2);
-                if ((await count(message(mid), MEMORY_COMPACTION_PROMPT, [])).tokens <= limits.inputTokens) low = mid;
+                if ((await count(message(mid), readMEMORY_COMPACTION_PROMPT(), [])).tokens <= limits.inputTokens) low = mid;
                 else high = mid - 1;
             }
             requireMemory(low > offset, 'input_limit');
-            const input = message(low), measured = await count(input, MEMORY_COMPACTION_PROMPT, []);
-            const result = await summarize({ messages: input, systemPrompt: MEMORY_COMPACTION_PROMPT,
+            const input = message(low), measured = await count(input, readMEMORY_COMPACTION_PROMPT(), []);
+            const result = await summarize({ messages: input, systemPrompt: readMEMORY_COMPACTION_PROMPT(),
                 tools: [], toolChoice: 'none', maxTokens: summaryTokens }, measured);
             signal?.throwIfAborted();
             requireMemory(typeof result.text === 'string' && result.text.trim() && !result.toolCalls?.length, 'compaction_failed');

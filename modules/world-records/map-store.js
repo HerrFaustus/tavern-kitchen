@@ -5,6 +5,12 @@ import { parseMapDomain } from '../xiaobai-os/domains/map/invariants.js';
 import { createEmptyMapDomain } from '../xiaobai-os/domains/map/state.js';
 import { createIdentifier } from '../../shared/common/identifier.js';
 
+const openingReaders = new Set();
+export async function readMapBeforeOpening(service) {
+    for (const reader of openingReaders) if (await reader(service)) return true;
+    return false;
+}
+
 /**
  * @returns {{store: import('../xiaobai-os/kernel/contracts.js').PartitionStore<import('../xiaobai-os/domains/map/types.js').MapDomainV1>, files: import('../xiaobai-os/kernel/contracts.js').XiaobaiOsFileControls, dispose: () => void}}
  */
@@ -43,6 +49,12 @@ export function createWorldMapStore({ legacyStore, legacyFiles, getStoryIdentity
             catch (error) { console.error('[TavernKitchen] 地图投影通知失败', error); }
         }
     }
+    async function readOpeningMap(service) {
+        if (!getStoryIdentity() || bridge().service !== service) return false;
+        await read();
+        return true;
+    }
+    openingReaders.add(readOpeningMap);
     const unsubscribe = subscribeWorldBridge(event => {
         if (event.storyIdentity !== getStoryIdentity()) return;
         let owner; try { owner = bridge(); } catch { return; }
@@ -173,6 +185,6 @@ export function createWorldMapStore({ legacyStore, legacyFiles, getStoryIdentity
             hasPendingCommit: () => !!pending,
             subscribeFileState(listener) { fileListeners.add(listener); return () => fileListeners.delete(listener); },
         },
-        dispose() { disposed = true; unsubscribe(); listeners.clear(); fileListeners.clear(); cached = null; pending = null; },
+        dispose() { disposed = true; openingReaders.delete(readOpeningMap); unsubscribe(); listeners.clear(); fileListeners.clear(); cached = null; pending = null; },
     };
 }

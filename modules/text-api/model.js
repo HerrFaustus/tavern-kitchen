@@ -4,7 +4,7 @@ import { TEXT_API_COPY as COPY } from './copy.js';
 
 export const TEXT_API_SETTINGS_KEY = 'textApiPresets';
 export const TEXT_API_VERSION = 1;
-export const TEXT_API_FEATURES = Object.freeze(['summary', 'planner', 'memory', 'world', 'l0', 'embedding', 'rerank']);
+export const TEXT_API_FEATURES = Object.freeze(['summary', 'planner', 'memory', 'world', 'opening', 'l0', 'embedding', 'rerank']);
 export const HOST_BINDING = '@host';
 export const HOST_PROVIDER = 'sillytavern-current';
 
@@ -46,7 +46,7 @@ export function assertSettings(value) {
 }
 
 export function resolveFeaturePreset(settings, feature) {
-    const id = settings.bindings[feature];
+    const id = settings.bindings[feature] ?? (feature === 'opening' ? settings.bindings.world : undefined);
     if (id === HOST_BINDING) return createPreset(HOST_BINDING, COPY.host);
     const preset = settings.presets.find(item => item.id === id);
     if (!preset) throw new Error(COPY.unset);

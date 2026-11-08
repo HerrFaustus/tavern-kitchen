@@ -1,8 +1,12 @@
+import { definePanelPrompt } from '../../../core/panel-policy.js';
 import { createAgentAdapter } from '../../agent-core/provider-config.js';
 import { pullModelsForProvider } from '../../agent-core/ui/settings-panel.js';
 import { setHostChatCompletionsRequestHeadersProvider } from '../../../shared/host-llm/chat-completions/client.js';
 
 type UnknownRecord = Record<string, unknown>;
+
+const connectionSystem = definePanelPrompt('settings','worldConnectionSystem','世界与地图接口测试','这是一次由用户主动发起的连接测试。只回复 OK。');
+const connectionInput = definePanelPrompt('settings','worldConnectionInput','世界与地图测试输入','OK');
 
 export interface XiaobaiOsAgentRunRequest {
     providerConfig: UnknownRecord;
@@ -71,8 +75,8 @@ export async function testXiaobaiOsAgentConnection(
     const startedAt = globalThis.performance?.now?.() ?? Date.now();
     const adapter = createAgentAdapter(providerConfig);
     const result = await adapter.chat({
-        systemPrompt: '这是一次由用户主动发起的连接测试。只回复 OK。',
-        messages: [{ role: 'user', content: 'OK' }],
+        systemPrompt: connectionSystem(),
+        messages: [{ role: 'user', content: connectionInput() }],
         tools: [],
         temperature: undefined,
         maxTokens: 1600,

@@ -8,7 +8,7 @@ import { worldStoryRecords } from './world-story-state.js';
 export const UPDATE_INPUT_LIMIT = 200_000;
 export const UPDATE_PREFIX = 'update:';
 export const worldUpdates = state => Object.entries(state?.sources || {}).filter(([key]) => key.startsWith(UPDATE_PREFIX)).map(([, record]) => record);
-const currentSources = state => Object.fromEntries(Object.entries(state.sources).filter(([key]) => key !== 'variables'
+const currentSources = state => Object.fromEntries(Object.entries(state.sources).filter(([key]) => key !== 'variables' && !key.startsWith('opening-part:')
     && !key.startsWith('turn:') && !key.startsWith(UPDATE_PREFIX)));
 export const worldSnapshotDigest = state => memoryDigest({ worldId: state.worldId, branchId: state.branchId,
     entities: state.entities, claims: state.claims, map: state.modules?.map ?? null,

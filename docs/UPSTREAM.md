@@ -4,7 +4,7 @@ Based on LittleWhiteBox by biex.
 
 - 上游：<https://github.com/RT15548/LittleWhiteBox>
 - 固定提交：`e30ebadf69cd53e9fafc5f81f74b9499911f78f5`
-- 上游版本：3.2.2；派生版：酒馆后厨 0.2.23。
+- 上游版本：3.2.2；派生版：酒馆后厨 0.2.24。
 - 修改日期：2026-11-06。
 - 原始快照保留在外层 `references`，不在原始快照上修改。
 

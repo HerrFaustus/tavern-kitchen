@@ -1,3 +1,4 @@
+import { definePanelPrompt, panelEnabled } from '../../../../../core/panel-policy.js';
 import { checkProgress } from './progress.js';
 import type { NormalizedMessageSnapshot } from '../../../capabilities/maintenance/accepted-turn-source.js';
 import { readSituationCatalog, type Involvement } from '../../../../story-state/situation-links.js';
@@ -30,6 +31,18 @@ function editScopes(args: unknown): string[] {
     return scopes.length ? scopes : ['call'];
 }
 
+const catalogGuide = definePanelPrompt('situation','catalogGuide','局势目录引用','当前局势目录（资料）。幕后进展明确关联某条局势时填写 situationId，使用目录中的精确 ID，否则省略。相关性仅用于归档，不改变正文事实。\n');
+const worldRule1 = definePanelPrompt('people|situation','worldRule1','推演目标','根据已完成的正文、设定和已有幕后记录，独立推演场外进展。使用 WorldRead 查看已有条目，WorldEdit 按稳定 ID 更新。没有合理进展时保持原状。');
+const worldRule2 = definePanelPrompt('people|situation','worldRule2','对象与相关度','只推演本轮名单中的对象，upsert 每项须填对应 subjectId。near=true 是主角栏当前牵涉，每轮检查，最多写一个有依据的小变化；near=false 是此次唤醒的远景，只概括已生效的现状。两档均允许不变。不要代替主角行动，不更新全局概况。');
+const worldRule3 = definePanelPrompt('people|situation','worldRule3','变化依据','每个自动新增、推进或撤下的条目都须提供 WorldEdit.progress：scope 为 news:加条目 ID（概况用 overview），from 原样复制旧正文，新建留空；新状态写入 body，quote 逐字引用本次已接受的正文，reason 说明这件新事如何使这一步成为可能。仅请求、愿望或时间经过不能证明行动已经完成；无据维持原状。');
+const worldRule4 = definePanelPrompt('people|situation','worldRule4','篇幅与知情范围','只写与经过的故事时间相称、能从现状推导出的具体变化。正文事实优先，不替玩家行动，不让角色自动知晓幕后信息。以故事语言写简短的标题和内容。');
+const worldRule5 = definePanelPrompt('people','worldRule5','人物议程','人物的 agendas 是仍有效的计划与长期目标。参考具体内容、条件约束和期限；只有正文证实进展才推演，切勿凭意图、到期或同伴的行动判定完成。');
+const worldRule6 = definePanelPrompt('people','worldRule6','人物属性','人物的 profile 是已确认属性。推演行动时考虑当前职务、能力限制和伤病；只在有依据时改变情绪，不把一时的情绪写成性格，也不让其他人物无故知道秘密立场。');
+const worldRule7 = definePanelPrompt('people','worldRule7','人物动向开启时','人物动向已开启：可推演已登场配角在场外的选择、目标和行动。人物条目的 ID 必须以 person- 开头。');
+const worldRule8 = definePanelPrompt('people','worldRule8','人物动向关闭时','人物动向关闭。禁止改动人物条目或推演个人行动。');
+const worldRule9 = definePanelPrompt('situation','worldRule9','局势进展开启时','局势进展已开启：可推演地区、组织和公共事件的发展。新条目 ID 以 situation- 开头；旧局势条目沿用原 ID。');
+const worldRule10 = definePanelPrompt('situation','worldRule10','局势进展关闭时','局势进展关闭。禁止改动 overview 或局势条目。');
+
 export function createWorldMaintenanceSession(world: WorldService, mode: MaintenanceMode, preferences?: () => WorldSettings, messages: readonly NormalizedMessageSnapshot[] = [], selectSubjects?: () => Involvement[]): MaintenanceSession {
     const settings = preferences?.();
     const permitted = (scope: string, flags: WorldSettings) => scope.startsWith('news:person-') ? !!flags.peopleEvolution : flags.subscribed;
@@ -58,23 +71,23 @@ export function createWorldMaintenanceSession(world: WorldService, mode: Mainten
     let invalid = false;
     let committed = false;
     const active = () => {
-        if (invalid || committed) { throw new Error('world_session_inactive'); }
+        if ((!panelEnabled('people') && !panelEnabled('situation')) || invalid || committed) { throw new Error('world_session_inactive'); }
     };
     const changed = () => !sameWorldContent(expected, staged);
     return {
         participantId: 'world',
         commitPolicy: 'complete-run',
         prompt: settings ? [
-            '根据已完成的正文、设定和已有幕后记录，独立推演场外进展。使用 WorldRead 查看已有条目，WorldEdit 按稳定 ID 更新。没有合理进展时保持原状。',
-            selected ? '只推演本轮名单中的对象，upsert 每项须填对应 subjectId。near=true 是主角栏当前牵涉，每轮检查，最多写一个有依据的小变化；near=false 是此次唤醒的远景，只概括已生效的现状。两档均允许不变。不要代替主角行动，不更新全局概况。' : '',
-            '每个自动新增、推进或撤下的条目都须提供 WorldEdit.progress：scope 为 news:加条目 ID（概况用 overview），from 原样复制旧正文，新建留空；新状态写入 body，quote 逐字引用本次已接受的正文，reason 说明这件新事如何使这一步成为可能。仅请求、愿望或时间经过不能证明行动已经完成；无据维持原状。',
-            '只写与经过的故事时间相称、能从现状推导出的具体变化。正文事实优先，不替玩家行动，不让角色自动知晓幕后信息。以故事语言写简短的标题和内容。',
-            '人物的 agendas 是仍有效的计划与长期目标。参考具体内容、条件约束和期限；只有正文证实进展才推演，切勿凭意图、到期或同伴的行动判定完成。',
-            '人物的 profile 是已确认属性。推演行动时考虑当前职务、能力限制和伤病；只在有依据时改变情绪，不把一时的情绪写成性格，也不让其他人物无故知道秘密立场。',
-            settings.peopleEvolution ? '人物动向已开启：可推演已登场配角在场外的选择、目标和行动。人物条目的 ID 必须以 person- 开头。' : '人物动向关闭。禁止改动人物条目或推演个人行动。',
-            settings.subscribed ? '局势进展已开启：可推演地区、组织和公共事件的发展。新条目 ID 以 situation- 开头；旧局势条目沿用原 ID。' : '局势进展关闭。禁止改动 overview 或局势条目。',
+            worldRule1(),
+            selected ? worldRule2() : '',
+            worldRule3(),
+            worldRule4(),
+            worldRule5(),
+            worldRule6(),
+            settings.peopleEvolution ? worldRule7() : worldRule8(),
+            settings.subscribed ? worldRule9() : worldRule10(),
         ].join('\n') : buildWorldMaintenancePrompt(mode),
-        dataMessages: [...(selected ? [{ role:'user' as const, content:'本轮对象：' + safePromptJson(selected) }] : []), ...(catalog.length && !selected ? [{ role: 'user' as const, content: '当前局势目录（资料）。幕后进展明确关联某条局势时填写 situationId，使用目录中的精确 ID，否则省略。相关性仅用于归档，不改变正文事实。\n' + safePromptJson(catalog.slice(0, 100)) }] : []), { role: 'user', content: buildWorldDataMessage(visible(expected)) }],
+        dataMessages: [...(selected ? [{ role:'user' as const, content:'本轮对象：' + safePromptJson(selected) }] : []), ...(catalog.length && !selected ? [{ role: 'user' as const, content: catalogGuide() + safePromptJson(catalog.slice(0, 100)) }] : []), { role: 'user', content: buildWorldDataMessage(visible(expected)) }],
         tools: WORLD_TOOLS,
         executeTool(name, args) {
             active();

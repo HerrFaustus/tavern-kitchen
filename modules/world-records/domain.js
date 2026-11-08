@@ -185,6 +185,10 @@ export function applyCommand(previous, command, reviewContext = {}) {
             mutate(op.entityId, e => { if (!e.bindings.includes(binding)) e.bindings.push(binding); });
         } else if (op.type === 'set') {
             setField(op.entityId, op.field, op.value, op.source);
+        } else if (op.type === 'clear_opening_field') {
+            const key = safeField(op.field);
+            invariant(entityById(state,op.entityId).fields[key]?.source.module === 'world-opening','仅能清除已失效的开局字段');
+            mutate(op.entityId,e => { delete e.fields[key]; });
         } else if (op.type === 'claim') {
             invariant(op.nature !== 'established_fact' && Object.hasOwn(NATURES, op.nature), '候选性质无效'); entityById(state, op.entityId);
             const claim = { id: text(op.id, '记录标识', 200), entityId: op.entityId, field: safeField(op.field), value: structuredClone(op.value), nature: op.nature, source: sourceOf(op.source), status: 'pending', eventId, version };

@@ -2,6 +2,8 @@ import type { MaintenanceFunctionDeclaration } from '../../../capabilities/maint
 import { WORLD_WRITE_LIMITS as L } from '../../../domains/world/types.js';
 import { WORLD_EDIT_SCHEMA } from '../../../domains/world/schema.js';
 
+import { editableToolDescriptions } from '../../../../../core/tool-descriptions.js';
+
 export function worldEditTool(saveDescription: string): MaintenanceFunctionDeclaration {
     return { type: 'function', function: {
         name: 'WorldEdit',
@@ -27,4 +29,4 @@ export const WORLD_TOOLS: readonly MaintenanceFunctionDeclaration[] = Object.fre
         'errors also lists unresolved changes from earlier failed batches, even when this call succeeds. These corrections must be completed before the publication can be saved.',
         'Resolve a rejected article with a valid upsert or remove. remove deletes an existing article; for a rejected new ID it abandons that proposal. To retain an existing article, upsert its complete values from WorldRead, shortening the body if needed to meet the writing limit. Resolve a rejected overview by resubmitting the desired or unchanged overview.',
     ].join('\n')),
-]);
+].map(tool => editableToolDescriptions('people|situation','worldMaintenanceTool',tool)));

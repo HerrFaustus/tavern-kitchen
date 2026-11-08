@@ -4,7 +4,7 @@ import { getTextApiRepository } from '../../text-api/repository.js';
 import { resolveAgentProfile } from '../../text-api/profile-runtime.js';
 import { isSillyTavernProvider } from '../../agent-core/provider-resolution.js';
 import { buildProviderAssistantToolCallMessage, buildProviderToolResultMessage, resolveResultToolCalls, dropInvalidatedThinkingFromMessage } from '../../agent-core/runtime/protocol.js';
-import { getMemoryMaintenancePrompt, getMemoryChatPrompt, MEMORY_RESPONSE_REPAIR, MEMORY_SAVE_RECOVERY } from './prompt.js';
+import { unitReviewRules, getMemoryMaintenancePrompt, getMemoryChatPrompt, readMEMORY_RESPONSE_REPAIR, readMEMORY_SAVE_RECOVERY } from './prompt.js';
 import { NARRATIVE_UNIT_TOOLS, MEMORY_TOOLS, READ_MAINTENANCE_TOOL, RECOVER_MAINTENANCE_SAVE_TOOL } from './tools.js';
 import { normalizeToolArguments, validateToolArguments } from './arguments.js';
 import { MemoryMaintenanceError, requireMemory } from './errors.js';
@@ -34,7 +34,7 @@ export async function runMemoryAgent(session, { adapter, config, signal, onCall 
     const calls = [], receipts = [];
     const tools = [...(session ? MEMORY_TOOLS : []), ...(session?.canReviewUnits ? NARRATIVE_UNIT_TOOLS : []), ...(mode === 'chat' || readMaintenance ? [READ_MAINTENANCE_TOOL] : [])];
     const domainPrompt = mode === 'chat' ? getMemoryChatPrompt(summaryStyle, proofreadingPrompt) : getMemoryMaintenancePrompt(summaryStyle, proofreadingPrompt);
-    const basePrompt = session?.canReviewUnits ? domainPrompt + '\n先用 ReadNarrativeUnits 的 round 层核对本轮总结，发现误记或重复时用 ReviseRoundSummary 附逐字依据修订；人物、地点、时间或关键词有误时一并更正 memoryTags，再判断分段。自动校对时兼看剧情分段；手动时按用户请求判断。先 ReadNarrativeUnits 阅读未归并摘要，需要时 ReadSource 核查原文。篇幅只提醒回看。局部目标达成、揭晓或转场构成闭合单元时，用 CloseNarrativeUnit 标明实际起止楼、理由和逐字证据。检查日可以晚于结束日；保留结尾之后的摘要与跨阶段悬念。没有闭合就继续积累。形成新阶段后读取 chapter 候选，只有贯穿数个阶段的目标已有结果且重心转移时才结章。' : domainPrompt;
+    const basePrompt = session?.canReviewUnits ? domainPrompt + unitReviewRules() : domainPrompt;
     let systemPrompt = basePrompt, lastRequestPrompt;
     let messages = [], responses = null, outcome = { status: 'turn_limit', summary: '' }, failure = null;
     let finalRanges, summaryAdapter, rulesMeasurement;
@@ -42,7 +42,7 @@ export async function runMemoryAgent(session, { adapter, config, signal, onCall 
     const taskForModel = () => session?.task({ includeStaged: true }) || null;
     // Recovery belongs to this execution, not reusable or summarized conversation history.
     const requestPrompt = () => recovery
-        ? `${systemPrompt}\n\n${MEMORY_SAVE_RECOVERY}\n${JSON.stringify({ saveState: recovery })}` : systemPrompt;
+        ? `${systemPrompt}\n\n${readMEMORY_SAVE_RECOVERY()}\n${JSON.stringify({ saveState: recovery })}` : systemPrompt;
     const savedCount = () => session?.savedCount || 0;
     const stagedCount = () => session?.stagedCount || 0;
     const progress = action => onProgress({ runId, action, calls: calls.length, saved: savedCount(), staged: stagedCount() });
@@ -266,7 +266,7 @@ export async function runMemoryAgent(session, { adapter, config, signal, onCall 
                 correctionUsed = true;
                 // Never replay the invalid native payload or execute even a partial batch.
                 messages = [...messages.map(dropInvalidatedThinkingFromMessage),
-                    { role: 'system', content: MEMORY_RESPONSE_REPAIR, memoryResponseRepair: true }];
+                    { role: 'system', content: readMEMORY_RESPONSE_REPAIR(), memoryResponseRepair: true }];
                 responses = null;
                 continue;
             }

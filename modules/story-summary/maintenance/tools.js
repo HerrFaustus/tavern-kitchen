@@ -5,12 +5,14 @@ import { MEMORY_COLLECTIONS } from './domain.js';
 import { STORY_FIELDS } from '../../story-state/records.js';
 import { SUMMARY_DIAGNOSTIC_LIMIT, SUMMARY_DIAGNOSTIC_REASON_CHARS } from '../summary-diagnostics.js';
 
+import { editableToolDescriptions } from '../../../core/tool-descriptions.js';
+
 const string = { type: 'string' };
 const integer = { type: 'integer', minimum: 0 };
 const strings = { type: 'array', items: string };
 const collection = { type: 'string', enum: MEMORY_COLLECTIONS.filter(name => name !== 'events'), description: 'Memory section containing the record.' };
 const object = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
-const tool = (name, description, properties, required = []) => ({ type: 'function', function: { name, description, parameters: object(properties, required) } });
+const tool = (name, description, properties, required = []) => editableToolDescriptions('proofreading','reviewTool', { type: 'function', function: { name, description, parameters: object(properties, required) } });
 const fields = {
     storyRecords: Object.fromEntries(Object.entries(STORY_FIELDS).map(([key, label]) => [key, { ...(['participants','holders'].includes(key) ? strings : string), description: label + '；按记录原有类型修订，不得改变 id/kind。' }])),
     facts: {

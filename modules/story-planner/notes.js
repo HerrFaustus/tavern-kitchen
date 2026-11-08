@@ -1,3 +1,4 @@
+import { definePanelPrompt } from '../../core/panel-policy.js';
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
 import { summaryLayers } from '../story-summary/data/summary-layers.js';
 import { captureRangeSource } from '../story-summary/data/turn-source.js';
@@ -69,11 +70,13 @@ export function publishNotes(raw,previous,snap,reason) {
     return {owner:snap.owner, boundary:snap.boundary, basis:snap.world.version, end, source, reason, global, chapter,
         id:memoryDigest([snap.owner,snap.boundary,source,snap.world.version,previous?.id || '',reason])};
 }
+const writerPrompt = definePanelPrompt('planner','writerPrompt','作家札记',WRITER);
+
 export function writerInput(snap,previous,reason,preference) {
     const body = JSON.stringify({reason,preference, previousGlobal:previous?.global.text, previousChapter:previous?.chapter.text,
         cast:snap.cast, world:snap.world.entities, records:snap.records, chapterHistory:snap.layers.parents.filter(unit=>unit.level==='chapter').map(unit=>unit.text),
         recentSummaries:snap.layers.leaves.slice(-10).map(unit=>unit.text),
         recent:snap.chat.slice(-10).map(msg=>({name:msg.name,role:msg.is_user?'player':'story',text:msg.mes}))});
     if (body.length > 180000) throw new Error('作家材料超出单次预算');
-    return [{role:'system',content:WRITER},{role:'user',content:body}];
+    return [{role:'system',content:writerPrompt()},{role:'user',content:body}];
 }

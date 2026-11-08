@@ -1,3 +1,4 @@
+import { definePanelPrompt } from '../../../../../core/panel-policy.js';
 import type { ManagementParticipant } from '../../../capabilities/management/index.js';
 import { MANAGEMENT_PAGE_SIZE } from '../../../capabilities/management/read-page.js';
 import { createEmptyMapDomain } from '../../../domains/map/state.js';
@@ -12,9 +13,14 @@ import { createMapManagementTools } from './tool-contract.js';
 import { createManagementDocument } from '../../../capabilities/management/document.js';
 import { parseMapDomain } from '../../../domains/map/invariants.js';
 
+import { editableToolDescriptions } from '../../../../../core/tool-descriptions.js';
+const tools = createMapManagementTools().map(tool => ({
+    ...tool, definition:editableToolDescriptions('map','mapManagementTool',tool.definition),
+}));
+
+const managementPrompt = definePanelPrompt('map','mapManagement','手动整理规则',MAP_MANAGEMENT_PROMPT);
 export function createMapManagement(map: MapService, player: () => { actorKey: 'player'; displayName: string }): ManagementParticipant {
-    const tools = createMapManagementTools();
-    return { id: 'map', label: '地图', prompt: MAP_MANAGEMENT_PROMPT, tools, confirmPending: map.confirmPending,
+    return { id: 'map', label: '地图', get prompt() { return managementPrompt(); }, tools, confirmPending: map.confirmPending,
         async open() {
             const saving = createManagementSave(map.confirmPending);
             const inspection = await map.document.read();
@@ -26,7 +32,7 @@ export function createMapManagement(map: MapService, player: () => { actorKey: '
             return {
                 recover: saving.recover,
                 confirmSaved: saving.confirmSaved,
-                prompt: MAP_MANAGEMENT_PROMPT,
+                get prompt() { return managementPrompt(); },
                 initial: current ? readAtlas(current, { mode: 'summary' }).data : (await document.read({})).data,
                 tools,
                 async execute(name, args, guard) {

@@ -4,7 +4,7 @@ import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
 import { createWorldStorage } from './storage.js';
 import { createWorldService } from './service.js';
 import { registerWorldBridge, publishWorldBridgeState } from './bridge.js';
-import { createWorldMapStore } from './map-store.js';
+import { createWorldMapStore, readMapBeforeOpening } from './map-store.js';
 import { createMapService } from '../xiaobai-os/apps/map/application/service.js';
 import { createEmptyMapDomain } from '../xiaobai-os/domains/map/state.js';
 import { readWorldMap } from './map-commands.js';
@@ -282,4 +282,15 @@ test('long panoramas survive a durable map save; clearing a temporary panorama p
     const restored = (await f.map.refreshCurrent()).map.atlas.locations[0];
     assert.equal(restored.brief,undefined);
     assert.equal(restored.features[0].description,long);
+});
+
+test('opening initialization adopts the legacy map before adding opening geography', async t => {
+    const f = await fixture(t);
+    await f.service.ensure();
+    assert.equal(await readMapBeforeOpening(f.service),true);
+    const saved = await f.service.read();
+    assert.ok(saved.modules.map.atlas.locations.some(place => place.key === 'smithy'));
+    assert.equal(saved.modules.map.atlas.actors[0].locationKey,'smithy');
+    await readMapBeforeOpening(f.service);
+    assert.equal((await f.service.read()).version,saved.version);
 });

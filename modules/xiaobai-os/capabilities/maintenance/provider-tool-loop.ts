@@ -1,3 +1,4 @@
+import { definePanelPrompt } from '../../../../core/panel-policy.js';
 import {
     buildProviderAssistantToolCallMessage,
     buildProviderToolResultMessage,
@@ -67,8 +68,8 @@ function isFailedToolResult(value: unknown): value is UnknownRecord {
         && (value as UnknownRecord).ok === false;
 }
 
-function systemPrompt(sessions: readonly ProviderToolLoopSession[]): string {
-    return [
+const finishReminder = definePanelPrompt('people|situation|map','finishReminder','后台收尾提醒','Tool results are complete. Stop calling tools and finish this maintenance run with a concise conclusion.');
+const maintenanceRules = definePanelPrompt('people|situation|map','maintenanceRules','共享后台任务规则',[
         [
             'You maintain the Tavern Kitchen world state behind an ongoing role-play. The main chat handles the narrative; keep the backstage records consistent with it.',
             'Never take over the scene, speak as a character, or make story decisions for the player.',
@@ -83,7 +84,11 @@ function systemPrompt(sessions: readonly ProviderToolLoopSession[]): string {
             'Each domain declares below which of its data is already in this context. Do not fetch injected data again.',
             'Work in this order: decide which enabled domains actually changed this turn (an enabled domain may be left unchanged); use injected data first and read only what it lacks; make the smallest change that leaves the affected area correct; read every tool result and adjust the next call from it; stop when every domain is correct, deliberately unchanged, or clearly blocked.',
             'Only after all domains are handled, return one short non-empty plain-text conclusion and make no further tool calls. The conclusion is internal and never reaches the player.',
-        ].join('\n'),
+        ].join('\n')
+    ].join('\n\n'));
+function systemPrompt(sessions: readonly ProviderToolLoopSession[]): string {
+    return [
+        maintenanceRules(),
         ...sessions.map(({ session }) => `Domain ${session.participantId}:\n${session.prompt}`),
     ].join('\n\n');
 }
@@ -188,7 +193,7 @@ export async function runProviderToolLoop(options: {
             const hasConclusion = !!String(result.text || '').trim();
             if (!hasConclusion && sawToolExecution && !reminded && round < MAX_PROVIDER_ROUNDS) {
                 reminded = true;
-                const reminder = 'Tool results are complete. Stop calling tools and finish this maintenance run with a concise conclusion.';
+                const reminder = finishReminder();
                 if (agent.supportsSessionToolLoop) { pendingFinalAnswerReminderText = reminder; }
                 else { messages.push({ role: 'system', content: reminder }); }
                 continue;

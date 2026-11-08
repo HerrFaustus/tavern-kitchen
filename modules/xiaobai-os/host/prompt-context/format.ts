@@ -1,5 +1,8 @@
+import { definePanelPrompt } from '../../../../core/panel-policy.js';
 import type { PromptContextSnapshot } from './types.js';
 
+const settingIntro = definePanelPrompt('map|people|situation','settingIntro','背景资料','以下是人物与世界背景资料。');
+const stateIntro = definePanelPrompt('map|people|situation','stateIntro','捕获边界','以下是截至捕获边界的剧情背景，只用于理解当前处境，不是本次需要续写的剧情正文。');
 export function escapePromptData(value: unknown): string {
     return String(value ?? '')
         .replace(/&/g, '&amp;')
@@ -44,7 +47,7 @@ export function buildPromptSettingBlock(
         || context.worldInfo.extras?.exampleAfter.length);
     return [
         '<setting>',
-        '以下是人物与世界背景资料。',
+        settingIntro(),
         hasExamples && exampleNote ? exampleNote : '',
         economyScale ? `<economy_scale>\n${escape(economyScale)}\n</economy_scale>` : '',
         '<player>',
@@ -109,7 +112,7 @@ export function buildPromptCurrentStateBlock(
     ].filter(section => typeof section === 'string' && section.length > 0);
     return [
         '<current_state>',
-        '以下是截至捕获边界的剧情背景，只用于理解当前处境，不是本次需要续写的剧情正文。',
+        stateIntro(),
         ...sections,
         '</current_state>',
     ].join('\n');

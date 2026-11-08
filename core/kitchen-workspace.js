@@ -31,7 +31,7 @@ export const KITCHEN_TABS = [['overview', '主角'], ['world', '世界'], ['memo
 export const KITCHEN_ROUTES = {
     overview: [['overview', '主角']],
     memory: [['memory', '剧情时间线'], ['suspense', '悬念簿'], ['proofreading', '剧情校对'], ['memory-settings', '剧情设置']],
-    world: [['people', '人物'], ['map', '地图'], ['situation', '局势'], ['lore', '设定']],
+    world: [['people', '人物'], ['map', '地图'], ['situation', '局势'], ['lore', '设定'], ['opening','世界初始化']],
     planner: [['planner', '剧情规划']],
     settings: [['settings', 'API 设置']],
 };
@@ -211,10 +211,14 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
         message.append(text, retry, settings); mount.prepend(message);
     };
     const navigate = id => observeBackgroundTask(api.open(id), { source: import.meta.url, operation: 'open-workspace' });
+    let visiblePanel = id => id !== 'opening';
+    let configurePanel;
+    const routesFor = parent => KITCHEN_ROUTES[parent].filter(([id]) => visiblePanel(id));
+    const firstRoute = () => KITCHEN_TABS.flatMap(([parent]) => routesFor(parent))[0]?.[0];
     const buildSubnav = parent => {
         subnav.replaceChildren();
         subnav.dataset.section = parent;
-        for (const [route, label] of KITCHEN_ROUTES[parent]) {
+        for (const [route, label] of routesFor(parent)) {
             const button = doc.createElement('button');
             button.type = 'button';
             button.className = 'menu_button';
@@ -224,9 +228,25 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
             subnav.append(button);
         }
     };
+    let initializeWorld, panelSettings;
     const renderFeatureBar = id => {
         const items = featureSwitches[id] || [];
         featureBar.replaceChildren(); featureBar.hidden = !items.length;
+        if (configurePanel) configurePanel(id, featureBar);
+        if ((id === 'opening' || !configurePanel && parentOf(id) === 'world') && initializeWorld) {
+            featureBar.hidden = false;
+            const button = doc.createElement('button');
+            button.type = 'button'; button.className = 'menu_button'; button.textContent = '初始化世界';
+            const status = doc.createElement('span'); status.setAttribute('role','status');
+            const initialize = async () => {
+                button.disabled = true; status.textContent = '正在读取开局资料…';
+                try { status.textContent = await initializeWorld(); }
+                catch (error) { status.textContent = error.message || '初始化失败，请重试'; }
+                finally { button.disabled = false; }
+            };
+            button.addEventListener('click',() => observeBackgroundTask(initialize(),{source:import.meta.url,operation:'initialize-world'}));
+            featureBar.append(button,status);
+        }
         for (const item of items) {
             const label = doc.createElement('label'); label.className = 'tk-feature-switch';
             const input = doc.createElement('input'); input.type = 'checkbox'; input.checked = !!item.checked;
@@ -237,13 +257,36 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
     };
     const api = {
         configure(options) {
+            initializeWorld = options.initializeWorld;
             actions = options.actions;
+            configurePanel = options.configurePanel;
+            if (options.visiblePanel) visiblePanel = options.visiblePanel;
+            for (const [parent,button] of buttons) button.hidden = !routesFor(parent).length;
+            const available = firstRoute();
+            if (options.panelSettings && panelSettings !== options.panelSettings) {
+                panelSettings?.remove();
+                panelSettings = options.panelSettings;
+                panel.insertBefore(panelSettings, tabs);
+            }
+            entry.hidden = !available && !panelSettings;
+            tabs.hidden = body.hidden = !available;
+            delete subnav.dataset.section;
             toggleDrawer = options.toggleDrawer;
             onVisibility = options.onVisibility || (() => {});
             if (options.featureSwitches) featureSwitches = options.featureSwitches;
             if (options.onToggleFeature) onToggleFeature = options.onToggleFeature;
             if (options.settingsElement) mounts.get('settings').replaceChildren(options.settingsElement);
-            if (active && isOpen()) { const id = active; active = null; navigate(id); }
+            if (!available) {
+                generation++;
+                active = null;
+                subnav.hidden = featureBar.hidden = evolution.hidden = true;
+                stopEvolution?.(); stopEvolution = undefined;
+                if (panelSettings) panelSettings.open = true;
+                else api.close();
+                return;
+            }
+            if (!active && isOpen()) { navigate(available); return; }
+            if (active && isOpen()) { const id = visiblePanel(active) ? active : available; active = null; navigate(id); }
             else if (active) renderFeatureBar(active);
         },
         failStartup(error) {
@@ -270,6 +313,11 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
         isActive: id => isOpen() && active === canonicalRoute(id),
         async open(id = active || 'overview') {
             id = canonicalRoute(id);
+            if (!visiblePanel(id)) id = routesFor(parentOf(id) || 'overview')[0]?.[0] || firstRoute();
+            if (!id) {
+                if (panelSettings) { panelSettings.open = true; await ensureOpen(); }
+                return;
+            }
             const parent = parentOf(id);
             if (!parent) return;
             const wasClosed = !isOpen();
@@ -293,7 +341,7 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
                 button.setAttribute('aria-pressed', String(button.dataset.route === id));
                 button.classList.toggle('active', button.dataset.route === id);
             }
-            subnav.hidden = KITCHEN_ROUTES[parent].length < 2;
+            subnav.hidden = routesFor(parent).length < 2;
             stopEvolution?.(); stopEvolution = undefined; evolution.replaceChildren(); evolution.hidden = true;
             renderFeatureBar(id);
             onVisibility(true, id);
@@ -318,7 +366,7 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
     close.addEventListener('click', api.close);
     trigger.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); isOpen() || pendingOpen ? api.close() : navigate(); });
     tabs.addEventListener('keydown', event => {
-        const ids = [...buttons.keys()]; const index = ids.indexOf(event.target.id?.replace('tk-tab-', ''));
+        const ids = [...buttons.keys()].filter(id => !buttons.get(id).hidden); const index = ids.indexOf(event.target.id?.replace('tk-tab-', ''));
         if (index < 0 || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();
         const next = event.key === 'Home' ? 0 : event.key === 'End' ? ids.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + ids.length) % ids.length;

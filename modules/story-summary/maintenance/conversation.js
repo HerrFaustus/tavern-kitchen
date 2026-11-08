@@ -1,6 +1,6 @@
 import { estimateConversationTokens } from '../../agent-core/runtime/context-tokens.js';
 import { dropInvalidatedThinkingFromMessage } from '../../agent-core/runtime/protocol.js';
-import { getMemoryChatPrompt, MEMORY_REGENERATION_PROMPT } from './prompt.js';
+import { getMemoryChatPrompt, readMEMORY_REGENERATION_PROMPT } from './prompt.js';
 import { MEMORY_TOOLS, READ_MAINTENANCE_TOOL } from './tools.js';
 import { REVIEW_LIMITS } from './limits.js';
 
@@ -10,7 +10,7 @@ export function memoryChatMaterial(task, callsRemaining) {
 
 export function memoryRegenerationNote({ runId, receipts = [], saved = 0, status } = {}) {
     return { role: 'system', memoryRegeneration: true,
-        content: `${MEMORY_REGENERATION_PROMPT}\n${JSON.stringify({ previousAttempt: { runId, receipts, saved, status } })}` };
+        content: `${readMEMORY_REGENERATION_PROMPT()}\n${JSON.stringify({ previousAttempt: { runId, receipts, saved, status } })}` };
 }
 
 function memoryChatHistory(history) {
