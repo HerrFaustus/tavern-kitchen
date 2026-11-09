@@ -241,8 +241,17 @@
 #tk-module-native-controls summary { cursor: pointer; }
 
 #tk-module-native-controls > h4 { margin: 0 0 8px; font-size: 1em; }
-#tk-module-native-controls > details { margin-block: 6px; }
-#tk-module-native-controls > details > summary { font-weight: 600; cursor: pointer; padding-block: 4px; }
+#tk-module-native-controls > [data-settings-group] { margin-block: 6px; }
+#tk-module-native-controls > [data-settings-group] > :is(h5, summary), #tk-module-native-controls .tk-evolution-title {
+    margin: 0; padding-block: 4px; font-size: 1em; font-weight: 600;
+}
+#tk-module-native-controls > details > summary { cursor: pointer; }
+#tk-module-native-controls .tk-api-fields > section > h5 { margin: 8px 0 4px; font-size: 1em; font-weight: 600; }
 
 /* A module only shows settings categories with controls. */
-#tk-module-native-controls > details[data-settings-group]:not(:has(> :not(summary):not([hidden]):not(.tk-feature-switches), > .tk-feature-switches:not([hidden]) > *)) { display: none; }
+#tk-module-native-controls > [data-settings-group]:not(:has(> :not(h5):not(summary):not([hidden]):not(.tk-feature-switches), > .tk-feature-switches:not([hidden]) > :not([hidden]))) { display: none; }
+
+/* The native controls can live in the story, proofreading or map frame. */
+.tk-embedded :is(body, #tab-agent, .place-index):has(> [data-kitchen-controls] > #tk-module-native-controls > [data-settings-group="prompts"][open]) {
+    grid-template-rows: minmax(0, 1fr) minmax(0, 4fr);
+}

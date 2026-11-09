@@ -59,9 +59,10 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
         parent.append(document.createElement('input'));
         return () => {};
     }, true);
-    const evolutionSettings = document.querySelector('.tk-workspace-controls .tk-evolution details');
+    const evolutionSettings = document.querySelector('.tk-workspace-controls .tk-evolution section');
     assert.ok(evolutionSettings);
-    assert.equal(evolutionSettings.open, true);
+    assert.equal(evolutionSettings.querySelector('h5').textContent, '演化设置');
+    assert.equal(evolutionSettings.querySelector('details'), null);
     assert.ok(evolutionSettings.querySelector('input'));
 
     assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '人物');

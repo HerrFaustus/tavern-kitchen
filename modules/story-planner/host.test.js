@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { IDBFactory } from 'fake-indexeddb';
+import { parseHTML } from 'linkedom';
 import { createTestModuleUrl } from '../story-summary/tests/helpers/bundle-module.js';
 
 test('foreground adapter publishes only a whole chapter and clears its request-local slot', async t => {
@@ -37,8 +38,27 @@ test('foreground adapter publishes only a whole chapter and clears its request-l
     assert.equal(fixture.calls,1);
     await run('continue');
     assert.equal(fixture.calls,1);
+    const { document } = parseHTML('<html><body><div id="planner"></div><div id="settings"></div></body></html>');
+    const root = document.getElementById('planner'), controls = document.getElementById('settings');
+    await planner.open(root,controls);
+    assert.equal(root.querySelector('.tk-planner-chapter').textContent,'药车停在桥头。');
+    assert.equal(root.querySelector('.tk-planner-global').open,false);
+    assert.equal(root.querySelector('.tk-planner-global .tk-planner-note-text').textContent,'后台全局');
+    assert.match(root.querySelector('.tk-planner-global summary').textContent,/剧透/);
+    assert.equal(fixture.calls,1,'opening the panel must not call the model');
     fixture.events.CHAT_CHANGED();
     assert.deepEqual(fixture.prompts,{});
+    assert.equal(root.querySelector('.tk-planner-chapter').textContent,'');
+    state.owner='another-chat';
+    await planner.open(root,controls);
+    assert.match(root.textContent,/暂无札记/);
+    state.owner='one';
+    await planner.open(root,controls);
+    assert.equal(root.querySelector('.tk-planner-chapter').textContent,'药车停在桥头。');
+    state.boundary='next-chapter';
+    await planner.open(root,controls);
+    assert.match(root.querySelector('.tk-planner-note-status').textContent,/需要更新/);
+    assert.equal(fixture.calls,1);
     assert.deepEqual(chat,[{mes:'去河边',is_user:true}]);
     planner.dispose();
 });

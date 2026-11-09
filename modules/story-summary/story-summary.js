@@ -74,9 +74,6 @@ import {
     getSummaryStore,
     invalidateSummaryAnchors,
     rollbackSummaryIfNeeded,
-    rollbackSummaryOnce,
-    clearSummaryData,
-    getRollbackOnceTargetEndMesId,
     isSummaryConsumable,
     isSummarySourceValid,
     getPublishedSummaryStore,
@@ -153,11 +150,6 @@ import { maintainChunks } from './vector/pipeline/chunk-maintenance.js';
 import { clearAllAtomsAndVectors, getAnchorStats } from "./vector/pipeline/state-integration.js";
 import { clearStateVectors, deleteStateVectorsByIds, getStateAtoms, getStateAtomsCount, getStateVectorsCount, getL0Index } from "./vector/storage/state-store.js";
 
-// vector io
-
-
-
-import { exportVectors, importVectors, backupToServer, restoreFromServer, fetchManifest, deleteServerBackup, isDeleteUnsupportedError, getBackupFilename } from "./vector/storage/vector-io.js";
 import {
     clearRecallRuntime,
     getRecallRuntimeStats,
@@ -497,9 +489,6 @@ function stopVectorMaintenanceAfterFailure(chatId, { allowEventRepair = true, al
     scheduleVectorIntegrityCheck(0, { allowEventRepair, allowChunkRepair });
 }
 
-let backupDeleteSupported = true;
-let backupDeleteUnsupportedReason = '';
-let backupManagerCleanup = null;
 
 const EXT_PROMPT_KEY = "TavernKitchen_StorySummary";
 const MIN_INJECTION_DEPTH = 2;
@@ -1089,17 +1078,6 @@ async function autoVectorizeMissingEvents() { return { success: true, repaired: 
 
 
 
-// ═══════════════════════════════════════════════════════════════════════════
-// L2 跟随编辑同步（用户编辑 events 时调用）
-// ═══════════════════════════════════════════════════════════════════════════
-
-
-function cancelPendingEventEditSync() {
-    return { retired: true };
-}
-
-
-
 
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1258,7 +1236,6 @@ function hideOverlay() {
     if (getKitchenMount('memory')) closeKitchenWorkspace();
     stopOverlayViewport?.();
     stopOverlayViewport = null;
-    removeBackupManagerModal();
     document.getElementById("tavernKitchen-story-summary-overlay")?.remove();
     overlayCreated = false;
     frameReady = false;
@@ -1401,7 +1378,6 @@ async function sendFrameBaseData(store, totalFloors) {
     const hiddenCount = (getContext().chat || []).reduce((count, message) => count + Number(!!message?.is_system), 0);
 
     const lastSummarized = store?.lastSummarizedMesId ?? -1;
-    const rollbackTargetEndMesId = getRollbackOnceTargetEndMesId(store);
     postToFrame({
         type: "SUMMARY_BASE_DATA",
         stats: {
@@ -1415,9 +1391,6 @@ async function sendFrameBaseData(store, totalFloors) {
         keepVisibleCount: ui.keepVisibleCount,
         useVectorBoundary: ui.useVectorBoundary,
         vectorEnabled: !!getVectorConfig()?.enabled,
-        canRollback: rollbackTargetEndMesId != null,
-        rollbackTargetSummarizedUpTo: rollbackTargetEndMesId == null ? 0 : rollbackTargetEndMesId + 1,
-        rollbackWillResetBoundary: rollbackTargetEndMesId != null && rollbackTargetEndMesId < 0,
     });
 }
 
@@ -1457,33 +1430,6 @@ function buildFramePayload(store) {
         lastSummarizedMesId: store?.lastSummarizedMesId ?? -1,
     };
 }
-
-async function copyTextToClipboard(text) {
-    const value = String(text ?? "");
-    if (!value) {
-        throw new Error("没有可复制的内容");
-    }
-
-    if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(value);
-        return;
-    }
-
-    const ta = document.createElement("textarea");
-    ta.value = value;
-    ta.setAttribute("readonly", "");
-    ta.style.position = "fixed";
-    ta.style.left = "-9999px";
-    document.body.appendChild(ta);
-    ta.select();
-    ta.setSelectionRange(0, ta.value.length);
-    const ok = document.execCommand?.("copy");
-    ta.remove();
-    if (!ok) {
-        throw new Error("浏览器不支持自动复制");
-    }
-}
-
 
 function normalizeInternalFact(item) {
     const fact = item && typeof item === "object" ? item : {};
@@ -1683,66 +1629,6 @@ function formatStorySummaryMemoryText(store) {
     return lines.join("\n").trim();
 }
 
-
-async function importSummaryMemoryPackage(rawText, targetChatId = '') {
-    if (!String(rawText || "").trim()) {
-        throw new Error("记忆包内容为空");
-    }
-    let parsed;
-    try {
-        parsed = JSON.parse(String(rawText));
-    } catch {
-        throw new Error("JSON 解析失败");
-    }
-
-    const importedJson = extractSummaryImportJson(parsed);
-    const { chatId, chat } = getContext();
-    if (!chatId || (targetChatId && chatId !== targetChatId)) {
-        throw new Error("当前没有打开聊天");
-    }
-    const assertImportActive = () => {
-        if (getContext()?.chatId !== chatId) {
-            throw new Error("聊天已切换，已取消导入");
-        }
-    };
-
-    const store = getSummaryStore();
-    if (!store) {
-        throw new Error("无法读取当前聊天的总结存储");
-    }
-    const previous = readSummaryMemory();
-    const next = prepareImportedSummary(previous, importedJson, (chat?.length || 0) - 1);
-    const sourceBasis = messageSources.capture(getContext());
-    await commitSummaryMemory(chatId, next, { previous, resolvesSourceInvalidity: true, validate: assertImportActive, invalidate: async () => {
-        await updateMeta(chatId, { lastChunkFloor: -1, fingerprint: null });
-        await clearAllChunks(chatId);
-        await clearEventVectors(chatId);
-        await clearStateVectors(chatId);
-        invalidateLexicalIndex();
-    } });
-    assertImportActive();
-    messageSources.resolveRollback(sourceBasis, getContext());
-
-    refreshEntityLexiconAndWarmup();
-    scheduleLexicalWarmup();
-
-    await clearHideState();
-    assertImportActive();
-    const totalFloors = Array.isArray(chat) ? chat.length : 0;
-    await sendFrameBaseData(store, totalFloors);
-    sendFrameFullData(store, totalFloors);
-    await sendAnchorStatsToFrame();
-    await sendVectorStatsToFrame();
-
-    return {
-        counts: {
-            rounds: importedJson.importedRounds?.length || importedJson.events.length,
-            characters: importedJson.characters.main.length,
-            arcs: importedJson.arcs.length,
-            facts: importedJson.facts.length,
-        },
-    };
-}
 
 // Canonical fallback for the recall interceptor's published result.
 // This reads saved summary text only; it never performs vector retrieval.
@@ -2265,307 +2151,10 @@ async function handleFrameMessage(event) {
             postToFrame({ type: "RECALL_LOG", text: lastRecallLogText });
             break;
 
-        case "VECTOR_EXPORT":
-            observeBackgroundTask((async () => {
-                try {
-                    const result = await exportVectors((status) => {
-                        postToFrame({ type: "VECTOR_IO_STATUS", status });
-                    });
-                    postToFrame({
-                        type: "VECTOR_EXPORT_RESULT",
-                        success: true,
-                        filename: result.filename,
-                        size: result.size,
-                        chunkCount: result.chunkCount,
-                        eventCount: result.eventCount,
-                        stateVectorCount: result.stateVectorCount,
-                    });
-                } catch (e) {
-                    postToFrame({ type: "VECTOR_EXPORT_RESULT", success: false, error: e.message });
-                }
-            })(), { source: import.meta.url, operation: 'handleFrameMessage' });
-            break;
-
-        case "SUMMARY_COPY":
-            observeBackgroundTask((async () => {
-                try {
-                    const store = getSummaryStore();
-                    const payload = buildSummaryExportPackage(store);
-                    await copyTextToClipboard(JSON.stringify(payload, null, 2));
-                    postToFrame({
-                        type: "SUMMARY_COPY_RESULT",
-                        success: true,
-                        rounds: payload.counts.rounds,
-                        facts: payload.counts.facts,
-                    });
-                } catch (e) {
-                    postToFrame({ type: "SUMMARY_COPY_RESULT", success: false, error: e.message });
-                }
-            })(), { source: import.meta.url, operation: 'handleFrameMessage' });
-            break;
-
-        case "SUMMARY_IMPORT_TEXT":
-            if (guard.isAnyRunning('summary', 'vector', 'anchor')) {
-                postToFrame({ type: "SUMMARY_IMPORT_RESULT", success: false, error: "请等待当前总结/向量任务结束" });
-                break;
-            }
-            observeBackgroundTask((async () => {
-                try {
-                    const targetChatId = getContext()?.chatId || '';
-                    const result = await runVectorWriteTask(
-                        {
-                            chatId: targetChatId,
-                            kind: 'summary-import',
-                            scope: VECTOR_WRITE_SCOPES.IO,
-                        },
-                        async () => {
-                            if (getContext()?.chatId !== targetChatId) {
-                                throw new Error('聊天已切换，已取消导入');
-                            }
-                            return changeRecallData(targetChatId, () => importSummaryMemoryPackage(data.text || "", targetChatId));
-                        },
-                    );
-                    if (!result) {
-                        postToFrame({ type: "SUMMARY_IMPORT_RESULT", success: false, error: "导入已取消" });
-                        return;
-                    }
-                    notifyStorySummaryChatState();
-                    postToFrame({
-                        type: "SUMMARY_IMPORT_RESULT",
-                        success: true,
-                        counts: result.counts,
-                    });
-                } catch (e) {
-                    postToFrame({ type: "SUMMARY_IMPORT_RESULT", success: false, error: memorySaveError(e) });
-                    notifyStorySummaryChatState();
-                }
-            })(), { source: import.meta.url, operation: 'handleFrameMessage' });
-            break;
-
-        case "VECTOR_IMPORT_PICK":
-            // 在 parent 创建 file picker，避免 iframe 传大文件
-            observeBackgroundTask((async () => {
-                const input = document.createElement("input");
-                input.type = "file";
-                input.accept = ".zip";
-
-                input.onchange = async () => {
-                    const file = input.files?.[0];
-                    if (!file) {
-                        postToFrame({ type: "VECTOR_IMPORT_RESULT", success: false, error: "未选择文件" });
-                        return;
-                    }
-
-                    try {
-                        const targetChatId = getContext()?.chatId || '';
-                        const result = await runVectorWriteTask(
-                            {
-                                chatId: targetChatId,
-                                kind: 'vector-import',
-                                scope: VECTOR_WRITE_SCOPES.IO,
-                            },
-                            async (writeSession) => {
-                                if (getContext()?.chatId !== targetChatId) {
-                                    throw new Error('聊天已切换，已取消导入');
-                                }
-                                return changeRecallData(targetChatId, () => importVectors(file, (status) => {
-                                    postToFrame({ type: "VECTOR_IO_STATUS", status });
-                                }, {
-                                    targetChatId,
-                                    signal: writeSession.signal,
-                                    isCurrent: () => isVectorWriteSessionCurrent(writeSession),
-                                }));
-                            },
-                        );
-                        if (!result) {
-                            postToFrame({ type: "VECTOR_IMPORT_RESULT", success: false, error: "导入已取消" });
-                            return;
-                        }
-                        postToFrame({
-                            type: "VECTOR_IMPORT_RESULT",
-                            success: true,
-                            chunkCount: result.chunkCount,
-                            eventCount: result.eventCount,
-                            stateVectorCount: result.stateVectorCount,
-                            warnings: result.warnings,
-                        });
-                        await sendVectorStatsToFrame();
-                    } catch (e) {
-                        postToFrame({ type: "VECTOR_IMPORT_RESULT", success: false, error: e.message });
-                    }
-                };
-
-                input.click();
-            })(), { source: import.meta.url, operation: 'handleFrameMessage' });
-            break;
-        case "VECTOR_BACKUP_SERVER":
-            observeBackgroundTask((async () => {
-                try {
-                    const result = await backupToServer((status) => {
-                        postToFrame({ type: "VECTOR_IO_STATUS", status });
-                    });
-                    postToFrame({
-                        type: "VECTOR_BACKUP_RESULT",
-                        success: true,
-                        size: result.size,
-                        chunkCount: result.chunkCount,
-                        eventCount: result.eventCount,
-                        stateVectorCount: result.stateVectorCount,
-                    });
-                } catch (e) {
-                    postToFrame({ type: "VECTOR_BACKUP_RESULT", success: false, error: e.message });
-                }
-            })(), { source: import.meta.url, operation: 'handleFrameMessage' });
-            break;
-
-        case "VECTOR_RESTORE_SERVER":
-            observeBackgroundTask((async () => {
-                try {
-                    const targetChatId = getContext()?.chatId || '';
-                    const result = await runVectorWriteTask(
-                        {
-                            chatId: targetChatId,
-                            kind: 'vector-restore',
-                            scope: VECTOR_WRITE_SCOPES.IO,
-                        },
-                        async (writeSession) => {
-                            if (getContext()?.chatId !== targetChatId) {
-                                throw new Error('聊天已切换，已取消恢复');
-                            }
-                            return changeRecallData(targetChatId, () => restoreFromServer((status) => {
-                                postToFrame({ type: "VECTOR_IO_STATUS", status });
-                            }, {
-                                targetChatId,
-                                signal: writeSession.signal,
-                                isCurrent: () => isVectorWriteSessionCurrent(writeSession),
-                            }));
-                        },
-                    );
-                    if (!result) {
-                        postToFrame({ type: "VECTOR_RESTORE_RESULT", success: false, error: "恢复已取消" });
-                        return;
-                    }
-                    postToFrame({
-                        type: "VECTOR_RESTORE_RESULT",
-                        success: true,
-                        chunkCount: result.chunkCount,
-                        eventCount: result.eventCount,
-                        stateVectorCount: result.stateVectorCount,
-                        warnings: result.warnings,
-                    });
-                    await sendVectorStatsToFrame();
-                } catch (e) {
-                    postToFrame({ type: "VECTOR_RESTORE_RESULT", success: false, error: e.message });
-                }
-            })(), { source: import.meta.url, operation: 'handleFrameMessage' });
-            break;
-
-        case "VECTOR_LIST_BACKUPS":
-            showBackupManagerModal();
-            break;
-
         case "REQUEST_VECTOR_STATS":
             observeBackgroundTask(sendVectorStatsToFrame(), { source: import.meta.url, operation: 'handleFrameMessage' });
             maybePreloadTokenizer();
             break;
-
-        case "REQUEST_CLEAR": {
-            if (guard.isAnyRunning('summary', 'vector', 'anchor')) {
-                await executeSlashCommand("/echo severity=warning 当前有任务运行中，暂时不能清理总结数据");
-                break;
-            }
-            const { chat, chatId } = getContext();
-            cancelPendingEventEditSync();
-            cancelRecallAndClearPrompt('summary-cleared');
-            let cleared;
-            try {
-                cleared = await runVectorWriteTask(
-                    { chatId, kind: 'summary-clear', scope: VECTOR_WRITE_SCOPES.IO },
-                    () => changeRecallData(chatId, async () => {
-                        if (getContext()?.chatId !== chatId) return false;
-                        const sourceBasis = messageSources.capture(getContext());
-                        await clearSummaryData(chatId);
-                        messageSources.resolveRollback(sourceBasis, getContext());
-                        return true;
-                    }),
-                );
-            } catch (error) {
-                xbLog.error(MODULE_ID, '清空总结失败', error);
-                reportMemorySaveFailure(error);
-                break;
-            }
-            if (!cleared) break;
-            if (getContext()?.chatId !== chatId) break;
-            postToFrame({ type: 'RECALL_LOG', text: '' });
-            postToFrame({ type: 'SUMMARY_STATUS', statusText: '总结数据已清空' });
-            invalidateLexicalIndex();
-            await clearHideState();
-            const totalFloors = Array.isArray(chat) ? chat.length : 0;
-            const store = getSummaryStore();
-            await sendFrameBaseData(store, totalFloors);
-            sendFrameFullData(store, totalFloors);
-            notifyStorySummaryChatState();
-            await executeSlashCommand("/echo severity=info 总结数据已清空");
-            break;
-        }
-
-        case "REQUEST_ROLLBACK_ONCE": {
-            if (guard.isAnyRunning('summary', 'vector', 'anchor')) {
-                await executeSlashCommand("/echo severity=warning 当前有任务运行中，暂时不能回退总结");
-                break;
-            }
-
-            const { chat, chatId } = getContext();
-            if (!chatId) break;
-
-            const currentStore = getSummaryStore();
-            const rollbackTargetEndMesId = getRollbackOnceTargetEndMesId(currentStore);
-            if (rollbackTargetEndMesId == null) {
-                await executeSlashCommand("/echo severity=info 当前没有可回退的总结快照");
-                break;
-            }
-
-            cancelRecallAndClearPrompt('summary-rollback');
-            cancelPendingEventEditSync();
-            const result = await runVectorWriteTask(
-                { chatId, kind: 'summary-rollback', scope: VECTOR_WRITE_SCOPES.CONSISTENCY },
-                () => changeRecallData(chatId, async () => {
-                    if (getContext()?.chatId !== chatId) return null;
-                    return rollbackSummaryOnce(chatId);
-                }),
-            );
-            if (!result) break;
-            if (result.success) {
-                invalidateLexicalIndex();
-                if (getHideUiSettings().hideSummarized) {
-                    if (result.clearedBoundary) {
-                        await clearHideState();
-                    } else {
-                        await applyHideState();
-                    }
-                }
-            }
-            const totalFloors = Array.isArray(chat) ? chat.length : 0;
-            const nextStore = getSummaryStore();
-            await sendFrameBaseData(nextStore, totalFloors);
-            sendFrameFullData(nextStore, totalFloors);
-            notifyStorySummaryChatState();
-
-            if (!result.success) {
-                reportMemorySaveFailure({ code: result.reason, uncertain: getMemoryCommitState() === 'unconfirmed' });
-                break;
-            }
-
-            if (result.clearedBoundary) {
-                const message = result.clearedAll
-                    ? "已回退首次总结，当前总结数据已清空"
-                    : "已回退首次总结；未被本次总结修改的内容已保留";
-                await executeSlashCommand(`/echo severity=info ${message}`);
-            } else {
-                await executeSlashCommand(`/echo severity=info 已回退上一次总结，已总结楼层退回到 ${result.targetEndMesId + 1} 楼`);
-            }
-            break;
-        }
 
         case "CLOSE_PANEL":
             hideOverlay();
@@ -3786,7 +3375,7 @@ async function deactivateCurrentChatStorySummary() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 聊天删除时清理本地缓存和服务器向量备份
+// 聊天删除时清理本地召回缓存
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function handleChatDeleted(chatId) {
@@ -3799,206 +3388,6 @@ async function handleChatDeleted(chatId) {
     await waitForVectorWrites();
     await clearChatData(chatId);
     messageSources.forget(chatId);
-    try {
-        const filename = getBackupFilename(chatId);
-        await deleteServerBackup(filename, null);
-        xbLog.info(MODULE_ID, `聊天删除，已清理服务器备份: ${filename}`);
-    } catch (_) {
-        console.warn({ source: import.meta.url, operation: "handleChatDeleted" }, _);
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 备份管理 Modal（渲染在父窗口，确保层级在 settings modal 之上）
-// ═══════════════════════════════════════════════════════════════════════════
-
-function removeBackupManagerModal() {
-    backupManagerCleanup?.();
-    backupManagerCleanup = null;
-    document.getElementById('lwb-backup-manager-modal')?.remove();
-}
-
-function showBackupManagerModal() {
-    removeBackupManagerModal();
-    const isNarrowViewport = window.matchMedia?.('(max-width: 640px)').matches || window.innerWidth <= 640;
-
-    const overlay = document.createElement('div');
-    overlay.id = 'lwb-backup-manager-modal';
-    overlay.style.cssText = [
-        'position:fixed', 'inset:0', 'background:rgba(0,0,0,.55)',
-        'z-index:100000', 'display:flex', 'align-items:center', 'justify-content:center',
-        'box-sizing:border-box', `padding:${isNarrowViewport ? '10px' : '16px'}`,
-        'overflow:hidden',
-    ].join(';');
-
-    const viewport = window.visualViewport;
-    const syncOverlayToViewport = () => {
-        if (!viewport) return;
-        overlay.style.inset = 'auto';
-        overlay.style.left = `${viewport.offsetLeft}px`;
-        overlay.style.top = `${viewport.offsetTop}px`;
-        overlay.style.width = `${viewport.width}px`;
-        overlay.style.height = `${viewport.height}px`;
-    };
-    if (viewport) {
-        syncOverlayToViewport();
-        viewport.addEventListener('resize', syncOverlayToViewport);
-        viewport.addEventListener('scroll', syncOverlayToViewport);
-        backupManagerCleanup = () => {
-            viewport.removeEventListener('resize', syncOverlayToViewport);
-            viewport.removeEventListener('scroll', syncOverlayToViewport);
-        };
-    }
-
-    const box = document.createElement('div');
-    box.style.cssText = [
-        'background:#fff', 'color:#222', 'border-radius:8px',
-        `width:${isNarrowViewport ? '100%' : 'min(520px,92vw)'}`,
-        `padding:${isNarrowViewport ? '12px' : '18px'}`,
-        `max-height:${isNarrowViewport ? 'calc(100dvh - 20px)' : '80vh'}`,
-        'box-sizing:border-box', 'display:flex', 'flex-direction:column',
-        'overflow:hidden',
-        'box-shadow:0 8px 32px rgba(0,0,0,.35)', 'font-size:14px',
-    ].join(';');
-
-    // Header
-    const header = document.createElement('div');
-    header.style.cssText = [
-        'display:flex', 'justify-content:space-between', 'align-items:center',
-        'gap:8px', 'margin-bottom:10px', 'flex-shrink:0',
-    ].join(';');
-    const title = document.createElement('span');
-    title.style.cssText = 'font-weight:700;font-size:15px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
-    title.textContent = '服务器向量备份';
-    const badge = document.createElement('span');
-    badge.id = 'lwb-backup-badge';
-    badge.style.cssText = 'opacity:0.5;font-size:0.85em;margin-left:4px';
-    title.appendChild(badge);
-
-    const btnRow = document.createElement('div');
-    btnRow.style.cssText = 'display:flex;gap:6px';
-
-    const btnRefresh = document.createElement('button');
-    btnRefresh.className = 'btn btn-sm';
-    btnRefresh.textContent = '刷新';
-
-    const btnClose = document.createElement('button');
-    btnClose.className = 'btn btn-sm';
-    btnClose.textContent = '✕';
-    btnClose.onclick = removeBackupManagerModal;
-
-    btnRow.append(btnRefresh, btnClose);
-    header.append(title, btnRow);
-
-    // List area
-    const listEl = document.createElement('div');
-    listEl.id = 'lwb-backup-list';
-    listEl.style.cssText = 'overflow-y:auto;overflow-x:hidden;flex:1;min-height:60px;-webkit-overflow-scrolling:touch';
-
-    // Status bar
-    const statusEl = document.createElement('div');
-    statusEl.id = 'lwb-backup-status';
-    statusEl.style.cssText = 'margin-top:8px;font-size:0.82em;color:#666;min-height:1em;flex-shrink:0;word-break:break-word';
-
-    box.append(header, listEl, statusEl);
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-
-    // Close on backdrop click
-    overlay.addEventListener('click', e => { if (e.target === overlay) removeBackupManagerModal(); });
-
-    function setStatus(text, isError) {
-        statusEl.textContent = text;
-        statusEl.style.color = isError ? '#c00' : '#666';
-    }
-
-    function renderList(files) {
-        badge.textContent = `(${files.length})`;
-        if (!files.length) {
-            listEl.innerHTML = '<div style="padding:12px;opacity:0.5;text-align:center">暂无备份记录</div>';
-            return;
-        }
-        const sorted = [...files].sort((a, b) => new Date(b.backupTime) - new Date(a.backupTime));
-        listEl.replaceChildren();
-        sorted.forEach(f => {
-            const row = document.createElement('div');
-            row.style.cssText = isNarrowViewport
-                ? [
-                    'display:grid', 'grid-template-columns:1fr auto', 'gap:4px 8px',
-                    'align-items:center', 'padding:8px 2px',
-                    'border-bottom:1px solid #e8e8e8', 'font-size:0.82em',
-                ].join(';')
-                : [
-                    'display:flex', 'gap:8px', 'align-items:center', 'padding:6px 2px',
-                    'border-bottom:1px solid #e8e8e8', 'font-size:0.82em',
-                ].join(';');
-
-            const label = document.createElement('span');
-            label.style.cssText = isNarrowViewport
-                ? 'grid-column:1 / -1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#333'
-                : 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#333';
-            label.title = f.chatId || f.filename;
-            label.textContent = f.chatId || f.filename;
-
-            const size = document.createElement('span');
-            size.style.cssText = 'white-space:nowrap;color:#555';
-            size.textContent = f.size ? (f.size / 1024 / 1024).toFixed(2) + 'MB' : '?';
-
-            const time = document.createElement('span');
-            time.style.cssText = isNarrowViewport
-                ? 'min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#888'
-                : 'white-space:nowrap;color:#888';
-            time.textContent = f.backupTime ? new Date(f.backupTime).toLocaleString() : '?';
-
-            const btnDel = document.createElement('button');
-            btnDel.className = 'btn btn-sm';
-            btnDel.style.cssText = 'padding:1px 10px;flex-shrink:0;color:#c00;border-color:#c00';
-            btnDel.textContent = '删';
-            btnDel.onclick = async () => {
-                if (!confirm(`确认删除此备份？\n${f.filename}`)) return;
-                setStatus('删除中...');
-                btnDel.disabled = true;
-                try {
-                    await deleteServerBackup(f.filename, f.serverPath);
-                    setStatus('已删除');
-                    const updated = await fetchManifest();
-                    renderList(updated);
-                } catch (e) {
-                    if (isDeleteUnsupportedError(e)) {
-                        backupDeleteSupported = false;
-                        backupDeleteUnsupportedReason = e.message || '宿主不支持删除接口';
-                        setStatus('⚠️ 只读模式：' + backupDeleteUnsupportedReason, true);
-                        // 禁用所有删除按钮
-                        listEl.querySelectorAll('button').forEach(b => { b.disabled = true; });
-                    } else {
-                        setStatus('删除失败: ' + (e.message || '未知'), true);
-                        btnDel.disabled = false;
-                    }
-                }
-            };
-
-            row.append(label, size, time, btnDel);
-            listEl.appendChild(row);
-        });
-
-        if (!backupDeleteSupported) {
-            setStatus('⚠️ 只读模式：' + backupDeleteUnsupportedReason, true);
-            listEl.querySelectorAll('button').forEach(b => { b.disabled = true; });
-        }
-    }
-
-    btnRefresh.onclick = async () => {
-        setStatus('加载中...');
-        try {
-            const files = await fetchManifest();
-            renderList(files);
-            setStatus('');
-        } catch (e) {
-            setStatus('加载失败: ' + e.message, true);
-        }
-    };
-
-    btnRefresh.onclick();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

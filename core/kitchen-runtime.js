@@ -58,7 +58,8 @@ async function syncPlanner() {
     if (!panelEnabled('planner')) { planner?.dispose(); planner = null; return; }
     if (planner || !worldArchive) return;
     const { installPlanner } = await import('../modules/story-planner/host.js');
-    planner = installPlanner({snapshot:worldArchive.plannerSnapshot,getContext,settings:settings.enaPlanner,saveSettings});
+    planner = installPlanner({snapshot:worldArchive.plannerSnapshot,loadSnapshot:worldArchive.loadPlannerSnapshot,
+        isVisible:() => kitchen.isActive('planner'),getContext,settings:settings.enaPlanner,saveSettings});
 }
 const cleanups = new Map();
 window.registerKitchenModuleCleanup = (id, cleanup) => cleanups.set(id, cleanup);

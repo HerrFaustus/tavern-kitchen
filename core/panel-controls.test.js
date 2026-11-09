@@ -31,6 +31,13 @@ test('panel controls show the bound model first and save and reset the actual re
     const [save,reset] = input.parentElement.nextElementSibling.querySelectorAll('button');
     await save.onclick(); assert.equal(buildMapMaintenancePrompt('automatic'),input.value);
     await reset.onclick(); assert.equal(buildMapMaintenancePrompt('automatic'),original);
+    const model = document.createElement('section'), prompts = document.createElement('details');
+    const memoryBar = document.createElement('div');
+    mountPanelControls('memory',memoryBar,state,async () => {},async()=>repo,{model,prompts});
+    await setImmediate();
+    assert.equal(model.querySelectorAll('select').length,4);
+    assert.equal(model.querySelectorAll('details').length,0);
+    assert.match(model.textContent,/召回模型/);
     state.panels.map=false; assert.equal(panelEnabled('map'),false);assert.equal(panelEnabled('opening'),true);
     state.enabled=false; assert.equal(panelEnabled('opening'),false);
     usePanelSettings({});

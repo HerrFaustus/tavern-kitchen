@@ -30,28 +30,6 @@ const UNANNOTATED_LABEL = '未标注';
     const dirtyFields = new Set();
     let settingsSnapshot;
     let settingsSaving = false;
-    function formatVectorPackageCounts(result) {
-        return `${result.stateVectorCount} 锚点向量、${result.chunkCount} 片段向量、${result.eventCount} 事件向量`;
-    }
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-
-
     // ═══════════════════════════════════════════════════════════════════════════
     // DOM Helpers
     // ═══════════════════════════════════════════════════════════════════════════
@@ -219,12 +197,6 @@ const UNANNOTATED_LABEL = '未标注';
     let localGenerating = false;
     let vectorGenerating = false;
     let anchorGenerating = false;
-    let cleanActionState = {
-        canRollback: false,
-        rollbackTargetSummarizedUpTo: 0,
-        rollbackWillResetBoundary: false,
-        summarizedUpTo: 0,
-    };
     let currentEditSection = null;
     let currentEditBaseline = null;
     let currentCharacterId = null;
@@ -251,10 +223,6 @@ const UNANNOTATED_LABEL = '未标注';
 
     function postMsg(type, data = {}) {
         window.parent.postMessage({ source: 'TavernKitchen-StoryFrame', type, ...data }, PARENT_ORIGIN);
-    }
-
-    function isBusyLike() {
-        return !!(localGenerating || vectorGenerating || anchorGenerating);
     }
 
     function nextConfigSaveRequestId() {
@@ -373,11 +341,6 @@ const UNANNOTATED_LABEL = '未标注';
         }
 
         syncVectorBoundaryControl(true, $('hide-summarized').checked);
-        const busy = isBusyLike();
-        $('workspace-rollback').disabled = busy || !cleanActionState.canRollback;
-        $('workspace-rollback').title = busy ? WORKSPACE_COPY.busy : cleanActionState.canRollback ? '' : WORKSPACE_COPY.noRollback;
-        $('workspace-clear').disabled = busy;
-        $('workspace-clear').title = busy ? WORKSPACE_COPY.busy : '';
     }
 
     function renderSummaryStatus(data) {
@@ -814,31 +777,6 @@ const UNANNOTATED_LABEL = '未标注';
             postMsg('VECTOR_CANCEL_GENERATE');
         };
 
-        $('btn-export-vectors').onclick = () => {
-            $('btn-export-vectors').disabled = true;
-            $('vector-io-status').textContent = '导出中...';
-            postMsg('VECTOR_EXPORT');
-        };
-
-        $('btn-import-vectors').onclick = () => {
-            $('btn-import-vectors').disabled = true;
-            $('vector-io-status').textContent = '导入中...';
-            postMsg('VECTOR_IMPORT_PICK');
-        };
-        $('btn-backup-server').onclick = () => {
-            $('btn-backup-server').disabled = true;
-            $('server-io-status').textContent = '备份中...';
-            postMsg('VECTOR_BACKUP_SERVER');
-        };
-
-        $('btn-restore-server').onclick = () => {
-            $('btn-restore-server').disabled = true;
-            $('server-io-status').textContent = '恢复中...';
-            postMsg('VECTOR_RESTORE_SERVER');
-        };
-
-        $('btn-manage-backups').onclick = () => postMsg('VECTOR_LIST_BACKUPS');
-
         initAnchorUI();
         postMsg('REQUEST_ANCHOR_STATS');
     }
@@ -854,31 +792,6 @@ const UNANNOTATED_LABEL = '未标注';
         );
     }
 
-    function initSummaryIOUI() {
-        $('btn-copy-summary').onclick = () => {
-            $('btn-copy-summary').disabled = true;
-            $('summary-io-status').textContent = '复制中...';
-            postMsg('SUMMARY_COPY');
-        };
-
-        $('btn-import-summary').onclick = async () => {
-            const text = await showConfirmInput(
-                '覆盖导入记忆包',
-                '导入会覆盖当前聊天已有的总结资料，并立即清空向量、锚点、总结边界。请把记忆包粘贴到下面。',
-                '继续导入',
-                '取消',
-                '在这里粘贴记忆包 JSON'
-            );
-            if (text == null) return;
-            if (!String(text).trim()) {
-                $('summary-io-status').textContent = '导入失败: 记忆包内容为空';
-                return;
-            }
-            $('btn-import-summary').disabled = true;
-            $('summary-io-status').textContent = '导入中...';
-            postMsg('SUMMARY_IMPORT_TEXT', { text });
-        };
-    }
     // ═══════════════════════════════════════════════════════════════════════════
     // Settings Modal
     // ═══════════════════════════════════════════════════════════════════════════
@@ -898,6 +811,7 @@ const UNANNOTATED_LABEL = '未标注';
         else {
             modal.querySelector('.workspace-shell').append(actions);
             memoryMaintenancePage.close();
+            postMsg('REQUEST_RECALL_LOG');
         }
     }
 
@@ -1262,8 +1176,6 @@ const UNANNOTATED_LABEL = '未标注';
             const modal = $('confirm-modal');
             const titleEl = $('confirm-title');
             const msgEl = $('confirm-message');
-            const inputWrap = $('confirm-input-wrap');
-            const inputEl = $('confirm-input');
             const actionList = $('confirm-action-list');
             const okBtn = $('confirm-ok');
             const cancelBtn = $('confirm-cancel');
@@ -1272,9 +1184,7 @@ const UNANNOTATED_LABEL = '未标注';
 
             titleEl.textContent = title;
             msgEl.textContent = message;
-            inputWrap.classList.add('hidden');
             actionList.classList.add('hidden');
-            inputEl.value = '';
             okBtn.classList.remove('hidden');
             okBtn.textContent = okText;
             cancelBtn.textContent = cancelText;
@@ -1298,53 +1208,6 @@ const UNANNOTATED_LABEL = '未标注';
             postMsg('CONFIRM_OPENED');
         });
     }
-
-    function showConfirmInput(title, message, okText = '执行', cancelText = '取消', placeholder = '') {
-        return new Promise(resolve => {
-            const modal = $('confirm-modal');
-            const titleEl = $('confirm-title');
-            const msgEl = $('confirm-message');
-            const inputWrap = $('confirm-input-wrap');
-            const inputEl = $('confirm-input');
-            const actionList = $('confirm-action-list');
-            const okBtn = $('confirm-ok');
-            const cancelBtn = $('confirm-cancel');
-            const closeBtn = $('confirm-close');
-            const backdrop = $('confirm-backdrop');
-
-            titleEl.textContent = title;
-            msgEl.textContent = message;
-            inputWrap.classList.remove('hidden');
-            actionList.classList.add('hidden');
-            inputEl.placeholder = placeholder || '';
-            inputEl.value = '';
-            okBtn.classList.remove('hidden');
-            okBtn.textContent = okText;
-            cancelBtn.textContent = cancelText;
-
-            const close = (result) => {
-                modal.classList.remove('active');
-                postMsg('CONFIRM_CLOSED');
-                inputWrap.classList.add('hidden');
-                inputEl.value = '';
-                okBtn.onclick = null;
-                cancelBtn.onclick = null;
-                if (closeBtn) closeBtn.onclick = null;
-                backdrop.onclick = null;
-                resolve(result);
-            };
-
-            okBtn.onclick = () => close(inputEl.value);
-            cancelBtn.onclick = () => close(null);
-            if (closeBtn) closeBtn.onclick = () => close(null);
-            backdrop.onclick = () => close(null);
-
-            modal.classList.add('active');
-            postMsg('CONFIRM_OPENED');
-            setTimeout(() => inputEl.focus(), 0);
-        });
-    }
-
 
     function setRecallLog(text) {
         lastRecallLogText = text || '';
@@ -1673,7 +1536,6 @@ const UNANNOTATED_LABEL = '未标注';
                 if (d.stats) {
                     updateStats(d.stats);
                     $('summarized-count').textContent = d.stats.hiddenCount ?? 0;
-                    cleanActionState.summarizedUpTo = d.stats.summarizedUpTo ?? 0;
                 }
                 if (d.hideSummarized !== undefined) {
                     if (!settingsDirty) $('hide-summarized').checked = d.hideSummarized;
@@ -1685,9 +1547,6 @@ const UNANNOTATED_LABEL = '未标注';
                 }
                 if (d.useVectorBoundary !== undefined) config.ui.useVectorBoundary = d.useVectorBoundary === true;
                 config.vector.enabled = true;
-                cleanActionState.canRollback = !!d.canRollback;
-                cleanActionState.rollbackTargetSummarizedUpTo = Number(d.rollbackTargetSummarizedUpTo || 0);
-                cleanActionState.rollbackWillResetBoundary = !!d.rollbackWillResetBoundary;
                 syncCurrentChatSummaryControls();
                 break;
 
@@ -1817,73 +1676,6 @@ const UNANNOTATED_LABEL = '未标注';
                 updateVectorProgress(d);
                 break;
 
-            case 'VECTOR_EXPORT_RESULT':
-                $('btn-export-vectors').disabled = false;
-                if (d.success) {
-                    $('vector-io-status').textContent = `导出成功: ${d.filename} (${(d.size / 1024 / 1024).toFixed(2)}MB)`;
-                } else {
-                    $('vector-io-status').textContent = '导出失败: ' + (d.error || '未知错误');
-                }
-                break;
-
-            case 'SUMMARY_COPY_RESULT':
-                $('btn-copy-summary').disabled = false;
-                if (d.success) {
-                    $('summary-io-status').textContent = `复制成功: ${d.rounds || 0} 条本轮总结, ${d.facts || 0} 条世界状态`;
-                } else {
-                    $('summary-io-status').textContent = '复制失败: ' + (d.error || '未知错误');
-                }
-                break;
-
-            case 'SUMMARY_IMPORT_RESULT':
-                $('btn-import-summary').disabled = false;
-                if (d.success) {
-                    const c = d.counts || {};
-                    $('summary-io-status').textContent = `导入成功: ${c.rounds || 0} 条本轮总结, ${c.facts || 0} 条世界状态。向量与锚点已清空，请先生成锚点，再补齐向量。`;
-                    postMsg('REQUEST_VECTOR_STATS');
-                    postMsg('REQUEST_ANCHOR_STATS');
-                } else {
-                    $('summary-io-status').textContent = '导入失败: ' + (d.error || '未知错误');
-                }
-                break;
-
-            case 'VECTOR_IMPORT_RESULT':
-                $('btn-import-vectors').disabled = false;
-                if (d.success) {
-                    let msg = `导入成功: ${formatVectorPackageCounts(d)}`;
-                    if (d.warnings?.length) {
-                        msg += '\n⚠️ ' + d.warnings.join('\n⚠️ ');
-                    }
-                    $('vector-io-status').textContent = msg;
-                    // 刷新统计
-                    postMsg('REQUEST_VECTOR_STATS');
-                } else {
-                    $('vector-io-status').textContent = '导入失败: ' + (d.error || '未知错误');
-                }
-                break;
-            case 'VECTOR_BACKUP_RESULT':
-                $('btn-backup-server').disabled = false;
-                if (d.success) {
-                    $('server-io-status').textContent = `☁️ 备份成功: ${(d.size / 1024 / 1024).toFixed(2)}MB (${formatVectorPackageCounts(d)})`;
-                } else {
-                    $('server-io-status').textContent = '备份失败: ' + (d.error || '未知错误');
-                }
-                break;
-
-            case 'VECTOR_RESTORE_RESULT':
-                $('btn-restore-server').disabled = false;
-                if (d.success) {
-                    let msg = `☁️ 恢复成功: ${formatVectorPackageCounts(d)}`;
-                    if (d.warnings?.length) {
-                        msg += '\n⚠️ ' + d.warnings.join('\n⚠️ ');
-                    }
-                    $('server-io-status').textContent = msg;
-                    postMsg('REQUEST_VECTOR_STATS');
-                } else {
-                    $('server-io-status').textContent = '恢复失败: ' + (d.error || '未知错误');
-                }
-                break;
-
             case 'RECALL_LOG':
                 setRecallLog(d.text || '');
                 break;
@@ -1895,7 +1687,6 @@ const UNANNOTATED_LABEL = '未标注';
     // ═══════════════════════════════════════════════════════════════════════════
 
     function bindEvents() {
-        for (const id of ['tab-transfer','tab-cache','tab-clear']) $('legacy-data-tools').append($(id));
         const setCardBusy = () => {
             $('btn-export-kitchen-card').disabled = $('btn-import-kitchen-card').disabled = true;
             $('kitchen-card-status').textContent = '正在处理后厨卡…';
@@ -1924,8 +1715,6 @@ const UNANNOTATED_LABEL = '未标注';
         $('editor-save').onclick = saveEditor;
 
         // Settings modal
-        $('tab-vector').ontoggle = () => { if ($('tab-vector').open) postMsg('REQUEST_RECALL_LOG'); };
-        $('tab-clear').ontoggle = () => { if ($('tab-clear').open) syncCurrentChatSummaryControls(); };
         $('settings-chat').textContent = MEMORY_CHAT_COPY.entry;
         $('settings-chat').onclick = () => memoryMaintenancePage.openChat();
         $('settings-cancel').onclick = () => {
@@ -1960,25 +1749,6 @@ const UNANNOTATED_LABEL = '未标注';
             e.target.value = val;
         };
 
-        // Main actions
-        const clean = async action => {
-            if (isBusyLike() || (action === 'rollback' && !cleanActionState.canRollback)) return;
-            if (action === 'rollback') {
-                const currentUpTo = cleanActionState.summarizedUpTo || 0;
-                const rollbackMessage = cleanActionState.rollbackWillResetBoundary
-                    ? '确定回退首次总结吗？首次总结生成的内容会被撤销；人工修改不会被覆盖，存在冲突时将拒绝回退。聊天记录不会删除。'
-                    : `确定回退上一次总结吗？将把已总结楼层从 ${currentUpTo} 回退到 ${cleanActionState.rollbackTargetSummarizedUpTo}。聊天记录不会删除。`;
-                if (await showConfirm('回退一次', rollbackMessage, '回退', '取消')) {
-                    postMsg('REQUEST_ROLLBACK_ONCE');
-                }
-            } else if (action === 'clear') {
-                if (await showConfirm('清空全部', '确定要清空本聊天的所有总结及人物关系数据吗？聊天记录不会删除。此操作不可撤销。', '清空', '取消')) {
-                    postMsg('REQUEST_CLEAR');
-                }
-            }
-        };
-        $('workspace-rollback').onclick = () => clean('rollback');
-        $('workspace-clear').onclick = () => clean('clear');
         bindSummaryActions();
 
         // Hide summarized
@@ -1994,19 +1764,7 @@ const UNANNOTATED_LABEL = '未标注';
 
 
         // Vector UI
-        initSummaryIOUI();
         initVectorUI();
-
-        // Filter rules collapsible
-        const filterRulesToggle = $('filter-rules-toggle');
-        const filterRulesContent = $('filter-rules-content');
-        if (filterRulesToggle && filterRulesContent) {
-            filterRulesToggle.onclick = () => {
-                const collapse = filterRulesToggle.closest('.settings-collapse');
-                collapse.classList.toggle('open');
-                filterRulesContent.classList.toggle('hidden');
-            };
-        }
 
         // Auto summary sub-options toggle
         const triggerEnabled = $('trigger-enabled');

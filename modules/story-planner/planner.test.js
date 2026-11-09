@@ -19,12 +19,24 @@ test('one writer publishes once, full chapter only; change, rollback and chat is
             chapter:{text:'完整章节稿'+calls,dependencies:[{entityId:'bridge',field:'status'}]},reason});
     }});
     const run = () => runtime.prepare();
+    assert.equal((await runtime.inspect()).state,'empty');
     assert.equal(await run(),'完整章节稿1');
+    let shown = await runtime.inspect();
+    assert.equal(shown.state,'ready');
+    assert.equal(shown.note.chapter.text,'完整章节稿1');
+    assert.equal(shown.note.global.text,'后台方向');
+    assert.equal(calls,1,'reading the panel must not call the writer');
+    chat[0].mes = '原文已改写';
+    assert.equal((await runtime.inspect()).state,'empty','a note from a different source must not be shown');
+    chat[0].mes = '进镇';
+    assert.equal((await runtime.inspect()).state,'ready');
     chat.push({mes:'去河边'});
     assert.equal(await run(),'完整章节稿1');
     world.entities[0].fields.status.value='通行'; world.version++;
+    assert.equal((await runtime.inspect()).state,'stale');
     assert.equal(await run(),'完整章节稿2');
     boundary='closed-1';
+    assert.equal((await runtime.inspect()).state,'stale');
     assert.equal(await run(),'完整章节稿3');
     const rows = await store.list(snapshot().owner);
     assert.equal(rows.length,3);
@@ -32,8 +44,40 @@ test('one writer publishes once, full chapter only; change, rollback and chat is
     chat.pop(); boundary='opening'; world.entities[0].fields.status.value='封闭';
     assert.equal(await run(),'完整章节稿1');
     scope='other';
+    assert.equal((await runtime.inspect()).state,'empty');
     assert.equal(await run(),'完整章节稿4');
     assert.deepEqual(chat,[{mes:'进镇',is_user:true}]);
+});
+
+test('a note read finishing after the world changes cannot display the earlier snapshot', async () => {
+    const world = {worldId:'w',branchId:'b',version:1,entities:[]};
+    const chat = [{mes:'原文',is_user:true}];
+    const snap = () => plannerSnapshot(world,{enabled:true,store:{summaryHistory:[]}},chat,'chat');
+    const note = publishNotes(JSON.stringify({global:{text:'全局',dependencies:[]},chapter:{text:'章节',dependencies:[]}}),null,snap(),'opening');
+    let release, started;
+    const waiting = new Promise(resolve => { started = resolve; });
+    const runtime = createPlanner({snapshot:snap,status:()=>{},write:()=>assert.fail('inspection must not call the writer'),
+        store:{list:async()=>{started(); return new Promise(resolve=>{release=resolve;});}}});
+    const reading = runtime.inspect();
+    await waiting;
+    world.version++;
+    release([note]);
+    assert.deepEqual(await reading,{state:'changed'});
+});
+
+test('an in-flight writer cannot publish after its world snapshot changes in place', async () => {
+    const world = {worldId:'w',branchId:'b',version:1,entities:[]};
+    const chat = [{mes:'原文',is_user:true}];
+    const snap = () => plannerSnapshot(world,{enabled:true,store:{summaryHistory:[]}},chat,'chat');
+    let release, started;
+    const waiting = new Promise(resolve => { started = resolve; });
+    const runtime = createPlanner({snapshot:snap,status:()=>{},store:{list:async()=>[],put:()=>assert.fail('stale note must not be saved')},
+        write:async()=>{started();return new Promise(resolve=>{release=resolve;});}});
+    const running = runtime.prepare();
+    await waiting;
+    world.version++;
+    release(JSON.stringify({global:{text:'全局',dependencies:[]},chapter:{text:'章节',dependencies:[]}}));
+    assert.equal(await running,'');
 });
 
 test('invalid private text, stale completion and failed draft never reach a reply', async () => {

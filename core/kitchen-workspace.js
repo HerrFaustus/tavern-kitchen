@@ -302,12 +302,16 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
             title.textContent = id === 'data' ? '数据' : 'API'; body.hidden = false; controls.hidden = true;
             return;
         }
-        settingsHeading = doc.createElement('h4'); settingsHeading.textContent = '设置';
+        const routeLabel = KITCHEN_ROUTES[parentOf(id)].find(([route]) => route === id)[1];
+        const settingsLabel = routeLabel + '设置';
+        settingsHeading = doc.createElement('h4'); settingsHeading.textContent = settingsLabel;
+        controls.setAttribute('aria-label', settingsLabel);
         controls.append(settingsHeading);
         groups = {};
         for (const [key, label] of [['master','模块开关'], ['model','模型设置'], ['function','功能设置'], ['prompts','提示词设置']]) {
-            const group = doc.createElement('details'), heading = doc.createElement('summary');
-            group.dataset.settingsGroup = key; group.open = key !== 'prompts';
+            const group = doc.createElement(key === 'prompts' ? 'details' : 'section');
+            const heading = doc.createElement(key === 'prompts' ? 'summary' : 'h5');
+            group.dataset.settingsGroup = key;
             heading.textContent = label; group.append(heading); controls.append(group);
             groups[key] = group;
         }
@@ -315,7 +319,6 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
         featureBar.replaceChildren(); featureBar.hidden = !items.length;
 
         if (panelSwitch) {
-            const routeLabel = KITCHEN_ROUTES[parentOf(id)].find(([route]) => route === id)[1];
             const { enabled, label, change } = panelSwitch(id, routeLabel);
             const row = doc.createElement('label'); row.className = 'checkbox_label tk-panel-switch';
             const input = doc.createElement('input'); input.type = 'checkbox';
@@ -424,12 +427,12 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
                 actions[id] = () => { throw error; };
             }
         },
-        showEvolution(mount, collapse = false) {
+        showEvolution(mount, withHeading = false) {
             stopEvolution?.(); evolution.hidden = false;
             let target = evolution;
-            if (collapse) {
-                const settings = doc.createElement('details'), heading = doc.createElement('summary');
-                settings.open = true;
+            if (withHeading) {
+                const settings = doc.createElement('section'), heading = doc.createElement('h5');
+                heading.className = 'tk-evolution-title';
                 heading.textContent = '演化设置';
                 target = doc.createElement('div');
                 settings.append(heading, target); evolution.replaceChildren(settings);

@@ -1,11 +1,39 @@
 import { prefix, publishNotes, reviewReason, selectVersion, writerInput } from './notes.js';
 
+function captureSnapshot(snapshot, snap, signal) {
+    const end = snap.chat.length - 1, source = prefix(snap.chat,end);
+    const { owner, boundary } = snap, version = snap.world.version, lines = JSON.stringify(snap.plotLines);
+    return {
+        fresh() {
+            if (signal?.aborted) return false;
+            const next = snapshot();
+            return next?.owner === owner && next.boundary === boundary && next.world.version === version && JSON.stringify(next.plotLines) === lines
+                && next.chat.length === end + 1 && prefix(next.chat,end) === source;
+        },
+    };
+}
+
 export function createPlanner({snapshot, store, write, status}) {
     let current, failed;
     const cancel = () => { current?.abort(); current = null; };
     return {
         cancel,
         retry() { failed = null; },
+        async inspect() {
+            const snap = snapshot();
+            if (!snap) return { state:'unavailable' };
+            const { fresh } = captureSnapshot(snapshot, snap);
+            try {
+                if (store.recoverLegacy && snap.legacyOwner) await store.recoverLegacy(snap.legacyOwner, snap.owner, fresh);
+                const note = selectVersion(await store.list(snap.owner),snap);
+                if (!fresh()) return { state:'changed' };
+                if (!note) return { state:'empty' };
+                return { state:reviewReason(note,snap) ? 'stale' : 'ready', note };
+            } catch (error) {
+                if (!fresh()) return { state:'changed' };
+                throw error;
+            }
+        },
         async prepare(signal) {
             cancel();
             const controller = new AbortController();
@@ -15,13 +43,7 @@ export function createPlanner({snapshot, store, write, status}) {
             try {
                 const snap = snapshot();
                 if (!snap || signal?.aborted) return '';
-                const end = snap.chat.length - 1, source = prefix(snap.chat,end);
-                const fresh = () => {
-                    if (controller.signal.aborted) return false;
-                    const next = snapshot();
-                    return next?.owner === snap.owner && next.boundary === snap.boundary && next.world.version === snap.world.version && JSON.stringify(next.plotLines) === JSON.stringify(snap.plotLines)
-                        && next.chat.length === end + 1 && prefix(next.chat,end) === source;
-                };
+                const { fresh } = captureSnapshot(snapshot, snap, controller.signal);
                 if (store.recoverLegacy && snap.legacyOwner) await store.recoverLegacy(snap.legacyOwner, snap.owner, fresh);
                 const previous = selectVersion(await store.list(snap.owner),snap);
                 if (!fresh()) return '';

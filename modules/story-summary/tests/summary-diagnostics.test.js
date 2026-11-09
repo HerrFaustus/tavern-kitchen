@@ -60,8 +60,7 @@ test('host chat deletion preserves page diagnostics across same-filename owners'
     const host = entry(['handleChatDeleted'], {
         summaryDiagnostics, logRecallRuntimeCheckpoint() {}, clearWarningCooldownsForChat() {},
         waitForVectorWrites: async () => {}, clearChatData: async chatId => cleaned.push(chatId),
-        messageSources: { forget() {} }, getBackupFilename: chatId => chatId,
-        deleteServerBackup: async () => {}, xbLog: { info() {} }, MODULE_ID: 'fixture',
+        messageSources: { forget() {} },
     });
     await host.handleChatDeleted('same');
     assert.deepEqual(cleaned, ['same']);

@@ -2663,12 +2663,6 @@ h1 span {
     align-self: center;
 }
 
-.vector-io-section {
-    border-top: 1px solid var(--bdr);
-    padding-top: 16px;
-    margin-top: 16px;
-}
-
 /* Mobile Settings Responsive */
 @media (max-width: 768px) {
     .settings-modal-box {

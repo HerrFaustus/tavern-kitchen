@@ -23,8 +23,8 @@ export function mountPanelControls(id, bar, settings, savePrompt, getRepository 
             const repository = await getRepository(), config = await repository.load();
             api.replaceChildren();
             let openingNote;
-            const recall = doc.createElement('details');
-            const title = doc.createElement('summary'); title.textContent = '召回模型'; recall.append(title);
+            const recall = doc.createElement('section');
+            const title = doc.createElement('h5'); title.textContent = '召回模型'; recall.append(title);
             for (const key of keys) {
                 const select = doc.createElement('select'); select.className = 'text_pole';
                 const selected = config.bindings[key] ?? (key === 'opening' ? config.bindings.world : '');

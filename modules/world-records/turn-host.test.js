@@ -27,6 +27,19 @@ function setup(t) {
         setSnapshot(value) { snapshot = value; }, setAccount(value) { account = value; }, setDataVisible(value) { showData = value; } };
 }
 
+test('planner panel reloads the saved world after reset without creating a new world version', async t => {
+    const f = setup(t);
+    const world = await f.bridge().service.ensure();
+    f.archive.reset();
+    assert.equal(f.archive.plannerSnapshot(),null);
+    await f.archive.loadPlannerSnapshot();
+    const snap = f.archive.plannerSnapshot();
+    assert.equal(snap.world.worldId,world.worldId);
+    assert.equal(snap.world.branchId,world.branchId);
+    assert.equal(snap.world.version,world.version);
+    assert.ok(snap.owner);
+});
+
 test('confirmed memory delivery automatically commits clear same-turn proposals before importing summary sources', async t => {
     const f = setup(t); f.context.chat[1].mes = '主角到达铁匠铺。主角相信信使。远方可能起火。';
     const prepared = await prepareMemorySources(0, 1, { unified: true }), context = prepared.updateContext;

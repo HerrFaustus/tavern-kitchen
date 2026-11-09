@@ -19,19 +19,30 @@ async function inspect(doc, width) {
     const controls = doc.createElement('div');
     panel.append(controls);
     let retries = 0;
-    const update = createPlannerSettings(controls, {
+    const view = createPlannerSettings(controls, {
         retry: () => { retries++; },
     });
     const retry = controls.querySelector('button');
-    update('等待正文生成', false);
+    view.status('等待正文生成', false);
     const initiallyHidden = retry.hidden;
-    update('札记未能发布', true);
+    view.note({state:'empty'});
+    const empty = controls.querySelector('.tk-planner-note-status').textContent;
+    const chapterText = '药车停在桥头。\n' + '雨水顺着斗篷流下。'.repeat(40) + 'X'.repeat(160);
+    const globalText = '后台仍未揭晓的线索。';
+    view.note({state:'ready',note:{id:'fiction',revision:2,chapter:{text:chapterText},global:{text:globalText}}});
+    const chapter = controls.querySelector('.tk-planner-chapter');
+    const global = controls.querySelector('.tk-planner-global');
+    const globalClosed = !global.open && !global.querySelector('.tk-planner-note-text').checkVisibility();
+    global.querySelector('summary').click();
+    const globalOpened = global.open && global.querySelector('.tk-planner-note-text').checkVisibility();
+    view.status('札记未能发布', true);
     retry.click();
     const box = element => {
         const { x, y, width, height } = element.getBoundingClientRect();
         return [x, y, width, height].map(Math.round);
     };
     return { width, native: box(reference), kitchen: box(panel), fields: controls.querySelectorAll('textarea, select').length, retries,
+        empty, chapterMatches:chapter.textContent === chapterText, globalClosed, globalOpened,
         retryVisible: initiallyHidden && !retry.hidden, fits: controls.scrollWidth <= controls.clientWidth };
 }
 
@@ -78,6 +89,8 @@ try {
         assert.equal(row.kitchen[2], row.native[2]);
         if (row.width > 1000) assert.ok(row.kitchen[0] >= (row.width + 800) / 2);
         assert.equal(row.fields, 0);
+        assert.match(row.empty,/暂无札记/);
+        assert.ok(row.chapterMatches && row.globalClosed && row.globalOpened);
         assert.ok(row.retryVisible && row.retries === 1 && row.fits);
     }
 } finally {

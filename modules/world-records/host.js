@@ -211,6 +211,10 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
             }
             return snap;
         },
+        async loadPlannerSnapshot() {
+            if (!identity() || disposed || authority.read()) return;
+            await service.read();
+        },
         async prepare(query) {
             const factText = await authority.prepare(query, getContext().name1, state => involvementFor(state));
             const state = authority.read()?.state, memory = getMemorySnapshot();

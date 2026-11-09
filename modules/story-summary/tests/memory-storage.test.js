@@ -26,6 +26,7 @@ import { SUMMARY_FEEDBACK_COPY } from '../feedback-copy.js';
 import { summaryFailureReason } from '../summary-failure.js';
 import { createSummaryDiagnostics } from '../summary-diagnostics.js';
 import { getChatIdentity } from '../data/chat-identity.js';
+import { captureRangeSource } from '../data/turn-source.js';
 import { applySummarySectionEdit } from '../data/section-edits.js';
 import { mergeEditedFactsWithTimestamps } from '../data/fact-edits.js';
 
@@ -1052,13 +1053,17 @@ for (const kind of ['edit', 'swipe']) test(`queued ${kind} survives leaving and 
     assert.deepEqual(disk(), ext());
 });
 
-function importEntry(tracker) {
+function cardEntry() {
     const noop = () => {};
-    return entry(['importSummaryMemoryPackage', 'extractSummaryImportJson', 'cloneSummaryJsonForPortability',
-        'normalizePortableFact', 'normalizeInternalFact', 'stripFloorMarker'], { ...mod, getContext: () => host.context, messageSources: tracker,
-        invalidateLexicalIndex: noop, refreshEntityLexiconAndWarmup: noop, scheduleLexicalWarmup: noop,
-        clearHideState: noop, sendFrameBaseData: noop, sendFrameFullData: noop, sendAnchorStatsToFrame: noop,
-        sendVectorStatsToFrame: noop, notifyStorySummaryChatState: noop });
+    return entry(['kitchenCardMemory', 'extractSummaryImportJson', 'cloneSummaryJsonForPortability',
+        'normalizePortableFact', 'normalizeInternalFact', 'stripFloorMarker'], {
+        ...mod, structuredClone, getContext: () => host.context, getChatIdentity, captureRangeSource,
+        guard: { isAnyRunning: () => false }, cancelActiveSummaryExecution: noop,
+        cancelRecallAndClearPrompt: noop,
+        runVectorWriteTask: async (_options, task) => task(), VECTOR_WRITE_SCOPES: vectorWrites.VECTOR_WRITE_SCOPES,
+        invalidateLexicalIndex: noop, refreshEntityLexiconAndWarmup: noop,
+        sendFrameBaseData: noop, sendFrameFullData: noop, notifyStorySummaryChatState: noop,
+    });
 }
 
 for (const order of ['event-first', 'background-first']) for (const sameText of [false, true]) test(`${order}: a selected swipe change cannot leave imported L2 consumable (same text: ${sameText})`, async () => {
@@ -1142,7 +1147,7 @@ for (const order of ['body-before-notice', 'body-after-notice']) for (const same
     });
 }
 
-for (const kind of ['swipe', 'delete']) for (const stage of ['queued', 'failed']) for (const action of ['import', 'clear']) test(`confirmed ${action} resolves ${stage} ${kind} rollback intent without confirming source caches`, async () => {
+for (const kind of ['swipe', 'delete']) for (const stage of ['queued', 'failed']) for (const action of ['card', 'clear']) test(`confirmed ${action} resolves ${stage} ${kind} rollback intent without confirming source caches`, async () => {
     await importFixture(); await seedAnchors();
     const context = host.context;
     await seedCacheRange(context.chatId, [0, 1, 2, 3]);
@@ -1154,9 +1159,13 @@ for (const kind of ['swipe', 'delete']) for (const stage of ['queued', 'failed']
     // Explicit recovery can follow a queued, cancelled or failed consistency task.
     const sourceBasis = tracker.capture(context);
     let imported;
-    if (action === 'import') {
-        await importEntry(tracker).importSummaryMemoryPackage(JSON.stringify({ ...mod.SUMMARY_MEMORY_PACKAGE,
-            data: { facts: [{ 人物名字: '夏实', 种类: '去向', 描述: '导入后确认的新路线' }] } }), context.chatId);
+    if (action === 'card') {
+        const summary = { ...mod.SUMMARY_MEMORY_PACKAGE,
+            data: { facts: [{ 人物名字: '夏实', 种类: '去向', 描述: '导入后确认的新路线' }] } };
+        await cardEntry().kitchenCardMemory().write(transaction => transaction.commit({
+            source: { digest: 'different-chat', length: 1 },
+            memory: { storySummary: {}, stateAtoms: [], l0Index: {} }, summary,
+        }, 'replacement-branch', () => {}));
         imported = structuredClone(mod.readSummaryMemory().storySummary.json);
     } else await mod.clearSummaryData(context.chatId);
     tracker.resolveRollback(sourceBasis, context);
@@ -1167,7 +1176,7 @@ for (const kind of ['swipe', 'delete']) for (const stage of ['queued', 'failed']
     assert.ok(ext().stateAtoms.every(atom => atom.floor !== 1));
     assert.equal(ext().storySummary.sourceInvalidFromFloor, undefined);
     assert.equal(ext().storySummary.sourceRollbackFromFloor, undefined);
-    if (action === 'import') {
+    if (action === 'card') {
         assert.equal(mod.isSummaryConsumable(ext().storySummary, context.chat.length), true);
         assert.deepEqual(ext().storySummary.json, imported);
     }

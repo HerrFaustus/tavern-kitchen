@@ -38,9 +38,7 @@ body:has(.summary-workspace.active) { overflow: hidden; }
 .workspace-shell #tab-summary .vector-boundary-container { display: flex; width: 100%; margin: 0; gap: 8px; }
 .workspace-shell #tab-summary .vector-boundary-container .archive-setting { flex: 1; }
 .workspace-shell #tab-summary > .summary-group { margin: 0; border-top: 1px solid var(--bdr); }
-.summary-group > summary { cursor: pointer; min-height: 56px; padding: 18px 0; color: var(--txt); font-size: 14px; }
-.summary-group > summary .workspace-scope { float: right; }
-.summary-group[open] > summary { color: var(--archive-accent); }
+.workspace-shell #tab-summary > .summary-group { padding-block: 12px; }
 .workspace-shell #tab-summary .summary-group > .settings-section { margin: 18px 0; }
 .workspace-shell .settings-checkbox { display: flex; flex-direction: row-reverse; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid var(--bdr); width: 100%; }
 .workspace-shell .settings-checkbox .checkbox-mark { display: none; }

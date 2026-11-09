@@ -917,9 +917,9 @@ test('a post-commit phase callback failure retains confirmed saves and never ope
     assert.equal(store().json.facts[0].o, '确认后的修改');
 });
 
-// Acceptance: replacement before submission cancels staged coverage, including
-// when import wins the write queue after model completion. Cost: silent lost work.
-for (const queued of [false, true]) test(`import cancels completion without reporting success (${queued ? 'queued save' : 'model waiting'})`, options, async t => {
+// Acceptance: replacing recall data cancels staged coverage, including when the
+// change wins the write queue after model completion. Cost: silent lost work.
+for (const queued of [false, true]) test(`recall replacement cancels completion without reporting success (${queued ? 'queued save' : 'model waiting'})`, options, async t => {
     store().summaryHistory = [mod.createSummaryBatch(-1, 23, { version: 1 })];
     const modelWaiting = deferred(), reply = deferred(), releaseQueue = deferred(), queueHeld = deferred(), finished = deferred();
     t.after(() => { reply.resolve(); releaseQueue.resolve(); });
@@ -930,17 +930,9 @@ for (const queued of [false, true]) test(`import cancels completion without repo
         await reply.promise;
         return { text: 'Review finished.' };
     };
-    const api = entry(['changeRecallData', 'importSummaryMemoryPackage'], {
+    const api = entry(['changeRecallData'], {
         getContext: () => host.context, memoryMaintenance: host.maintenance,
         cancelEmbeddingWriteTasks: mod.cancelEmbeddingWriteTasks, cancelRecallAndClearPrompt() {},
-        extractSummaryImportJson: () => structuredClone(host.fixture.json), getSummaryStore: store,
-        readSummaryMemory: mod.readSummaryMemory, prepareImportedSummary: mod.prepareImportedSummary,
-        commitSummaryMemory: mod.commitSummaryMemory,
-        messageSources: { capture() { return {}; }, resolveRollback() {} },
-        updateMeta: async () => {}, clearAllChunks: async () => {}, clearEventVectors: async () => {},
-        clearStateVectors: async () => {}, invalidateLexicalIndex() {}, refreshEntityLexiconAndWarmup() {},
-        scheduleLexicalWarmup() {}, clearHideState: async () => {}, sendFrameBaseData: async () => {},
-        sendFrameFullData() {}, sendAnchorStatsToFrame: async () => {}, sendVectorStatsToFrame: async () => {},
     });
     const running = host.maintenance.chat.send(chatRequest('Review memory'));
     await modelWaiting.promise;
@@ -949,8 +941,12 @@ for (const queued of [false, true]) test(`import cancels completion without repo
         queueHeld.resolve(); await releaseQueue.promise;
     }) : null;
     if (queued) await queueHeld.promise;
-    const imported = mod.runVectorWriteTask({ ...descriptor, kind: 'summary-import' }, () =>
-        api.changeRecallData(host.context.chatId, () => api.importSummaryMemoryPackage('{}', host.context.chatId)));
+    const imported = mod.runVectorWriteTask({ ...descriptor, kind: 'recall-replacement' }, () =>
+        api.changeRecallData(host.context.chatId, async () => {
+            const previous = mod.readSummaryMemory();
+            const next = mod.prepareImportedSummary(previous, structuredClone(host.fixture.json), host.context.chat.length - 1);
+            await mod.commitSummaryMemory(host.context.chatId, next, { previous });
+        }));
     if (queued) {
         const enqueued = deferred();
         const unsubscribe = mod.observeVectorWrites(() => {

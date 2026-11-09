@@ -59,7 +59,6 @@ function panel() {
     const ui = uiEntry(['canUseCurrentChatControls', 'syncCurrentChatSummaryControls', 'syncVectorBoundaryControl', 'renderSummaryStatus',
         'bindSummaryActions', 'handleParentMessage'], {
         $, SUMMARY_FEEDBACK_COPY, ARCHIVE_COPY, WORKSPACE_COPY, PARENT_ORIGIN: 'test', window: { parent }, document: { activeElement: null },
-        cleanActionState: { canRollback: false }, isBusyLike: () => false,
         settingsPage: 'tab-summary', currentChatSummaryState: {}, summaryStatusId: 0, localGenerating: false,
         config: { api: {}, gen: {}, trigger: {}, vector: { enabled: true }, ui: { hideSummarized: true } },
         postMsg: (type, data) => messages.push({ type, ...data }),
