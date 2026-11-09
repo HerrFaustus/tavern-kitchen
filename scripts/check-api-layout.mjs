@@ -54,7 +54,8 @@ try {
     await selector.waitFor();
     assert.ok((await selector.boundingBox()).height <= 50);
     assert.equal(await selector.evaluate(el => !!el.closest('.tk-module-settings')), false);
-    assert.ok(await settings.evaluate(el => el.open));
+    assert.equal(await settings.evaluate(el => el.tagName), 'DIV');
+    assert.equal(await page.locator('.text-api-configuration > summary, .text-api-configuration [data-settings-group]').count(), 0);
     assert.equal(await page.locator('.text-api-presets button, .text-api-presets input').count(), 0);
     await page.getByLabel('模型', { exact: true }).fill('updated-model');
     await page.locator('[data-save]').click();

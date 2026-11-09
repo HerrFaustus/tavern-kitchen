@@ -243,3 +243,6 @@
 #tk-module-native-controls > h4 { margin: 0 0 8px; font-size: 1em; }
 #tk-module-native-controls > details { margin-block: 6px; }
 #tk-module-native-controls > details > summary { font-weight: 600; cursor: pointer; padding-block: 4px; }
+
+/* A module only shows settings categories with controls. */
+#tk-module-native-controls > details[data-settings-group]:not(:has(> :not(summary):not([hidden]):not(.tk-feature-switches), > .tk-feature-switches:not([hidden]) > *)) { display: none; }

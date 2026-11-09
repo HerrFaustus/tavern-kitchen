@@ -30,7 +30,7 @@ function syncNativeControls(target) {
 export const KITCHEN_TABS = [['overview', '主角'], ['world', '世界'], ['memory', '剧情'], ['planner', '编剧'], ['settings', 'API'], ['data', '数据']];
 export const KITCHEN_ROUTES = {
     overview: [['overview', '主角']],
-    memory: [['memory', '总结'], ['suspense', '悬念'], ['clues', '线索'], ['proofreading', '校对']],
+    memory: [['memory', '总结'], ['suspense', '悬念'], ['clues', '剧情线'], ['proofreading', '校对']],
     world: [['people', '人物'], ['map', '地图'], ['situation', '局势'], ['opening','世界生成']],
     planner: [['planner', '编剧']],
     settings: [['settings', 'API']],
@@ -174,11 +174,11 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
         if (controls.parentElement !== page) page.append(controls);
         page.classList.remove('tk-controls-in-frame');
         if (settingsHeading) settingsHeading.hidden = false;
-        controls.hidden = active === 'settings' && !body.hidden;
+        controls.hidden = ['settings','data'].includes(active) && !body.hidden;
     };
     const placeControls = () => {
-        page.classList.toggle('tk-page-full', active === 'settings' && !body.hidden);
-        if (!isOpen() || body.hidden) { restoreControls(); return; }
+        page.classList.toggle('tk-page-full', ['settings','data'].includes(active) && !body.hidden);
+        if (!isOpen() || body.hidden || ['settings','data'].includes(active)) { restoreControls(); return; }
         const mount = api.getMount(active);
         for (const [frame, state] of frames) {
             if (!frame.isConnected || frame.contentDocument !== state.document || !mount?.contains(frame)) continue;
@@ -297,10 +297,15 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
         restoreControls();
         const items = featureSwitches[id] || [];
         controls.replaceChildren();
+        if (['data','settings'].includes(id)) {
+            groups = {}; settingsHeading = undefined;
+            title.textContent = id === 'data' ? '数据' : 'API'; body.hidden = false; controls.hidden = true;
+            return;
+        }
         settingsHeading = doc.createElement('h4'); settingsHeading.textContent = '设置';
         controls.append(settingsHeading);
         groups = {};
-        for (const [key, label] of [['master','总开关'], ['model','模型设置'], ['function','功能设置'], ['prompts','提示词设置']]) {
+        for (const [key, label] of [['master','模块开关'], ['model','模型设置'], ['function','功能设置'], ['prompts','提示词设置']]) {
             const group = doc.createElement('details'), heading = doc.createElement('summary');
             group.dataset.settingsGroup = key; group.open = key !== 'prompts';
             heading.textContent = label; group.append(heading); controls.append(group);
@@ -328,7 +333,7 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
             input.addEventListener('change', () => observeBackgroundTask(changePanel(), { source: import.meta.url, operation: 'toggle-panel' }));
             title.textContent = routeLabel;
             input.setAttribute('aria-label', label);
-            row.append(input, doc.createTextNode(label === '启用' + routeLabel ? '启用' : label));
+            row.append(input, doc.createTextNode(label));
             featureBar.hidden = false;
             groups.master.append(row);
             body.hidden = !enabled;

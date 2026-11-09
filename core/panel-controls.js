@@ -12,7 +12,7 @@ export function mountPanelControls(id, bar, settings, savePrompt, getRepository 
     bar.hidden = false;
     const doc = bar.ownerDocument, group = doc.createElement('div');
     group.className = 'tk-panel-controls';
-    (sections?.model || bar).append(group);
+    if (keys.length) (sections?.model || bar).append(group);
     const status = doc.createElement('small'); status.setAttribute('role','status');
     const field = (parent,label,control) => {
         const row = doc.createElement('label'); row.append(doc.createTextNode(label),control); parent.append(row);
@@ -22,6 +22,7 @@ export function mountPanelControls(id, bar, settings, savePrompt, getRepository 
         const load = async () => {
             const repository = await getRepository(), config = await repository.load();
             api.replaceChildren();
+            let openingNote;
             const recall = doc.createElement('details');
             const title = doc.createElement('summary'); title.textContent = '召回模型'; recall.append(title);
             for (const key of keys) {
@@ -35,15 +36,29 @@ export function mountPanelControls(id, bar, settings, savePrompt, getRepository 
                 }
                 const parent = ['embedding','rerank','l0'].includes(key) ? recall : api;
                 if (parent === recall && !recall.parentElement) api.append(recall);
-                field(parent,(PROFILE_FEATURES[key] || key)+'模型',select);
+                const modelLabel = id === 'proofreading' && key === 'summary'
+                    ? '篇目和章节总结模型' : (PROFILE_FEATURES[key] || key)+'模型';
+                field(parent,modelLabel,select);
                 let saved = select.value;
                 select.onchange = async () => {
                     select.disabled = true;
                     try { await repository.mutate(key,select.value === HOST_BINDING ? {type:'select-host'} : {type:'select',id:select.value});
-                        saved = select.value; status.textContent = '已切换到' + items.find(item => item.id === saved)?.name; }
+                        saved = select.value; status.textContent = '已切换到' + items.find(item => item.id === saved)?.name;
+                        if (openingNote) openingNote.textContent = '世界生成使用单独选择的模型。'; }
                     catch (error) { select.value = saved; status.textContent = error.message; }
                     finally { select.disabled = false; }
                 };
+            }
+            if (['people', 'map', 'situation'].includes(id)) {
+                const note = doc.createElement('small');
+                note.textContent = '人物、地图和局势共用此模型，在任一处更改会同步到其他两处。';
+                api.append(note);
+            }
+            if (id === 'opening') {
+                openingNote = doc.createElement('small');
+                openingNote.textContent = config.bindings.opening
+                    ? '世界生成使用单独选择的模型。' : '世界生成未单独选择时，跟随世界与地图后台模型。';
+                api.append(openingNote);
             }
         };
         load().catch(error => { api.textContent = error.message; });
@@ -54,7 +69,8 @@ export function mountPanelControls(id, bar, settings, savePrompt, getRepository 
         if (!sections) {
             const summary = doc.createElement('summary'); summary.textContent = '提示词设置'; details.append(summary);
         }
-        (sections?.prompts || group).append(details);
+        (sections?.prompts || (keys.length ? group : bar)).append(details);
+        const promptStatus = doc.createElement('small'); promptStatus.setAttribute('role','status');
         const protocols = doc.createElement('details'), title = doc.createElement('summary');
         title.className = 'standoutHeader'; title.textContent = '工具说明'; protocols.append(title);
         for (const entry of prompts) {
@@ -69,14 +85,15 @@ export function mountPanelControls(id, bar, settings, savePrompt, getRepository 
                 button.onclick = async () => {
                     try { if (!reset) entry.validate?.(input.value);
                         await savePrompt(entry.key,reset ? undefined : input.value); if (reset) input.value = entry.template;
-                        status.textContent = entry.label+'已保存'; }
-                    catch (error) { status.textContent = error.message; }
+                        promptStatus.textContent = entry.label+'已保存'; }
+                    catch (error) { promptStatus.textContent = error.message; }
                 };
                 controls.append(button);
             }
             section.append(controls);
         }
         if (protocols.childElementCount > 1) details.append(protocols);
+        details.append(promptStatus);
     }
-    group.append(status);
+    if (keys.length) group.append(status);
 }

@@ -54,7 +54,8 @@ try {
     const frame = page.frameLocator('iframe'), options = frame.locator('#summary-options');
     assert.ok(await frame.locator('#btn-generate').evaluate(el => !!el.closest('#summary-controls')));
     assert.equal(await frame.locator('.archive #btn-generate').count(), 0);
-    assert.ok(await options.evaluate(el => el.open));
+    assert.ok(await options.isVisible());
+    assert.equal(await options.locator(':scope > summary').count(), 0);
     await frame.locator('#tab-summary-prompts > summary').click();
     await frame.locator('#tab-summary-prompts details > summary').first().click();
     await frame.locator('#prompt-round').fill('只提交本轮测试');
@@ -71,6 +72,12 @@ try {
     assert.ok(await frame.locator('#summary-controls').isHidden());
     await frame.locator('#tab-transfer > summary').click();
     assert.ok(await frame.locator('#btn-copy-summary').isVisible());
+    assert.match(await frame.locator('#tab-transfer > summary').innerText(), /旧版总结包/);
+    await frame.locator('#tab-cache > summary').click();
+    assert.ok(await frame.getByRole('button', {name:'导出向量数据'}).isVisible());
+    assert.ok(await frame.locator('#tab-backups > h3').isVisible());
+    assert.match(await frame.locator('#tab-backups > h3').innerText(), /服务器向量备份/);
+    assert.equal(await frame.locator('#tab-transfer #btn-export-vectors').count(),0);
     await frame.getByRole('button', { name: '导出后厨卡', exact: true }).click();
     await page.waitForFunction(() => globalThis.exportedCard === true);
     await frame.locator('#kitchen-card-file').setInputFiles({name:'fixture.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({type:'TavernKitchenCard',version:1,data:{}}))});
@@ -80,9 +87,12 @@ try {
     await frame.locator('#kitchen-card-status').filter({hasText:'不支持的后厨卡格式'}).waitFor();
     for (const width of [319,1280]) {
         await page.setViewportSize({width,height:780});
-        const box = await frame.locator('#data-controls').evaluate(el => ({top:el.getBoundingClientRect().top,height:el.getBoundingClientRect().height,total:globalThis.innerHeight}));
-        assert.ok(Math.abs(box.height/box.total - 1/3) < .02);
-        assert.ok(box.top >= box.total * .65);
+        const full = await frame.locator('#data-page').evaluate(el => ({height:el.getBoundingClientRect().height,total:globalThis.innerHeight,overflow:globalThis.getComputedStyle(el).overflowY,width:el.clientWidth,scrollWidth:el.scrollWidth}));
+        assert.ok(Math.abs(full.height/full.total - 1) < .02);
+        assert.equal(full.overflow,'auto');
+        assert.ok(full.scrollWidth <= full.width);
+        assert.equal(await frame.locator('#data-page [data-setting-section], #data-page [data-kitchen-controls], #data-page [data-settings-group]').count(),0);
+        assert.equal(await frame.locator('#data-controls').evaluate(el => globalThis.getComputedStyle(el).overflowY),'visible');
     }
     await view('proofreading');
     await frame.locator('#memory-maintenance-enabled').waitFor({state:'attached'});
@@ -105,7 +115,8 @@ try {
     assert.ok(await options.isHidden());
     await view('memory');
     await options.waitFor();
-    assert.ok(await frame.locator('#tab-summary > summary').isVisible());
+    assert.ok(await frame.locator('#tab-summary .settings-section-title').filter({hasText:'自动总结'}).isVisible());
+    assert.ok(await frame.locator('#tab-vector > summary').filter({hasText:'相关内容召回'}).isVisible());
     await view('people');
     await frame.locator('#archive-people').waitFor();
     assert.equal(await frame.locator('#archive-person-select').count(), 0);
@@ -116,7 +127,7 @@ try {
         payload: {
             chatId: 'people-ui-fixture', rounds: [], facts: [],
             storyRecords: [
-                { id: 'port', kind: 'situation', title: '港口封锁', description: '守卫检查出港船只。', status: 'open' },
+                { id: 'port', kind: 'situation', title: '港口封锁', description: '守卫检查出港船只。', status: 'open', _history: [{text:'守卫开始加强检查',_addedAt:1}] },
                 { id: 'rain', kind: 'situation', flavor: 'scenery', title: '雨季将至', description: '海风湿润，迁徙鸟群停在岸边。', status: 'open' },
             ],
             entities: [{ id: 'person-lin', kind: 'person', name: '林舟', aliases: ['银鸦'],
@@ -157,6 +168,10 @@ try {
     assert.match(await affairs.innerText(), /港口封锁/);
     assert.match(await scenery.innerText(), /雨季将至/);
     assert.equal(await frame.locator('.tk-story-situations article').count(), 2);
+    assert.doesNotMatch(await frame.locator('.tk-story-situations').innerText(), /类型：事态|类型：风物/);
+    assert.equal(await frame.locator('.tk-story-situations h5').filter({hasText:'局势历史'}).count(),1);
+    assert.match(await frame.locator('[data-record-id=port]').innerText(),/守卫开始加强检查/);
+    assert.match(await frame.locator('[data-record-id=port]').innerText(),/来源：第 2 楼/);
     assert.equal(await frame.locator('.tk-story-situations details').count(), 0);
     assert.equal(await frame.locator('.tk-story-situations > button, .sec-btn').count(), 0);
     assert.equal(await frame.locator('.tk-story-situations input, .tk-story-situations select').count(), 0);
@@ -168,7 +183,7 @@ try {
     await sceneryToggle.check();
     await page.waitForFunction(() => globalThis.evolution?.sceneryEvolution === true);
     assert.ok(await affairToggle.isChecked());
-    await frame.getByLabel('街头偶遇频率').selectOption('lively');
+    await frame.getByLabel('街头见闻频率').selectOption('lively');
     await page.waitForFunction(() => globalThis.evolution?.encounterFrequency === 'lively');
     await fs.mkdir(path.resolve('output'), { recursive: true });
     for (const width of [319, 1280]) {

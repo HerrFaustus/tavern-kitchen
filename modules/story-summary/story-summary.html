@@ -145,19 +145,21 @@
 
     <footer id="people-controls" class="tk-module-settings" data-kitchen-controls="people relations" hidden></footer>
 
-    <section id="data-overview" hidden aria-label="后厨数据">
+    <section id="data-page" hidden aria-label="后厨数据">
+    <div id="data-overview">
         <h3>后厨数据</h3><p id="kitchen-card-counts">读取当前聊天的数据…</p>
-        <p>后厨卡保存总结、世界与地图、编剧札记。</p>
+        <p>后厨卡保存总结、世界与地图、编剧札记；设置和召回缓存不包含在内。</p>
         <p id="kitchen-card-status" role="status"></p>
-    </section>
-    <footer id="data-controls" class="tk-module-settings" data-kitchen-controls="data" hidden>
-        <section data-setting-section="function" id="kitchen-card-actions">
+    </div>
+    <div id="data-controls">
+        <section id="kitchen-card-actions">
             <button class="btn" id="btn-export-kitchen-card">导出后厨卡</button>
             <button class="btn" id="btn-import-kitchen-card">导入后厨卡</button>
             <input id="kitchen-card-file" type="file" accept=".json,application/json" hidden>
         </section>
-        <section data-setting-section="function" id="legacy-data-tools"></section>
-    </footer>
+        <section id="legacy-data-tools"></section>
+    </div>
+    </section>
 
     <dialog class="archive-drawer" id="archive-detail" aria-labelledby="archive-detail-title">
         <div class="archive-drawer-head"><h2 id="archive-detail-title"></h2><button class="archive-icon" data-close-archive="" aria-label="返回档案">×</button></div>
@@ -195,7 +197,7 @@
             <div data-setting-section="function" class="archive-actions archive-generate">
                 <button class="btn btn-p" id="btn-generate"></button>
             </div>
-<details id="summary-options" data-setting-section="function" open hidden><summary>总结规则与召回</summary></details>
+<div id="summary-options" data-setting-section="function" hidden></div>
 </footer>
 <footer id="situation-controls" data-kitchen-controls="situation" class="tk-module-settings" hidden aria-label="局势控制与设置">
     <section data-setting-section="function"><div id="affair-settings"></div><div id="scenery-settings"></div></section>
@@ -210,7 +212,7 @@
             </div>
             <div class="workspace-layout"><div class="modal-body">
                 <!-- Tab 1: Summary Settings -->
-                <details class="summary-local-group" id="tab-summary"><summary>总结规则</summary><section class="settings-section"><h3 class="settings-section-title">更新方式<small class="workspace-scope">全局</small></h3><p class="settings-hint">剧情记忆默认启用。正文回复完成后独立更新，处理上次成功记录之后的内容，直到最新已完成回复；积压内容自动分批。</p></section><section class="settings-section"><h3 class="settings-section-title">自动总结<small class="workspace-scope">全局</small></h3><div class="settings-checkbox-group">
+                <div class="summary-local-group" id="tab-summary"><section class="settings-section"><h3 class="settings-section-title">自动总结<small class="workspace-scope">全局</small></h3><div class="settings-checkbox-group">
                             <label class="settings-checkbox">
                                 <input type="checkbox" id="trigger-enabled" checked>
                                 <span class="checkbox-mark"></span>
@@ -235,10 +237,10 @@
                                 <input type="checkbox" id="trigger-notify-on-complete">
                                 <span class="checkbox-mark"></span>
                                 <span class="checkbox-label">总结完成提醒</span>
-                            </label></section><details class="settings-section summary-group"><summary>原文处理<small class="workspace-scope">全局</small></summary><label class="archive-setting"><span>隐藏已总结楼层 · <strong id="summarized-count">0</strong> 楼</span><input type="checkbox" id="hide-summarized"></label><label class="archive-setting"><span>保留最近原文（轮）</span><input type="number" id="keep-visible-count" min="0" max="50" value="5"></label><label class="archive-setting"><span>按需注入相关早期原文</span><input type="checkbox" id="recall-early-original"></label><div id="container-vector-boundary" class="vector-boundary-container">
+                            </label></section><details class="settings-section summary-group"><summary>保留原文<small class="workspace-scope">全局</small></summary><label class="archive-setting"><span>隐藏已总结楼层 · <strong id="summarized-count">0</strong> 楼</span><input type="checkbox" id="hide-summarized"></label><label class="archive-setting"><span>保留最近原文（轮）</span><input type="number" id="keep-visible-count" min="0" max="50" value="5"></label></details><details class="settings-section summary-group"><summary>高级设置<small class="workspace-scope">全局</small></summary><div id="container-vector-boundary" class="vector-boundary-container">
                 <label class="archive-setting" id="lbl-vector-boundary" title="开：按向量处理的最新进度隐藏；关：按总结的最新进度隐藏。"><span>按向量进度隐藏</span><input type="checkbox" id="use-vector-boundary"></label>
                 <span class="info-dot" id="vector-boundary-info" title="开：按向量处理的最新进度隐藏；关：按总结的最新进度隐藏。">i</span>
-            </div></details><details class="settings-section summary-group"><summary>记忆注入<small class="workspace-scope">全局</small></summary><div class="settings-field summary-role-field">
+            </div><div class="settings-field summary-role-field">
                                 <label for="trigger-role">注入角色</label>
                                 <select id="trigger-role">
                                     <option value="system">System</option>
@@ -268,13 +270,13 @@
                             <div id="filter-rules-list" class="filter-rules-list"></div>
                         </div>
                     </div>
-                </details>
+                </div>
 
                 <!-- Tab 2: Vector Settings -->
-                <details class="summary-local-group" id="tab-vector"><summary>向量召回</summary>
+                <details class="summary-local-group" id="tab-vector"><summary>相关内容召回</summary>
                     <div class="settings-section">
                         <div class="settings-section-title">原文检索 · 全局</div>
-                        <p class="settings-hint">原文检索默认启用；配置向量模型后自动补齐向量，重排模型可选。未配置向量模型时仍可使用关键词检索。</p>
+                        <p class="settings-hint">原文检索默认启用；配置向量模型后自动补齐向量，重排模型可选。未配置向量模型时仍可使用关键词检索。</p><label class="archive-setting"><span>按需注入相关早期原文</span><input type="checkbox" id="recall-early-original"></label>
 
                         <div id="vector-config-area">
                             <div class="settings-row">
@@ -400,7 +402,7 @@
                     <button type="button" class="btn btn-sm" data-save-layer="chapter">保存</button> <button type="button" class="btn btn-sm" id="reset-chapter">恢复默认并保存</button> <small role="status" id="status-chapter"></small>
                 </details></details>
                 <div class="tab-pane" id="tab-agent"></div>
-                <details class="summary-local-group" data-setting-section="prompts" id="tab-prompts"><summary>写作与记忆注入</summary>
+                <details class="summary-local-group" data-setting-section="prompts" id="tab-prompts"><summary>总结与校对的写作要求</summary>
                     <div class="settings-section">
                         <div class="settings-btn-row" style="margin: 0 0 12px 0; align-items: center;">
                             <label class="settings-section-title" for="summary-style" style="margin: 0;">写作要求</label>
@@ -421,14 +423,13 @@
                 <!-- Tab 3: Debug -->
 
 
-            <details class="summary-local-group" id="tab-transfer"><summary>导入与导出</summary><div class="settings-section" style="padding: 0; margin-top: 16px;">
-                            <div class="settings-section-title">导出与导入</div>
+            <details class="summary-local-group" id="tab-transfer"><summary>旧版总结包（兼容）</summary><div class="settings-section" style="padding: 0; margin-top: 16px;">
                             <div class="settings-btn-row" style="margin-top: 8px;">
                                 <button class="btn btn-sm" id="btn-copy-summary" style="flex:1">复制记忆包</button>
                                 <button class="btn btn-sm" id="btn-import-summary" style="flex:1">粘贴导入记忆包</button>
                             </div>
                             <div class="settings-hint" id="summary-io-status">复制会把记忆包放进剪贴板；导入会覆盖当前聊天的总结资料，并自动清空向量与总结边界。</div>
-                        </div><section class="settings-section"><h3 class="settings-section-title">向量文件<small class="workspace-scope">此聊天</small></h3><button class="btn btn-sm" id="btn-export-vectors" style="flex:1">导出向量数据</button><button class="btn btn-sm" id="btn-import-vectors" style="flex:1">导入向量数据</button><div class="settings-hint" id="vector-io-status"></div></section></details><details class="summary-local-group" id="tab-backups"><summary>服务器备份</summary><section class="settings-section"><h3 class="settings-section-title">服务器备份<small class="workspace-scope">此聊天</small></h3><button class="btn btn-sm" id="btn-backup-server" style="flex:1">☁️ 备份向量到服务器</button><button class="btn btn-sm" id="btn-restore-server" style="flex:1">☁️ 从服务器恢复向量</button><button class="btn btn-sm" id="btn-manage-backups" style="width:100%">
+                        </div></details><details class="summary-local-group" id="tab-cache"><summary>召回缓存</summary><section class="settings-section"><h3 class="settings-section-title">向量文件<small class="workspace-scope">此聊天</small></h3><button class="btn btn-sm" id="btn-export-vectors" style="flex:1">导出向量数据</button><button class="btn btn-sm" id="btn-import-vectors" style="flex:1">导入向量数据</button><div class="settings-hint" id="vector-io-status"></div></section><section id="tab-backups" class="settings-section"><h3 class="settings-section-title">服务器向量备份<small class="workspace-scope">此聊天</small></h3><button class="btn btn-sm" id="btn-backup-server" style="flex:1">☁️ 备份向量到服务器</button><button class="btn btn-sm" id="btn-restore-server" style="flex:1">☁️ 从服务器恢复向量</button><button class="btn btn-sm" id="btn-manage-backups" style="width:100%">
                                                 ☁️ 管理服务器向量备份
                                             </button><div class="settings-hint" id="server-io-status"></div></section></details><details class="summary-local-group" id="tab-clear"><summary>清理与回退</summary><section class="settings-section"><h3 class="settings-section-title">回退上一次总结<small class="workspace-scope">此聊天</small></h3><p class="settings-hint">撤销最近一次总结；保留聊天记录，人工修改存在冲突时不回退。</p><button type="button" id="workspace-rollback" class="btn">回退上一次总结</button></section><section class="settings-section"><h3 class="settings-section-title">清空总结资料<small class="workspace-scope">此聊天</small></h3><p class="settings-hint">删除此聊天的总结、关键词和人物关系，不删除聊天记录。</p><button type="button" id="workspace-clear" class="btn">清空总结资料</button></section></details><input type="hidden" id="vector-l0-concurrency" value="10"></div></div>
             <div class="modal-foot" data-setting-section="function"><div id="api-connect-status" role="status"></div><button class="btn" id="settings-cancel">还原修改</button>

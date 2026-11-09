@@ -1632,15 +1632,13 @@ const UNANNOTATED_LABEL = '未标注';
             case 'KITCHEN_MEMORY_VIEW': {
                 const options = $('summary-options'), modal = $('settings-modal');
                 const summary = d.view === 'memory';
-                $('data-overview').hidden = d.view !== 'data';
-                $('data-controls').hidden = d.view !== 'data';
+                $('data-page').hidden = d.view !== 'data';
                 if (d.view === 'data') postMsg('KITCHEN_CARD_INFO');
                 $('summary-controls').hidden = !summary;
                 $('people-controls').hidden = !['people','relations'].includes(d.view);
                 $('situation-controls').hidden = d.view !== 'world';
                 if (['world','people','relations'].includes(d.view)) postMsg('WORLD_EVOLUTION_REQUEST');
                 options.hidden = !summary;
-                if (summary) options.open = true;
                 document.documentElement.dataset.kitchenView = d.view === 'relations' ? 'people' : d.view;
                 if (summary && modal.parentElement !== options) {
                     options.append(modal);
@@ -1657,7 +1655,7 @@ const UNANNOTATED_LABEL = '未标注';
                 } else {
                     const view = { memory: 'story', world: 'world', lore: 'world', people: 'people', relations: 'people' }[d.view];
                     if (view) archiveView.switchView(view, { notify: false });
-                    if (summary && options.open && !modal.classList.contains('active')) openSettings();
+                    if (summary && !modal.classList.contains('active')) openSettings();
                 }
                 break;
             }
@@ -1897,7 +1895,7 @@ const UNANNOTATED_LABEL = '未标注';
     // ═══════════════════════════════════════════════════════════════════════════
 
     function bindEvents() {
-        for (const id of ['tab-transfer','tab-backups','tab-clear']) $('legacy-data-tools').append($(id));
+        for (const id of ['tab-transfer','tab-cache','tab-clear']) $('legacy-data-tools').append($(id));
         const setCardBusy = () => {
             $('btn-export-kitchen-card').disabled = $('btn-import-kitchen-card').disabled = true;
             $('kitchen-card-status').textContent = '正在处理后厨卡…';
@@ -1926,10 +1924,6 @@ const UNANNOTATED_LABEL = '未标注';
         $('editor-save').onclick = saveEditor;
 
         // Settings modal
-        $('summary-options').ontoggle = () => {
-            if (!$('summary-options').open || $('summary-options').hidden || $('settings-modal').classList.contains('active')) return;
-            openSettings();
-        };
         $('tab-vector').ontoggle = () => { if ($('tab-vector').open) postMsg('REQUEST_RECALL_LOG'); };
         $('tab-clear').ontoggle = () => { if ($('tab-clear').open) syncCurrentChatSummaryControls(); };
         $('settings-chat').textContent = MEMORY_CHAT_COPY.entry;
@@ -2139,7 +2133,7 @@ const UNANNOTATED_LABEL = '未标注';
         toggle.onchange = () => change(key, toggle.checked);
         if (scenery) {
             const frequency = document.createElement('select');
-            frequency.setAttribute('aria-label', '街头偶遇频率');
+            frequency.setAttribute('aria-label', '街头见闻频率');
             for (const [value, text] of [['off','关闭'], ['occasional','偶尔'], ['lively','活跃']]) {
                 const option = document.createElement('option');
                 option.value = value; option.textContent = text;
@@ -2149,7 +2143,7 @@ const UNANNOTATED_LABEL = '未标注';
             frequency.disabled = toggle.disabled;
             frequency.onchange = () => change('encounterFrequency', frequency.value);
             const field = document.createElement('label');
-            field.append('街头偶遇频率', frequency);
+            field.append('街头见闻频率', frequency);
             heading.append(field);
         }
         if (evolutionSettings?.error) {

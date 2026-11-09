@@ -19,6 +19,7 @@ test('panel controls show the bound model first and save and reset the actual re
     };
     mountPanelControls('map',bar,state,async (key,value) => {state.panelPrompts[key]=value;},async()=>repo);
     await setImmediate();
+    assert.match(bar.textContent, /人物、地图和局势共用此模型/);
     const select = bar.querySelector('.tk-panel-controls').querySelector('select');
     select.querySelector('option[value="world-model"]').selected = true;
     await select.onchange();
@@ -62,7 +63,7 @@ test('tool instructions change on the next serialized request while its validati
     const original = JSON.stringify(tool);
     input.value = '不是 JSON';
     await save.onclick();
-    assert.match(bar.querySelector('[role="status"]').textContent,/有效的 JSON/);
+    assert.match(bar.querySelector('.tk-prompt-fields [role="status"]').textContent,/有效的 JSON/);
     assert.equal(JSON.stringify(tool),original);
     const descriptions = {function:'先查已有总结'};
     input.value = JSON.stringify(descriptions);

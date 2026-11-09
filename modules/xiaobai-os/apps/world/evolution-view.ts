@@ -36,7 +36,7 @@ export function mountEvolutionView(parent: HTMLElement, section: 'people' | 'sit
         for (const [value, text] of [['off', '关闭'], ['occasional', '偶尔'], ['lively', '活跃']]) {
             const option = document.createElement('option'); option.value = value; option.textContent = text; frequency.append(option);
         }
-        encounterLabel.append('街头偶遇频率', frequency);
+        encounterLabel.append('街头见闻频率', frequency);
         parent.insertBefore(weatherLabel, status); parent.insertBefore(encounterLabel, status);
     }
     const embedded = !!frame;

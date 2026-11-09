@@ -41,7 +41,7 @@ export function renderThreads(parent, records, kinds = ['plan', 'suspense', 'sit
             const row = el(kind === 'situation' ? 'article' : 'details'); row.dataset.recordId = record.id; row.append(el(kind === 'situation' ? 'h5' : 'summary', `${record.title} · ${THREAD_STATUS[record.status]}`));
             if (kind === 'situation') {
                 const scenery = record.flavor === 'scenery' || record.flavor === 'encounter';
-                line(row, '类型', record.flavor === 'encounter' ? '风物 · 街头见闻' : scenery ? '风物' : '事态');
+                if (record.flavor === 'encounter') line(row, '类别', '街头见闻');
                 line(row, scenery ? '眼前细节' : '局势概况', record.description);
                 if (scenery) {
                     if (record.flavor !== 'encounter') line(row, '类别', record.category);
@@ -50,11 +50,13 @@ export function renderThreads(parent, records, kinds = ['plan', 'suspense', 'sit
                     line(row, '关联局势', record._relatedTitle || records.find(item => item.id === record.relatedId)?.title);
                 }
                 for (const [key, label] of Object.entries(SITUATION_FIELDS)) line(row, label, record[key]);
-                const history = el('section'); history.append(el('h5', '局势历史'));
-                for (const step of record._history || []) {
-                    const item = el('p', step.text); item.append(document.createTextNode(' '), source(step)); history.append(item);
+                if (record._history?.length) {
+                    const history = el('section'); history.append(el('h5', '局势历史'));
+                    for (const step of record._history) {
+                        const item = el('p', step.text); item.append(document.createTextNode(' '), source(step)); history.append(item);
+                    }
+                    row.append(history);
                 }
-                row.append(history);
                 for (const item of record._developments || []) line(row, '幕后进展 · ' + item.title, item.body);
             } else if (isPersonalAgenda(record)) {
                 line(row,'持有人',record.holders?.join('、') || '待归属');
@@ -108,7 +110,7 @@ export function createSuspenseBook({ getSnapshot, clues = false }) {
             for (const item of root.querySelectorAll('details')) item.open = expanded.has(item.dataset.recordId);
         },
         isEditing: () => false,
-        empty() { root.replaceChildren(el('p', clues ? '选择一段对话后查看线索。' : '选择一段对话后查看悬念。', 'tk-record-note')); },
+        empty() { root.replaceChildren(el('p', clues ? '选择一段对话后查看剧情线。' : '选择一段对话后查看悬念。', 'tk-record-note')); },
         reset() { root?.replaceChildren(); },
     };
 }

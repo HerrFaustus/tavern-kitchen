@@ -1,7 +1,7 @@
 {
-  "version": "0.2.26",
-  "verified_at_utc": "2026-11-08T20:37:19.159743+00:00",
-  "build_id": "b190ab52df2945e7a0ae",
+  "version": "0.2.27",
+  "verified_at_utc": "2026-11-09T06:42:43.899016+00:00",
+  "build_id": "a078641aae5e8de4e385",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
@@ -14,7 +14,7 @@
     "skipped": 0
   },
   "memory_runtime": "passed",
-  "scope": "Data-only kitchen cards with staged world and notes, API continuous page, native and iframe lower-third settings.",
+  "scope": "Unified API and data pages, simplified settings, shared model explanations and clearer story, data and situation labels.",
   "runtime_changes": true,
   "removed_source_paths": 1763,
   "removed_modules_in_build": 0,
@@ -677,5 +677,17 @@
       false
     ],
     "headless_verified": true
+  },
+  "layout_followup": {
+    "scope": "Data page uses continuous layout without shared settings groups",
+    "headless_summary_and_workspace": "passed",
+    "workspace_unit_test": "passed",
+    "full_suite_rerun": false
+  },
+  "ui_cleanup": {
+    "scope": "API and settings simplification, sourced plot lines, data and legacy naming",
+    "headless_browser": "passed",
+    "workspace_summary_save_and_switch": "passed",
+    "model_calls": 0
   }
 }

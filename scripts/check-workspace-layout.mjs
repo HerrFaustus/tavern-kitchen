@@ -33,7 +33,7 @@ try {
         globalThis.workspace = workspace;
         let enabled = true;
         const configure = () => workspace.configure({
-            actions: { suspense() {}, settings() {}, map() {
+            actions: { data() {}, suspense() {}, settings() {}, map() {
                 const mount = workspace.getMount('map');
                 if (mount.querySelector('iframe')) return;
                 const frame = globalThis.document.createElement('iframe');
@@ -61,7 +61,7 @@ try {
     const frame = page.frameLocator('iframe');
     await frame.locator('#tk-module-native-controls').waitFor();
     const groups = frame.locator('#tk-module-native-controls > details');
-    assert.deepEqual(await groups.locator(':scope > summary').allTextContents(), ['总开关','模型设置','功能设置','提示词设置']);
+    assert.deepEqual(await groups.locator(':scope > summary').allTextContents(), ['模块开关','模型设置','功能设置','提示词设置']);
     assert.deepEqual(await groups.evaluateAll(nodes => nodes.map(node => node.open)), [true,true,true,false]);
     assert.equal(await frame.locator('[data-settings-group="function"] [data-setting-section="function"]').count(), 1);
     assert.equal(await frame.locator('[data-settings-group="prompts"] #local-prompt').count(), 1);
@@ -93,6 +93,10 @@ try {
         await page.evaluate(() => globalThis.workspace.open('suspense'));
         const native = page.locator('#tk-module-native-controls');
         await native.waitFor();
+        assert.ok(await native.locator('[data-settings-group=master]').isVisible());
+        assert.ok(await native.locator('[data-settings-group=model]').isVisible());
+        assert.ok(await native.locator('[data-settings-group=function]').isHidden());
+        assert.ok(await native.locator('[data-settings-group=prompts]').isHidden());
         const box = await native.evaluate(el => ({top:el.getBoundingClientRect().top,body:el.previousElementSibling.getBoundingClientRect().bottom,height:el.getBoundingClientRect().height,page:el.parentElement.getBoundingClientRect().height,header:el.parentElement.firstElementChild.getBoundingClientRect().height}));
         assert.ok(box.top >= box.body - 1,'settings must follow content');
         assert.ok(Math.abs(box.height / (box.page-box.header) - 1/3) < .02);
@@ -100,6 +104,10 @@ try {
         await page.waitForFunction(() => globalThis.document.querySelector('.tk-panel-page').classList.contains('tk-page-full'));
         assert.ok(await native.isHidden());
     }
+    await page.evaluate(() => globalThis.workspace.open('data'));
+    await page.waitForFunction(() => globalThis.document.querySelector('.tk-panel-page').classList.contains('tk-page-full'));
+    assert.equal(await page.locator('#tk-module-native-controls [data-settings-group]').count(),0);
+    assert.ok(await page.locator('#tk-module-native-controls').isHidden());
     await page.evaluate(() => globalThis.workspace.open('map'));
     await frame.locator('#tk-module-native-controls').waitFor();
     await frame.getByRole('checkbox', { name: '启用地图' }).focus();

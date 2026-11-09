@@ -208,11 +208,7 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
             return;
         }
         const parametersOpen = fields.querySelector('.text-api-parameters')?.open || false;
-        const settingsOpen = fields.querySelector('.text-api-configuration')?.open ?? true;
-        configuration = element('details', null, 'tk-module-settings text-api-configuration');
-        configuration.open = settingsOpen;
-        configuration.dataset.kitchenControls = 'settings agent-api';
-        configuration.append(element('summary', '设置'));
+        configuration = element('div', null, 'text-api-configuration');
         fields.replaceChildren();
         const toolbar = element('fieldset', null, 'text-api-presets');
         toolbar.disabled = busy;
@@ -246,6 +242,7 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
         syncSaveButton();
         if (!draft) return;
         if (selected === HOST_BINDING) {
+            configuration.append(element('p', '目前总结支持跟随酒馆主 API；其他功能需要选择适用的独立连接。', 'text-api-status'));
             const test = button('测试生成', async () => {
                 if (networkBusy) return;
                 networkBusy = true; configuration.append(status); const stamp = revision; feedback(COPY.testing);
