@@ -128,6 +128,7 @@ function configureWorkspace() {
                 isCurrent: identity => memory.kitchenCardMemory().read().identity === identity,
             }));
             memory.openStoryMemorySettings('data');
+            worldArchive.showRecovery(kitchen.getMount('data')?.querySelector('iframe'));
         },
         proofreading: async () => {
             await requireFeatures();
@@ -147,6 +148,7 @@ function configureWorkspace() {
         if (!kitchen.isActive(id)) return;
         if (!memory) throw new Error('剧情记忆尚未准备好，请刷新后重试。');
         memory.openStoryWorld(id === 'situation' ? 'world' : id);
+        if (id === 'situation') worldArchive.showProposals(kitchen.getMount(id)?.querySelector('iframe'));
         if (id === 'people' || id === 'situation') kitchen.showEvolution(parent => mountWorldEvolution(parent, id, kitchen.getMount(id)?.querySelector('iframe')), id === 'people');
     };
     for (const id of ['map', 'settings', 'agent-api']) actions[id] = async () => {

@@ -151,5 +151,23 @@ html.tk-embedded[data-kitchen-view="data"] :is(.archive, #settings-modal) { disp
 #data-page[hidden] { display: none; }
 #data-controls { margin-block: 12px; }
 #kitchen-card-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 16px; }
+#world-recovery { margin: 0 0 16px; }
+.tk-world-history-field { display: flex; flex-direction: column; gap: 4px; margin: 10px 0 5px; }
+.tk-world-history-field select, .tk-world-history-field input { width: 100%; min-width: 0; }
+.tk-world-history-confirm { margin: 8px 0; }
+.tk-world-history-confirm button { margin-right: 5px; }
 #tab-agent > .memory-record-view { grid-row: 1; }
 #tab-agent > .memory-controls { grid-row: 2; }
+
+.tk-world-proposals { margin: 0 0 14px; overflow-wrap: anywhere; }
+.tk-world-proposals[hidden] { display: none; }
+.tk-proposal-queue, .tk-proposal-row { margin-block: 8px; }
+.tk-proposal-queue > summary, .tk-proposal-row > summary { cursor: pointer; }
+.tk-proposal-private { display: flex; align-items: center; gap: 6px; margin-block: 10px; }
+.tk-proposal-row { padding-inline-start: 8px; border-inline-start: 2px solid var(--bdr, #8885); }
+.tk-proposal-row p { margin-block: 6px; }
+.tk-proposal-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-block: 8px; }
+.tk-proposal-form fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.tk-proposal-field { display: grid; gap: 4px; margin-block: 8px; }
+.tk-proposal-field :is(input:not([type=checkbox]), select, textarea) { width: 100%; min-width: 0; box-sizing: border-box; font: inherit; }
+.tk-proposal-field textarea { resize: vertical; }

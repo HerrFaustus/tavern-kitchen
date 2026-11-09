@@ -20,9 +20,16 @@ export function validateKitchenCard(value) {
         const replay = forkWorld(parsed, parsed.version, createIdentifier());
         if (['entities','claims','sources','modules'].some(key => canonical(parsed[key] ?? null) !== canonical(replay[key] ?? null))) throw new Error('世界数据与历史不一致');
     }
+    if (new Set(notes.map(note => note?.id)).size !== notes.length) throw new Error('编剧札记编号重复');
+    const validDependencies = part => Array.isArray(part?.dependencies) && part.dependencies.length <= 40 && part.dependencies.every(ref =>
+        ref && typeof ref === 'object' && typeof ref.digest === 'string' && !!ref.digest
+        && (typeof ref.lineTitle === 'string' && !!ref.lineTitle || typeof ref.recordId === 'string' && !!ref.recordId
+            || typeof ref.entityId === 'string' && !!ref.entityId && typeof ref.field === 'string' && !!ref.field));
     for (const note of notes) {
         if (typeof note.id !== 'string' || !Number.isSafeInteger(note.end) || typeof note.source !== 'string'
+            || !Number.isSafeInteger(note.revision) || note.revision < 1
             || typeof note.global?.text !== 'string' || typeof note.chapter?.text !== 'string'
+            || !validDependencies(note.global) || !validDependencies(note.chapter)
             || note.chapter.text.includes('{{') || note.global.text.length > 16000 || note.chapter.text.length > 24000) throw new Error('编剧札记格式无效');
     }
     return { ...value.data, memory: cardMemory(memory) };

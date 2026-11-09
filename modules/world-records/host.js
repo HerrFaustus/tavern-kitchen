@@ -1,5 +1,7 @@
 import { createNoteStore } from '../story-planner/storage.js';
 import { createWorldCardData } from '../kitchen-data/world.js';
+import { createProposalPanel } from './proposal-panel.js';
+import { createWorldRecoveryPanel } from './recovery-panel.js';
 import { plannerSnapshot } from '../story-planner/notes.js';
 import { ambientControl, ambientPrompt, mapLocalConditions } from '../story-state/ambient.js';
 import { readInvolvement } from '../story-state/involvement.js';
@@ -25,7 +27,7 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
     const sourceIdentity = () => storyIdentityKey(captureStoryIdentity(getContext()));
     const identity = (branch = getMemorySnapshot()?.store?.dataBranch) => { const story = sourceIdentity(); return story ? JSON.stringify([getAccountId(), story, ...(branch ? [branch] : [])]) : ''; };
     const storage = createWorldStorage();
-    let authority, latestState = null;
+    let authority, proposalPanel, recoveryPanel, latestState = null;
     const service = createWorldService({ storage, getIdentity: identity, isSourceCurrent: turn => !!turn
         && isRangeSourceCurrent(turn.source, getContext().chat || [])
         && getSummarySourceEnd(getContext().chat, turn.source.end) >= turn.source.end,
@@ -36,10 +38,33 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
             return { available: !!snapshot?.enabled && snapshot.invalidFrom === undefined && !snapshot.store?.summaryInvalid,
                 history: snapshot?.store?.summaryHistory || [], storyRecords: snapshot?.store?.json?.storyRecords || [] };
         }, onChanged: (state, owner) => {
-        if (owner === identity()) latestState = state;
+        if (owner === identity()) {
+            latestState = state;
+            if (isVisible('situation') && !proposalPanel?.isEditing()) proposalPanel?.show(state);
+            if (isVisible('data')) recoveryPanel?.noteChange(state);
+        }
         authority?.publish(state, owner);
         publishWorldBridgeState(sourceIdentity(), owner, state);
     } });
+    proposalPanel = createProposalPanel({ service, getIdentity:identity });
+    const recoveryStamp=()=>{
+        const chat=getContext().chat || [], memory=getMemorySnapshot();
+        return memoryDigest({chat:chat.length ? captureRangeSource(chat,0,chat.length-1) : null,
+            end:getSummarySourceEnd(chat,chat.length-1),enabled:!!memory?.enabled,invalidFrom:memory?.invalidFrom ?? null,
+            history:memory?.store?.summaryHistory || [],data:memory?.store?.json || null});
+    };
+    recoveryPanel = createWorldRecoveryPanel({service,getIdentity:identity,getStamp:recoveryStamp,readState:async()=>{
+        const owner=identity(),token=epoch,scope=service.scopeVersion(),stamp=recoveryStamp(),input=observation();
+        const current=()=>!disposed && token===epoch && owner===identity() && scope===service.scopeVersion() && stamp===recoveryStamp();
+        const existing=await service.read();
+        if (!current()) throw new Error('聊天、总结或世界分支已变化，请重试');
+        if (!existing) return null;
+        if (!input.snapshot?.enabled || !input.snapshot.store) throw new Error('剧情资料尚未就绪，请稍后重新读取');
+        const state=await service.syncTurns(input.chat,{end:input.end,history:input.snapshot?.store?.summaryHistory || [],
+            memoryAvailable:!!input.snapshot?.enabled,guard:current});
+        if (!current()) throw new Error('聊天、总结或世界分支已变化，请重试');
+        return state;
+    }});
     const initialize = createOpening?.({getContext,identity,service});
     const unregisterBridge = registerWorldBridge(() => ({ storyIdentity: sourceIdentity(), identity: identity(), service }));
     authority = createAuthorityRuntime({ getIdentity: identity, getStoryIdentity: sourceIdentity, sync: async () => {
@@ -60,6 +85,40 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
     const protagonist = createProtagonistView({ getInvolvement: involvementFor, getSnapshot: getMemorySnapshot, getPlayerName: () => getContext().name1 });
     const views = { overview: protagonist, clues: createSuspenseBook({getSnapshot:getMemorySnapshot, clues:true}), suspense: createSuspenseBook({ getSnapshot: getMemorySnapshot }) };
     let disposed = false, scheduled = false, epoch = 0;
+    let proposalFrame, proposalFrameLoad, recoveryFrame, recoveryFrameLoad;
+    function showProposals(frame) {
+        if (!frame || disposed) return;
+        const mount = () => {
+            if (disposed || !isVisible('situation')) return;
+            const target = frame.contentDocument?.getElementById('world-proposals');
+            if (!target) return;
+            proposalPanel.mount(target);
+            const owner = identity(), token = epoch;
+            sync().then(state => {
+                if (!disposed && owner === identity() && token === epoch && isVisible('situation') && !proposalPanel.isEditing()) proposalPanel.show(state);
+            }).catch(error => onError(error));
+        };
+        if (proposalFrame !== frame) {
+            if (proposalFrameLoad) proposalFrame?.removeEventListener('load',proposalFrameLoad);
+            proposalFrame = frame; proposalFrameLoad = mount; frame.addEventListener('load',mount);
+        }
+        mount();
+    }
+    function showRecovery(frame) {
+        if (!frame || disposed) return;
+        const mount = () => {
+            if (disposed || !isVisible('data')) return;
+            const target=frame.contentDocument?.getElementById('world-recovery');
+            if (!target) return;
+            recoveryPanel.mount(target);
+            recoveryPanel.refresh().catch(onError);
+        };
+        if (recoveryFrame !== frame) {
+            if (recoveryFrameLoad) recoveryFrame?.removeEventListener('load',recoveryFrameLoad);
+            recoveryFrame=frame;recoveryFrameLoad=mount;frame.addEventListener('load',mount);
+        }
+        mount();
+    }
     const observation = () => {
         const context = getContext(), chat = context.chat || [], snapshot = getMemorySnapshot();
         return { chat, snapshot, end: getSummarySourceEnd(chat, chat.length - 1) };
@@ -139,6 +198,8 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
     const noteStore = createNoteStore();
     return {
         cardData: createWorldCardData({ identity, storage, service, noteStore }),
+        showProposals,
+        showRecovery,
         initialize,
         plannerSnapshot() {
             const ctx = getContext();
@@ -164,7 +225,7 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
             await service.ensure(getContext().chatId || '当前故事');
             const state = await sync(); if (isVisible(route) && !disposed) view.show(state || await service.read());
         },
-        reset() { epoch++; latestState = null; service.invalidate(); authority.reset(); for (const view of Object.values(views)) view.reset(); },
-        dispose() { disposed = true; service.invalidate(); authority.reset(); disconnectFocus(); unregisterConditions(); unregisterCatalog(); unregisterTurns(); unregisterBridge(); unregisterAuthority(); unsubscribe(); unregisterMemory(); for (const view of Object.values(views)) view.reset(); storage.close().catch(error => onError(error)); },
+        reset() { epoch++; latestState = null; proposalPanel.reset(); recoveryPanel.reset(); service.invalidate(); authority.reset(); for (const view of Object.values(views)) view.reset(); },
+        dispose() { disposed = true; if (proposalFrameLoad) proposalFrame?.removeEventListener('load',proposalFrameLoad); if (recoveryFrameLoad) recoveryFrame?.removeEventListener('load',recoveryFrameLoad); proposalPanel.reset(); recoveryPanel.reset(); service.invalidate(); authority.reset(); disconnectFocus(); unregisterConditions(); unregisterCatalog(); unregisterTurns(); unregisterBridge(); unregisterAuthority(); unsubscribe(); unregisterMemory(); for (const view of Object.values(views)) view.reset(); storage.close().catch(error => onError(error)); },
     };
 }

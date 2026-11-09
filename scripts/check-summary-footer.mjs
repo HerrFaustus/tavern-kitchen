@@ -54,6 +54,7 @@ try {
     const frame = page.frameLocator('iframe'), options = frame.locator('#summary-options');
     assert.ok(await frame.locator('#btn-generate').evaluate(el => !!el.closest('#summary-controls')));
     assert.equal(await frame.locator('.archive #btn-generate').count(), 0);
+    await options.waitFor({ state: 'visible' });
     assert.ok(await options.isVisible());
     assert.equal(await options.locator(':scope > summary').count(), 0);
     await frame.locator('#tab-summary-prompts > summary').click();

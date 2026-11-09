@@ -22,6 +22,7 @@ export function createPlanner({snapshot, store, write, status}) {
                     return next?.owner === snap.owner && next.boundary === snap.boundary && next.world.version === snap.world.version && JSON.stringify(next.plotLines) === JSON.stringify(snap.plotLines)
                         && next.chat.length === end + 1 && prefix(next.chat,end) === source;
                 };
+                if (store.recoverLegacy && snap.legacyOwner) await store.recoverLegacy(snap.legacyOwner, snap.owner, fresh);
                 const previous = selectVersion(await store.list(snap.owner),snap);
                 if (!fresh()) return '';
                 const reason = reviewReason(previous,snap);

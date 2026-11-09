@@ -1,3 +1,4 @@
+import { plannerOwner } from './identity.js';
 import { collectPlotLines } from '../story-state/plot-lines.js';
 import { definePanelPrompt, panelEnabled } from '../../core/panel-policy.js';
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
@@ -18,7 +19,7 @@ export function plannerSnapshot(world, memory, chat, identity) {
     const last = layers.parents.filter(unit => unit.level === 'chapter').at(-1);
     const records = worldStoryRecords(world, memory.store?.json?.storyRecords || []);
     const plotLines = panelEnabled('clues') ? collectPlotLines(memory.store?.summaryHistory, records) : [];
-    return { world, records, layers, chat, plotLines, lineState:plotLines.length ? memoryDigest(plotLines.map(({title,status}) => [title,status]).sort((a,b) => a[0].localeCompare(b[0]))) : '', owner: JSON.stringify([identity,world.worldId,world.branchId]),
+    return { world, records, layers, chat, plotLines, lineState:plotLines.length ? memoryDigest(plotLines.map(({title,status}) => [title,status]).sort((a,b) => a[0].localeCompare(b[0]))) : '', owner: plannerOwner(identity,world), legacyOwner: identity,
         boundary: last ? memoryDigest([last.start,last.end,last.sourceId,last.text]) : 'opening' };
 }
 
@@ -51,8 +52,9 @@ export function prefix(chat, end) {
     return end < 0 ? '' : end >= chat.length ? null : captureRangeSource(chat,0,end).digest;
 }
 export function selectVersion(rows, snap) {
-    // Rollback selects the newest publication based on the surviving chat prefix.
-    return rows.filter(row => row.owner === snap.owner).sort((a,b) => b.revision - a.revision)
+    // An old import and later publications used independent revision counters.
+    // A matching publication in the real branch therefore takes precedence.
+    return rows.filter(row => row.owner === snap.owner).sort((a,b) => Number(!!a.recoveredLegacy) - Number(!!b.recoveredLegacy) || b.revision - a.revision)
         .find(row => prefix(snap.chat,row.end) === row.source);
 }
 export function reviewReason(previous,snap) {

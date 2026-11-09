@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setImmediate } from 'node:timers/promises';
 import { IDBFactory } from 'fake-indexeddb';
+import { parseHTML } from 'linkedom';
 import { createWorldArchive } from './host.js';
 import { getWorldBridge } from './bridge.js';
 import { prepareMemorySources, assertMemorySources, validateMemorySources } from './turn-runtime.js';
@@ -17,13 +18,13 @@ function setup(t) {
     const previousDB = globalThis.indexedDB; globalThis.indexedDB = new IDBFactory();
     const context = { chatId: 'story', characterId: 0, characters: [{ avatar: 'hero.png' }],
         chat: [{ is_user: true, mes: '买剑', send_date: 'user' }, { name: '铁匠', mes: '支付五金币。', send_date: 'reply' }] };
-    let snapshot = { enabled: true, store: { summaryHistory: [], json: {} } }, account = 'account-a';
+    let snapshot = { enabled: true, store: { summaryHistory: [], json: {} } }, account = 'account-a', showData = false;
     const errors = [];
     const archive = createWorldArchive({ getContext: () => context, getAccountId: () => account, getMemorySnapshot: () => snapshot,
-        getMount: () => assert.fail('no UI expected'), isVisible: () => false, navigate() {}, onError: error => errors.push(error) });
+        getMount: () => assert.fail('no UI expected'), isVisible: id => showData && id === 'data', navigate() {}, onError: error => errors.push(error) });
     t.after(async () => { archive.dispose(); await setImmediate(); globalThis.indexedDB = previousDB; });
     return { context, archive, errors, bridge: () => getWorldBridge(storyIdentityKey(captureStoryIdentity(context))),
-        setSnapshot(value) { snapshot = value; }, setAccount(value) { account = value; } };
+        setSnapshot(value) { snapshot = value; }, setAccount(value) { account = value; }, setDataVisible(value) { showData = value; } };
 }
 
 test('confirmed memory delivery automatically commits clear same-turn proposals before importing summary sources', async t => {
@@ -145,6 +146,21 @@ test('narration stops on stale executed effects while the archive remains availa
     await service.fork(conflict, state.version - 1); await f.archive.prepare();
     assert.equal(turnProgress(await service.read()).conflicts.length, 0); assert.deepEqual(f.errors, []);
 });
+
+test('opening recovery while memory is loading never clears recorded source deliveries', async t => {
+    const f=setup(t),prepared=await prepareMemorySources(0,1),service=f.bridge().service;
+    f.setSnapshot({enabled:true,store:{json:{},summaryHistory:[{endMesId:1,sourceReceipt:prepared.receipt}]}});
+    await prepared.deliver();const before=await service.read();
+    assert.equal(currentTurns(before)[0].memory.length,1);
+    f.setSnapshot({enabled:true,store:null});f.setDataVisible(true);
+    const {document}=parseHTML('<html><body><section id="world-recovery" hidden></section></body></html>');
+    const frame={contentDocument:document,addEventListener(){},removeEventListener(){}};
+    f.archive.showRecovery(frame);
+    for(let i=0;i<100 && !document.querySelector('#world-recovery').textContent.includes('剧情资料尚未就绪');i++) await setImmediate();
+    assert.match(document.querySelector('#world-recovery').textContent,/剧情资料尚未就绪/);
+    assert.deepEqual(await service.read(),before);assert.deepEqual(f.errors,[]);
+});
+
 test('an unavailable registered world runtime fails closed instead of silently generating without a full snapshot', async t => {
     const f = setup(t); f.archive.dispose();
     await assert.rejects(prepareMemorySources(0, 1, { unified: true }), /世界内核尚未就绪/);

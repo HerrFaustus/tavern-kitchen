@@ -50,7 +50,10 @@ export function createWorldService({ storage, getIdentity, id = createIdentifier
             effectLeases.set(command, generation); return command;
         },
         async branches() { const bound = capture(); const branches = await storage.list(bound.identity); invariant(bound.current(), '对话已切换'); return branches; },
-        async selectBranch(branchId, expected) { const bound = capture(); return publish(bound, storage.select(bound.identity, branchId, expected, bound.current), true); },
+        async selectBranch(branchId, expected, { guard = () => true } = {}) {
+            const bound = capture();
+            return publish(bound, storage.select(bound.identity, branchId, expected, () => bound.current() && guard()), true);
+        },
         async commit(command, { guard = () => true } = {}) {
             const bound = capture();
             return publish(bound, storage.update(bound.identity, state => {
@@ -116,12 +119,12 @@ export function createWorldService({ storage, getIdentity, id = createIdentifier
         },
         executionReceipts(state, sourceId) { return state.receipts.filter(receipt => receipt.origin?.sourceId === sourceId).map(receipt => structuredClone(receipt)); },
         assertSourcesConsistent(state) { invariant(!turnEffectConflicts(state).length, '正文来源已变化，关联的世界效果需要核对；请先回到变更前的世界分支'); },
-        async fork(expected, version) {
+        async fork(expected, version, { guard = () => true } = {}) {
             const bound = capture();
             return publish(bound, storage.update(bound.identity, state => {
                 invariant(state?.branchId === expected.branchId && state.version === expected.version, '档案已更新，请重新加载');
                 const next = forkWorld(state, version, id()); return { state: next, result: next };
-            }, bound.current), true);
+            }, () => bound.current() && guard()), true);
         },
         async restore(backup, expected) {
             const parsed = validateWorld(structuredClone(backup));
