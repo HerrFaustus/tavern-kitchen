@@ -3,7 +3,24 @@
   "status": "passed",
   "validated_on": "2026-11-15",
   "build_id": "624afd7a34e4bfc4952a",
-  "product": "酒馆后厨 Tavern 扩展，本地安装包",
+  "product": "酒馆后厨 Tavern 扩展",
+  "publication": {
+    "tag": "v0.2.33",
+    "commit": "285274fe07d3c0714f785268ad9ad6cd49ce39d6",
+    "published_at": "2026-11-14T22:37:12Z",
+    "url": "https://github.com/HerrFaustus/tavern-kitchen/releases/tag/v0.2.33",
+    "workflow_url": "https://github.com/HerrFaustus/tavern-kitchen/actions/runs/43648917326",
+    "zip_sha256": "f9f27db26f5aacfdf3f726e742e546e9b3f3bb0cde49a49245f1509bfcdb133c",
+    "observed": "发布后从 GitHub Release 下载 ZIP、SHA-256 校验文件和 release-info.json，三份附件逐字节匹配本地验收件。下载 ZIP 的 SHA-256 也与最终复装回执一致。",
+    "replay_from_repo_root": [
+      "download_dir=$(mktemp -d)",
+      "gh release download v0.2.33 --repo HerrFaustus/tavern-kitchen --dir \"$download_dir\"",
+      "(cd \"$download_dir\" && shasum -a 256 -c tavern-kitchen-0.2.33.zip.sha256)",
+      "cmp \"$download_dir/tavern-kitchen-0.2.33.zip\" release/tavern-kitchen-0.2.33.zip",
+      "cmp \"$download_dir/tavern-kitchen-0.2.33.zip.sha256\" release/tavern-kitchen-0.2.33.zip.sha256",
+      "cmp \"$download_dir/release-info.json\" release/release-info.json"
+    ]
+  },
   "code_baseline": "85d645dcbbe5ca8e66069dd8edd8ddae936e905d",
   "upgrade_fixture": {
     "commit": "506146623383fd9b6fea3cdd27c3ca1ca115f31a",
@@ -29,7 +46,7 @@
     "network": "浏览器安装用例只接受本地样例域名，三个模型名称由 API 页保存，使用真实扩展适配器和浏览器请求。领域回归使用虚构聊天和确定性模型响应。"
   },
   "replay": {
-    "working_directory": "仓库根目录。安装包内附同版源码、脚本和旧档样例。",
+    "working_directory": "复现已发布的安装包时，在 v0.2.33 标签的干净检出根目录运行。安装包内附同版源码、脚本和旧档样例。",
     "setup": [
       "pnpm install --frozen-lockfile --ignore-scripts"
     ],

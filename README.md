@@ -2,11 +2,11 @@
 
 酒馆后厨（Tavern Kitchen）是一个 SillyTavern 扩展。每次正文回复完成后，后厨记录发生了什么，把已确认的世界状态、近期原文和早期经历提供给下一次续写。
 
-0.2.33 在本地提供完整安装包，六项成品验收及最终 ZIP 复装均已通过。宿主生成角色正文，后厨按顺序结算已选回复。每份聊天维护一个世界。全新安装后，各业务开关均关闭。[安装包](release/tavern-kitchen-0.2.33.zip) · [校验值](release/release-info.json) · [成品规则](最终项目目标.md) · [验收记录](docs/validation.json)
+0.2.33 已正式发布。六项成品验收及最终 ZIP 复装均已通过，发布后下载的 ZIP 与本地验收包逐字节一致。宿主生成角色正文，后厨按顺序结算已选回复。每份聊天维护一个世界。全新安装后，各业务开关均关闭。[下载 ZIP](https://github.com/HerrFaustus/tavern-kitchen/releases/download/v0.2.33/tavern-kitchen-0.2.33.zip) · [SHA-256 校验文件](https://github.com/HerrFaustus/tavern-kitchen/releases/download/v0.2.33/tavern-kitchen-0.2.33.zip.sha256) · [发布页](https://github.com/HerrFaustus/tavern-kitchen/releases/tag/v0.2.33) · [成品规则](最终项目目标.md) · [验收记录](docs/validation.json)
 
 ## 安装与开始
 
-1. 全新安装时将 `release/tavern-kitchen-0.2.33.zip` 解压到宿主的 `public/scripts/extensions/third-party/`，确认 `tavern-kitchen/manifest.json` 与 `tavern-kitchen/dist/host/plugin.js` 在同一扩展目录下，刷新宿主。升级时先在原浏览器的「数据」导出后厨卡，再用 ZIP 中的同名目录覆盖原扩展文件并刷新。沿用原宿主账号、地址和浏览器配置文件即可读回原聊天、IndexedDB 世界以及札记。
+1. 全新安装时将下载的 `tavern-kitchen-0.2.33.zip` 解压到宿主的 `public/scripts/extensions/third-party/`，确认 `tavern-kitchen/manifest.json` 与 `tavern-kitchen/dist/host/plugin.js` 在同一扩展目录下，刷新宿主。升级时先在原浏览器的「数据」导出后厨卡，再用 ZIP 中的同名目录覆盖原扩展文件并刷新。沿用原宿主账号、地址和浏览器配置文件即可读回原聊天、IndexedDB 世界以及札记。
 2. 打开聊天，点击顶栏最右的门形图标，或在扩展设置里点击「打开后厨」。在「API → 编辑连接」新建或导入命名连接，填好地址和模型后保存。回到 API 页的更新、推演、编剧三行，为要启用的 Agent 选择连接。三者可以共用一个。
 3. 在所需板块的页头设置开启功能。在角色对话里走完一轮，到「剧情 → 总结」看本轮记录。要从角色卡、已启用的世界书条目和开场资料建档，到「世界 → 世界生成」手动生成。要让编剧给续写提供建议，到「编剧」点击「立即生成／更新札记」。
 
@@ -70,7 +70,7 @@
 
 宿主从扩展清单加载 `dist/host/plugin.js`。改启动和工作台行为时，从 `plugin-entry.js` 进入原生抽屉的引导与运行时。`index.js` 为仍缓存旧入口的安装转发到构建产物。改领域行为时，可从上面各功能的源码或测试进入。[扩展清单](manifest.json) · [启动源码](plugin-entry.js) · [旧入口](index.js)
 
-使用 Node.js 24、pnpm 11.25.0 和 Python 3。在仓库根目录运行以下命令，输出的安装包在 `release/`。
+使用 Node.js 24、pnpm 11.25.0 和 Python 3。在仓库根目录运行以下命令，输出的安装包在 `release/`。要复现正式发布的 0.2.33 ZIP，请使用 `v0.2.33` 标签的干净检出，包内文档也取自该标签。
 
 ```sh
 pnpm install --frozen-lockfile --ignore-scripts
