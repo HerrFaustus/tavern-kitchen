@@ -48,23 +48,23 @@ test('each panel can be enabled in place, even when all panels are off', async (
     const body = page.querySelector('.tk-workspace-body');
     assert.ok(document.querySelector('#tk-workspace.fillRight'));
     assert.equal(document.querySelector('.tk-panel-settings'), null);
-    assert.ok(body.nextElementSibling.classList.contains('tk-workspace-controls'));
-    assert.ok(body.nextElementSibling.contains(toggle()), 'module controls remain below its content when disabled');
+    assert.ok(body.previousElementSibling.classList.contains('tk-workspace-controls'));
+    assert.ok(body.previousElementSibling.contains(toggle()), 'module controls remain alongside the readable archive');
     assert.equal(body.contains(toggle()), false);
     assert.equal(toggle().getAttribute('aria-label'), '启用地图');
-    assert.equal(body.hidden, true);
-    assert.equal(workspace.isActive('map'), false);
-    assert.equal(opens, 0);
+    assert.equal(body.hidden, false);
+    assert.equal(workspace.isActive('map'), true);
+    await setImmediate(); assert.equal(opens, 1);
     for (const checked of [true,false,true]) {
         toggle().checked = checked;
         toggle().dispatchEvent(new Event('change'));
         await setImmediate();
-        assert.equal(body.hidden, !checked);
-        assert.equal(workspace.isActive('map'), checked);
+        assert.equal(body.hidden, false);
+        assert.equal(workspace.isActive('map'), true);
         assert.equal(toggle().checked, checked);
     }
-    assert.equal(opens, 2);
+    assert.equal(opens, 4);
     await workspace.open('people');
     assert.equal(page.querySelector('[data-panel="people"]').checked, false);
-    assert.equal(body.hidden, true);
+    assert.equal(body.hidden, false);
 });

@@ -122,9 +122,12 @@
             </section>
             <section id="archive-people" role="tabpanel" aria-labelledby="archive-tab-people" hidden>
                 <div class="archive-roster" id="archive-roster"></div>
-                <section id="people-developments" hidden></section>
-                <section id="world-people-editor" hidden aria-label="人物档案维护"></section>
+                <button type="button" class="archive-text" id="archive-people-back" hidden>返回人物列表</button>
                 <div class="archive-people-layout">
+                    <div class="archive-person-head">
+                        <h2 id="archive-person-name" tabindex="-1"></h2>
+                        <section id="world-people-editor" hidden aria-label="人物档案维护"></section>
+                    </div>
                     <div id="archive-profile-home">
                         <section class="archive-profile" id="archive-profile">
 
@@ -133,6 +136,7 @@
                         </section>
                     </div>
                 </div>
+                <section id="people-developments" hidden></section>
             </section>
             <section id="archive-world" role="tabpanel" aria-labelledby="archive-tab-world" hidden>
                 <section id="world-proposals" hidden aria-label="待核对的世界变化"></section>

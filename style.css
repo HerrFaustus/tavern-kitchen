@@ -233,9 +233,9 @@
 .tk-module-settings { border-top: 1px solid var(--SmartThemeBorderColor, #8885); padding-block: 10px; margin-block-start: 12px; }
 .tk-module-settings > summary, .tk-module-settings > details > summary { cursor: pointer; }
 
-#tk-workspace .tk-panel-page { display: grid; grid-template-rows: auto minmax(0, 3fr) minmax(0, 1fr); }
-#tk-workspace .tk-panel-page.tk-controls-in-frame { grid-template-rows: auto minmax(0, 1fr); }
-#tk-workspace .tk-workspace-controls { height: 100%; max-height: none; min-height: 0; overflow-y: auto; box-sizing: border-box; }
+#tk-workspace .tk-panel-page { display: flex; flex-direction: column; }
+
+#tk-workspace .tk-workspace-controls { height: auto; max-height: 45%; min-height: 0; overflow-y: auto; box-sizing: border-box; }
 #tk-workspace .tk-workspace-body { overflow: hidden; }
 
 #tk-module-native-controls > h4 { margin: 0 0 8px; font-size: 1em; }
@@ -246,10 +246,13 @@
 #tk-module-native-controls > details > summary { cursor: pointer; }
 #tk-module-native-controls .tk-api-fields > section > h5 { margin: 8px 0 4px; font-size: 1em; font-weight: 600; }
 
-#tk-workspace .tk-panel-page > .tk-workspace-header { grid-row: 1; }
-#tk-workspace .tk-panel-page > .tk-workspace-body { grid-row: 2; }
-#tk-workspace .tk-panel-page > .tk-workspace-controls { grid-row: 3; }
-#tk-workspace .tk-panel-page.tk-page-full { grid-template-rows: auto minmax(0, 1fr); }
+#tk-workspace .tk-panel-page > .tk-workspace-header { flex: none; gap: .4em; }
+#tk-workspace .tk-settings-toggle { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: .6em; min-width: 0; color: inherit; font: inherit; cursor: pointer; text-align: start; }
+#tk-workspace .tk-settings-toggle .up { transform: rotate(180deg); }
+#tk-workspace .tk-workspace-header .tk-close { margin-inline-start: auto; }
+#tk-workspace .tk-panel-page > .tk-workspace-body { flex: 1 1 0; min-height: 0; }
+#tk-workspace .tk-panel-page[data-settings-open="false"] > .tk-workspace-controls,
+#tk-workspace .tk-workspace-header > [hidden] { display: none; }
 
 /* A module only shows settings categories with controls. */
 #tk-module-native-controls > [data-settings-group]:not(:has(> :not(h5):not(summary):not([hidden]):not(.tk-feature-switches), > .tk-feature-switches:not([hidden]) > :not([hidden]))) { display: none; }

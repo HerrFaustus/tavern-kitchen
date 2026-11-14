@@ -97,7 +97,7 @@ import { projectStoryCharacters } from "./prompt-characters.js";
 import { notifyWorldSourcesChanged } from '../world-records/sources.js';
 import { prepareMemorySources, prepareSummaryRecovery, summaryRecoveryScope, validateMemorySources } from '../world-records/turn-runtime.js';
 import { captureRangeSource, firstInvalidMemorySource } from './data/turn-source.js';
-import { worldAuthorityForContext, authorityStoryStore } from '../world-records/authority-context.js';
+import { worldAuthorityForContext, authorityStoryStore, worldFieldSource } from '../world-records/authority-context.js';
 import { getAutoSummaryPlan } from './generate/summary-trigger.js';
 import { getSummarySourceEnd } from './generate/source-boundary.js';
 import { createHideStateController } from './hide-state.js';
@@ -1400,13 +1400,13 @@ async function sendFrameBaseData(store, totalFloors) {
 }
 
 function sendFrameFullData(store, totalFloors) {
-    if (store?.json || worldAuthorityForContext(getContext())?.sources?.['world-opening']) {
+    if (store?.json || worldAuthorityForContext(getContext())?.entities?.length || worldAuthorityForContext(getContext())?.sources?.['world-opening']) {
         postToFrame({
             type: "SUMMARY_FULL_DATA",
             payload: buildFramePayload(store),
         });
     } else {
-        postToFrame({ type: "SUMMARY_CLEARED", payload: { totalFloors } });
+        postToFrame({ type: "SUMMARY_CLEARED", payload: { totalFloors, chatId: getContext().chatId || '', branchId: worldAuthorityForContext(getContext())?.branchId || '' } });
     }
 }
 
@@ -1417,9 +1417,9 @@ function buildFramePayload(store) {
     const facts = json.facts || [];
     const valid = !store?.summaryInvalid && store?.sourceInvalidFromFloor == null && store?.sourceRollbackFromFloor == null
         && firstInvalidMemorySource(store, getContext().chat) == null;
-    const entities = (worldAuthorityForContext(getContext())?.entities || []).map(({id,kind,name,aliases,fields}) => ({id,kind,name,aliases,fields}));
+    const entities = (authority?.entities || []).map(({id,kind,name,aliases,fields}) => ({id,kind,name,aliases,fields}));
     return {
-        entities,
+        entities, branchId: authority?.branchId || '',
         playerName: getContext().name1 || '',
         chatId: getContext().chatId || '',
         rounds: valid ? timelineRounds(store) : [],
@@ -2055,6 +2055,11 @@ async function handleFrameMessage(event) {
                 postToFrame({ type: 'SUMMARY_STATUS', statusText: '' });
             }
             break;
+        case 'WORLD_FIELD_SOURCE': {
+            const ctx = getContext(), world = worldAuthorityForContext(ctx);
+            postToFrame({type:'WORLD_FIELD_SOURCE_RESULT', payload:worldFieldSource(world, ctx, data)});
+            break;
+        }
         case 'MEMORY_MAINTENANCE_SOURCE':
             postToFrame({ type: 'MEMORY_MAINTENANCE_SOURCE_RESULT', payload: memoryMaintenance.source(data) });
             break;

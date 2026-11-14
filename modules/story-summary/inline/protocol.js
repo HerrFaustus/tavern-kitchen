@@ -68,7 +68,7 @@ export function extractGeneratedFloorPayload(raw) {
     const fenced = source.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
     const json = fenced ? fenced[1].trim() : source.slice(source.indexOf('{'), source.lastIndexOf('}') + 1);
     if (!json.startsWith('{') || !json.endsWith('}')) {
-        return { status: 'invalid', error: '模型未返回总结 JSON，请检查总结模型和提示词设置。' };
+        return { status: 'invalid', error: '模型未返回总结 JSON，请在 API 检查更新 Agent 的连接和模型。' };
     }
     try {
         if (json.length > FLOOR_PROTOCOL_LIMIT) fail('本楼总结过长');

@@ -8,7 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = json.loads((ROOT / 'manifest.json').read_text(encoding='utf-8'))['version']
 DIST = json.loads((ROOT / 'dist/manifest.json').read_text(encoding='utf-8'))
 DIRECTORIES = ['bridges', 'core', 'docs', 'dist', 'libs', 'modules', 'scripts', 'shared', 'widgets']
-FILES = ['README.md', 'manifest.json', 'package.json', 'pnpm-lock.yaml', 'plugin-entry.js', 'index.js',
+FILES = ['README.md', '最终项目目标.md', '历史更新记录.md', '下一轮更新计划.md',
+         'manifest.json', 'package.json', 'pnpm-lock.yaml', 'plugin-entry.js', 'index.js',
          'style.css', 'tsconfig.json', 'vite.plugin.config.mjs', '.gitignore', '.eslintignore', '.eslintrc.cjs']
 files = [ROOT / name for name in FILES]
 for name in DIRECTORIES:
@@ -19,7 +20,7 @@ for file in files:
 for entry in DIST['entries'].values():
     if not (ROOT / 'dist' / entry['file']).is_file():
         raise ValueError('Missing build entry')
-for required in ['docs/LICENSE.md', 'docs/COPYRIGHT', 'docs/NOTICE', 'docs/UPSTREAM.md', 'docs/VALIDATION.md']:
+for required in ['docs/LICENSE.md', 'docs/COPYRIGHT', 'docs/NOTICE', 'docs/validation.json', 'dist/THIRD-PARTY-LICENSES.md']:
     assert ROOT / required in files, required
 
 release = ROOT / 'release'

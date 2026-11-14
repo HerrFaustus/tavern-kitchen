@@ -31,7 +31,11 @@
 .tk-embedded[data-kitchen-view="settings"] .workspace-shell { padding-inline: 24px; }
 .tk-embedded #archive-manage-open { display: none; }
 .tk-embedded .archive { padding: 0 24px 32px; font-family: inherit; }
-.tk-embedded .archive-topbar { height: 52px; }
+.tk-embedded :is(.archive-topbar, .archive-nav) { display: none; }
+.tk-embedded .archive-content { padding-top: .3em; }
+.tk-embedded #archive-people .archive-roster { margin: 0; }
+.tk-embedded #archive-people .archive-person { min-height: 2.6em; }
+.tk-embedded #archive-people .archive-avatar { display: none; }
 .tk-embedded .archive-brand, .tk-embedded #archive-close, .tk-embedded #archive-theme,
 .tk-embedded #ep_close, .tk-embedded .header-left { display: none; }
 .tk-embedded .container { max-width: none; padding: 16px 24px; }
@@ -154,7 +158,7 @@
     cursor: not-allowed !important;
 }
 .tk-embedded.tk-follow-host :is(.btn, .xb-assistant-config button, .agent-api-connection button) { min-height: 0; }
-.tk-embedded.tk-follow-host :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]), select, textarea) {
+.tk-embedded.tk-follow-host :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]), textarea) {
     background-color: var(--tk-field-background-color, var(--bg2)) !important;
     background-image: var(--tk-field-background-image, none) !important;
     color: var(--tk-field-color, var(--txt)) !important;
@@ -166,7 +170,24 @@
     min-height: 0 !important;
     box-shadow: none !important;
 }
-.tk-embedded.tk-follow-host select { appearance: auto !important; }
+.tk-embedded.tk-follow-host select {
+    appearance: var(--tk-select-appearance, auto) !important;
+    background-color: var(--tk-select-background-color, var(--bg2)) !important;
+    border: var(--tk-select-border, 1px solid var(--bdr)) !important;
+    border-radius: var(--tk-select-border-radius, 5px) !important;
+    color: var(--tk-select-color, var(--txt)) !important;
+    font-family: var(--tk-select-font-family, inherit) !important;
+    min-height: 0 !important; box-shadow: none !important;
+    background-image: var(--tk-select-background-image, none) !important;
+    background-position: var(--tk-select-background-position, right center) !important;
+    background-repeat: var(--tk-select-background-repeat, no-repeat) !important;
+    background-size: var(--tk-select-background-size, auto) !important;
+    height: var(--tk-select-height, auto) !important;
+    line-height: var(--tk-select-line-height, normal) !important;
+    padding: var(--tk-select-padding, .2em .4em) !important;
+    font-size: var(--tk-select-font-size, inherit) !important;
+    box-sizing: border-box;
+}
 .tk-embedded.tk-follow-host input:is([type="checkbox"], [type="radio"]) {
     appearance: auto !important; position: static !important; opacity: 1 !important;
     width: 1em !important; height: 1em !important; min-width: 1em !important; min-height: 1em !important;
@@ -271,7 +292,7 @@
 /* A module only shows settings categories with controls. */
 #tk-module-native-controls > [data-settings-group]:not(:has(> :not(h5):not(summary):not([hidden]):not(.tk-feature-switches), > .tk-feature-switches:not([hidden]) > :not([hidden]))) { display: none; }
 
-/* Compact dual-pane split across embedded frames now that prompt configuration is backend-only. */
-.tk-embedded :is(body:has(> [data-kitchen-controls]:not([hidden])), #tab-agent.active, .place-index) {
-    grid-template-rows: minmax(0, 3fr) minmax(0, 1fr);
-}
+/* The host disclosure owns visibility; each embedded app keeps its own controls and event handlers. */
+.tk-embedded[data-tk-settings-open="false"] [data-kitchen-controls] { display: none !important; }
+.tk-embedded[data-tk-settings-open] [data-kitchen-controls] { max-height: 45dvh; overscroll-behavior: contain; }
+.tk-embedded :is(button, select, input, summary):focus-visible { outline: 2px solid var(--SmartThemeQuoteColor, currentColor); outline-offset: 2px; }

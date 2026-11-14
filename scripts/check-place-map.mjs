@@ -91,7 +91,10 @@ async function inspect() {
     const dataHeight = document.querySelector('.place-index > .tk-module-data').getBoundingClientRect().height;
     const settingsOpen = !document.querySelector('.place-index > footer [data-setting-section="function"]').hidden;
     const hasPromptSection = document.querySelector('.place-index [data-setting-section="prompts"], .place-index [data-settings-group="prompts"]') !== null;
-    return {controlRatio:controlHeight / (controlHeight + dataHeight),hasPromptSection,controlHeight,settingsOpen,nearby,beforeFestival,duringFestival,afterFestival,fromProse,fromFeatureLink,north,west,unknown,initial,collapsed,atmosphere,feature,edges,oneWay,mapNodes,destination,incoming,outbound,current:title(),player:state.map.atlas.actors[0].locationKey};
+    document.documentElement.dataset.tkSettingsOpen = 'false';
+    const collapsedHeight = document.querySelector('.place-index > .tk-module-data').clientHeight;
+    const regainedSpace = collapsedHeight > dataHeight && !document.querySelector('.place-index > footer').checkVisibility();
+    return {regainedSpace,controlRatio:controlHeight / (controlHeight + dataHeight),hasPromptSection,controlHeight,settingsOpen,nearby,beforeFestival,duringFestival,afterFestival,fromProse,fromFeatureLink,north,west,unknown,initial,collapsed,atmosphere,feature,edges,oneWay,mapNodes,destination,incoming,outbound,current:title(),player:state.map.atlas.actors[0].locationKey};
 }
 inspect().then(result=>fetch('/result',{method:'POST',body:JSON.stringify(result)}))
     .catch(error=>fetch('/result',{method:'POST',body:JSON.stringify(error?.stack || String(error))}));
@@ -123,9 +126,9 @@ try {
     assert.equal(typeof result, 'object', String(result));
     assert.deepEqual(result.initial.slice(0,4).map(value=>value.replace(/\s+/g,'')),['▾世界群岛','▾地区北岸','▾地点旧渡口·当前位置','地点要素吊机']);
     assert.deepEqual([result.fromProse,result.fromFeatureLink,result.north,result.west,result.unknown],['集市','吊机','仓门','吊机','旧桶']);
-    assert.ok(Math.abs(result.controlRatio - 1 / 4) < .015, JSON.stringify(result));
+    assert.ok(result.controlRatio > 0 && result.controlRatio <= .46, JSON.stringify(result));
     assert.equal(result.hasPromptSection, false);
-    assert.equal(result.settingsOpen,true);
+    assert.equal(result.settingsOpen,true); assert.equal(result.regainedSpace,true);
     assert.equal(result.nearby,true);
     assert.equal(result.beforeFestival,true);
     assert.match(result.duringFestival,/河灯节.*灯摊占着青石坡/s);

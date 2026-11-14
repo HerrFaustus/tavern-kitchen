@@ -54,6 +54,9 @@ try {
     }, presets);
     const selector = page.getByLabel('选择连接');
     const settings = page.locator('.text-api-configuration');
+    await page.getByLabel('更新 Agent').waitFor();
+    assert.ok(await selector.isHidden());
+    await page.getByText('编辑连接',{exact:true}).click();
     await selector.waitFor();
     await page.locator('.text-api-call-stats output').filter({ hasText: '本次调用 3 次 · 失败 1 · 累计 2.4 秒' }).waitFor();
     await page.evaluate(() => Object.defineProperty(globalThis.navigator, 'clipboard', { value: { writeText: async text => { globalThis.copiedStats = JSON.parse(text); } } }));

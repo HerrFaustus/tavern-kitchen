@@ -75,7 +75,7 @@ export function createWorldEditorPanel({ service, getIdentity, section = 'situat
     };
     const getSelectValue = node => {
         const options = [...(node.options || [])];
-        const chosen = options.find(option => option.selected || option.hasAttribute('selected'));
+        const chosen = Number.isInteger(node.selectedIndex) ? options[node.selectedIndex] : options.find(option => option.selected);
         return chosen ? chosen.value : (node.value ?? options[0]?.value ?? '');
     };
     const select = (choices, value) => {
@@ -154,6 +154,8 @@ export function createWorldEditorPanel({ service, getIdentity, section = 'situat
             if (busy) return;
             editing = false;
             show(state);
+            const returned = root.querySelector('details');
+            if (returned) { returned.open = false; returned.querySelector('summary')?.focus(); }
         });
         const actions = el('div', undefined, 'tk-world-editor-actions');
         actions.append(save, cancel);
@@ -177,6 +179,8 @@ export function createWorldEditorPanel({ service, getIdentity, section = 'situat
         const entities = state?.entities || [];
         if (!entities.length) return null;
         if (isPeople) {
+            const id = doc?.getElementById('archive-people')?.dataset.personId;
+            if (id) return entities.find(item => item.id === id) || null;
             const selectedName = getSelectedPerson?.() || doc?.querySelector('#profile-content .prof-name')?.textContent?.trim();
             if (selectedName) {
                 const match = entities.find(item => item.name === selectedName || item.aliases?.includes(selectedName));
@@ -491,7 +495,7 @@ export function createWorldEditorPanel({ service, getIdentity, section = 'situat
             message = '';
         }
 
-        const summaryLabel = isPeople ? '手动维护人物与关系' : '手动维护世界对象与交易';
+        const summaryLabel = isPeople ? '编辑人物' : '手动维护世界对象与交易';
         const drawer = el('details', undefined, 'tk-world-editor-drawer');
         drawer.dataset.summaryLabel = summaryLabel;
         drawer.open = wasOpen;
@@ -505,13 +509,13 @@ export function createWorldEditorPanel({ service, getIdentity, section = 'situat
         const actions = el('div', undefined, 'tk-world-editor-actions');
         actions.append(button(isPeople ? '+ 新增人物' : '+ 新增对象', () => renderCreateForm(drawer)));
 
-        if (entities.length) {
+        if (entities.length && (!isPeople || preferredEntity())) {
             actions.append(
                 button('编辑名称', () => renderRenameForm(drawer)),
                 button('设置属性', () => renderFieldForm(drawer)),
             );
         }
-        if (isPeople && peopleCount >= 2) {
+        if (isPeople && peopleCount >= 2 && preferredEntity()) {
             actions.append(button('绑定关系', () => renderRelationForm(drawer)));
         }
         if (actorCount >= 2 && itemCount >= 1) {
@@ -523,8 +527,18 @@ export function createWorldEditorPanel({ service, getIdentity, section = 'situat
         root.append(drawer);
     }
 
+    const personChanged = () => {
+        if (busy || !state) return;
+        editing = false;
+        const drawer = root?.querySelector('details'); if (drawer) drawer.open = false;
+        show(state);
+    };
     return {
         mount(target) {
+            if (isPeople && root !== target) {
+                root?.closest('#archive-people')?.removeEventListener('kitchen-person-changed', personChanged);
+                target.closest('#archive-people')?.addEventListener('kitchen-person-changed', personChanged);
+            }
             root = target;
             doc = target.ownerDocument;
             root.classList.add('tk-world-editor');

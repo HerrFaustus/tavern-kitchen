@@ -101,19 +101,26 @@ function renderNoteLayer(doc, container, layer, staleTargets) {
     return count;
 }
 
-export function createPlannerSettings(root, { retry, prepare, autoPrepare = false, setAutoPrepare, controlsRoot, clipboard } = {}) {
+export function createPlannerSettings(root, { retry, prepare, autoPrepare = false, setAutoPrepare, controlsRoot, clipboard, enabled = true, visitBinding } = {}) {
     const doc = root.ownerDocument;
     const panel = doc.createElement('section');
     panel.className = 'tk-planner-settings';
     const heading = doc.createElement('h4');
     heading.className = 'standoutHeader tk-planner-heading';
-    heading.textContent = '当前札记';
+    heading.textContent = '当前分支札记';
     const state = doc.createElement('span');
     state.className = 'tk-planner-live-state';
     state.setAttribute('role', 'status');
     const noteStatus = doc.createElement('p');
     noteStatus.className = 'tk-planner-note-status';
     noteStatus.setAttribute('role', 'status');
+    const missingLink = doc.createElement('button'); missingLink.type = 'button'; missingLink.className = 'menu_button';
+    missingLink.textContent = '前往 API'; missingLink.hidden = true;
+    function showFailure(error, selector) {
+        state.textContent = error?.message || '札记更新失败，请重试。';
+        missingLink.hidden = !(error?.agent && visitBinding);
+        missingLink.onclick = () => visitBinding(error.agent, selector);
+    }
     const overview = doc.createElement('div');
     overview.className = 'tk-planner-overview';
     overview.hidden = true;
@@ -144,7 +151,7 @@ export function createPlannerSettings(root, { retry, prepare, autoPrepare = fals
     const global = doc.createElement('details');
     global.className = 'tk-planner-global inline-drawer';
     const globalHeading = doc.createElement('summary');
-    globalHeading.className = 'inline-drawer-toggle inline-drawer-header';
+    globalHeading.className = 'inline-drawer-header';
     globalHeading.textContent = '全局札记（可能包含剧透）';
     const globalText = doc.createElement('div');
     globalText.className = 'tk-planner-note-text inline-drawer-content';
@@ -159,30 +166,31 @@ export function createPlannerSettings(root, { retry, prepare, autoPrepare = fals
     autoLabel.className = 'checkbox_label';
     const auto = doc.createElement('input');
     auto.type = 'checkbox';
-    auto.checked = autoPrepare;
+    auto.checked = autoPrepare; auto.dataset.plannerAuto = ''; auto.disabled = !enabled;
     autoLabel.append(auto, doc.createTextNode('生成前自动更新章节札记'));
     let retryable = false;
     auto.onchange = async () => {
         auto.disabled = true;
         try { await setAutoPrepare?.(auto.checked); }
-        catch (error) { auto.checked = !auto.checked; state.textContent = error.message; }
+        catch (error) { auto.checked = !auto.checked; showFailure(error,'[data-planner-auto]'); }
         finally { auto.disabled = false; retryButton.hidden = !retryable || !auto.checked; }
     };
     const prepareButton = doc.createElement('button');
-    prepareButton.type = 'button';
+    prepareButton.type = 'button'; prepareButton.dataset.prepareNote = '';
     prepareButton.className = 'menu_button';
+    prepareButton.disabled = !enabled;
     prepareButton.textContent = '立即生成／更新札记';
     prepareButton.onclick = async () => {
         prepareButton.disabled = true;
         try { await prepare?.(); }
-        catch { state.textContent = '札记更新失败，请重试。'; }
+        catch (error) { showFailure(error,'[data-prepare-note]'); }
         finally { prepareButton.disabled = false; }
     };
     const controls = doc.createElement('footer');
     controls.className = 'tk-planner-controls';
     controls.setAttribute('aria-label', '编剧控制');
-    controls.append(autoLabel, prepareButton, retryButton);
-    panel.append(heading, state, noteStatus, overview, toolbar, note);
+    controls.append(autoLabel, retryButton);
+    panel.append(heading, state, missingLink, noteStatus, prepareButton, overview, toolbar, note);
     (controlsRoot || panel).append(controls);
     root.replaceChildren(panel);
     let shownId = null;

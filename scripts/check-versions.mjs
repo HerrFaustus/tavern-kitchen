@@ -35,11 +35,10 @@ export function checkVersions(directory = root, { tag = process.env.GITHUB_REF_N
 
     expect('package.json', readJson(directory, 'package.json').version, version);
     expect('README.md', capture('README.md', read(directory, 'README.md'), /^# 酒馆后厨 (\d+\.\d+\.\d+)\s*$/m), version);
-    expect('docs/UPSTREAM.md', capture('docs/UPSTREAM.md', read(directory, 'docs/UPSTREAM.md'), /派生版：酒馆后厨 (\d+\.\d+\.\d+)/), version);
+    const historyFile = '历史更新记录.md';
+    const latestVersion = capture(historyFile, read(directory, historyFile), /^## (\d+\.\d+\.\d+)(?=\s|$)/m);
+    expect(historyFile, latestVersion, version);
     expect('docs/validation.json', readJson(directory, 'docs/validation.json').version, version);
-    if (!new RegExp(`^## ${version.replaceAll('.', '\\.')}(?:\\s|$)`, 'm').test(read(directory, 'docs/VALIDATION.md'))) {
-        throw new Error(`Version consistency: docs/VALIDATION.md has no ${version} section`);
-    }
 
     const releaseInfo = path.join(directory, 'release/release-info.json');
     if (fs.existsSync(releaseInfo)) {

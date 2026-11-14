@@ -1,41 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { setImmediate } from 'node:timers/promises';
-import { parseHTML } from 'linkedom';
 import { panelEnabled, usePanelSettings } from './panel-policy.js';
-import { mountPanelControls } from './panel-controls.js';
+import { requireAgent, panelAgent } from './panel-controls.js';
 import { MEMORY_TOOLS } from '../modules/story-summary/maintenance/tools.js';
 import { initializeOpening } from '../modules/world-records/opening.js';
 import { buildMapMaintenancePrompt } from '../modules/xiaobai-os/apps/map/maintenance/prompt.js';
 
-test('panel controls render model selectors without prompt forms and ignore legacy overrides', async () => {
-    const {document} = parseHTML('<div id="controls"></div>');
-    const bar = document.getElementById('controls'), state = {panelPrompts:{openingPrompt:'旧覆盖'},panels:{map:true}};
-    usePanelSettings(state);
-    const mutations = [];
-    const repo = {
-        load:async () => ({presets:[{id:'world-model',name:'测试模型'}],bindings:{}}),
-        mutate:async (...args) => mutations.push(args),
-    };
-    mountPanelControls('map',bar,async()=>repo);
-    await setImmediate();
-    assert.match(bar.textContent, /人物、地图和局势共用此模型/);
-    assert.equal(bar.querySelectorAll('textarea, .tk-prompt-fields').length, 0);
-    const select = bar.querySelector('.tk-panel-controls').querySelector('select');
-    select.querySelector('option[value="world-model"]').selected = true;
-    await select.onchange();
-    assert.deepEqual(mutations,[['world',{type:'select',id:'world-model'}]]);
-    const model = document.createElement('section'), unusedPrompts = document.createElement('details');
-    const memoryBar = document.createElement('div');
-    mountPanelControls('memory',memoryBar,async()=>repo,{model,prompts:unusedPrompts});
-    await setImmediate();
-    assert.equal(model.querySelectorAll('select').length,4);
-    assert.equal(model.querySelectorAll('details, textarea').length,0);
-    assert.equal(unusedPrompts.children.length,0);
-    assert.match(model.textContent,/召回模型/);
-    state.panels.map=false; assert.equal(panelEnabled('map'),false);assert.equal(panelEnabled('opening'),true);
-    state.enabled=false; assert.equal(panelEnabled('opening'),false);
-    usePanelSettings({});
+test('enabling a module checks only its own Agent without writing or starting a model', async () => {
+    const settings = { presets:[{id:'p',kind:'text',provider:'openai-compatible',model:'local',baseUrl:'http://localhost'}], bindings:{world:'p'} };
+    const repository = async () => ({load:async () => settings});
+    await requireAgent('simulation', repository);
+    await assert.rejects(requireAgent(panelAgent('map'), repository), {message:'请先在API界面中配置更新agent'});
+    await assert.rejects(requireAgent(panelAgent('planner'), repository), {message:'请先在API界面中配置编剧agent'});
+    usePanelSettings({panels:{map:false}}); assert.equal(panelEnabled('map'),false); usePanelSettings({});
 });
 
 test('opening and map maintenance always use built-in backend instructions and ignore legacy panelPrompts', async () => {

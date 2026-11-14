@@ -37,7 +37,7 @@ test('foreground adapter publishes only a whole chapter and clears its request-l
     for (const type of ['normal','continue','regenerate','swipe']) await run(type);
     assert.equal(fixture.calls,0);
     assert.deepEqual(fixture.prompts,{});
-    await controls.querySelector('button').onclick();
+    await root.querySelector('[data-prepare-note]').onclick();
     assert.equal(fixture.calls,1);
     await run('normal');
     assert.equal(fixture.prompts['kitchen-chapter-note'].value,'【本章札记】\n药车停在桥头。');

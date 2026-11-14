@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { migrateLegacySettings } from '../migration.js';
 import { upgradeProfiles, vectorProfiles, acceptsProfile } from '../profiles.js';
 import { agentSettingsForProfile, resolveAgentProfile } from '../profile-runtime.js';
-import { applyPresetAction, createPreset, resolveFeaturePreset, TEXT_API_SETTINGS_KEY } from '../model.js';
+import { applyPresetAction, createPreset, readAgentBinding, resolveFeaturePreset, TEXT_API_SETTINGS_KEY } from '../model.js';
 import { snapshotTavernApi } from '../tavern-import.js';
 import { createTextApiRepository } from '../repository.js';
 
@@ -15,6 +15,22 @@ const legacyAgent = { currentPresetName: '主助手', presets: {
 const migrated = () => upgradeProfiles(migrateLegacySettings({}), legacyAgent, {
     embeddingApi: { provider: 'custom', url: 'https://embedding.test/v1', key: 'fake-vector', model: 'embed-old' },
 });
+test('three Agent bindings preserve conflicting legacy choices until saved, and an explicit clear survives reopening', () => {
+    const config = migrated(), id = config.bindings.world;
+    config.bindings.opening = null;
+    assert.equal(resolveFeaturePreset(config,'opening').id,id);
+    const previous = structuredClone(config);
+    assert.equal(readAgentBinding(config, 'update').conflict, true);
+    assert.deepEqual(config, previous);
+    const unified = applyPresetAction(config, 'library', {type:'bind-agent', agent:'update', id});
+    assert.equal(readAgentBinding(unified,'update').id,id);
+    for (const consumer of ['summary','memory','opening']) assert.equal(resolveFeaturePreset(unified,consumer).id,id);
+    const cleared = applyPresetAction(unified,'library',{type:'bind-agent',agent:'update',id:''});
+    assert.throws(() => resolveFeaturePreset(cleared,'opening'));
+    assert.equal(readAgentBinding(cleared,'simulation').id,id);
+    assert.throws(() => applyPresetAction(config,'library',{type:'bind-agent',agent:'update',id:config.bindings.embedding}));
+});
+
 test('upgrade keeps old profiles, binds each former consumer, and is idempotent', () => {
     const settings = migrated();
     assert.equal(settings.bindings.summary, 'summary-default');

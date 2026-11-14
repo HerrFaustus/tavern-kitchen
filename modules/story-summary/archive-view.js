@@ -32,7 +32,6 @@ export function getArchiveCharacters(data) {
     for (const item of data.characters.main) add(typeof item === 'string' ? item : item.name);
     for (const relation of data.characters.relationships) { add(relation.from); add(relation.to); }
     for (const alias of data.characterAliases) add(alias.to);
-    if (data.playerName) add(data.playerName);
     for (const record of data.storyRecords || []) {
         if (record.kind === 'person') add(record.name);
         if (record.kind === 'knowledge') add(record.person);
@@ -53,10 +52,9 @@ export function getArchiveStateFacts(data, section) {
 }
 
 // Presentation state belongs to this iframe. Data and all writes remain owned by story-summary-ui.
-export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCharacter, onTimelineChange, onFactsChange, onEdit, postMsg, setHtml, h }) {
+export function createSummaryArchive({ getData, hasChat, getSelectedCharacter, onSelectCharacter, onTimelineChange, onFactsChange, onEdit, postMsg, setHtml, h }) {
     const $ = id => document.getElementById(id);
     const detail = $('archive-detail');
-    const profile = $('archive-profile');
     let view = 'story';
     let role = '';
     let subject = '';
@@ -64,7 +62,7 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
     const expanded = new Set();
     let initialExpansion = true;
     let detailEventId = null;
-    let restoreFocus = null;
+    let restoreFocus = null, openPerson = null, rosterScroll = 0, sourceKey = null;
 
     const worldSection = () => document.documentElement.classList.contains('tk-embedded') ? document.documentElement.dataset.kitchenView === 'lore' ? 'lore' : 'world' : undefined;
     const worldFacts = () => getArchiveStateFacts(getData(), worldSection());
@@ -72,11 +70,12 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
     function closeDialogs() {
         for (const dialog of [detail]) {
             if (!dialog.open) continue;
-            detailEventId = null;
+            detailEventId = sourceKey = null;
             dialog.close();
             postMsg('FULLSCREEN_CLOSED');
         }
         if (restoreFocus?.isConnected) restoreFocus.focus({ preventScroll: true });
+        restoreFocus = null;
     }
 
     function openDialog(dialog) {
@@ -85,10 +84,6 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
             dialog.showModal();
             postMsg('FULLSCREEN_OPENED');
         }
-    }
-
-    function showPerson() {
-        profile.scrollIntoView({ block: 'nearest' });
     }
 
     function showEvent(event) {
@@ -156,10 +151,11 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
         for (const unit of data.narrativeUnits || []) counts[unit.level] = (counts[unit.level] || 0) + 1;
         const extraLevels = [...new Set((data.narrativeUnits || []).map(unit => String(unit.level)))].filter(level => !Object.hasOwn(timelineLabels, level));
         const roles = [...Object.keys(timelineLabels), ...extraLevels].filter(level => counts[level]);
-        if (role && !roles.includes(role)) role = '';
+        if (roles.length < 2 || !roles.includes(role)) role = '';
         const totalUnits = Object.values(counts).reduce((sum, count) => sum + count, 0);
-        setHtml($('archive-story-index'), ['', ...roles].map(item => `<button class="archive-index-button" data-archive-role="${h(item)}" aria-pressed="${item === role}">${h(timelineLabel(item) || ARCHIVE_COPY.allEvents)}<span>${item ? counts[item] : totalUnits}</span></button>`).join(''));
-        $('archive-story-heading').textContent = timelineLabel(role) || ARCHIVE_COPY.allEvents;
+        $('archive-story-index').parentElement.hidden = roles.length < 2;
+        setHtml($('archive-story-index'), (roles.length > 1 ? ['', ...roles] : []).map(item => `<button class="archive-index-button" data-archive-role="${h(item)}" aria-pressed="${item === role}">${h(timelineLabel(item) || ARCHIVE_COPY.allEvents)}<span>${item ? counts[item] : totalUnits}</span></button>`).join(''));
+        $('archive-story-heading').textContent = (timelineLabel(role || (roles.length === 1 ? roles[0] : '')) || ARCHIVE_COPY.allEvents) + '（' + (role ? counts[role] : totalUnits) + '）';
         $('archive-order').textContent = descending ? ARCHIVE_COPY.newest : ARCHIVE_COPY.oldest;
         const facts = worldFacts();
         const subjects = [...new Set(facts.map(f => f.s))];
@@ -175,8 +171,36 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
     function refreshRoster() {
         const data = getData();
         const characters = getArchiveCharacters(data);
-        const chars = characters;
-        setHtml($('archive-roster'), chars.length ? chars.map(c => `<button class="archive-person" data-archive-person="${h(c.id)}" aria-pressed="${getSelectedCharacter() === c.id}"><span class="archive-avatar" aria-hidden="true">${h(Array.from(c.name)[0])}</span><span>${h(c.name)}</span></button>`).join('') : `<p class="archive-empty">${ARCHIVE_COPY.noPeople}</p>`);
+        const roster = $('archive-roster'), page = $('archive-people');
+        const current = hasChat() && characters.find(entry => entry.id === getSelectedCharacter());
+        if (!current || current.id !== openPerson) openPerson = null;
+        const showDetail = !!current && (characters.length === 1 || !!openPerson);
+        roster.hidden = showDetail;
+        $('archive-people-back').hidden = !(showDetail && characters.length > 1);
+        const layout = page.querySelector('.archive-people-layout');
+        layout.hidden = !hasChat() || (characters.length > 1 && !showDetail);
+        const heading = $('archive-person-name');
+        heading.textContent = showDetail ? current.name : '';
+        heading.hidden = !showDetail;
+        const selectedId = showDetail ? current.id : '';
+        if (page.dataset.personId !== selectedId) {
+            page.dataset.personId = selectedId;
+            page.dispatchEvent(new CustomEvent('kitchen-person-changed'));
+        }
+        if (showDetail) return;
+        if (!hasChat() || !characters.length) {
+            setHtml(roster, '<p class="archive-empty">' + (hasChat() ? '这段对话尚无人物记录。' : '选择一段对话后查看人物档案。') + '</p>');
+            return;
+        }
+        setHtml(roster, characters.map(person => {
+            const entity = data.entities?.find(item => item.id === person.id);
+            const fields = entity?.fields || {};
+            const entry = ['身份','职务','称号','当前位置','阵营'].map(key => fields[key]).find(field => field?.nature === 'established_fact' && typeof field.value === 'string' && field.value);
+            const duplicate = characters.some(other => other.id !== person.id && other.name === person.name);
+            const recent = !duplicate && data.storyRecords?.find(record => record.kind === 'person' && record.name === person.name && record.note);
+            const hint = entry?.value || recent?.note || (duplicate ? '档案 ' + person.id : '尚无身份资料');
+            return `<button class="archive-person" data-archive-person="${h(person.id)}"><strong>${h(person.name)}</strong><span>${h(hint)}</span></button>`;
+        }).join(''));
     }
 
     function switchView(next) {
@@ -196,6 +220,8 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
 
     function reset() {
         closeDialogs();
+        openPerson = null; rosterScroll = 0; sourceKey = null;
+        $('archive-roster').closest('.archive').scrollTop = 0;
         expanded.clear(); initialExpansion = true;
         role = '';
         subject = '';
@@ -213,6 +239,13 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
             switchView(tabs[target].dataset.view);
             tabs[target].focus();
         });
+    });
+    $('archive-people-back').addEventListener('click', () => {
+        const previous = openPerson;
+        openPerson = null; refreshRoster();
+        const scroll = $('archive-roster').closest('.archive');
+        scroll.scrollTop = rosterScroll;
+        [...$('archive-roster').querySelectorAll('button')].find(row => row.dataset.archivePerson === previous)?.focus({preventScroll:true});
     });
     $('archive-order').addEventListener('click', () => {
         descending = !descending;
@@ -243,13 +276,29 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
         if (button.dataset.archivePerson != null) {
             if (detail.open) closeDialogs();
             const name = button.dataset.archivePerson;
-            const character = getArchiveCharacters(getData()).find(c => c.id === name || c.name === name);
-            if (character && view === 'people') { onSelectCharacter(character.id); showPerson(); }
+            const character = getArchiveCharacters(getData()).find(c => c.id === name);
+            if (character && view === 'people') {
+                rosterScroll = $('archive-roster').closest('.archive').scrollTop;
+                openPerson = character.id; onSelectCharacter(character.id);
+                $('archive-person-name').focus();
+            }
+        }
+        if (button.dataset.worldProof) {
+            sourceKey = button.dataset.worldProof;
+            $('archive-detail-title').textContent = '交接来源';
+            $('archive-detail-body').textContent = '正在读取原楼…';
+            openDialog(detail);
+            postMsg('WORLD_FIELD_SOURCE', {key: sourceKey, chatId: getData().chatId, branchId: getData().branchId});
         }
         if (button.dataset.archiveEdit) { closeDialogs(); onEdit(button.dataset.archiveEdit); }
     });
     return {
-        closeDialogs, reset, switchView, timelineEvents, timelineItem, refreshIndexes, refreshRoster, showPerson,
+        showFieldSource(result) {
+            const data = getData();
+            if (!detail.open || !sourceKey || result.key !== sourceKey || result.chatId !== data.chatId || result.branchId !== data.branchId) return;
+            $('archive-detail-body').textContent = result.text == null ? '当前分支无法核对这条原文。' : '第 ' + (result.floor + 1) + ' 楼 · ' + result.name + '\n\n' + result.text;
+        },
+        closeDialogs, reset, switchView, timelineEvents, timelineItem, refreshIndexes, refreshRoster,
         hasTimelineFilter: () => !!role,
         isPeopleVisible: () => view === 'people',
         isStoryVisible: () => view === 'story',

@@ -62,8 +62,10 @@ try {
     });
     const frame=page.frameLocator('iframe');
     const controls=frame.locator('#tk-module-native-controls');
+    const toggle = page.getByRole('button',{name:'总结设置'});
+    await toggle.click();
     await controls.waitFor();
-    assert.equal(await controls.locator(':scope > h4').innerText(), '总结设置');
+    assert.equal(await controls.getAttribute('aria-label'), '总结设置');
     const functional=controls.locator('[data-settings-group="function"]');
     await functional.locator('#summary-options #settings-modal.active').waitFor();
     assert.ok(await functional.locator('#trigger-enabled').isVisible());
@@ -95,7 +97,11 @@ try {
     for (const width of [319,1280]) {
         await page.setViewportSize({width,height:780});
         const height = () => frame.locator('#summary-controls').evaluate(el => el.getBoundingClientRect().height / globalThis.innerHeight);
-        assert.ok(Math.abs(await height() - 1 / 4) < .02, `expected 1/4 summary controls height, got ${await height()}`);
+        assert.ok(await height() > 0 && await height() <= .46);
+        const before = await frame.locator('.archive').evaluate(el => el.clientHeight);
+        await toggle.click(); assert.equal(await height(),0);
+        assert.ok(await frame.locator('.archive').evaluate(el => el.clientHeight) > before);
+        await toggle.click();
     }
     if (process.env.TK_SETTINGS_SHOTS) {
         await fs.mkdir(process.env.TK_SETTINGS_SHOTS, {recursive:true});
@@ -107,12 +113,15 @@ try {
     }
     await page.evaluate(() => globalThis.workspace.open('proofreading'));
     await frame.locator('#tab-agent.active').waitFor();
+    assert.ok(await frame.locator('.memory-controls').isHidden());
+    await page.getByRole('button',{name:'校对设置'}).click();
     await frame.locator('#tk-module-native-controls [data-settings-group="function"] #memory-maintenance-enabled').waitFor();
-    assert.equal(await controls.locator(':scope > h4').innerText(), '校对设置');
+    assert.equal(await controls.getAttribute('aria-label'), '校对设置');
     assert.equal(await controls.locator('[data-settings-group="prompts"]').count(), 0);
     const proofRatio = await frame.locator('.memory-controls').evaluate(el => el.getBoundingClientRect().height / globalThis.innerHeight);
-    assert.ok(Math.abs(proofRatio - 1 / 4) < .02, `expected 1/4 proofreading controls ratio, got ${proofRatio}`);
+    assert.ok(proofRatio > 0 && proofRatio <= .46);
     await page.evaluate(() => globalThis.workspace.open('memory'));
+    await toggle.click();
     await frame.locator('#summary-options #settings-modal.active').waitFor();
     assert.deepEqual(errors,[]);
     console.log('Verified compact summary and proofreading settings without prompt forms inside the unified workspace.');

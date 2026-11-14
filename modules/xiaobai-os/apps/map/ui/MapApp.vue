@@ -105,7 +105,9 @@ watch(() => state.value.chatIdentity, () => select(''));
     </section>
 </template>
 <style scoped>
-.place-index { display: grid; grid-template-rows: minmax(0, 3fr) minmax(0, 1fr); overflow: hidden; height: 100%; box-sizing: border-box; padding: .6em; color: var(--SmartThemeBodyColor); }
+.place-index { display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; height: 100%; box-sizing: border-box; padding: .6em; color: var(--SmartThemeBodyColor); }
+.place-index > .tk-module-data { grid-row: 2; }
+.place-index > .tk-module-settings { grid-row: 1; max-height: 45dvh; }
 .place-index > .tk-module-data, .place-index > .tk-module-settings { min-height: 0; overflow-y: auto; box-sizing: border-box; margin-block: 0; }
 .local-conditions {border-inline-start:2px solid var(--SmartThemeBorderColor); padding-inline-start:.75em}
 .local-conditions p {margin-block:.2em .65em}

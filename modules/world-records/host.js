@@ -90,7 +90,17 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
     const involvementFor = (world, options) => readInvolvement(world, getMemorySnapshot(), getContext().name1, options);
     const disconnectFocus = registerInvolvement(key => key && captureStoryIdentity(getContext())?.key === key ? involvementFor(authority.read()?.state, {includeAgendas:true}) : []);
     const protagonist = createProtagonistView({ getInvolvement: involvementFor, getSnapshot: getMemorySnapshot, getPlayerName: () => getContext().name1 });
-    const views = { overview: protagonist, clues: createSuspenseBook({getSnapshot:getMemorySnapshot, clues:true}), suspense: createSuspenseBook({ getSnapshot: getMemorySnapshot }) };
+    const bookOptions = {getSnapshot:getMemorySnapshot, openSource(floor) {
+        const context = getContext(), message = context.chat?.[floor], snapshot = getMemorySnapshot();
+        const available = message && snapshot?.enabled && snapshot.invalidFrom == null && !snapshot.store?.summaryInvalid && snapshot.store?.sourceInvalidFromFloor == null;
+        const content = document.createElement('div'), title = document.createElement('h3'), text = document.createElement('p');
+        title.textContent = '第 ' + (floor + 1) + ' 楼' + (available && message.name ? ' · ' + message.name : '');
+        text.style.whiteSpace = 'pre-wrap';
+        text.textContent = available ? String(message.mes || '') : '当前分支无法核对这条原文。';
+        content.append(title, text);
+        return new context.Popup(content, context.POPUP_TYPE.TEXT).show().catch(onError);
+    }};
+    const views = { overview: protagonist, clues: createSuspenseBook({...bookOptions, clues:true}), suspense: createSuspenseBook(bookOptions) };
     let disposed = false, scheduled = false, epoch = 0;
     const frameBindings = new Map();
     function attachFrameMount(key, frame, mount) {

@@ -1,3 +1,5 @@
+import { isRangeSourceCurrent } from '../story-summary/data/turn-source.js';
+import { UPDATE_PREFIX } from './update-context.js';
 import { ambientRecords } from '../story-state/ambient.js';
 import { situationViewRecords } from '../story-state/situation-history.js';
 import { readLinkedDevelopments } from '../story-state/situation-links.js';
@@ -9,6 +11,21 @@ import { worldStoryStore } from './world-story-state.js';
 export function worldAuthorityForContext(context) {
     return readWorldAuthority(storyIdentityKey(captureStoryIdentity(context || {})));
 }
+export function worldFieldSource(world, context, request) {
+    const result = { key: request.key, chatId: context.chatId, branchId: world?.branchId || '' };
+    if (!world || request.chatId !== result.chatId || request.branchId !== result.branchId || typeof request.key !== 'string') return result;
+    const match = /^(.*)\/(\d+)$/.exec(request.key);
+    if (!match) return result;
+    const update = world.sources?.[UPDATE_PREFIX + match[1]]?.update;
+    const proof = update?.proposals[Number(match[2])]?.evidence;
+    const message = context.chat?.[proof?.floor];
+    // A floor number can point at a different swipe or edit. Verify the original receipt before displaying live text.
+    if (proof && message && isRangeSourceCurrent(update.source, context.chat) && String(message.mes || '').includes(proof.quote)) {
+        Object.assign(result, { floor: proof.floor, name: message.name || '', text: message.mes });
+    }
+    return result;
+}
+
 export function authorityMemoryFacts(facts, context) { return projectAuthorityFacts(facts, worldAuthorityForContext(context)); }
 export function authorityStoryStore(store, context, forDisplay = false) {
     const world = worldAuthorityForContext(context);

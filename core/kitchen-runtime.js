@@ -8,7 +8,7 @@ import { getCurrentUserHandle } from '../../../../user.js';
 import { EXT_ID } from './constants.js';
 import { buildEntryUrl } from './build-assets.js';
 import { panelEnabled, usePanelSettings } from './panel-policy.js';
-import { mountPanelControls } from './panel-controls.js';
+import { requireAgent, panelAgent } from './panel-controls.js';
 import { createExtensionDrawer } from './extension-drawer.js';
 import { createDefaultXiaobaiOsSettings, prepareXiaobaiOsSettings, initXiaobaiOs, cleanupXiaobaiOs, setXiaobaiOsEnabled, mountWorldEvolution, openXiaobaiOs } from '../modules/xiaobai-os/index.js';
 import { createOpeningHost } from '../modules/world-records/opening-host.js';
@@ -42,6 +42,7 @@ async function saveValue(target,key,value) {
 async function updatePanel(id,enabled) {
     await featureReady;
     const master = id === 'enabled';
+    if (enabled && !master) await requireAgent(panelAgent(id));
     await saveValue(master ? settings : (settings.panels ??= {}),id,enabled);
     window.isTavernKitchenEnabled = settings.enabled;
     if (master && enabled) await startWorld();
@@ -55,11 +56,13 @@ async function updatePanel(id,enabled) {
     if (master && enabled && settings.xiaobaiOs?.enabled) await initXiaobaiOs();
 }
 async function syncPlanner() {
-    if (!panelEnabled('planner')) { planner?.dispose(); planner = null; return; }
+    if (!settings.enabled) { planner?.dispose(); planner = null; return; }
+    if (!panelEnabled('planner')) planner?.cancel();
     if (planner || !worldArchive) return;
     const { installPlanner } = await import('../modules/story-planner/host.js');
     planner = installPlanner({snapshot:worldArchive.plannerSnapshot,loadSnapshot:worldArchive.loadPlannerSnapshot,
-        isVisible:() => kitchen.isActive('planner'),getContext,settings:settings.enaPlanner,saveSettings});
+        isVisible:() => kitchen.isActive('planner'),getContext,settings:settings.enaPlanner,saveSettings,
+        enabled:() => panelEnabled('planner'), checkBinding:() => requireAgent('planner'), visitBinding:kitchen.visitBinding});
 }
 const cleanups = new Map();
 window.registerKitchenModuleCleanup = (id, cleanup) => cleanups.set(id, cleanup);
@@ -140,7 +143,7 @@ function configureWorkspace() {
         planner: async () => {
             await requireFeatures();
             if (!kitchen.isActive('planner')) return;
-            if (!planner) throw new Error('请在本面板下方启用编剧。');
+            if (!planner) throw new Error('请展开编剧设置，启用编剧。');
             await planner.open(kitchen.getMount('planner'), kitchen.getControls());
         },
     };
@@ -154,7 +157,7 @@ function configureWorkspace() {
             const frame = kitchen.getMount(id)?.querySelector('iframe');
             worldArchive.showEditor(frame, id === 'situation' ? 'situation' : 'people');
         }
-        if (id === 'people' || id === 'situation') kitchen.showEvolution(parent => mountWorldEvolution(parent, id, kitchen.getMount(id)?.querySelector('iframe')), id === 'people');
+        if (id === 'people' || id === 'situation') kitchen.showEvolution(parent => mountWorldEvolution(parent, id, kitchen.getMount(id)?.querySelector('iframe'), () => requireAgent('simulation'), selector => kitchen.visitBinding('simulation', selector)), id === 'people');
     };
     for (const id of ['map', 'settings', 'agent-api']) actions[id] = async () => {
         await requireFeatures();
@@ -169,13 +172,12 @@ function configureWorkspace() {
             const paused = settings.enabled === false;
             const key = paused ? 'enabled' : id;
             return {
-                enabled:panelEnabled(id),
+                enabled:panelEnabled(id), paused,
                 label:paused ? '恢复酒馆后厨（已整体停用）' : '启用' + label,
                 change:value => enqueue(() => updatePanel(key,value)),
             };
         },
-        configurePanel:(id,bar) => mountPanelControls(id,bar,undefined,kitchen.getSettingSections()),
-        initializeWorld:async () => { await requireFeatures(); return worldArchive.initialize({manual:true}); },
+        initializeWorld:async () => { await requireFeatures(); await requireAgent('update'); return worldArchive.initialize({manual:true}); },
         toggleDrawer: hostScript.doNavbarIconClick,
     });
 }

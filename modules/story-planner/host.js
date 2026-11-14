@@ -12,7 +12,7 @@ import { subscribeWorldSources } from '../world-records/sources.js';
 import { createPlannerSettings } from './settings-view.js';
 
 const ID = 'kitchen-chapter-note';
-export function installPlanner({snapshot, loadSnapshot, isVisible = () => true, getContext, settings = {}, saveSettings}) {
+export function installPlanner({snapshot, loadSnapshot, isVisible = () => true, getContext, settings = {}, saveSettings, enabled = () => true, checkBinding, visitBinding}) {
     let message = '', canRetry = false, view, viewVersion = 0, queued = false, loading = 0, refreshPending = false, disposed = false;
     const status = (text, retryable = false) => {
         message = text;
@@ -68,6 +68,7 @@ export function installPlanner({snapshot, loadSnapshot, isVisible = () => true, 
     for (const event of [event_types.GENERATION_STOPPED,event_types.GENERATION_ENDED]) events.on(event,() => { resetForeground(); scheduleRefresh(); });
     registerGenerateInterceptor(ID, async (_chat,contextSize,_abort,type,run) => {
         clear();
+        if (!enabled()) return;
         if (!['','normal','continue','regenerate','swipe'].includes(type || '')) return;
         const epoch = ++generation;
         try {
@@ -89,13 +90,15 @@ export function installPlanner({snapshot, loadSnapshot, isVisible = () => true, 
         } catch { status('本轮未读取到札记，正文继续'); }
     }, GENERATE_INTERCEPTOR_ORDER.STORY_PLANNER);
     return {
+        cancel() { reset(); },
         async open(root, controlsRoot) {
             viewVersion++;
             view?.removeControls();
             view = createPlannerSettings(root, {
-                controlsRoot,
+                controlsRoot, enabled:enabled(), visitBinding,
                 autoPrepare: settings.autoPrepare === true,
                 async setAutoPrepare(enabled) {
+                    if (enabled) await checkBinding?.();
                     const previous = settings.autoPrepare === true;
                     settings.autoPrepare = enabled;
                     if (!enabled) reset();
@@ -107,6 +110,7 @@ export function installPlanner({snapshot, loadSnapshot, isVisible = () => true, 
                     }
                 },
                 async prepare() {
+                    await checkBinding?.();
                     writer.retry();
                     await writer.prepare();
                     await refreshView();

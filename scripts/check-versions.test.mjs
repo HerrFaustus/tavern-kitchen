@@ -12,9 +12,8 @@ function fixture(t, version = '1.2.3') {
     fs.writeFileSync(path.join(directory, 'manifest.json'), JSON.stringify({ version }));
     fs.writeFileSync(path.join(directory, 'package.json'), JSON.stringify({ version }));
     fs.writeFileSync(path.join(directory, 'README.md'), `# 酒馆后厨 ${version}\n`);
-    fs.writeFileSync(path.join(directory, 'docs/UPSTREAM.md'), `派生版：酒馆后厨 ${version}。\n`);
+    fs.writeFileSync(path.join(directory, '历史更新记录.md'), `# 历史更新记录\n\n## ${version}\n`);
     fs.writeFileSync(path.join(directory, 'docs/validation.json'), JSON.stringify({ version }));
-    fs.writeFileSync(path.join(directory, 'docs/VALIDATION.md'), `## ${version} 验证\n`);
     return directory;
 }
 
@@ -27,6 +26,12 @@ test('rejects a mismatched package version', t => {
     const directory = fixture(t);
     fs.writeFileSync(path.join(directory, 'package.json'), JSON.stringify({ version: '1.2.4' }));
     assert.throws(() => checkVersions(directory), /package\.json/);
+});
+
+test('checks the latest version heading even when the manifest version appears later in the history', t => {
+    const directory = fixture(t);
+    fs.writeFileSync(path.join(directory, '历史更新记录.md'), '# 历史更新记录\n\n## 1.2.4\n\n## 1.2.3\n');
+    assert.throws(() => checkVersions(directory), /历史更新记录\.md/);
 });
 
 test('rejects a mismatched release tag', t => {

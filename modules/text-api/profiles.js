@@ -64,6 +64,10 @@ export function vectorProfiles(settings, fallback) {
     if (!settings?.profilesVersion) return fallback;
     const result = structuredClone(fallback);
     for (const feature of ['l0', 'embedding', 'rerank']) {
+        if (!settings.bindings[feature]) {
+            result[feature + 'Api'] = { provider:'custom', url:'', key:'', model:'' };
+            continue;
+        }
         const preset = resolveFeaturePreset(settings, feature);
         assertProfileBinding(feature, preset);
         const connection = { ...preset, baseUrl: resolveApiBaseUrl(preset.baseUrl, preset.prefixMode === 'custom' ? preset.customPrefix : '/v1') };

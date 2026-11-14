@@ -13,12 +13,12 @@ export function registerEvolutionReader(world: WorldService) {
     return () => { disconnect(); if (reader === world) { reader = undefined; } };
 }
 
-export function mountEvolutionView(parent: HTMLElement, section: 'people' | 'situation', preferences: XiaobaiOsSettingsRepository, frame?: HTMLIFrameElement) {
+export function mountEvolutionView(parent: HTMLElement, section: 'people' | 'situation', preferences: XiaobaiOsSettingsRepository, frame?: HTMLIFrameElement, check?: () => Promise<void>, visit?: (selector: string) => void) {
     const people = section === 'people';
     const key = people ? 'peopleEvolution' : 'subscribed';
     const label = document.createElement('label');
     const toggle = document.createElement('input');
-    toggle.type = 'checkbox';
+    toggle.type = 'checkbox'; toggle.dataset.evolutionKey = key;
     label.append(toggle, people ? '随剧情推演人物动向' : '随剧情推演事态进展');
     const status = document.createElement('small');
     status.setAttribute('role', 'status');
@@ -42,7 +42,13 @@ export function mountEvolutionView(parent: HTMLElement, section: 'people' | 'sit
     const embedded = !!frame;
     const inline = !people && embedded;
     if (inline) { label.hidden = true; scenery.parentElement!.hidden = true; frequency.parentElement!.hidden = true; }
-    let active = true, saving = false;
+    let active = true, saving = false, missingField = '';
+    const go = document.createElement('button'); go.type = 'button'; go.className = 'menu_button'; go.textContent = '前往 API'; go.hidden = true;
+    const visitMissing = () => {
+        const section = inline ? (missingField === 'subscribed' ? '#affair-settings ' : '#scenery-settings ') : '';
+        visit?.(section + '[data-evolution-key="' + missingField + '"]');
+    };
+    go.onclick = visitMissing; status.after(go);
     const renderPreferences = () => {
         const settings = preferences.read();
         if (inline) { frame!.contentWindow?.postMessage({
@@ -51,7 +57,7 @@ export function mountEvolutionView(parent: HTMLElement, section: 'people' | 'sit
                 subscribed: !!settings?.apps.world.subscribed,
                 sceneryEvolution: settings?.apps.world.sceneryEvolution === true,
                 encounterFrequency: settings?.apps.world.encounterFrequency || 'occasional',
-                error: status.textContent || '' },
+                error: status.textContent || '', missingField },
         }, window.location.origin); }
 
         toggle.checked = !!settings?.apps.world[key];
@@ -103,34 +109,41 @@ export function mountEvolutionView(parent: HTMLElement, section: 'people' | 'sit
         }
     };
     const report = (error: unknown) => { if (active) { status.textContent = error instanceof Error ? error.message : String(error); } };
-    const save = async (operation: () => Promise<unknown>) => {
+    const save = async (field: string, enabling: boolean, operation: () => Promise<unknown>) => {
+        missingField = ''; go.hidden = true;
         saving = true; renderPreferences(); toggle.disabled = scenery.disabled = frequency.disabled = true; status.textContent = '';
-        try { await operation(); }
-        catch (error) { report(error); }
+        try {
+            if (enabling) { await check?.(); }
+            if (active) { await operation(); }
+        } catch (error) {
+            if (error instanceof Error && 'agent' in error && error.agent === 'simulation') { missingField = field; go.hidden = inline; }
+            report(error);
+        }
         finally { saving = false; if (active) { renderPreferences(); } }
     };
     toggle.onchange = () => {
         const value = toggle.checked;
-        return save(() => preferences.setWorldPreference(key, value));
+        return save(key, value, () => preferences.setWorldPreference(key, value));
     };
     scenery.onchange = () => {
         const value = scenery.checked;
-        return save(() => preferences.setWorldPreference('sceneryEvolution', value));
+        return save('sceneryEvolution', value, () => preferences.setWorldPreference('sceneryEvolution', value));
     };
     frequency.onchange = () => {
         const value = frequency.value as 'off' | 'occasional' | 'lively';
-        return save(() => preferences.setEncounterFrequency(value));
+        return save('encounterFrequency', value !== 'off', () => preferences.setEncounterFrequency(value));
     };
     const receive = (event: MessageEvent) => {
         if (!embedded || !active || !isTrustedMessage(event, frame, 'TavernKitchen-StoryFrame')) { return; }
         if (event.data.type === 'WORLD_EVOLUTION_REQUEST') { renderPreferences(); renderEntries(); return; }
+        if (inline && missingField && event.data.type === 'WORLD_EVOLUTION_CONFIGURE') { visitMissing(); return; }
         if (!inline || event.data.type !== 'WORLD_EVOLUTION_CHANGE' || saving || !preferences.read()?.enabled) { return; }
         const { key: field, value } = event.data;
         if (field === 'encounterFrequency' && ['off','occasional','lively'].includes(value)) {
-            save(() => preferences.setEncounterFrequency(value)).catch(report); return;
+            save(field, value !== 'off', () => preferences.setEncounterFrequency(value)).catch(report); return;
         }
         if (['subscribed','sceneryEvolution'].includes(field) && typeof value === 'boolean') {
-            save(() => preferences.setWorldPreference(field, value)).catch(report);
+            save(field, value, () => preferences.setWorldPreference(field, value)).catch(report);
         }
     };
     if (embedded) {

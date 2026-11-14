@@ -53,10 +53,10 @@ test('scene and round mentions stay off the roster while an identified custodian
         rounds: [{ participants: ['卖花人', '北门守卫'], summary: '卖花人吆喝了一声。' }],
     };
     const names = () => getArchiveCharacters(data).map(character => character.name);
-    assert.deepEqual(names(), ['主角']);
+    assert.deepEqual(names(), []);
     data.storyRecords.push({ kind: 'person', name: '北门守卫', note: '代管银钥匙，明早归还。' });
-    assert.deepEqual(names(), ['主角', '北门守卫']);
+    assert.deepEqual(names(), ['北门守卫']);
     data.characterAliases.push({ from: '北门守卫', to: '林安', evidence: '守卫报出姓名。' });
     data.entities = [{ kind: 'person', name: '林安' }];
-    assert.deepEqual(names().sort(), ['主角', '林安'].sort());
+    assert.deepEqual(names().sort(), ['林安']);
 });

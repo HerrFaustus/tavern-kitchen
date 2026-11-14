@@ -7,7 +7,8 @@ import { createWorldService } from './service.js';
 import { createAuthorityRuntime } from './authority-runtime.js';
 import { authorityIndex, buildAuthorityContext, projectAuthorityFacts, projectAuthorityMap } from './authority.js';
 import { registerWorldAuthority, readWorldAuthority } from './sources.js';
-import { authorityMemoryFacts, authorityMap } from './authority-context.js';
+import { captureRangeSource } from '../story-summary/data/turn-source.js';
+import { authorityMemoryFacts, authorityMap, worldFieldSource } from './authority-context.js';
 import { buildMapPromptBlock } from '../xiaobai-os/domains/map/projection.js';
 
 const source = { module: 'manual', key: 'fixture', label: '已确认的世界状态' };
@@ -28,6 +29,17 @@ function world() {
 const facts = [{ s: '铁匠', p: '金币', o: '100' }, { s: '阿伦', p: '所在地', o: '旧渡口' }, { s: '阿伦', p: '性格', o: '耐心' }, { s: '陌生人', p: '金币', o: '10' }];
 const map = { atlas: { locations: [{ key: 'old', name: '旧渡口' }, { key: 'new', name: '新渡口', brief: '仍然封锁' }],
     actors: [{ actorKey: 'alan', displayName: '铁匠', locationKey: 'old' }], links: [] }, scenes: [] };
+
+test('field provenance opens its original handoff only in the matching chat, branch and selected reply', () => {
+    const chat = [{name:'阿棠', mes:'暂时代管县衙钥匙。'}], ctx = {chatId:'west', chat};
+    const source = captureRangeSource(chat,0,0);
+    const world = {branchId:'main', sources:{'update:turn/1':{update:{source, proposals:[{evidence:{floor:0,quote:'代管县衙钥匙'}}]}}}};
+    const request = {key:'turn/1/0',chatId:'west',branchId:'main'};
+    assert.equal(worldFieldSource(world,ctx,request).text,chat[0].mes);
+    assert.equal(worldFieldSource(world,ctx,{...request,branchId:'east'}).text,undefined);
+    assert.equal(worldFieldSource(world,{...ctx,chatId:'other'},request).text,undefined);
+    assert.equal(worldFieldSource(world,{...ctx,chat:[{name:'阿棠',mes:'另一版本也包含代管县衙钥匙。'}]},request).text,undefined);
+});
 
 test('confirmed world fields supersede only explicitly bound memory facts; rumours and histories stay separate', () => {
     const state = world(), before = canonical(state);

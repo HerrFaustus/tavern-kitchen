@@ -9,6 +9,33 @@ export const TEXT_API_FEATURES = Object.freeze(['summary', 'planner', 'memory', 
 export const HOST_BINDING = '@host';
 export const HOST_PROVIDER = 'sillytavern-current';
 
+export const AGENT_BINDINGS = Object.freeze({
+    update: { name: '更新', features: ['summary', 'memory', 'opening'] },
+    simulation: { name: '推演', features: ['world'] },
+    planner: { name: '编剧', features: ['planner'] },
+});
+
+export function usableAgentConnection(preset, agent) {
+    return !!preset && (preset.kind || 'text') === 'text' && preset.provider !== HOST_PROVIDER && !!preset.model?.trim() && !!preset.baseUrl?.trim()
+        && (agent !== 'planner' || !!preset.apiKey?.trim());
+}
+
+export function featureBinding(settings, key) {
+    const id = settings.bindings[key];
+    // Older installations stored null to inherit the world connection. Explicitly clearing the update Agent also disconnects opening.
+    if (key === 'opening' && id == null && settings.openingInheritsWorld !== false) return settings.bindings.world;
+    return id;
+}
+
+export function readAgentBinding(settings, agent) {
+    const { features } = AGENT_BINDINGS[agent];
+    const ids = features.map(key => featureBinding(settings, key));
+    const distinct = [...new Set(ids)];
+    const preset = distinct.length === 1 && settings.presets.find(item => item.id === distinct[0]);
+    const id = usableAgentConnection(preset, agent) ? preset.id : '';
+    return { id, previous: ids, conflict: !id && ids.some(Boolean) };
+}
+
 export function createPreset(id, name, input = {}) {
     return {
         id, name, ...(input.requestExtras && supportsRequestExtras(input.provider) && {requestExtras: structuredClone(input.requestExtras)}), kind: input.kind || 'text', toolMode: input.toolMode || 'native', provider: input.provider ?? HOST_PROVIDER,
@@ -48,7 +75,7 @@ export function assertSettings(value) {
 }
 
 export function resolveFeaturePreset(settings, feature) {
-    const id = settings.bindings[feature] ?? (feature === 'opening' ? settings.bindings.world : undefined);
+    const id = featureBinding(settings, feature);
     if (id === HOST_BINDING) return createPreset(HOST_BINDING, COPY.host);
     const preset = settings.presets.find(item => item.id === id);
     if (!preset) throw new Error(COPY.unset);
@@ -59,6 +86,16 @@ export function applyPresetAction(settings, feature, action) {
     if (feature !== 'library' && !TEXT_API_FEATURES.includes(feature)) throw new Error(COPY.invalid);
     const next = assertSettings(settings);
     const index = next.presets.findIndex(preset => preset.id === action.id);
+    if (action.type === 'bind-agent') {
+        const group = Object.hasOwn(AGENT_BINDINGS, action.agent) && AGENT_BINDINGS[action.agent];
+        if (feature !== 'library' || !group || (action.id && !usableAgentConnection(next.presets[index], action.agent))) throw new Error('请选择已填写地址和模型的独立文本连接');
+        for (const key of group.features) next.bindings[key] = action.id || null;
+        if (action.agent === 'update') next.openingInheritsWorld = false;
+        return next;
+    }
+    if (action.type === 'clear' && ['embedding', 'rerank', 'l0'].includes(feature)) {
+        next.bindings[feature] = null; return next;
+    }
     if (action.type === 'select') {
         if (index === -1) throw new Error(COPY.missing);
         next.bindings[feature] = action.id; return next;

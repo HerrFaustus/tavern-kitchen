@@ -937,8 +937,9 @@ const UNANNOTATED_LABEL = '未标注';
         return Math.min(Math.max(0, Math.trunc(page)), tlTotalPages() - 1);
     }
 
+    const timelinePageKey = () => summaryData.branchId ? JSON.stringify([currentTimelineChatId, summaryData.branchId]) : currentTimelineChatId;
     function tlLoadPage() {
-        const v = JSON.parse(localStorage.getItem(TL_PAGE_KEY))?.[currentTimelineChatId];
+        const v = JSON.parse(localStorage.getItem(TL_PAGE_KEY))?.[timelinePageKey()];
         return Number.isFinite(v) ? v : -1;
     }
 
@@ -946,11 +947,11 @@ const UNANNOTATED_LABEL = '未标注';
         if (!currentTimelineChatId) return;
         const pages = JSON.parse(localStorage.getItem(TL_PAGE_KEY)) || {};
         if (tlCurrentPage < 0) {
-            if (!Object.hasOwn(pages, currentTimelineChatId)) return;
-            delete pages[currentTimelineChatId];
+            if (!Object.hasOwn(pages, timelinePageKey())) return;
+            delete pages[timelinePageKey()];
         } else {
-            if (pages[currentTimelineChatId] === tlCurrentPage) return;
-            pages[currentTimelineChatId] = tlCurrentPage;
+            if (pages[timelinePageKey()] === tlCurrentPage) return;
+            pages[timelinePageKey()] = tlCurrentPage;
         }
         localStorage.setItem(TL_PAGE_KEY, JSON.stringify(pages));
     }
@@ -1051,7 +1052,7 @@ const UNANNOTATED_LABEL = '未标注';
     }
 
     function selectCharacter(id) {
-        const character = getArchiveCharacters(summaryData).find(entry => entry.id === id || entry.name === id);
+        const character = getArchiveCharacters(summaryData).find(entry => entry.id === id);
         currentCharacterId = character?.id || null;
         renderCharacterProfile();
         archiveView.refreshRoster();
@@ -1115,10 +1116,11 @@ const UNANNOTATED_LABEL = '未标注';
         renderPersonalAgendas(c, agendas, holder => resolve(holder) === name);
         renderUnassigned();
         const attributes = document.createElement('section');
-        renderWorldAttributes(attributes,entities,person,identity.aliasesFor(name,person));
+        renderWorldAttributes(attributes,entities,person,identity.aliasesFor(name,person),true);
         const title = c.querySelector('.prof-name');
         if (state) title.after(state);
         if (attributes.childElementCount) title.after(attributes);
+        if (c.childElementCount === 1) { const hint = document.createElement('p'); hint.textContent = '目前只记下了姓名，尚无其他资料。'; c.append(hint); }
     }
 
     function updateStats(s) {
@@ -1554,13 +1556,15 @@ const UNANNOTATED_LABEL = '未标注';
                     summaryData.narrativeUnits = p.narrativeUnits || [];
                     const nextChatId = typeof p.chatId === 'string' ? p.chatId : '';
                     memoryMaintenancePage.setChat(nextChatId);
-                    if (nextChatId !== currentTimelineChatId) {
-                        currentTimelineChatId = nextChatId;
+                    if (nextChatId !== currentTimelineChatId || (p.branchId || '') !== (summaryData.branchId || '')) {
+                        currentTimelineChatId = nextChatId; summaryData.branchId = p.branchId || '';
                         tlUnfilteredPage = null;
                         archiveView.reset();
                         currentCharacterId = null;
                         tlCurrentPage = tlLoadPage();
                     }
+                    summaryData.chatId = nextChatId;
+                    summaryData.branchId = p.branchId || '';
                     summaryData.storyRecords = p.storyRecords || [];
                     if (p.rounds) renderTimeline(p.rounds);
                     if (p.characters) summaryData.characters = p.characters;
@@ -1589,6 +1593,7 @@ const UNANNOTATED_LABEL = '未标注';
             case 'MEMORY_MAINTENANCE_RESULTS':
                 memoryMaintenancePage.render(d.payload);
                 break;
+            case 'WORLD_FIELD_SOURCE_RESULT': archiveView.showFieldSource(d.payload); break;
             case 'MEMORY_MAINTENANCE_SOURCE_RESULT':
                 memoryMaintenancePage.renderSource(d.payload);
                 break;
@@ -1600,7 +1605,8 @@ const UNANNOTATED_LABEL = '未标注';
                 $('stat-pending').textContent = t;
                 $('summarized-count').textContent = 0;
                 summaryData = { rounds: [], characters: { main: [], relationships: [] }, arcs: [], facts: [], characterAliases: [] };
-                currentTimelineChatId = '';
+                currentTimelineChatId = d.payload?.chatId || '';
+                summaryData.chatId = currentTimelineChatId; summaryData.branchId = d.payload?.branchId || '';
                 tlUnfilteredPage = null;
                 currentCharacterId = null;
                 archiveView.reset();
@@ -1813,6 +1819,7 @@ const UNANNOTATED_LABEL = '未标注';
     function init() {
         archiveView = createSummaryArchive({
             getData: () => summaryData,
+            hasChat: () => !!currentTimelineChatId,
             getSelectedCharacter: () => currentCharacterId,
             onSelectCharacter: selectCharacter,
             onTimelineChange: options => renderTimeline(summaryData.rounds, options),
@@ -1864,6 +1871,7 @@ const UNANNOTATED_LABEL = '未标注';
         const toggle = document.createElement('input');
         toggle.type = 'checkbox';
         const key = scenery ? 'sceneryEvolution' : 'subscribed';
+        toggle.dataset.evolutionKey = key;
         toggle.checked = evolutionSettings?.[key] === true;
         toggle.disabled = !evolutionSettings?.enabled || evolutionSettings.pending;
         label.append(toggle, scenery ? '风物随剧情演化' : '事态随剧情演化');
@@ -1877,6 +1885,7 @@ const UNANNOTATED_LABEL = '未标注';
         toggle.onchange = () => change(key, toggle.checked);
         if (scenery) {
             const frequency = document.createElement('select');
+            frequency.dataset.evolutionKey = 'encounterFrequency';
             frequency.setAttribute('aria-label', '街头见闻频率');
             for (const [value, text] of [['off','关闭'], ['occasional','偶尔'], ['lively','活跃']]) {
                 const option = document.createElement('option');
@@ -1890,9 +1899,13 @@ const UNANNOTATED_LABEL = '未标注';
             field.append('街头见闻频率', frequency);
             heading.append(field);
         }
-        if (evolutionSettings?.error) {
+        if (evolutionSettings?.error && (!evolutionSettings.missingField || evolutionSettings.missingField === key || (scenery && evolutionSettings.missingField === 'encounterFrequency'))) {
             const status = document.createElement('p');
             status.setAttribute('role', 'alert'); status.textContent = evolutionSettings.error;
+            if (evolutionSettings.missingField) {
+                const go = document.createElement('button'); go.type = 'button'; go.textContent = '前往 API';
+                go.onclick = () => postMsg('WORLD_EVOLUTION_CONFIGURE'); status.append(' ', go);
+            }
             heading.append(status);
         }
     }
@@ -1916,9 +1929,15 @@ const UNANNOTATED_LABEL = '未标注';
                 situations.append(group);
             }
             container.before(situations);
+            const focused = document.activeElement;
+            const focusedSettings = focused?.closest('#affair-settings, #scenery-settings');
             for (const [id, scenery] of [['affair-settings', false], ['scenery-settings', true]]) {
                 const group = $(id); group.replaceChildren();
                 appendEvolutionControls(group, scenery);
+            }
+            if (focusedSettings && focused.dataset.evolutionKey) {
+                const control = focusedSettings.querySelector(`[data-evolution-key="${focused.dataset.evolutionKey}"]`);
+                control?.focus({ preventScroll: true });
             }
         }
 

@@ -2,18 +2,21 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { build } from 'esbuild';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const root = path.resolve(process.argv[2] || path.resolve(import.meta.dirname, '..'));
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_BIN });
 try {
+    const editorBundle = (await build({entryPoints:['modules/world-records/editor-panel.js'],bundle:true,write:false,format:'esm'})).outputFiles[0].text;
     const page = await browser.newPage({ viewport: { width: 319, height: 780 } });
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/*', async route => {
         const url = new URL(route.request().url());
         if (url.origin !== 'http://kitchen.test') { await route.abort(); return; }
+        if (url.pathname === '/editor.js') return route.fulfill({contentType:'text/javascript',body:editorBundle});
         if (url.pathname === '/') {
             await route.fulfill({ contentType: 'text/html', body: '<style>body{margin:0;background:#202024;color:#ddd}</style><iframe title="summary" style="width:100%;height:760px;border:0"></iframe>' });
             return;
@@ -30,7 +33,9 @@ try {
         globalThis.onmessage = event => {
             if (event.origin !== globalThis.location.origin || event.source !== frame.contentWindow || event.data?.source !== 'TavernKitchen-StoryFrame') return;
             const reply = data => frame.contentWindow.postMessage({ source: 'TavernKitchen', ...data }, globalThis.location.origin);
-            if (event.data.type === 'WORLD_EVOLUTION_REQUEST') {
+            if (event.data.type === 'WORLD_FIELD_SOURCE') {
+                reply({type:'WORLD_FIELD_SOURCE_RESULT',payload:{...event.data,floor:3,name:'阿棠',text:'守卫阿棠接过县衙钥匙，答应明早交还。'}});
+            } else if (event.data.type === 'WORLD_EVOLUTION_REQUEST') {
                 reply({ type: 'WORLD_EVOLUTION_STATE', settings: globalThis.evolution || { enabled: true, subscribed: false, sceneryEvolution: false, encounterFrequency: 'occasional' } });
             } else if (event.data.type === 'WORLD_EVOLUTION_CHANGE') {
                 globalThis.evolution = { enabled: true, subscribed: false, sceneryEvolution: false, encounterFrequency: 'occasional', ...globalThis.evolution, [event.data.key]: event.data.value };
@@ -87,15 +92,7 @@ try {
     await frame.locator('#memory-maintenance-enabled').waitFor({state:'attached'});
     await frame.locator('#tab-agent.active').waitFor();
     const proofRatio = await frame.locator('.memory-controls').evaluate(el => el.getBoundingClientRect().height / globalThis.innerHeight);
-    const proofSizes = await frame.locator('.memory-controls').evaluate(el => {
-        const rows = [];
-        for (let node = el; node; node = node.parentElement) {
-            const style = globalThis.getComputedStyle(node);
-            rows.push([node.id || node.className || node.tagName, node.getBoundingClientRect().height, style.height, style.minHeight, style.display]);
-        }
-        return rows;
-    });
-    assert.ok(Math.abs(proofRatio - 1 / 4) < .02, JSON.stringify(proofSizes));
+    assert.ok(proofRatio > 0 && proofRatio <= .46);
     assert.ok(await frame.locator('.memory-settings').evaluate(el => el.open));
     assert.ok(await options.isHidden());
     assert.equal(await frame.locator('#settings-close, .memory-api, [data-workspace-page], #summary-text-api').count(), 0);
@@ -109,11 +106,11 @@ try {
     await view('people');
     await frame.locator('#archive-people').waitFor();
     assert.equal(await frame.locator('#archive-person-select').count(), 0);
-    assert.equal(await frame.getByText('暂无人物记录', { exact: true }).count(), 1);
+    assert.equal(await frame.getByText('选择一段对话后查看人物档案。', { exact: true }).count(), 1);
     assert.equal(await frame.locator('#profile-content').innerText(), '');
     await page.evaluate(() => globalThis.document.querySelector('iframe').contentWindow.postMessage({
         source: 'TavernKitchen', type: 'SUMMARY_FULL_DATA',
-        payload: {
+        payload: globalThis.originalScene = {
             chatId: 'people-ui-fixture', rounds: [], facts: [],
             storyRecords: [
                 { id: 'port', kind: 'situation', title: '港口封锁', description: '守卫检查出港船只。', status: 'open', _history: [{text:'守卫开始加强检查',_addedAt:1}] },
@@ -134,22 +131,99 @@ try {
         assert.ok(await frame.locator('.archive-hero').isHidden());
         assert.equal(await frame.locator('.archive-search, #keywords-cloud, .archive-keywords').count(), 0);
         assert.equal(await frame.locator('.archive-graph, #archive-profile-open, #rel-fs-modal').count(), 0);
-        assert.equal(await frame.locator('#archive-people h2').count(), 0);
+        assert.ok(await frame.locator('#archive-person-name').isHidden());
         assert.equal(await frame.locator('#archive-roster button').count(), 2);
         assert.equal(await frame.locator('.archive-aliases, #aliases-list, #alias-add').count(), 0);
-        await frame.locator('#archive-roster').getByRole('button', { name: '林舟', exact: true }).click();
+        await frame.locator('#archive-roster').getByRole('button', { name: /林舟/ }).click();
         assert.match(await frame.locator('#profile-content').innerText(), /共同守护银钥匙的伙伴/);
         assert.match(await frame.locator('#profile-content').innerText(), /别名：银鸦、阿舟/);
         assert.match(await frame.locator('#profile-content').innerText(), /称号：渡鸦使者/);
-        await frame.locator('#archive-roster').getByRole('button', { name: '沈青', exact: true }).click();
-        assert.equal(await frame.locator('.prof-name').innerText(), '沈青');
+        await frame.locator('#archive-people-back').click();
+        await frame.locator('#archive-roster').getByRole('button', { name: /沈青/ }).click();
+        assert.equal(await frame.locator('#archive-person-name').innerText(), '沈青');
         assert.match(await frame.locator('#profile-content').innerText(), /共同守护银钥匙的伙伴/);
         assert.ok(await frame.locator('#archive-profile').isVisible());
+        await frame.locator('#archive-people-back').click();
         await view('memory');
         await frame.locator('#archive-story').waitFor();
         assert.ok(await frame.locator('.archive-hero').isVisible());
         assert.equal(await frame.locator('.archive-search').count(), 0);
     }
+    await view('people');
+    const deliver = payload => page.evaluate(payload => globalThis.document.querySelector('iframe').contentWindow.postMessage({
+        source:'TavernKitchen',type:'SUMMARY_FULL_DATA',payload
+    }, globalThis.location.origin),payload);
+    const state = {chatId:'people-ui-fixture',branchId:'主线',characters:{main:[],relationships:[]},storyRecords:[],rounds:[],facts:[],characterAliases:[],entities:[]};
+    await deliver(state);
+    await frame.getByText('这段对话尚无人物记录。').waitFor();
+    const guard = {kind:'person',id:'tang-west',name:'阿棠',fields:{身份:{nature:'established_fact',value:'西门守卫'}}};
+    const key = {kind:'item',id:'key',name:'县衙钥匙',fields:{保管人:{nature:'established_fact',value:{entityId:guard.id},source:{module:'world_update',key:'fixture/0'}}}};
+    state.entities = [guard,key];
+    await deliver(state);
+    await frame.locator('#archive-person-name').filter({hasText:'阿棠'}).waitFor();
+    assert.ok(await frame.locator('#archive-roster').isHidden());
+    assert.match(await frame.locator('#profile-content').innerText(),/所有人：未知，保管人：阿棠/);
+    await frame.getByRole('button',{name:'查看交接原楼'}).click();
+    await frame.locator('#archive-detail-body').filter({hasText:'第 4 楼'}).waitFor();
+    await frame.getByRole('button',{name:'返回档案'}).click();
+    const twin = {kind:'person',id:'tang-east',name:'阿棠',fields:{身份:{nature:'established_fact',value:'东门传令官'}}};
+    state.entities.push(twin);
+    await deliver(state);
+    await frame.getByRole('button',{name:/东门传令官/}).click();
+    await frame.locator('body').evaluate(async (_, entities) => {
+        const {createWorldEditorPanel} = await import('/editor.js');
+        const editor = createWorldEditorPanel({service:{},getIdentity:()=> 'fixture',section:'people'});
+        editor.mount(globalThis.document.getElementById('world-people-editor')); editor.show({version:1,branchId:'主线',entities});
+    },state.entities);
+    for (const width of [319,600]) {
+        await page.setViewportSize({width,height:780});
+        await frame.getByText('编辑人物',{exact:true}).click();
+        await frame.getByRole('button',{name:'编辑名称'}).click();
+        assert.equal(await frame.getByLabel('对象',{exact:true}).inputValue(),twin.id);
+        await frame.getByLabel('名称',{exact:true}).fill('未保存的别名');
+        await frame.getByRole('button',{name:'取消',exact:true}).click();
+        assert.equal(await frame.locator('#archive-person-name').innerText(),'阿棠');
+        assert.ok(await frame.getByText('编辑人物',{exact:true}).evaluate(el => el.ownerDocument.activeElement === el));
+        if (process.env.TK_UI_SHOTS) {
+            await fs.mkdir(process.env.TK_UI_SHOTS,{recursive:true});
+            await page.screenshot({path:path.join(process.env.TK_UI_SHOTS,'人物-'+width+'-档案.png')});
+        }
+    }
+    await frame.locator('#archive-people-back').click();
+    assert.ok(await frame.getByRole('button',{name:/东门传令官/}).evaluate(el => el.ownerDocument.activeElement === el));
+    await frame.getByRole('button',{name:/西门守卫/}).click();
+    await deliver({...state,branchId:'支线'});
+    await frame.getByRole('button',{name:/东门传令官/}).waitFor();
+    const longName = '城北抄录官' + 'Ashford'.repeat(12);
+    const roster = Array.from({length:36}, (_, i) => ({kind:'person', id:'scribe-' + i, name:'书吏' + i, fields:{}}));
+    roster.push({kind:'person',id:'guest',name:longName,fields:{}});
+    const ending = '守卫将封好的名册交到城门。';
+    const round = {_addedAt:3, _sourceStart:2, title:'西门换班', summary:'守卫沿城墙清点灯火。'.repeat(480) + ending, participants:[]};
+    await deliver({...state, entities:roster, rounds:[round]});
+    const reading = frame.locator('.archive');
+    const guest = frame.getByRole('button',{name:new RegExp('城北抄录官')});
+    for (const width of [319,600]) {
+        await page.setViewportSize({width,height:780});
+        await guest.scrollIntoViewIfNeeded();
+        const previous = await reading.evaluate(el => el.scrollTop);
+        assert.ok(previous > 0);
+        assert.ok(await reading.evaluate(el => el.scrollWidth <= el.clientWidth));
+        await guest.click();
+        assert.equal(await frame.locator('#archive-person-name').innerText(),longName);
+        await frame.locator('#archive-people-back').click();
+        assert.equal(await reading.evaluate(el => el.scrollTop),previous);
+        assert.ok(await guest.evaluate(el => el === el.ownerDocument.activeElement));
+        await view('memory');
+        await frame.locator('#timeline-list').getByText(round.summary,{exact:true}).waitFor();
+        const accessibleEnd = await reading.evaluate(el => {
+            el.scrollTop = el.scrollHeight;
+            const text = el.querySelector('.archive-event-main p');
+            return !!text && text.getBoundingClientRect().bottom <= el.getBoundingClientRect().bottom + 1 && el.scrollTop > 0 && el.scrollWidth <= el.clientWidth;
+        });
+        assert.ok(accessibleEnd);
+        await view('people');
+    }
+    await page.evaluate(() => globalThis.document.querySelector('iframe').contentWindow.postMessage({source:'TavernKitchen',type:'SUMMARY_FULL_DATA',payload:globalThis.originalScene},globalThis.location.origin));
     await view('world');
     const affairs = frame.locator('[data-situation-group="affairs"]');
     const scenery = frame.locator('[data-situation-group="scenery"]');
@@ -179,8 +253,8 @@ try {
         await page.setViewportSize({ width, height: 780 });
         assert.ok(await affairs.isVisible());
         const split = await frame.locator('#situation-controls').evaluate(el => ({ controls: el.getBoundingClientRect().height, total: globalThis.innerHeight }));
-        assert.ok(Math.abs(split.controls / split.total - 1 / 4) < .015);
-        assert.ok(await frame.locator('#situation-controls').evaluate(el => el.getBoundingClientRect().top >= globalThis.innerHeight * .74));
+        assert.ok(split.controls > 0 && split.controls <= split.total * .46);
+        assert.ok(await frame.locator('#situation-controls').evaluate(el => el.getBoundingClientRect().top < 12));
         assert.ok(await scenery.isVisible());
         assert.ok(await frame.locator('body').evaluate(body => body.scrollWidth <= body.clientWidth));
         await page.screenshot({ path: path.resolve('output', 'situations-' + width + '.png') });

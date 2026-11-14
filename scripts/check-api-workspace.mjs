@@ -1,29 +1,187 @@
 import assert from 'node:assert/strict';
-import { build } from 'esbuild';
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import { createRequire } from 'node:module';
-const require=createRequire(import.meta.url), {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright');
-const root=process.cwd();
-const workspace=(await build({absWorkingDir:root,entryPoints:['core/kitchen-workspace.js'],bundle:true,write:false,format:'esm',platform:'browser'})).outputFiles[0].text;
-const api=(await build({absWorkingDir:root,entryPoints:['modules/text-api/settings-ui.js'],bundle:true,write:false,format:'esm',platform:'browser',loader:{'.css':'empty'}})).outputFiles[0].text;
-const css=await fs.readFile('style.css','utf8'); const apiCss=await fs.readFile('modules/text-api/settings-ui.css','utf8');
-const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_BIN});
+import { build } from 'esbuild';
+
+const root = process.cwd();
+const require = createRequire(import.meta.url);
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const fixture = await build({ stdin: { resolveDir: root, contents: `
+    export {createKitchenWorkspace, bindKitchenFrame} from './core/kitchen-workspace.js';
+    export {requireAgent} from './core/panel-controls.js';
+    export {createTextApiRepository} from './modules/text-api/repository.js';
+    export {createPreset} from './modules/text-api/model.js';
+    export {mountTextApiSettings} from './modules/text-api/settings-ui.js';
+    export {mountEvolutionView} from './modules/xiaobai-os/apps/world/evolution-view.ts';
+` }, bundle:true, format:'esm', platform:'browser', write:false, loader:{'.css':'empty'}, external:['../../../../../script.js','../../../../utils.js'] });
+const [workspaceCss, embeddedCss, apiCss] = await Promise.all(['style.css','core/kitchen-embedded.css','modules/text-api/settings-ui.css'].map(file => fs.readFile(file,'utf8')));
+const browser = await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_BIN});
 try {
-const page=await browser.newPage({viewport:{width:420,height:800}});
-page.on('pageerror',e=>process.stderr.write('browser: '+e.message+'\n'));
-await page.route('**/*',async route=>{const p=new URL(route.request().url()).pathname;if(p==='/workspace.js')return route.fulfill({contentType:'text/javascript',body:workspace});if(p==='/api.js')return route.fulfill({contentType:'text/javascript',body:api}); return route.fulfill({contentType:'text/html',body:'<style>body{margin:0}'+css+'#tk-workspace{position:fixed;inset:0;width:100%;height:100%;}iframe{width:100%;height:100%;border:0}</style><div id="top-settings-holder"></div>'});});
-await page.goto('http://kitchen.test/');
-await page.evaluate(async ({apiCss})=>{const {createKitchenWorkspace}=await import('/workspace.js');const w=createKitchenWorkspace({});w.configure({actions:{settings(){const f=globalThis.document.createElement('iframe');f.onload=()=>w.attachFrame(f);f.srcdoc='<style>html,body{height:100%;margin:0}'+apiCss+'</style><div id="api"></div><script type="module">import {mountTextApiSettings} from "/api.js"; const e=mountTextApiSettings(document.getElementById("api"),{library:true, feature:"library",namespace:"",transport:async action=>action.endsWith("call-stats")?{features:{},recent:[]}:({presets:[{id:"p",name:"测试",kind:"text",provider:"openai-compatible",baseUrl:"https://example.invalid/v1",apiKey:"",model:"fixture",sampling:{}}],bindings:{summary:"p"}})});e.refresh();</script>';w.getMount('settings').append(f);}},panelSwitch:()=>({enabled:true,label:'启用API',change(){}})});await w.open('settings');}, {apiCss});
-const frame=page.frameLocator('iframe');
-await frame.getByLabel('选择连接').waitFor({timeout:10000});
-await frame.getByLabel('选择连接').selectOption('p');
-await frame.getByLabel('模型', {exact:true}).waitFor();
-assert.equal(await frame.locator('#tk-module-native-controls, [data-settings-group]').count(),0);
-assert.equal(await frame.locator('.text-api-configuration > summary').count(),0);
-assert.ok(await page.locator('#tk-module-native-controls').isHidden());
-assert.ok(await page.locator('.tk-panel-page').evaluate(el=>el.classList.contains('tk-page-full')));
-await frame.locator('.text-api-call-stats output').filter({hasText:'本次调用 0 次'}).waitFor();
-assert.ok(await frame.locator('[data-save]').isVisible());
-assert.ok(await frame.getByRole('button',{name:'测试生成',exact:true}).isVisible());
-console.log('Verified API stays unified inside the live workspace without settings groups.');
-} finally {await browser.close();}
+    for (const width of [319, 600]) {
+        const page = await browser.newPage({ viewport:{width,height:780} });
+        const errors = [];
+        page.on('pageerror',error => errors.push(error.message));
+        await page.route('**/*',async route => {
+            const url = new URL(route.request().url());
+            if (url.origin !== 'http://kitchen.test') return route.abort();
+            if (url.pathname === '/script.js') return route.fulfill({contentType:'text/javascript',body:'export const getRequestHeaders = () => ({});'});
+            if (url.pathname === '/utils.js') return route.fulfill({contentType:'text/javascript',body:'export const debounce = fn => fn;'});
+            if (url.pathname.endsWith('/fixture.js')) return route.fulfill({contentType:'text/javascript',body:fixture.outputFiles[0].text});
+            if (url.pathname.endsWith('kitchen-embedded.css')) return route.fulfill({contentType:'text/css',body:embeddedCss});
+            if (url.pathname === '/story') {
+                const base = '/scripts/extensions/third-party/tavern-kitchen/';
+                const html = (await fs.readFile('modules/story-summary/story-summary.html','utf8')).replace('<head>', '<head><base href="' + base + 'modules/story-summary/">');
+                return route.fulfill({contentType:'text/html',body:html});
+            }
+            const prefix = '/scripts/extensions/third-party/tavern-kitchen/';
+            if (url.pathname.startsWith(prefix)) {
+                const file = path.resolve(root,decodeURIComponent(url.pathname.slice(prefix.length)));
+                if (!file.startsWith(root + path.sep)) return route.abort();
+                const types = {'.js':'text/javascript','.css':'text/css','.json':'application/json'};
+                if (!types[path.extname(file)]) return route.abort();
+                return route.fulfill({contentType:types[path.extname(file)],body:await fs.readFile(file)});
+            }
+            if (url.pathname === '/api') return route.fulfill({contentType:'text/html',body:'<html><head><link id="tk-embedded-styles" rel="stylesheet" href="/core/kitchen-embedded.css"><style>body{margin:.35em}'+apiCss+'</style></head><body><main id="api"></main></body></html>'});
+            return route.fulfill({contentType:'text/html',body:'<style>body{margin:0;font:16px system-ui;color:var(--SmartThemeBodyColor);background:var(--SmartThemeBlurTintColor);--SmartThemeBodyColor:#ddd;--SmartThemeEmColor:#bbb;--SmartThemeQuoteColor:#bca880;--SmartThemeBorderColor:#787878;--SmartThemeBlurTintColor:#272728;--SmartThemeChatTintColor:#272728}.text_pole{font:inherit;border:1px solid var(--SmartThemeBorderColor);padding:3px 5px}.menu_button,.inline-drawer-header{font:inherit;color:inherit;background:transparent;border:1px solid var(--SmartThemeBorderColor);border-radius:4px}.text_pole:is(select){appearance:none;background-image:linear-gradient(45deg,transparent 50%,currentColor 50%);background-size:5px 5px;background-position:right 6px center;background-repeat:no-repeat;padding-right:20px}'+workspaceCss+'#tk-workspace{position:fixed;inset:0;height:100%;width:100%}iframe{width:100%;height:100%;border:0}</style><div id="top-settings-holder"></div><select style="position:fixed;left:-100vw" class="text_pole" id="host-select" aria-label="宿主连接"><option>本地连接</option></select>'});
+        });
+        await page.goto('http://kitchen.test');
+        const mountFixture = () => page.evaluate(async () => {
+            const api = await import('/fixture.js');
+            const key = 'textApiPresets';
+            const storage = {
+                async getStrict(name,fallback) { return JSON.parse(globalThis.localStorage.getItem(name) || 'null') ?? fallback; },
+                async updateAndSave(update) {
+                    const draft = {[key]:await this.getStrict(key,null)};
+                    update(draft);
+                    if (globalThis.failSave) { globalThis.failSave = false; throw new Error('样例存储写入失败'); }
+                    globalThis.localStorage.setItem(key,JSON.stringify(draft[key]));
+                },
+                clearCache() {},
+            };
+            if (!globalThis.localStorage.getItem(key)) {
+                const preset = id => api.createPreset(id, id === 'p' ? '本地连接' : '旧世界连接', {provider:'openai-compatible', baseUrl:'http://fixture.invalid', model:'fixture', apiKey:'fixture'});
+                globalThis.localStorage.setItem(key,JSON.stringify({version:1,profilesVersion:1,presets:[preset('p'),preset('old')],bindings:{summary:'p',memory:'old',opening:'p',planner:'p'}}));
+            }
+            const repository = api.createTextApiRepository({common:storage,planner:storage});
+            const workspace = api.createKitchenWorkspace({});
+            const world = {subscribed:false};
+            const prefs = {read:()=>({enabled:true,apps:{world}}),subscribe:()=>()=>{},async setWorldPreference(key,value){world[key]=value;}};
+            globalThis.uiFixture = {workspace,world,calls:0};
+            const doc = globalThis.document;
+            workspace.configure({panelSwitch:(_,label)=>({enabled:true,label:'启用'+label,change(){}}),actions:{
+                situation() {
+                    const mount = workspace.getMount('situation');
+                    let frame = mount.querySelector('iframe');
+                    const post = data => frame.contentWindow.postMessage({source:'TavernKitchen',...data},globalThis.location.origin);
+                    if (!frame) {
+                        frame = doc.createElement('iframe'); frame.title = '剧情资料'; api.bindKitchenFrame(frame);
+                        globalThis.onmessage = event => {
+                            if (event.origin !== globalThis.location.origin || event.source !== frame.contentWindow || event.data.type !== 'FRAME_READY') return;
+                            post({type:'LOAD_PANEL_CONFIG',config:{}});
+                            post({type:'KITCHEN_MEMORY_VIEW',view:'world'});
+                        };
+                        frame.src = '/story'; mount.append(frame);
+                    } else post({type:'KITCHEN_MEMORY_VIEW',view:'world'});
+                    workspace.showEvolution(target => api.mountEvolutionView(target,'situation',prefs,frame,
+                        () => api.requireAgent('simulation', async () => repository), selector => workspace.visitBinding('simulation',selector)));
+                },
+                settings() {
+                    const mount = workspace.getMount('settings');
+                    if (mount.querySelector('iframe')) return;
+                    const frame = doc.createElement('iframe'); frame.title = 'API';
+                    api.bindKitchenFrame(frame);
+                    frame.addEventListener('load', () => {
+                        const root = frame.contentDocument.querySelector('#api');
+                        const instance = api.mountTextApiSettings(root,{feature:'library',namespace:'',library:true,
+                            async transport(action,payload) {
+                                if (action === 'load') return repository.load();
+                                if (action === 'mutate') return repository.mutate(payload.feature,payload.mutation);
+                                if (action.endsWith('call-stats')) return {features:{},recent:[]};
+                                if (action === 'dialog') return null;
+                                globalThis.uiFixture.calls++; throw Error('意外模型调用');
+                            },
+                        });
+                        instance.refresh();
+                    });
+                    frame.src = '/api'; mount.append(frame);
+                },
+            }});
+            await workspace.open('situation');
+        });
+        await mountFixture();
+        const trigger = page.getByRole('button',{name:'局势设置'});
+        const story = page.frameLocator('iframe[title="剧情资料"]');
+        const switcher = story.getByRole('checkbox',{name:'事态随剧情演化'});
+        const frame = page.frameLocator('iframe[title="API"]');
+        const binding = frame.getByLabel('推演 Agent');
+        const waitForReturnFocus = () => page.waitForFunction(() => {
+            const storyDocument = globalThis.document.querySelector('iframe[title="剧情资料"]').contentDocument;
+            const control = storyDocument.querySelector('#affair-settings [data-evolution-key="subscribed"]');
+            return !!control && control === storyDocument.activeElement;
+        }, undefined, {timeout:5000});
+        await trigger.click();
+        await switcher.click();
+        await story.getByRole('alert').filter({hasText:'请先在API界面中配置推演agent'}).waitFor();
+        assert.equal(await switcher.isChecked(),false);
+        await story.getByRole('button',{name:'前往 API'}).click();
+        await binding.waitFor();
+        await page.waitForFunction(() => globalThis.document.querySelector('iframe[title="API"]').contentDocument.activeElement?.dataset.agentBinding === 'simulation');
+        assert.equal(await frame.getByLabel('编剧 Agent').inputValue(),'p');
+        assert.match(await frame.getByLabel('更新 Agent').locator('..').innerText(),/旧世界连接/);
+        assert.ok(await frame.getByLabel('选择连接').isHidden());
+        await page.getByRole('button',{name:'返回局势'}).click();
+        assert.equal(await switcher.isChecked(),false);
+        await waitForReturnFocus();
+        await switcher.click();
+        await story.getByRole('button',{name:'前往 API'}).click();
+        await page.evaluate(() => { globalThis.failSave = true; });
+        await binding.selectOption('p');
+        await frame.getByRole('status').filter({hasText:'样例存储写入失败'}).waitFor();
+        assert.equal(await binding.inputValue(),'');
+        await binding.selectOption('p');
+        await frame.getByRole('status').filter({hasText:'已保存推演 Agent'}).waitFor();
+        await page.getByRole('button',{name:'返回局势'}).click();
+        await waitForReturnFocus();
+        assert.equal(await switcher.isChecked(),false);
+        await switcher.click();
+        await page.waitForFunction(() => globalThis.uiFixture.world.subscribed === true);
+        await page.getByRole('tab',{name:'API',exact:true}).click();
+        assert.equal(await binding.inputValue(),'p');
+        await frame.getByLabel('更新 Agent').selectOption('p');
+        await frame.getByRole('status').filter({hasText:'已保存更新 Agent'}).waitFor();
+        for (const [size,dark] of [[16,true],[20,false]]) {
+            await page.evaluate(({size,dark}) => {
+                globalThis.document.body.style.fontSize = size + 'px';
+                globalThis.document.body.style.setProperty('--SmartThemeBodyColor',dark?'#ddd':'#252525');
+                globalThis.document.body.style.setProperty('--SmartThemeBlurTintColor',dark?'#272728':'#f6f3ef');
+                globalThis.document.body.style.setProperty('--SmartThemeChatTintColor',dark?'#272728':'#f6f3ef');
+                globalThis.document.body.style.setProperty('--SmartThemeEmColor',dark?'#bbb':'#555');
+            },{size,dark});
+            const reference = await page.locator('#host-select').evaluate(el => ({height:el.offsetHeight,arrow:globalThis.getComputedStyle(el).backgroundImage}));
+            await page.waitForFunction(expected => {
+                const node = globalThis.document.querySelector('iframe[title="API"]').contentDocument.querySelector('[data-agent-binding=simulation]');
+                return Math.abs(node.offsetHeight - expected) <= 1;
+            },reference.height);
+            assert.equal(await binding.evaluate(el => globalThis.getComputedStyle(el).backgroundImage),reference.arrow);
+            assert.ok(await frame.locator('body').evaluate(el => el.scrollWidth <= el.clientWidth));
+            if (process.env.TK_UI_SHOTS) {
+                await fs.mkdir(process.env.TK_UI_SHOTS,{recursive:true});
+                await page.screenshot({path:path.join(process.env.TK_UI_SHOTS,'API-'+width+'-'+(dark?'深色16':'浅色20')+'.png')});
+            }
+        }
+        await frame.getByText('编辑连接',{exact:true}).click();
+        await frame.getByText('更多',{exact:true}).click();
+        const rename = frame.getByRole('button',{name:'重命名'});
+        await rename.click();
+        assert.equal(await frame.getByLabel('选择连接').locator('option:checked').textContent(),'本地连接');
+        assert.equal(await page.evaluate(() => globalThis.uiFixture.calls),0);
+        await page.reload(); await mountFixture();
+        await page.getByRole('tab',{name:'API',exact:true}).click();
+        await binding.waitFor(); assert.equal(await binding.inputValue(),'p');
+        assert.equal(await page.evaluate(() => JSON.parse(globalThis.localStorage.getItem('textApiPresets')).bindings.world),'p');
+        assert.deepEqual(errors,[]);
+        await page.close();
+    }
+    console.log('Verified all three bindings, legacy conflict, rollback, cancel, explicit re-enable, keyboard focus, host metrics and persistence.');
+} finally { await browser.close(); }

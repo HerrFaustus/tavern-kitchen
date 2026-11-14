@@ -42,11 +42,12 @@ try {
     const panel=page.locator('#tk-panel-planner'), state=panel.locator('.tk-planner-note-status'), chapter=panel.locator('.tk-planner-chapter');
     await state.filter({hasText:'暂无札记'}).waitFor();
     const functionSettings=page.locator('#tk-module-native-controls [data-settings-group="function"]');
+    await page.getByRole('button',{name:'编剧设置'}).click();
     const auto = functionSettings.getByRole('checkbox',{name:'生成前自动更新章节札记'});
     assert.equal(await auto.isChecked(),false);
     assert.equal(await page.evaluate(()=>globalThis.__plannerFixture.generate()),undefined);
     assert.equal(await page.evaluate(()=>globalThis.__plannerFixture.calls),0);
-    await functionSettings.getByRole('button',{name:'立即生成／更新札记'}).click();
+    await page.getByRole('button',{name:'立即生成／更新札记'}).click();
     await chapter.filter({hasText:'旅人站在码头'}).waitFor();
     const injected=await page.evaluate(()=>globalThis.__plannerFixture.generate());
     assert.equal(injected,'【本章札记】\n'+await chapter.innerText());

@@ -73,7 +73,7 @@ test('manual controls stay available with automatic writing off and a failed set
     let manualCalls = 0;
     const view = createPlannerSettings(root, { prepare: () => manualCalls++, setAutoPrepare: () => { throw Error('未保存'); } });
     view.status('失败',true);
-    const [prepare, retry] = root.querySelectorAll('footer button');
+    const prepare = root.querySelector('[data-prepare-note]'), retry = root.querySelector('footer button');
     const toggle = root.querySelector('footer input');
     assert.ok(retry.hidden && !prepare.hidden);
     await prepare.onclick();

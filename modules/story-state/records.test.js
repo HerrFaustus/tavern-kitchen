@@ -32,7 +32,7 @@ test('shared profiles separate social roles, physical state, mood, competence an
     assert.match(first,/小孟：本人是对方的师父/);
     const second = show(hero);
     assert.match(second,/阿林：对方是本人的师父/);
-    assert.match(second,/资产渡船：所有人：阿林；保管人：小孟；使用人：小孟/);
+    assert.match(second,/资产渡船：所有人：阿林，保管人：小孟，使用人：小孟/);
     assert.equal(second.split('渡船').length,2);
 });
 test('any character shows confirmed traits, items and assets by current ownership', t => {

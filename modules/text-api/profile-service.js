@@ -7,6 +7,17 @@ import { importCurrentTavernApi } from './tavern-import.js';
 import { createIdentifier } from '../../shared/common/identifier.js';
 import { featureCalls } from './call-stats.js';
 export async function handleProfileRequest(data, signal) {
+    if (data.action === 'dialog') {
+        const { Popup, POPUP_TYPE, POPUP_RESULT } = globalThis.SillyTavern.getContext();
+        const text = document.createElement('p');
+        text.textContent = String(data.message || '');
+        if (data.kind === 'input') {
+            const result = await new Popup(text, POPUP_TYPE.INPUT, String(data.initial || '')).show();
+            return typeof result === 'string' ? result : null;
+        }
+        if (data.kind === 'confirm') return await new Popup(text, POPUP_TYPE.CONFIRM).show() === POPUP_RESULT.AFFIRMATIVE;
+        throw new Error('无法识别对话框');
+    }
     if (data.action === 'clear-call-stats') featureCalls.clear();
     if (data.action === 'call-stats' || data.action === 'clear-call-stats') return featureCalls.snapshot();
     const repository = await getTextApiRepository();

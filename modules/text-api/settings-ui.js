@@ -6,7 +6,7 @@ import { PROVIDER_OPTIONS, TOOL_MODE_OPTIONS } from '../agent-core/provider-reso
 import { samplingParametersFor } from '../agent-core/sampling.js';
 import { resolveReasoningCapability, getReasoningModeOptions, getReasoningEffortOptions } from '../agent-core/reasoning-capabilities.js';
 import { getModelListAuthOptions, normalizeModelListAuth, supportsModelListAuth } from '../agent-core/model-list-auth.js';
-import { createPreset, HOST_BINDING, HOST_PROVIDER } from './model.js';
+import { AGENT_BINDINGS, featureBinding, readAgentBinding, usableAgentConnection, createPreset, HOST_BINDING, HOST_PROVIDER } from './model.js';
 import { PROFILE_FEATURES, profileChoices } from './profiles.js';
 import { TEXT_API_COPY as COPY, deletionMessage } from './copy.js';
 
@@ -118,7 +118,8 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
     }
     function choose(id) {
         revision++; cancelRequests(); selected = id;
-        draft = id === HOST_BINDING ? createPreset(id, COPY.host) : structuredClone(settings.presets.find(preset => preset.id === id));
+        const saved = settings.presets.find(preset => preset.id === id);
+        draft = id === HOST_BINDING ? createPreset(id, COPY.host) : saved && createPreset(saved.id, saved.name, saved);
         render();
     }
     async function mutate(mutation, selection = null) {
@@ -139,7 +140,7 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
         if (busy) return;
         busy = true;
         const stamp = revision;
-        configuration.append(status);
+        root.insertBefore(status, fields);
         fields.querySelector('.text-api-presets').disabled = true;
         saveFeedback.set({ status: 'saving' });
         feedback(COPY.saving);
@@ -147,6 +148,7 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
             const mutation = selected === HOST_BINDING ? { type: 'select-host' }
                 : { type: 'save', id: selected, preset: structuredClone(draft) };
             settings = await request('mutate', { mutation });
+            if (!destroyed && library) refreshBindingRows();
             // Keep the live draft and its input bindings, including edits made
             // while the submitted snapshot was being saved.
             feedback(stamp === revision ? COPY.saved : '');
@@ -160,14 +162,14 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
         }
     }
     async function add() {
-        const name = win.prompt(COPY.name, '新配置');
+        const name = await request('dialog', { kind:'input', message:COPY.name, initial:'新配置' });
         if (!name?.trim()) return;
         const id = createIdentifier();
         await mutate({ type: 'add', id, afterId: selected, name, preset: createPreset('', '', { provider: 'openai-compatible' }) }, id);
     }
     async function rename() {
         const saved = settings.presets.find(preset => preset.id === selected);
-        const name = win.prompt(COPY.name, saved.name); if (!name?.trim() || name === saved.name) return;
+        const name = await request('dialog', { kind:'input', message:COPY.name, initial:saved.name }); if (!name?.trim() || name === saved.name) return;
         const preservedDraft = structuredClone(draft);
         const oldSelection = selected;
         await mutate({ type: 'rename', id: selected, name });
@@ -180,7 +182,7 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
         const replacement = remaining[Math.min(index, remaining.length - 1)];
         const affected = Object.keys(settings.bindings).filter(key => settings.bindings[key] === selected);
         if (library && affected.length) throw new Error('此配置仍被 ' + affected.map(key => PROFILE_FEATURES[key]).join('、') + ' 使用，请先更换调用配置');
-        if (!win.confirm(deletionMessage(settings.presets[index].name, replacement.name, affected))) return;
+        if (!await request('dialog', { kind:'confirm', message:deletionMessage(settings.presets[index].name, replacement.name, affected) })) return;
         await mutate({ type: 'delete', id: selected }, replacement.id);
     }
     async function importTavern(connectionOnly) {
@@ -191,6 +193,55 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
             if (destroyed) return;
             settings = result.settings; choose(result.id); feedback(result.message);
         } finally { busy = false; fields.disabled = false; render(); }
+    }
+    function renderBindings(parent) {
+        const bindings = element('div', null, 'text-api-agent-rows');
+        const recall = element('details', null, 'text-api-recall');
+        recall.append(element('summary', '检索服务'));
+        const option = preset => ({ value: preset.id, label: preset.name });
+        const previousName = id => id === HOST_BINDING ? COPY.host : settings.presets.find(item => item.id === id)?.name || '未配置';
+        function bindingRow(container, label, current, choices, mutation, help) {
+            const selector = select([{value:'', label: help ? '旧配置待选择' : '待配置'}, ...choices], current, async value => {
+                if (busy) { selector.value = current; return; }
+                fields.disabled = busy = true;
+                try {
+                    settings = await request('mutate', mutation(value));
+                } catch (error) { selector.value = current; throw error; }
+                finally { fields.disabled = busy = false; }
+                if (destroyed) return;
+                render();
+                fields.querySelector('[aria-label="' + label + '"]')?.focus();
+                feedback('已保存' + label);
+            });
+            const row = control(label, selector, container);
+            if (help) row.append(element('small', help));
+            return selector;
+        }
+        for (const [key, group] of Object.entries(AGENT_BINDINGS)) {
+            const state = readAgentBinding(settings, key);
+            const help = state.conflict ? group.features.map((feature, index) =>
+                PROFILE_FEATURES[feature] + ' · ' + previousName(state.previous[index])).join('，') : '';
+            const selector = bindingRow(bindings, group.name + ' Agent', state.id, settings.presets.filter(preset => usableAgentConnection(preset, key)).map(option),
+                id => ({ mutation: { type: 'bind-agent', agent: key, id } }), help);
+            selector.dataset.agentBinding = key;
+            if (!settings.presets.some(preset => usableAgentConnection(preset, key))) {
+                selector.parentElement.append(element('small', key === 'planner' ? '在「编辑连接」填写地址、模型和密钥。' : '在「编辑连接」填写地址和模型。'));
+            }
+        }
+        for (const key of ['embedding', 'rerank', 'l0']) {
+            if (key === 'l0' && !settings.bindings.l0) continue;
+            bindingRow(recall, PROFILE_FEATURES[key], settings.bindings[key] || '', profileChoices(settings, key),
+                id => ({ feature: key, mutation: id ? {type:'select', id} : {type:'clear'} }));
+        }
+        parent.append(bindings);
+        return recall;
+    }
+    function refreshBindingRows() {
+        const fragment = doc.createDocumentFragment();
+        const recall = renderBindings(fragment), previous = fields.querySelector('.text-api-recall');
+        recall.open = previous?.open || false;
+        fields.querySelector('.text-api-agent-rows')?.replaceWith(fragment);
+        previous?.replaceWith(recall);
     }
     function render() {
         if (destroyed) return;
@@ -209,9 +260,16 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
             configuration.append(element('p', '在「API」中创建、命名和编辑配置。', 'text-api-status'));
             return;
         }
+        const previousFocus = doc.activeElement;
+        const focusLabel = fields.contains(previousFocus) ? previousFocus.getAttribute('aria-label') : '';
+        const libraryOpen = fields.querySelector('.text-api-library')?.open || false;
+        const recallOpen = fields.querySelector('.text-api-recall')?.open || false;
         const parametersOpen = fields.querySelector('.text-api-parameters')?.open || false;
         configuration = element('div', null, 'text-api-configuration');
         fields.replaceChildren();
+        const recall = renderBindings(fields); recall.open = recallOpen;
+        const libraryDrawer = element('details', null, 'text-api-library'); libraryDrawer.open = libraryOpen;
+        libraryDrawer.append(element('summary', '编辑连接'));
         const toolbar = element('fieldset', null, 'text-api-presets');
         toolbar.disabled = busy;
         const choices = [{ value: HOST_BINDING, label: '跟随酒馆主 API' },
@@ -221,7 +279,7 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
         });
         control('选择连接', selector, toolbar);
         const usage = Object.entries(PROFILE_FEATURES).filter(([key]) =>
-            (settings.bindings[key] ?? (key === 'opening' ? settings.bindings.world : null)) === selected).map(([,name]) => name);
+            featureBinding(settings, key) === selected).map(([,name]) => name);
         toolbar.append(element('small', usage.length ? '用于：' + usage.join('、') : '尚无功能使用此配置'));
         const actions = element('div', null, 'text-api-tools');
         actions.dataset.settingSection = 'function';
@@ -238,16 +296,17 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
             more.append(element('summary','更多'),button(COPY.rename,rename),removeButton);
             actions.append(more);
         }
-        configuration.append(actions, status, retry);
-        status.dataset.settingSection = retry.dataset.settingSection = 'function';
-        fields.append(toolbar, configuration);
+        configuration.append(actions);
+        libraryDrawer.append(toolbar, configuration);
+        fields.append(libraryDrawer, recall);
         syncSaveButton();
+        if (focusLabel) [...fields.querySelectorAll('[aria-label]')].find(node => node.getAttribute('aria-label') === focusLabel)?.focus({ preventScroll: true });
         if (!draft) return;
         if (selected === HOST_BINDING) {
             configuration.append(element('p', '目前总结支持跟随酒馆主 API；其他功能需要选择适用的独立连接。', 'text-api-status'));
             const test = button('测试生成', async () => {
                 if (networkBusy) return;
-                networkBusy = true; configuration.append(status); const stamp = revision; feedback(COPY.testing);
+                networkBusy = true; root.insertBefore(status, fields); const stamp = revision; feedback(COPY.testing);
                 try { await request('test', { preset: structuredClone(draft) }); if (stamp === revision) feedback(COPY.testOk); }
                 catch (error) { if (stamp === revision) feedback(error.message, true); }
                 finally { networkBusy = false; }
@@ -293,7 +352,7 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
             if (networkBusy) return;
             networkBusy = true;
             networkActions.querySelectorAll('button').forEach(node => { node.disabled = true; });
-            networkActions.after(status);
+            root.insertBefore(status, fields);
             const stamp = revision; feedback(action === 'models' ? COPY.pulling : COPY.testing);
             try {
             const result = await request(action, { preset: structuredClone(draft) });

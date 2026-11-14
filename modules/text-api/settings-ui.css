@@ -45,3 +45,12 @@
 
 .text-api .text-api-presets { align-content: start; }
 .text-api .text-api-presets select { flex: none; }
+.text-api .text-api-agent-rows label, .text-api .text-api-recall label {
+    display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .35em .8em;
+    padding: .5em 0; margin: 0; border-bottom: 1px solid var(--SmartThemeBorderColor, #8885); font-size: 1em;
+}
+.text-api .text-api-agent-rows small { grid-column: 1 / -1; overflow-wrap: anywhere; color: var(--SmartThemeEmColor, inherit); }
+.text-api :is(.text-api-library,.text-api-recall) { margin: .4em 0; }
+.text-api :is(.text-api-library,.text-api-recall) > summary { padding: .45em 0; }
+.text-api .text-api-agent-rows select { height: auto; font: inherit; }
+.text-api .text-api-call-stats { margin-top: 1em; }
