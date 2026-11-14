@@ -88,7 +88,7 @@ node scripts/check-installation.mjs release/tavern-kitchen-0.2.33.zip > release/
 
 日常开发可用 `pnpm test` 跑单元测试，或从根目录用 `node --import tsx --test <测试文件>` 运行单项。界面回归按改动选择编剧、API、楼尾、地点地图或提案脚本。首次校验宿主接口可能需要取得固定版本的源码，已有本地参考树时按回执校验来源。[测试入口](scripts/test.mjs) · [宿主版本固定清单](scripts/host/official.json) · [本地参考树](scripts/host/local-reference.mjs)
 
-发版时核对下载所得 ZIP 的 SHA-256、`release-info.json` 的版本和归档名。包内须有可安装的 `dist/`、对应源码、四份文档和随附许可。已推送标签保留在原提交，错误版本用新补丁号修复。[持续验证](https://github.com/HerrFaustus/tavern-kitchen/blob/506146623383fd9b6fea3cdd27c3ca1ca115f31a/.github/workflows/verify.yml) · [标签发布工作流](https://github.com/HerrFaustus/tavern-kitchen/blob/506146623383fd9b6fea3cdd27c3ca1ca115f31a/.github/workflows/release.yml)
+发版时核对下载所得 ZIP 的 SHA-256、`release-info.json` 的版本和归档名。包内须有可安装的 `dist/`、对应源码、项目文档和随附许可。已推送标签保留在原提交，错误版本用新补丁号修复。[持续验证](https://github.com/HerrFaustus/tavern-kitchen/blob/main/.github/workflows/verify.yml) · [标签发布工作流](https://github.com/HerrFaustus/tavern-kitchen/blob/main/.github/workflows/release.yml)
 
 ## 署名与许可
 
