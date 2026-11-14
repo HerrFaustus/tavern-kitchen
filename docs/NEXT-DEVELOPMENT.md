@@ -16,11 +16,21 @@
 3. **UI 原版化与直观化（`settings-view.js`、`view.js`、`archive.css`、`story-summary.html`）**
    - 编剧面板用宿主 `.standoutHeader`、`.inline-drawer` 与实体统计芯片分段呈现实体札记；剧情线面板展示各状态汇总、脉络总结、焦点、关联人物与可折叠多轮 `推进轨迹`；嵌入剧情框架对齐宿主字体及主题强调色，消除深色主题首帧闪白。
 
-## 下一版（0.2.31+）推进进度
+## 下一版（0.2.31+）推进进度与确认更新计划
 
-1. **剧情线总结与递归压缩树合流（已实现）**：`summary-layers.js` 导出 `mergePlotLineSnapshots`，使 `layer-cascade.js` 与 `narrative-review.js`（`readNarrativeUnits` / `requestNarrativeClosure`）在生成 `stage`/`chapter`/`L3+` 压缩节点时同步产出自洽的阶段 `plotLineSnapshots` 并在时间线视图（`archive-view.js` / `timeline-tree.js`）展示与检索；`ReviseRoundSummary`（`session.js` / `tools.js` / `summary-history.js`）会复核受影响轮次的 `plotLines` 引文，返回 `invalidatedPlotLines` 与警告并支持附带新版 `plotLines`。
-2. **编剧局部依赖与只读检索增强（已实现）**：`modules/story-planner/notes.js` 将 `dependencies` 细化到人物字段（含在场状态/认知/个人计划）、局势记录字段与单条剧情线摘要，`runtime.inspect()` 暴露 `staleTargets` 供 `settings-view.js` 标出实体级 `[待更新]`，并新增实体分组筛选、关键词搜索与整章纯文本只读复制按钮（保持零持久化表单写入边界）。
-3. **工作台全面原版化与真机回归（无头回归已通过，真机待测）**：已对齐 `story-summary.html`、`story-summary-ui.js`、`archive.css` 与 `core/kitchen-embedded.css` 内部弹层（`role="dialog"`、`aria-modal="true"`、Escape 退格与焦点恢复、主题变量修正）及嵌入筛选条样式，并完成本地无头 Chromium 五项布局/工作台脚本回归；仍待实际 SillyTavern/TauriTavern 多主题真机与真实模型联调。
+1. **已完成前置基础（基于 `0.2.30` / commit `38b194c`）**：
+   - **剧情线总结与递归压缩树合流**：`summary-layers.js` 导出 `mergePlotLineSnapshots`，使 `layer-cascade.js` 与 `narrative-review.js`（`readNarrativeUnits` / `requestNarrativeClosure`）在生成 `stage`/`chapter`/`L3+` 压缩节点时同步产出自洽的阶段 `plotLineSnapshots` 并在时间线视图（`archive-view.js` / `timeline-tree.js`）展示与检索；`ReviseRoundSummary`（`session.js` / `tools.js` / `summary-history.js`）复核受影响轮次的 `plotLines` 引文，返回 `invalidatedPlotLines` 与警告并支持附带新版 `plotLines`。
+   - **编剧局部依赖与只读检索增强**：`modules/story-planner/notes.js` 将 `dependencies` 细化到人物字段（含在场状态/认知/个人计划）、局势记录字段与单条剧情线摘要，`runtime.inspect()` 暴露 `staleTargets` 供 `settings-view.js` 标出实体级 `[待更新]`，并新增实体分组筛选、关键词搜索与整章纯文本只读复制按钮（保持零持久化表单写入边界）。
+   - **工作台内嵌弹层收口**：对齐 `story-summary.html`、`story-summary-ui.js`、`archive.css` 与 `core/kitchen-embedded.css` 内部弹层（`role="dialog"`、`aria-modal="true"`、Escape 退格与焦点恢复、主题变量修正）及嵌入筛选条样式，并完成本地无头 Chromium 五项布局/工作台脚本回归。
+
+2. **已确认后续四阶段更新路线**：
+   - **阶段一（下一轮优先：提示词彻底后台化 + 原版 UI 深化 + `0.2.31` 发版）**：
+     - **提示词配置取消、完全后台化**：下线 `core/panel-policy.js`（`definePanelPrompt`）、`core/panel-controls.js`、`core/kitchen-workspace.js` 中的“提示词设置”界面分组与覆盖存储，`core/panel-prompt-catalog.js`、`core/tool-descriptions.js` 与各模块（`story-planner`、`story-summary`、`xiaobai-os`）内部提示词全部收口为后端只读常量；同时移除 `story-summary.html` / `story-summary-ui.js` / `story-summary.js` 的 `#tab-summary-prompts` 与 `#tab-prompts` 编辑面板及 `core/kitchen-embedded.css` 中提示词展开高度特例，并同步更新相关布局脚本与单元测试。
+     - **UI 布局与控件风格进一步原版化**：淘汰 `story-summary.css` / `story-summary.js` 残留 `.custom-select`、硬阴影与渐变进度条；统一 `maintenance/chat-ui.css` / `maintenance/ui.css` 弹层背景与边框为宿主主题变量；利用无提示词设置区后的更紧凑高度重校准各工作台帧（剧情/人物/局势/地图）双区占比及 `world-records` 原生抽屉对齐。
+     - **真实宿主验收与 `0.2.31` 打包**：完成 SillyTavern / TauriTavern 多主题及真实模型联调后，按 [RELEASING.md](RELEASING.md) 升级版本号与 `release/` 产物。
+   - **阶段二（中期功能闭环）**：将压缩节点 `plotLineSnapshots` 接入 `plot-background.js` / `prompt.js` 正文背景与 `collectPlotLines` 增量汇总（避免长聊全量扫描）；将 `staleTargets` 接入编剧 `runtime.prepare()` / `writerInput()`，实现单实体变化局部增量重写（换章、切分支或超 `180000` 字符预算时整章重算）。
+   - **阶段三（架构主线 P2 / P3 / P4）**：突破 `update-context.js` `200_000` 字符单包限制实现全视分区分页读取（`N13`）；完善 `prompt.js` 与 `notes.js` 对人物 `knowledge`（已证实/传闻/误信/未获知）的严格知情裁剪（`N01`、`N02`、`N06`）；实现历史修改/撤回/分支后的自动局部子树与向量索引修复（`N10–N12`）。
+   - **阶段四（P5 长程基准与成本可观测性）**：固化 `N01–N15` 连续长故事自动化验收（赊剑分期还款修订、封桥与药车编剧偏离），建立独立整理/压缩/编剧/检索/推演分项成本与触发统计。
 
 ## 原 0.2.22 基线架构约定
 

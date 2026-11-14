@@ -56,5 +56,5 @@
 
 ## 当前后续阶段演进（0.2.30+ 至下一版规划）
 
-- **剧情线总结闭环**：`modules/story-state/plot-lines.js` 持续随单楼与增量总结累积各剧情线脉络 `summary`、轮次轨迹 `beats`、关联人物 `characters` 与当前焦点 `nextFocus`，并通过 `plotLineStateDigest` 直接作为 `story-planner` 的下游规划材料。
-- **实体中心编剧室基础**：`modules/story-planner/notes.js` 以 `人物 / 剧情线 / 局势` 为规划核心，围绕 `点评 / 走向预测 / 建议` 构成 `global` 与 `chapter` 札记并沿用私有字段隔离；后续可向剧情线递归压缩快照与实体级增量重算演进（详见[下一版设计文档](NEXT-DEVELOPMENT.md)与[编剧与剧情线协同机制](story-planner.md)）。
+- **剧情线总结与压缩树合流**：`modules/story-state/plot-lines.js` 持续随单楼与增量总结累积各剧情线脉络 `summary`、轮次轨迹 `beats`、关联人物 `characters` 与当前焦点 `nextFocus`；`summary-layers.js`、`layer-cascade.js` 与 `narrative-review.js` 已打通 `L0 → L1 → L2 → L3+` 阶段快照 `plotLineSnapshots` 传播及 `ReviseRoundSummary` 引文核验。
+- **实体中心编剧与字段级失效边界**：`modules/story-planner/notes.js` 以 `人物 / 剧情线 / 局势` 为规划核心，支持单实体/单字段/单线依赖及 `staleTargets` 精确失效标定与只读筛选 UI；后续依次推进提示词配置彻底后台化与原生 UI 深化、`plotLineSnapshots` 正文背景消费、编剧局部增量重写，以及 P2 容量分区与 P4 知情裁剪（详见[下一版设计文档](NEXT-DEVELOPMENT.md)与[编剧与剧情线协同机制](story-planner.md)）。
