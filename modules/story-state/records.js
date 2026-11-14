@@ -39,6 +39,11 @@ export function storyDate(value) {
     const date = new Date(`${value}T00:00:00Z`);
     return Number.isFinite(date.valueOf()) && date.toISOString().slice(0, 10) === value ? date.valueOf() : null;
 }
+export function latestStoryTimeFromStore(store, records = null) {
+    const list = Array.isArray(records) ? records : (store?.json?.storyRecords || []);
+    const clock = list.filter(record => record?.kind === 'clock').at(-1);
+    return clock ? String(clock.date || clock.label || '').trim() : '';
+}
 export function relativeStoryTime(value, now) {
     const then = storyDate(value), current = storyDate(now);
     if (then === null || current === null) return '';

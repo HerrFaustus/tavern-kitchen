@@ -1,6 +1,7 @@
 import { createNoteStore } from '../story-planner/storage.js';
 import { createWorldCardData } from '../kitchen-data/world.js';
 import { createProposalPanel } from './proposal-panel.js';
+import { createWorldEditorPanel } from './editor-panel.js';
 import { createWorldRecoveryPanel } from './recovery-panel.js';
 import { plannerSnapshot } from '../story-planner/notes.js';
 import { ambientControl, ambientPrompt, mapLocalConditions } from '../story-state/ambient.js';
@@ -8,6 +9,7 @@ import { readInvolvement } from '../story-state/involvement.js';
 import { protagonistIdentity } from '../story-state/protagonist-identity.js';
 import { registerInvolvement, registerMapConditions, registerSituationCatalog } from '../story-state/situation-links.js';
 import { availableStoryRecords } from '../story-state/records.js';
+import { resolveStateInjectionDepth } from './authority.js';
 import { worldStoryRecords } from './world-story-state.js';
 import { createWorldStorage } from './storage.js';
 import { createWorldService } from './service.js';
@@ -27,7 +29,7 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
     const sourceIdentity = () => storyIdentityKey(captureStoryIdentity(getContext()));
     const identity = (branch = getMemorySnapshot()?.store?.dataBranch) => { const story = sourceIdentity(); return story ? JSON.stringify([getAccountId(), story, ...(branch ? [branch] : [])]) : ''; };
     const storage = createWorldStorage();
-    let authority, proposalPanel, recoveryPanel, latestState = null;
+    let authority, proposalPanel, peopleEditor, situationEditor, recoveryPanel, latestState = null;
     const service = createWorldService({ storage, getIdentity: identity, isSourceCurrent: turn => !!turn
         && isRangeSourceCurrent(turn.source, getContext().chat || [])
         && getSummarySourceEnd(getContext().chat, turn.source.end) >= turn.source.end,
@@ -41,12 +43,16 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
         if (owner === identity()) {
             latestState = state;
             if (isVisible('situation') && !proposalPanel?.isEditing()) proposalPanel?.show(state);
+            if (isVisible('situation') && !situationEditor?.isEditing()) situationEditor?.show(state);
+            if (isVisible('people') && !peopleEditor?.isEditing()) peopleEditor?.show(state);
             if (isVisible('data')) recoveryPanel?.noteChange(state);
         }
         authority?.publish(state, owner);
         publishWorldBridgeState(sourceIdentity(), owner, state);
     } });
     proposalPanel = createProposalPanel({ service, getIdentity:identity });
+    peopleEditor = createWorldEditorPanel({ service, getIdentity: identity, section: 'people' });
+    situationEditor = createWorldEditorPanel({ service, getIdentity: identity, section: 'situation' });
     const recoveryStamp=()=>{
         const chat=getContext().chat || [], memory=getMemorySnapshot();
         return memoryDigest({chat:chat.length ? captureRangeSource(chat,0,chat.length-1) : null,
@@ -85,39 +91,58 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
     const protagonist = createProtagonistView({ getInvolvement: involvementFor, getSnapshot: getMemorySnapshot, getPlayerName: () => getContext().name1 });
     const views = { overview: protagonist, clues: createSuspenseBook({getSnapshot:getMemorySnapshot, clues:true}), suspense: createSuspenseBook({ getSnapshot: getMemorySnapshot }) };
     let disposed = false, scheduled = false, epoch = 0;
-    let proposalFrame, proposalFrameLoad, recoveryFrame, recoveryFrameLoad;
-    function showProposals(frame) {
+    const frameBindings = new Map();
+    function attachFrameMount(key, frame, mount) {
         if (!frame || disposed) return;
-        const mount = () => {
+        const previous = frameBindings.get(key);
+        if (previous?.frame !== frame) {
+            if (previous?.onLoad) previous.frame.removeEventListener('load', previous.onLoad);
+            frameBindings.set(key, { frame, onLoad: mount });
+            frame.addEventListener('load', mount);
+        }
+        mount();
+    }
+    const syncAndShow = (section, panel) => {
+        const owner = identity(), token = epoch;
+        if (!owner) { panel.show(null); return; }
+        Promise.resolve()
+            .then(() => service.ensure(getContext().chatId || '当前故事'))
+            .then(() => sync())
+            .then(state => {
+                if (!disposed && owner === identity() && token === epoch && isVisible(section) && !panel.isEditing()) {
+                    panel.show(state);
+                }
+            })
+            .catch(error => onError(error));
+    };
+    function showProposals(frame) {
+        attachFrameMount('proposals', frame, () => {
             if (disposed || !isVisible('situation')) return;
             const target = frame.contentDocument?.getElementById('world-proposals');
             if (!target) return;
             proposalPanel.mount(target);
-            const owner = identity(), token = epoch;
-            sync().then(state => {
-                if (!disposed && owner === identity() && token === epoch && isVisible('situation') && !proposalPanel.isEditing()) proposalPanel.show(state);
-            }).catch(error => onError(error));
-        };
-        if (proposalFrame !== frame) {
-            if (proposalFrameLoad) proposalFrame?.removeEventListener('load',proposalFrameLoad);
-            proposalFrame = frame; proposalFrameLoad = mount; frame.addEventListener('load',mount);
-        }
-        mount();
+            syncAndShow('situation', proposalPanel);
+        });
+    }
+    function showEditor(frame, section = 'situation') {
+        const panel = section === 'people' ? peopleEditor : situationEditor;
+        const targetId = section === 'people' ? 'world-people-editor' : 'world-situation-editor';
+        attachFrameMount(`editor:${section}`, frame, () => {
+            if (disposed || (!isVisible(section) && !(section === 'people' && isVisible('relations')))) return;
+            const target = frame.contentDocument?.getElementById(targetId);
+            if (!target) return;
+            panel.mount(target);
+            syncAndShow(section === 'people' && isVisible('relations') ? 'relations' : section, panel);
+        });
     }
     function showRecovery(frame) {
-        if (!frame || disposed) return;
-        const mount = () => {
+        attachFrameMount('recovery', frame, () => {
             if (disposed || !isVisible('data')) return;
-            const target=frame.contentDocument?.getElementById('world-recovery');
+            const target = frame.contentDocument?.getElementById('world-recovery');
             if (!target) return;
             recoveryPanel.mount(target);
             recoveryPanel.refresh().catch(onError);
-        };
-        if (recoveryFrame !== frame) {
-            if (recoveryFrameLoad) recoveryFrame?.removeEventListener('load',recoveryFrameLoad);
-            recoveryFrame=frame;recoveryFrameLoad=mount;frame.addEventListener('load',mount);
-        }
-        mount();
+        });
     }
     const observation = () => {
         const context = getContext(), chat = context.chat || [], snapshot = getMemorySnapshot();
@@ -199,6 +224,7 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
     return {
         cardData: createWorldCardData({ identity, storage, service, noteStore }),
         showProposals,
+        showEditor,
         showRecovery,
         initialize,
         plannerSnapshot() {
@@ -218,9 +244,17 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
         async prepare(query) {
             const factText = await authority.prepare(query, getContext().name1, state => involvementFor(state));
             const state = authority.read()?.state, memory = getMemorySnapshot();
-            if (!state || !memory?.enabled || memory.invalidFrom != null) return factText;
-            const local = ambientPrompt(memory.store, state, worldStoryRecords(state, availableStoryRecords(memory.store)), getAmbientPreferences?.() || {});
-            return [factText, local].filter(Boolean).join('\n');
+            const local = state && memory?.enabled && memory.invalidFrom == null
+                ? ambientPrompt(memory.store, state, worldStoryRecords(state, availableStoryRecords(memory.store)), getAmbientPreferences?.() || {})
+                : '';
+            const raw = [factText, local].filter(Boolean).join('\n');
+            if (!raw) return '';
+            return `[以下为只读当前状态简报，仅帮你对齐事实与角色知情范围，严禁在正文中复述或仿写状态格式]\n${raw}\n[简报结束：请作为已了解上述前情的叙述者自然续写]`;
+        },
+        async prepareInjection(query, type) {
+            const value = await this.prepare(query);
+            if (!value) return '';
+            return { value, depth: resolveStateInjectionDepth(getContext().chat, getMemorySnapshot(), type) };
         },
         async open(route = 'overview') {
             const view = views[route]; if (!view) return;
@@ -229,7 +263,7 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
             await service.ensure(getContext().chatId || '当前故事');
             const state = await sync(); if (isVisible(route) && !disposed) view.show(state || await service.read());
         },
-        reset() { epoch++; latestState = null; proposalPanel.reset(); recoveryPanel.reset(); service.invalidate(); authority.reset(); for (const view of Object.values(views)) view.reset(); },
-        dispose() { disposed = true; if (proposalFrameLoad) proposalFrame?.removeEventListener('load',proposalFrameLoad); if (recoveryFrameLoad) recoveryFrame?.removeEventListener('load',recoveryFrameLoad); proposalPanel.reset(); recoveryPanel.reset(); service.invalidate(); authority.reset(); disconnectFocus(); unregisterConditions(); unregisterCatalog(); unregisterTurns(); unregisterBridge(); unregisterAuthority(); unsubscribe(); unregisterMemory(); for (const view of Object.values(views)) view.reset(); storage.close().catch(error => onError(error)); },
+        reset() { epoch++; latestState = null; proposalPanel.reset(); peopleEditor.reset(); situationEditor.reset(); recoveryPanel.reset(); service.invalidate(); authority.reset(); for (const view of Object.values(views)) view.reset(); },
+        dispose() { disposed = true; for (const binding of frameBindings.values()) binding.frame.removeEventListener('load', binding.onLoad); frameBindings.clear(); proposalPanel.reset(); peopleEditor.reset(); situationEditor.reset(); recoveryPanel.reset(); service.invalidate(); authority.reset(); disconnectFocus(); unregisterConditions(); unregisterCatalog(); unregisterTurns(); unregisterBridge(); unregisterAuthority(); unsubscribe(); unregisterMemory(); for (const view of Object.values(views)) view.reset(); storage.close().catch(error => onError(error)); },
     };
 }

@@ -85,7 +85,7 @@ Responses 的 `onStreamProgress` 快照用 `activity` 报告当前观察到的�
 
 结果中的 `source` 区分宿主分词与估算，只用于本轮计量和显示，不持久化；估算不缓存为成功分词，下次请求仍可重新计数。不新增误差补偿系数，也不声称估算保证严格 token 上限。计量的是文本与工具的统一投影，不等于供应商计费用量；未知模型映射、图片等仍有误差，视觉预留由功能自己负责。
 
-预算阈值、压缩、近期历史保留与超限处理归各消费者，不在 Core 统一改写：[信息 APP](../xiaobai-os/docs/information-app-context-design.md)、[四次元壁](../xiaobai-os/apps/fourth-wall/README.md)、小白助手、ebook 和 Tavern Manager 各使用自己的策略与 Host bridge。工具续轮也计量，压缩后以新历史重建模型会话；圆环无需请求分词器，使用本地估算或同输入的成功计数。
+预算阈值、压缩、近期历史保留与超限处理归各消费者，不在 Core 统一改写，各使用自己的策略与 Host bridge。工具续轮也计量，压缩后以新历史重建模型会话；圆环无需请求分词器，使用本地估算或同输入的成功计数。
 
 ## 共享联网
 
@@ -97,7 +97,7 @@ Agent API 的全局联网渠道可选 Tavily 或 Exa；主 Agent 和分身共用
 
 Exa 搜索使用 `POST /search` 的 `contents.highlights: true`，结果数量沿用工具默认 5、最多 8 的预算；全文提取使用 `POST /contents` 的 `text: true`，按请求网址关联 `statuses.id` 与 `results.url`，不将临时文档 ID 当作网址。鉴权使用 `x-api-key`。不调用 Exa 回答模型、异步研究 Agent 或自动重试。Tavily 保持原来的搜索和提取请求。网络与 HTTP 错误保留渠道、状态及脱敏诊断，取消向上传播。
 
-正文提取返回成功正文及逐网址 `failures`（网址、错误码、供应商提供的状态码或消息），`failedUrls` 由失败项派生；供应商请求 ID 一并保留。部分失败不丢弃成功正文，也不把供应商错误当作材料正文。管理员向模型及操作记录传递诊断；语伴保持教学材料的领域投影，不把代理诊断写进教学来源。长结果的管理员缓存与分页规则见 [管理员设计](../xiaobai-os/docs/administrator-app-target-design.md#73-模型上下文管理)。
+正文提取返回成功正文及逐网址 `failures`（网址、错误码、供应商提供的状态码或消息），`failedUrls` 由失败项派生；供应商请求 ID 一并保留。部分失败不丢弃成功正文，也不把供应商错误当作材料正文。
 
 浏览器访问 Exa 官方接口时使用[小白盒后端](../../server-plugin/littlewhitebox-server/README.md#exa-联网)，与绘图共用安装包；后端缺失时返回 `web_backend_unavailable`，不会改走直连或换渠道。Node 消费者直接请求供应商；Tavily 和显式配置的 Exa 自定义 Base URL 保持浏览器直连，所用服务或代理须允许 CORS。`http.js` 统一管理限时、响应大小和错误，`browser-backend.js` 只处理酒馆身份及后端协议，`server-entry.js` 限定后端可调用的 Exa 操作。
 

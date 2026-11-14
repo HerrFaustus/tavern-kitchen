@@ -1,4 +1,37 @@
 import { memoryDigest } from './memory-policy.js';
+import { isRangeSourceCurrent } from './turn-source.js';
+
+export const DEFAULT_LEAF_KEEP_RECENT = 3;
+
+export function layerDepth(level) {
+    if (level === 0 || level === 'round') return 0;
+    if (level === 1 || level === 'stage') return 1;
+    if (level === 2 || level === 'chapter') return 2;
+    if (typeof level === 'number' && Number.isInteger(level) && level > 0) return level;
+    const match = typeof level === 'string' && level.trim().match(/^L?(\d+)$/i);
+    if (match) {
+        const parsed = Number(match[1]);
+        if (Number.isInteger(parsed) && parsed > 0) return parsed;
+    }
+    return 1;
+}
+
+export function layerLevelName(depth) {
+    if (depth <= 0) return 'round';
+    if (depth === 1) return 'stage';
+    if (depth === 2) return 'chapter';
+    return 'L' + depth;
+}
+
+// Progressive thresholds adapted from BaiBaiBook:
+// keep L0 leaves abundant (12+3 recent kept uncompressed) before rolling into L1,
+// roll 6 L1 stages into L2, and 3 upper nodes into L3+ recursively.
+export function thresholdForLevel(level) {
+    const depth = layerDepth(level);
+    if (depth <= 0) return 12;
+    if (depth === 1) return 6;
+    return 3;
+}
 
 const optionalEntries = `先写事情的经过和结果。需要补充时，在同一段总结文本末尾用“【词条名】内容”的形式写短句。只列有材料依据、能补充正文的项，略去空项和重复信息。
 【环境氛围】留一个能辨认场面或影响行动的外部细节，如门外的脚步声让交谈中断。
@@ -92,32 +125,253 @@ export function reviewedRounds(history = [], staged = []) {
     });
 }
 
-export function summaryLayers(history = [], staged = []) {
+function collectBatchLayerNodes(batch) {
+    const out = [];
+    if (batch.layers && typeof batch.layers === 'object') {
+        for (const [key, value] of Object.entries(batch.layers)) {
+            if (value) out.push({ ...value, level: value.level || key });
+        }
+    }
+    if (Array.isArray(batch.reviewLayers)) out.push(...batch.reviewLayers);
+    if (Array.isArray(batch.compressionNodes)) out.push(...batch.compressionNodes);
+    return out;
+}
+
+function resolveBatchTimeBounds(batch, start, end) {
+    const importedTimes = (batch.importedRounds || []).map(row => row.timeLabel).filter(Boolean);
+    const fallbackTime = batch.storyTime || batch.memoryTags?.times?.at(-1) || importedTimes.at(-1) || '';
+    const timeStart = String(batch.timeStart || batch.storyTimeStart || importedTimes[0] || fallbackTime || '').trim();
+    const timeEnd = String(batch.timeEnd || batch.storyTimeEnd || fallbackTime || '').trim();
+    return {
+        timeStart,
+        timeEnd,
+        storyTime: String(batch.storyTime || timeEnd || timeStart || '').trim(),
+        timeLabel: batch.kind === 'baseline' ? '旧档汇总' : '#' + (start + 1) + (start < end ? '–' + (end + 1) : ''),
+    };
+}
+
+export function summaryLayers(history = [], staged = [], { chat = null, isLeafCurrent = null } = {}) {
     const leaves = [], records = [], parents = [];
     for (const batch of reviewedRounds(history)) {
-        if (roundSourceId(batch) && batch.summary && !batch.floorEntry?.omitted) leaves.push({
-            start: (batch.sourceReceipt?.source || batch.roundSource).start, end: batch.endMesId, text: batch.summary, sourceId: roundSourceId(batch), version: batch.roundVersion || 0, memoryTags: batch.memoryTags,
-        });
-        for (const level of ['stage', 'chapter']) if (batch.layers?.[level]) records.push({ ...batch.layers[level], level });
-        records.push(...(batch.reviewLayers || []));
+        const source = batch.sourceReceipt?.source || batch.roundSource;
+        const leafCurrent = !chat
+            || ((!source || isRangeSourceCurrent(source, chat)) && (!isLeafCurrent || isLeafCurrent(batch, chat)));
+        if (roundSourceId(batch) && batch.summary && !batch.floorEntry?.omitted && !batch.floorEntry?.deleted && leafCurrent) {
+            const start = source?.start ?? batch.floorEntry?.source?.start ?? (batch.previousEndMesId ?? -1) + 1;
+            const end = batch.endMesId;
+            const id = roundSourceId(batch);
+            leaves.push({
+                id,
+                kind: 'leaf',
+                level: 'round',
+                depth: 0,
+                start,
+                end,
+                text: batch.summary,
+                sourceId: id,
+                version: batch.roundVersion || 0,
+                memoryTags: batch.memoryTags,
+                childIds: [],
+                ...resolveBatchTimeBounds(batch, start, end),
+            });
+        }
+        records.push(...collectBatchLayerNodes(batch));
     }
     records.push(...staged);
+
+    const byId = new Map(leaves.map(leaf => [leaf.id, leaf]));
+    const referencedIds = new Set();
+    const maxDepth = records.reduce((max, node) => Math.max(max, layerDepth(node?.level)), 2);
+
     let children = leaves;
-    for (const level of ['stage', 'chapter']) {
-        const valid = [], positions = new Map(children.map((child, i) => [child.start, i]));
-        for (const node of records.filter(n => n.level === level).sort((a, b) => a.start - b.start)) {
-            if (!positions.has(node.start) || valid.at(-1)?.end >= node.start || !node.text?.trim()) continue;
-            const group = [];
-            for (let i = positions.get(node.start); i < children.length && children[i].end <= node.end; i++) {
-                if (group.length && children[i].start !== group.at(-1).end + 1) break;
-                group.push(children[i]);
+    for (let depth = 1; depth <= maxDepth; depth++) {
+        const valid = [];
+        const validRefs = [];
+        const positions = new Map(children.map((child, i) => [child.start, i]));
+        const candidates = records
+            .filter(node => node && layerDepth(node.level) === depth && node.text?.trim())
+            .sort((a, b) => (a.start ?? 0) - (b.start ?? 0));
+
+        for (const node of candidates) {
+            let group = null;
+            if (Array.isArray(node.childIds) && node.childIds.length) {
+                const resolved = node.childIds.map(cid => byId.get(cid));
+                if (resolved.every(Boolean)) {
+                    const sorted = [...resolved].sort((a, b) => a.start - b.start);
+                    const nonOverlapping = sorted.every((item, idx) => idx === 0 || item.start > sorted[idx - 1].end);
+                    const lowerDepth = sorted.every(item => (item.depth ?? layerDepth(item.level)) < depth);
+                    if (nonOverlapping && lowerDepth && (!node.sourceId || layerSignature(sorted) === node.sourceId)) {
+                        group = sorted;
+                    }
+                }
+            } else {
+                if (!positions.has(node.start) || valid.at(-1)?.end >= node.start) continue;
+                const span = [];
+                for (let i = positions.get(node.start); i < children.length && children[i].end <= node.end; i++) {
+                    if (span.length && children[i].start !== span.at(-1).end + 1) break;
+                    span.push(children[i]);
+                }
+                if (span.at(-1)?.end === node.end && layerSignature(span) === node.sourceId) group = span;
             }
-            if (group.at(-1)?.end === node.end && layerSignature(group) === node.sourceId) valid.push(node);
+            if (!group?.length) continue;
+
+            const start = node.start ?? group[0].start;
+            const end = node.end ?? group.at(-1).end;
+            if (valid.at(-1)?.end >= start) continue;
+
+            const levelName = node.level || layerLevelName(depth);
+            const id = node.id || `${levelName}:${start}-${end}`;
+            const childIds = group.map(child => child.id);
+            const timeStart = node.timeStart || group[0]?.timeStart || '';
+            const timeEnd = node.timeEnd || group.at(-1)?.timeEnd || '';
+            const normalized = {
+                ...node,
+                id,
+                kind: 'comp',
+                level: levelName,
+                depth,
+                start,
+                end,
+                sourceId: node.sourceId || layerSignature(group),
+                childIds,
+                timeStart,
+                timeEnd,
+                storyTime: node.storyTime || timeEnd || timeStart || '',
+            };
+            valid.push(normalized);
+            // Preserve exact original object references in `parents` so validateStagedUnits (`parents.includes(unit)`) keeps matching.
+            validRefs.push(node);
+            byId.set(id, normalized);
+            for (const cid of childIds) referencedIds.add(cid);
         }
-        parents.push(...valid);
+        parents.push(...validRefs);
         children = valid;
     }
-    return { parents, leaves };
+
+    const roots = [...byId.values()].filter(node => !referencedIds.has(node.id));
+    return { parents, leaves, byId, roots };
+}
+
+export function selectViewNodes(view, leafEligible = () => true) {
+    const byId = view?.byId || new Map();
+    const roots = view?.roots || [];
+
+    const collectLeaves = (node, acc) => {
+        if (node.kind === 'leaf' || node.atomic) {
+            acc.push(node);
+            return;
+        }
+        for (const cid of node.childIds || []) {
+            const child = byId.get(cid);
+            if (child) collectLeaves(child, acc);
+        }
+    };
+
+    const intactMemo = new Map();
+    const isIntact = node => {
+        if (node.kind === 'leaf' || node.atomic) return true;
+        if (intactMemo.has(node.id)) return intactMemo.get(node.id);
+        intactMemo.set(node.id, false);
+        const childIds = node.childIds || [];
+        let ok = childIds.length > 0;
+        for (const cid of childIds) {
+            const child = byId.get(cid);
+            if (!child || !isIntact(child)) {
+                ok = false;
+                break;
+            }
+        }
+        intactMemo.set(node.id, ok);
+        return ok;
+    };
+
+    const canRepresent = node => {
+        if (!isIntact(node)) return false;
+        const descendants = [];
+        collectLeaves(node, descendants);
+        return descendants.length > 0 && descendants.every(leafEligible);
+    };
+
+    const chosen = [];
+    const visited = new Set();
+    const visit = node => {
+        if (!node || visited.has(node.id)) return;
+        visited.add(node.id);
+        if (node.kind === 'leaf' || node.atomic) {
+            if (leafEligible(node)) chosen.push(node);
+            return;
+        }
+        if (canRepresent(node)) {
+            chosen.push(node);
+            return;
+        }
+        for (const cid of node.childIds || []) {
+            const child = byId.get(cid);
+            if (child) visit(child);
+        }
+    };
+
+    for (const root of roots) visit(root);
+    return chosen.sort((a, b) => (a.start ?? 0) - (b.start ?? 0) || (a.end ?? 0) - (b.end ?? 0));
+}
+
+export function selectInjectionNodes(history = [], chat = null, hiddenThrough = Infinity, { staged = [], isLeafCurrent = null } = {}) {
+    const view = summaryLayers(history, staged, { chat, isLeafCurrent });
+    return selectViewNodes(view, leaf => leaf.end <= hiddenThrough);
+}
+
+export function selectHistoryNodesBefore(history = [], chat = null, beforeIndex = Infinity, { staged = [], isLeafCurrent = null } = {}) {
+    const view = summaryLayers(history, staged, { chat, isLeafCurrent });
+    return selectViewNodes(view, leaf => leaf.end < beforeIndex);
+}
+
+export function rootsAtCompressionLevel(history = [], level = 0, { chat = null, staged = [], isLeafCurrent = null } = {}) {
+    const targetDepth = layerDepth(level);
+    const { leaves, parents } = summaryLayers(history, staged, { chat, isLeafCurrent });
+    const collected = new Set();
+    for (const parent of parents) {
+        for (const cid of parent.childIds || []) collected.add(cid);
+    }
+    const pool = targetDepth === 0 ? leaves : parents.filter(node => node.depth === targetDepth);
+    return pool
+        .filter(node => !collected.has(node.id))
+        .sort((a, b) => (a.start ?? 0) - (b.start ?? 0) || (a.end ?? 0) - (b.end ?? 0));
+}
+
+export function planNextCompression(history = [], { chat = null, staged = [], isLeafCurrent = null, leafKeepRecent = DEFAULT_LEAF_KEEP_RECENT } = {}) {
+    const view = summaryLayers(history, staged, { chat, isLeafCurrent });
+    const collected = new Set();
+    for (const parent of view.parents) {
+        for (const cid of parent.childIds || []) collected.add(cid);
+    }
+    const maxDepth = view.parents.reduce((max, node) => Math.max(max, node.depth || 1), 0);
+    for (let depth = 0; depth <= maxDepth + 1; depth++) {
+        const threshold = thresholdForLevel(depth);
+        const keep = depth === 0 ? Math.max(0, leafKeepRecent) : 0;
+        const pool = depth === 0 ? view.leaves : view.parents.filter(node => node.depth === depth);
+        const roots = pool
+            .filter(node => !collected.has(node.id))
+            .sort((a, b) => (a.start ?? 0) - (b.start ?? 0) || (a.end ?? 0) - (b.end ?? 0));
+        if (roots.length < threshold + keep) continue;
+        const nodes = roots.slice(0, threshold);
+        const targetDepth = depth + 1;
+        const targetLevel = layerLevelName(targetDepth);
+        const start = nodes[0].start;
+        const end = nodes.at(-1).end;
+        return {
+            depth: targetDepth,
+            level: targetLevel,
+            sourceLevel: depth,
+            nodes,
+            start,
+            end,
+            childIds: nodes.map(node => node.id),
+            sourceId: layerSignature(nodes),
+            timeStart: nodes[0]?.timeStart || '',
+            timeEnd: nodes.at(-1)?.timeEnd || '',
+        };
+    }
+    return null;
 }
 
 export function projectLayers(items, parents, end = Infinity) {

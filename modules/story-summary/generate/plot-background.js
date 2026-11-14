@@ -17,7 +17,20 @@ export function plotBackgroundItems(store, chat, hiddenThrough) {
         const end = source?.end ?? batch.endMesId;
         const text = [batch.summary, ...(batch.importedRounds || []).map(row => row.timeLabel + ' ' + row.summary)].filter(Boolean).join('\n');
         if (!text || !Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end > hiddenThrough) continue;
-        items.push({ start, end, text: String(text), sourceId: batch.sourceReceipt?.id || null });
+        const timeStart = String(batch.timeStart || batch.storyTimeStart || batch.importedRounds?.[0]?.timeLabel || batch.storyTime || '').trim();
+        const timeEnd = String(batch.timeEnd || batch.storyTimeEnd || batch.memoryTags?.times?.at(-1) || batch.storyTime || timeStart).trim();
+        items.push({
+            start,
+            end,
+            text: String(text),
+            sourceId: batch.sourceReceipt?.id || null,
+            level: 'round',
+            depth: 0,
+            timeStart,
+            timeEnd,
+            storyTime: String(batch.storyTime || timeEnd || timeStart).trim(),
+        });
     }
-    return projectLayers(items.sort((a, b) => a.start - b.start || a.end - b.end), summaryLayers(store?.summaryHistory).parents, hiddenThrough);
+    const { parents } = summaryLayers(store?.summaryHistory, [], { chat, isLeafCurrent: isFloorEntryCurrent });
+    return projectLayers(items.sort((a, b) => a.start - b.start || a.end - b.end), parents, hiddenThrough);
 }

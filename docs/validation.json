@@ -1,20 +1,20 @@
 {
-  "version": "0.2.29",
-  "verified_at_utc": "2026-11-09T19:08:38.311187+00:00",
-  "build_id": "3ba509ec35bb4beff1e9",
+  "version": "0.2.30",
+  "verified_at_utc": "2026-11-14T07:09:30+00:00",
+  "build_id": "e9e795f48aa39ec36052",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
   "quality": "passed",
   "unit_tests": {
-    "total": 1648,
-    "passed": 1648,
+    "total": 1662,
+    "passed": 1662,
     "failed": 0,
     "cancelled": 0,
     "skipped": 0
   },
   "memory_runtime": "passed",
-  "scope": "Data page cleanup, named settings expansion, and current planner notes.",
+  "scope": "P0 macOS build/test parity fixes, P2 BaiBaiBook long-term memory and dual-axis state injection, P3 world intervention drawers and documentation cleanup.",
   "runtime_changes": true,
   "removed_source_paths": 1763,
   "removed_modules_in_build": 0,
@@ -735,5 +735,5 @@
     "model_calls": 0,
     "released_in": "0.2.29"
   },
-  "previous_published_build_id": "dd9e51067a265493cad4"
+  "previous_published_build_id": "3ba509ec35bb4beff1e9"
 }

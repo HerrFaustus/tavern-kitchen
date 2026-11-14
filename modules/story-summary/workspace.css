@@ -157,15 +157,16 @@ html.tk-embedded[data-kitchen-view="data"] :is(.archive, #settings-modal) { disp
 #tab-agent > .memory-record-view { grid-row: 1; }
 #tab-agent > .memory-controls { grid-row: 2; }
 
-.tk-world-proposals { margin: 0 0 14px; overflow-wrap: anywhere; }
-.tk-world-proposals[hidden] { display: none; }
-.tk-proposal-queue, .tk-proposal-row { margin-block: 8px; }
-.tk-proposal-queue > summary, .tk-proposal-row > summary { cursor: pointer; }
+.tk-world-proposals, .tk-world-editor { margin: 0 0 14px; overflow-wrap: anywhere; }
+.tk-world-proposals[hidden], .tk-world-editor[hidden] { display: none; }
+.tk-proposal-queue, .tk-proposal-row, .tk-world-editor-drawer { margin-block: 8px; }
+.tk-proposal-queue > summary, .tk-proposal-row > summary, .tk-world-editor-drawer > summary { cursor: pointer; }
 .tk-proposal-private { display: flex; align-items: center; gap: 6px; margin-block: 10px; }
 .tk-proposal-row { padding-inline-start: 8px; border-inline-start: 2px solid var(--bdr, #8885); }
 .tk-proposal-row p { margin-block: 6px; }
-.tk-proposal-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-block: 8px; }
+.tk-proposal-actions, .tk-world-editor-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-block: 8px; }
 .tk-proposal-form fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
-.tk-proposal-field { display: grid; gap: 4px; margin-block: 8px; }
-.tk-proposal-field :is(input:not([type=checkbox]), select, textarea) { width: 100%; min-width: 0; box-sizing: border-box; font: inherit; }
-.tk-proposal-field textarea { resize: vertical; }
+.tk-proposal-field, .tk-world-editor-field { display: grid; gap: 4px; margin-block: 8px; }
+.tk-proposal-field :is(input:not([type=checkbox]), select, textarea),
+.tk-world-editor-field :is(input:not([type=checkbox]), select, textarea) { width: 100%; min-width: 0; box-sizing: border-box; font: inherit; }
+.tk-proposal-field textarea, .tk-world-editor-field textarea { resize: vertical; }

@@ -1226,13 +1226,11 @@ const UNANNOTATED_LABEL = '未标注';
             暂无召回日志<br><br>
             当 AI 生成回复时，系统会自动进行记忆召回。<br><br>
             召回日志将显示：<br>
-            • [L0] Query Understanding - 意图识别<br>
-            • [L1] Constraints - 硬约束注入<br>
-            • [L2] Narrative Retrieval - 事件召回<br>
-            • [L3] Evidence Assembly - 证据装配<br>
-            • [L4] Prompt Formatting - 格式化<br>
-            • [Budget] Token 预算使用情况<br>
-            • [Quality] 质量指标与潜在问题
+            • [状态约束] 当前相关角色与世界状态<br>
+            • [剧情背景] 分层摘要覆盖的早期剧情<br>
+            • [原文召回] 向量/关键词匹配与可选重排<br>
+            • [预算装配] 片段筛选、顺序与字符预算<br>
+            • [Quality] 耗时与潜在问题诊断
         </div>`);
         }
     }

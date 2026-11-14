@@ -1,4 +1,4 @@
-# 酒馆后厨 0.2.29
+# 酒馆后厨 0.2.30
 
 本版精简数据页和设置布局，在编剧面板展示当前札记；保留后厨卡、世界版本恢复及来源、防重复机制。
 
@@ -173,4 +173,4 @@ python scripts/package.py
 
 ## 署名与许可
 
-原作者：**biex**。酒馆后厨是修改版，并非小白X官方发布。上游 [LICENSE](docs/LICENSE.md)、[COPYRIGHT](docs/COPYRIGHT)、[NOTICE](docs/NOTICE)原文保留；请一起阅读其中的条款和附加声明。构建依赖的许可见 `dist/THIRD-PARTY-LICENSES.md`。本版未复制柏宝书代码。
+原作者：**biex**。酒馆后厨是修改版，并非小白X官方发布。上游 [LICENSE](docs/LICENSE.md)、[COPYRIGHT](docs/COPYRIGHT)、[NOTICE](docs/NOTICE)原文保留；请一起阅读其中的条款和附加声明。构建依赖的许可见 `dist/THIRD-PARTY-LICENSES.md`。自 0.2.30 起，可逆摘要树、故事相对时间、四档在场分级、双轴深度注入与批量分片策略参考并适配自柏宝书（ST-BaiBai-Book）架构思路。

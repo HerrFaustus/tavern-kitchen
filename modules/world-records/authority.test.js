@@ -125,3 +125,59 @@ test('private fields stay in the world snapshot and cannot reappear as an older 
     assert.equal(state.entities.find(person => person.id === 'alan').fields['管理员私有/阵营'].value, '银鸦会');
     assert.deepEqual(projectAuthorityFacts([{s:'铁匠', p:'阵营', o:'旧密约'}], state), []);
 });
+
+test('authority classifies 4-tier NPC presence, prunes distant fields, separates elsewhere items, and enforces knowledge isolation', () => {
+    let state = emptyWorld('w2', 'main', '四档与知情测试');
+    state = update(state, [
+        make('city', '王都', 'place'),
+        make('inn', '旅馆大厅', 'place'),
+        make('subport', '南郊港口', 'place'),
+        make('hero', '旅人', 'person'),
+        make('mira', '米拉', 'person'),
+        make('guard', '门卫', 'person'),
+        make('duke', '公爵', 'person'),
+        make('key', '银钥匙', 'item'),
+        make('sword', '旧剑', 'item'),
+        set('inn', 'parent', { entityId: 'city' }),
+        set('subport', 'parent', { entityId: 'city' }),
+        set('hero', 'location', { entityId: 'inn' }),
+        set('hero', 'description', '主角外貌描述'),
+        set('mira', 'location', { entityId: 'inn' }),
+        set('mira', 'personality', '沉着机警'),
+        set('mira', 'description', '穿着灰色斗篷的同行者'),
+        set('guard', 'location', { entityId: 'subport' }),
+        set('guard', 'personality', '严厉守规矩'),
+        set('guard', 'appearance', '左脸有一道长疤'),
+        set('guard', 'outfit', '重甲与长戟'),
+        set('duke', 'location', { entityId: 'subport' }),
+        set('duke', 'title', '港务总督'),
+        set('duke', 'personality', '深藏不露'),
+        set('key', 'owner', { entityId: 'hero' }),
+        set('key', 'description', '开启港口库房的银钥匙'),
+        set('sword', 'location', { entityId: 'subport' }),
+        set('sword', 'description', '非常冗长的远方寄存武器历史'.repeat(5)),
+    ]);
+    // Put duke truly in another distant city so duke is 'absent' while guard is 'nearby'
+    state = update(state, [make('far', '北境要塞', 'place'), set('duke', 'location', { entityId: 'far' })]);
+    const text = buildAuthorityContext(state, '在旅馆说话', 4000, '旅人');
+
+    // Present NPC retains full profile + personality + description; knowledge defaults to 暂无记录!
+    assert.match(text, /米拉.*在场/);
+    assert.match(text, /穿着灰色斗篷的同行者/);
+    assert.match(text, /米拉：暂无记录/);
+
+    // Nearby NPC keeps personality & location, trims appearance/outfit!
+    assert.match(text, /门卫.*同区域/);
+    assert.match(text, /严厉守规矩/);
+    assert.doesNotMatch(text, /左脸有一道长疤|重甲与长戟/);
+
+    // Absent NPC keeps title & location, trims personality!
+    assert.match(text, /公爵.*不在场/);
+    assert.match(text, /港务总督/);
+    assert.doesNotMatch(text, /深藏不露/);
+
+    // Hero-owned reachable item includes description; elsewhere item shows compact 他处寄存 without long description!
+    assert.match(text, /开启港口库房的银钥匙/);
+    assert.match(text, /"name":"旧剑".*"field":"他处寄存"/);
+    assert.doesNotMatch(text, /非常冗长的远方寄存武器历史/);
+});

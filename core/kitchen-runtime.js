@@ -150,6 +150,10 @@ function configureWorkspace() {
         if (!memory) throw new Error('剧情记忆尚未准备好，请刷新后重试。');
         memory.openStoryWorld(id === 'situation' ? 'world' : id);
         if (id === 'situation') worldArchive.showProposals(kitchen.getMount(id)?.querySelector('iframe'));
+        if (id === 'people' || id === 'situation' || id === 'relations') {
+            const frame = kitchen.getMount(id)?.querySelector('iframe');
+            worldArchive.showEditor(frame, id === 'situation' ? 'situation' : 'people');
+        }
         if (id === 'people' || id === 'situation') kitchen.showEvolution(parent => mountWorldEvolution(parent, id, kitchen.getMount(id)?.querySelector('iframe')), id === 'people');
     };
     for (const id of ['map', 'settings', 'agent-api']) actions[id] = async () => {
@@ -193,7 +197,7 @@ async function startWorld() {
         getMount: id => kitchen.getMount(id), isVisible: id => kitchen.isActive(id), onError: showError,
         onAuthorityChange: () => { removeWorldGeneration?.clear(); memory?.invalidateWorldContext(); } });
     const { installWorldAuthorityGeneration } = await import('../modules/world-records/generation-host.js');
-    removeWorldGeneration = installWorldAuthorityGeneration({ getContext, prepare:query => settings.enabled ? worldArchive.prepare(query) : '', onError: showError });
+    removeWorldGeneration = installWorldAuthorityGeneration({ getContext, prepare: (query, type) => settings.enabled ? worldArchive.prepareInjection(query, type) : '', onError: showError });
     stopWorld = () => {
         worldArchive.initialize?.cancel?.();
         removeWorldGeneration();

@@ -1,4 +1,4 @@
-import { projectLayers, reviewedRounds, summaryLayers } from '../story-summary/data/summary-layers.js';
+import { reviewedRounds, roundSourceId, selectHistoryNodesBefore, summaryLayers } from '../story-summary/data/summary-layers.js';
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
 import { beforeRecentTurns } from '../story-summary/data/narrative-window.js';
 import { captureRangeSource } from '../story-summary/data/turn-source.js';
@@ -6,6 +6,8 @@ import { currentTurns } from './turn-ledger.js';
 import { worldStoryRecords } from './world-story-state.js';
 
 export const UPDATE_INPUT_LIMIT = 200_000;
+const RECENT_SETTLED_PROPOSALS_CAP = 12;
+const RECENT_LEGACY_EVENTS_CAP = 30;
 export const UPDATE_PREFIX = 'update:';
 export const worldUpdates = state => Object.entries(state?.sources || {}).filter(([key]) => key.startsWith(UPDATE_PREFIX)).map(([, record]) => record);
 const currentSources = state => Object.fromEntries(Object.entries(state.sources).filter(([key]) => key !== 'variables' && !key.startsWith('opening-part:')
@@ -18,6 +20,35 @@ export const worldSnapshotDigest = state => memoryDigest({ worldId: state.worldI
 function visibleStoryModule(value) {
     return value && {...value, records:value.records.filter(entry => entry.record.kind !== 'scene'),
         candidates:value.candidates.filter(entry => entry.record.kind !== 'scene')};
+}
+
+function isSettledProposalRecord(record) {
+    if (record.status === 'stale') return true;
+    if (record.status !== 'ready') return false;
+    const proposals = record.update?.proposals || [];
+    const activeIndices = [];
+    for (let i = 0; i < proposals.length; i++) {
+        if (proposals[i]?.record?.kind !== 'scene') activeIndices.push(i);
+    }
+    const reviewed = new Set((record.reviews || []).map(r => r.index));
+    return activeIndices.every(i => reviewed.has(i));
+}
+
+function compactBackgroundData(json) {
+    if (!json || typeof json !== 'object') return {};
+    const copy = structuredClone(json);
+    delete copy.scenes;
+    if (Array.isArray(copy.storyRecords)) {
+        copy.storyRecords = copy.storyRecords.filter(row => row.kind !== 'scene');
+    }
+    if (Array.isArray(copy.events) && copy.events.length > RECENT_LEGACY_EVENTS_CAP) {
+        copy.archivedEventsCount = copy.events.length - RECENT_LEGACY_EVENTS_CAP;
+        copy.events = copy.events.slice(-RECENT_LEGACY_EVENTS_CAP);
+    }
+    if (Array.isArray(copy.importedRounds) && copy.importedRounds.length > RECENT_LEGACY_EVENTS_CAP) {
+        copy.importedRounds = copy.importedRounds.slice(-RECENT_LEGACY_EVENTS_CAP);
+    }
+    return copy;
 }
 
 function proposalHistory(record) {
@@ -45,29 +76,78 @@ export function buildUpdateContext(state, store, chat, receipt, keepVisibleTurns
     });
     const recentStart = beforeRecentTurns(chat, receipt.source.end, keepVisibleTurns) + 1;
     const sources = currentSources(state);
+
+    const allUpdateRecords = worldUpdates(state).filter(record => record.status !== 'retracted');
+    const settledSorted = allUpdateRecords
+        .filter(isSettledProposalRecord)
+        .sort((a, b) => (a.update?.source?.end ?? 0) - (b.update?.source?.end ?? 0));
+    const settledSet = new Set(settledSorted.slice(0, -RECENT_SETTLED_PROPOSALS_CAP));
+    const retainedUpdates = allUpdateRecords.filter(record => !settledSet.has(record));
+
     const world = { worldId: state.worldId, branchId: state.branchId, version: state.version,
         entities: structuredClone(state.entities), claims: structuredClone(state.claims), sources: structuredClone(sources),
         map: structuredClone(state.modules?.map ?? null), storyRecords: worldStoryRecords(state, store?.json?.storyRecords || []),
         ...(state.modules?.story?.candidates?.length ? { storyCandidates: structuredClone(state.modules.story.candidates.filter(item => item.record.kind !== 'scene')) } : {}),
-        proposalHistory: worldUpdates(state).filter(record => record.status !== 'retracted').map(proposalHistory) };
-    const parents = summaryLayers(store?.summaryHistory).parents;
+        proposalHistory: retainedUpdates.map(proposalHistory) };
+
+    const historyCutoff = receipt?.source?.start ?? ((store?.lastSummarizedMesId ?? -1) + 1);
+    const { parents } = summaryLayers(store?.summaryHistory, [], { chat });
+    const reviewed = reviewedRounds(store?.summaryHistory);
+    const leafMeta = new Map();
+    for (const batch of reviewed) {
+        const id = roundSourceId(batch);
+        if (id) leafMeta.set(id, batch);
+    }
+    const forestNodes = selectHistoryNodesBefore(store?.summaryHistory, chat, historyCutoff);
+    const compressedSummaries = forestNodes.map(node => {
+        if (node.depth > 0) {
+            return {
+                level: node.level,
+                start: node.start,
+                end: node.end,
+                summary: node.text,
+                sourceId: node.sourceId,
+                ...(node.timeStart ? { timeStart: node.timeStart } : {}),
+                ...(node.timeEnd ? { timeEnd: node.timeEnd } : {}),
+            };
+        }
+        const meta = leafMeta.get(node.id);
+        return {
+            start: node.start,
+            end: node.end,
+            summary: [node.text, ...(meta?.importedRounds || []).map(row => row.timeLabel + ' ' + row.summary)].filter(Boolean).join('\n'),
+            source: meta?.sourceReceipt ? { requestId: meta.sourceReceipt.id, digest: meta.sourceReceipt.source.digest } : null,
+            ...(node.memoryTags ? { memoryTags: structuredClone(node.memoryTags) } : {}),
+        };
+    });
+    const coveredByForest = batch => forestNodes.some(n => n.start <= ((batch.previousEndMesId ?? -1) + 1) && batch.endMesId <= n.end);
+    for (const batch of reviewed) {
+        if (roundSourceId(batch) || batch.endMesId >= historyCutoff || coveredByForest(batch)) continue;
+        if (!batch.summary && !batch.importedRounds?.length) continue;
+        compressedSummaries.push({
+            start: (batch.previousEndMesId ?? -1) + 1,
+            end: batch.endMesId,
+            summary: [batch.summary, ...(batch.importedRounds || []).map(row => row.timeLabel + ' ' + row.summary)].filter(Boolean).join('\n'),
+            source: batch.sourceReceipt ? { requestId: batch.sourceReceipt.id, digest: batch.sourceReceipt.source.digest } : null,
+            ...(batch.memoryTags ? { memoryTags: structuredClone(batch.memoryTags) } : {}),
+        });
+    }
+    compressedSummaries.sort((a, b) => a.start - b.start || a.end - b.end);
+
+    const hierarchyAvailable = parents.length > 0 || forestNodes.some(n => n.depth > 0);
     const context = { version: 1, requestId: receipt.id,
         basis: { worldId: state.worldId, branchId: state.branchId, version: state.version, digest: worldSnapshotDigest(state) },
         manifest: { mode: 'full', worldComplete: true, entities: world.entities.length, claims: world.claims.length,
             storyRecords: world.storyRecords.length, proposalBatches: world.proposalHistory.length,
-            historicalHierarchyAvailable: !!parents.length, excluded: ['历史原文账本与世界事件通过来源引用查询', '已删除模块的被动原始归档'],
+            ...(settledSet.size ? { archivedProposalBatches: settledSet.size } : {}),
+            historicalHierarchyAvailable: hierarchyAvailable, excluded: ['历史原文账本与世界事件通过来源引用查询', '已删除模块的被动原始归档'],
             mapAuthority: '实体字段是位置与归属权威；地图保留已有几何与语义，不从图形位置倒推世界变化。' },
         world, increment: structuredClone(receipt.source),
         incrementTurns: currentTurns(state).filter(turn => receipt.turns.includes(turn.id)).map(turn => ({ id: turn.id, source: { start: turn.source.start, end: turn.source.end } })),
         recent: captureRangeSource(chat, Math.min(recentStart, receipt.source.start), receipt.source.end),
-        background: { mode: 'existing_memory', hierarchyAvailable: !!parents.length, summarizedThrough: store?.lastSummarizedMesId ?? -1,
-            data: structuredClone(store?.json?.storyRecords ? {...store.json,storyRecords:store.json.storyRecords.filter(row => row.kind !== 'scene')} : store?.json || {}), summaries: reviewedRounds(store?.summaryHistory).filter(batch => batch.summary || batch.importedRounds?.length)
-                .map(batch => ({ start: (batch.previousEndMesId ?? -1) + 1, end: batch.endMesId, summary: [batch.summary, ...(batch.importedRounds || []).map(row => row.timeLabel + ' ' + row.summary)].filter(Boolean).join('\n'),
-                    source: batch.sourceReceipt ? { requestId: batch.sourceReceipt.id, digest: batch.sourceReceipt.source.digest } : null,
-                    ...(batch.memoryTags ? { memoryTags: structuredClone(batch.memoryTags) } : {}) })) },
+        background: { mode: 'existing_memory', hierarchyAvailable, summarizedThrough: store?.lastSummarizedMesId ?? -1,
+            data: compactBackgroundData(store?.json), summaries: compressedSummaries },
         executionReceipts };
-    if (parents.length) context.background.summaries = projectLayers(context.background.summaries, parents).map(item =>
-        item.level ? { level: item.level, start: item.start, end: item.end, summary: item.text, sourceId: item.sourceId } : item);
     assertUpdateBudget(JSON.stringify(context));
     return context;
 }

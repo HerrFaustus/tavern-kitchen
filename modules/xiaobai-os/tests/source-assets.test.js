@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -13,7 +13,7 @@ function loadEntry(directory, version = '') {
 }
 
 async function fixture(t) {
-    const root = await mkdtemp(path.join(os.tmpdir(), 'lwb-source-assets-'));
+    const root = await realpath(await mkdtemp(path.join(os.tmpdir(), 'lwb-source-assets-')));
     t.after(() => rm(root, { recursive: true, force: true }));
     const media = path.join(root, 'feature', 'assets');
     await mkdir(media, { recursive: true });

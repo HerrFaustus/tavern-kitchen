@@ -1406,7 +1406,8 @@ function sendFrameFullData(store, totalFloors) {
 }
 
 function buildFramePayload(store) {
-    if (!store?.json && worldAuthorityForContext(getContext())?.sources?.['world-opening']) store = {json:{},summaryHistory:[]};
+    const authority = worldAuthorityForContext(getContext());
+    if (!store?.json && (authority?.sources?.['world-opening'] || authority?.entities?.length)) store = {json:{},summaryHistory:[]};
     const json = authorityStoryStore(store, getContext(), true)?.json || {};
     const facts = json.facts || [];
     const entities = (worldAuthorityForContext(getContext())?.entities || []).map(({id,kind,name,aliases,fields}) => ({id,kind,name,aliases,fields}));
@@ -2860,12 +2861,14 @@ async function prepareMemoryPrompt(type, signal, diagnostics = createRecallDiagn
     // 构建注入文本
     let text = "";
     let notice = null;
+    const includeState = !extension_prompts.tavernKitchenWorldAuthority?.value;
     const T_BuildPrompt = performance.now();
     if (vectorCfg?.enabled && !usePendingCanonicalSummary) {
         const r = await buildVectorPromptText(excludeLastAi, {
             signal,
             diagnostics,
             withQueryEmbedding,
+            includeState,
         });
         if (signal?.aborted) {
             return finish('aborted_after_build');
@@ -2874,7 +2877,7 @@ async function prepareMemoryPrompt(type, signal, diagnostics = createRecallDiagn
         notice = r?.notice || null;
     } else {
         diagnostics.stage = 'canonical-summary';
-        text = buildNonVectorPromptText() || "";
+        text = buildNonVectorPromptText({ includeState }) || "";
     }
     timing.buildPrompt = Math.round(performance.now() - T_BuildPrompt);
 

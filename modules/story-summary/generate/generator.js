@@ -68,27 +68,67 @@ export function formatExistingSummaryForAI(store) {
     return parts.join("\n") || "（空白，这是首次总结）";
 }
 
-export function buildIncrementalSlice(targetMesId, lastSummarizedMesId, maxPerRun = 100, delayFloors = 0, filterRules = getTextFilterRules()) {
+export const DEFAULT_SUMMARY_BATCH_MAX_CHARS = 40_000;
+
+export function planSummaryBatches(chat = [], start = 0, rawEnd = -1, {
+    maxPerRun = 100,
+    maxChars = DEFAULT_SUMMARY_BATCH_MAX_CHARS,
+    filterRules = getTextFilterRules(),
+    name1 = '',
+    name2 = '',
+    isOmitted = isFloorMemoryOmitted,
+} = {}) {
+    if (!Array.isArray(chat) || start > rawEnd) return [];
+    const floorCap = Math.max(1, maxPerRun | 0);
+    const charCap = Math.max(500, maxChars | 0);
+    const userLabel = name1 || '用户';
+    const charLabel = name2 || '角色';
+    const batches = [];
+    let cur = null;
+
+    for (let idx = start; idx <= rawEnd; idx++) {
+        const msg = chat[idx];
+        const omitted = isOmitted(idx);
+        let segment = '';
+        if (!omitted && msg) {
+            const speaker = msg.name || (msg.is_user ? userLabel : charLabel);
+            const filteredMessage = applyTextFilterRules(msg.mes || '', filterRules);
+            segment = `#${idx + 1} 【${speaker}】\n${filteredMessage}`;
+        }
+        const segLen = segment.length;
+        const addSep = cur && cur.segments.length && segLen ? 2 : 0;
+        if (cur && (cur.count >= floorCap || (segLen > 0 && cur.chars + addSep + segLen > charCap))) {
+            batches.push({ start: cur.start, end: cur.end, count: cur.count, chars: cur.chars, text: cur.segments.join('\n\n') });
+            cur = null;
+        }
+        if (!cur) cur = { start: idx, end: idx, count: 0, chars: 0, segments: [] };
+        cur.end = idx;
+        cur.count++;
+        if (segLen > 0) {
+            cur.chars += (cur.segments.length ? 2 : 0) + segLen;
+            cur.segments.push(segment);
+        }
+    }
+    if (cur) batches.push({ start: cur.start, end: cur.end, count: cur.count, chars: cur.chars, text: cur.segments.join('\n\n') });
+    return batches;
+}
+
+export function buildIncrementalSlice(targetMesId, lastSummarizedMesId, maxPerRun = 100, delayFloors = 0, filterRules = getTextFilterRules(), maxChars = DEFAULT_SUMMARY_BATCH_MAX_CHARS) {
     const { chat, name1, name2 } = getContext();
 
     const start = Math.max(0, (lastSummarizedMesId ?? -1) + 1);
     const rawEnd = getSummarySourceEnd(chat, targetMesId, delayFloors);
-    const end = Math.min(rawEnd, start + maxPerRun - 1);
+    const batches = planSummaryBatches(chat, start, rawEnd, { maxPerRun, maxChars, filterRules, name1, name2 });
+    if (!batches.length) return { text: "", count: 0, range: "", endMesId: -1 };
 
-    if (start > end) return { text: "", count: 0, range: "", endMesId: -1 };
-
-    const userLabel = name1 || '用户';
-    const charLabel = name2 || '角色';
-    const slice = chat.slice(start, end + 1);
-
-    const text = slice.map((m, i) => {
-        if (isFloorMemoryOmitted(start + i)) return '';
-        const speaker = m.name || (m.is_user ? userLabel : charLabel);
-        const filteredMessage = applyTextFilterRules(m.mes || '', filterRules);
-        return `#${start + i + 1} 【${speaker}】\n${filteredMessage}`;
-    }).filter(Boolean).join('\n\n');
-
-    return { text, count: slice.length, range: `${start + 1}-${end + 1}楼`, endMesId: end };
+    const first = batches[0];
+    return {
+        text: first.text,
+        count: first.count,
+        range: `${first.start + 1}-${first.end + 1}楼`,
+        endMesId: first.end,
+        hasMoreBatches: batches.length > 1,
+    };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

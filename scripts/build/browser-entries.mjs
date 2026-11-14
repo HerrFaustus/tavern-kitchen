@@ -14,10 +14,7 @@ export const entries = {
     'runtime/context': 'bridges/context-bridge.js',
 };
 
-// These are design/asset-authoring pages, not plugin pages. They still receive lint.
-const developmentPages = new Set([
-    'modules/xiaobai-os/docs/prototypes/xiaobai-space-2d.html',
-]);
+const developmentPages = new Set();
 export function discoverPages(directory) {
     return collectSourceFiles(directory, new Set(['.html']))
         .map(file => path.relative(directory, file).split(path.sep).join('/'))

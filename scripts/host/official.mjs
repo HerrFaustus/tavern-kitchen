@@ -17,6 +17,29 @@ function git(directory, args, options = {}) {
     return result.stdout;
 }
 
+const sleepView = new Int32Array(new SharedArrayBuffer(4));
+
+function withDirectoryLock(lockDir, callback) {
+    const deadline = Date.now() + 120_000;
+    while (true) {
+        try {
+            fs.mkdirSync(lockDir);
+            break;
+        } catch (error) {
+            if (error?.code !== 'EEXIST') throw error;
+            if (Date.now() > deadline) {
+                throw new Error(`Timed out waiting for official host cache lock: ${lockDir}`);
+            }
+            Atomics.wait(sleepView, 0, 0, 100);
+        }
+    }
+    try {
+        return callback();
+    } finally {
+        fs.rmSync(lockDir, { recursive: true, force: true });
+    }
+}
+
 export function referenceFor(version) {
     if (!/^[\w.-]+$/.test(version)) throw new Error('Invalid official host version or ref');
     let commit = official.verificationVersions[version];
@@ -28,11 +51,16 @@ export function referenceFor(version) {
         if (!resolved) throw new Error(`No official SillyTavern ref: ${version}`);
         commit = resolved[0];
     }
-    const directory = path.join(pluginRoot, 'output/official-host', commit);
-    fs.mkdirSync(directory, { recursive: true });
-    if (!fs.existsSync(path.join(directory, 'HEAD'))) git(directory, ['init', '--bare']);
-    const present = spawnSync('git', ['--no-replace-objects', '-C', directory, 'cat-file', '-e', `${commit}^{commit}`]);
-    if (present.status !== 0) git(directory, ['fetch', '--depth=1', remote, commit]);
+    const cacheRoot = path.join(pluginRoot, 'output/official-host');
+    const directory = path.join(cacheRoot, commit);
+    const lockDir = path.join(cacheRoot, `${commit}.lock`);
+    fs.mkdirSync(cacheRoot, { recursive: true });
+    withDirectoryLock(lockDir, () => {
+        fs.mkdirSync(directory, { recursive: true });
+        if (!fs.existsSync(path.join(directory, 'HEAD'))) git(directory, ['init', '--bare']);
+        const present = spawnSync('git', ['--no-replace-objects', '-C', directory, 'cat-file', '-e', `${commit}^{commit}`]);
+        if (present.status !== 0) git(directory, ['fetch', '--depth=1', remote, commit]);
+    });
     const entries = git(directory, ['ls-tree', '-r', '-l', '-z', commit]).split('\0').filter(Boolean).map(line => {
         const [metadata, file] = line.split('\t');
         const [mode, type, hash, size] = metadata.trim().split(/\s+/);

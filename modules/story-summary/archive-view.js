@@ -1,6 +1,6 @@
 
 
-import { buildTimelineTree, selectTimelineTree, timelineLabels } from './timeline-tree.js';
+import { buildTimelineTree, selectTimelineTree, timelineLabel, timelineLabels } from './timeline-tree.js';
 import { buildCharacterIdentity } from './data/character-aliases.js';
 
 export const ARCHIVE_COPY = Object.freeze({
@@ -126,7 +126,7 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
         if (!node.round) {
             const { id, level, start, end, text, reason, evidence } = node;
             return `<details class="timeline-unit" data-unit="${h(id)}" ${expanded.has(id) || node.reveal ? 'open' : ''}>
-                <summary><strong>${h(timelineLabels[level])}</strong> <span class="archive-muted">第 ${h(start + 1)}–${h(end + 1)} 楼</span>
+                <summary><strong>${h(timelineLabel(level))}</strong> <span class="archive-muted">第 ${h(start + 1)}–${h(end + 1)} 楼</span>
                 <span class="timeline-unit-text">${h(text)}</span></summary>
                 ${reason ? `<p class="archive-muted">收束依据：${h(reason)}</p>` : ''}
                 ${evidence ? `<blockquote>第 ${h(evidence.floor)} 楼：${h(evidence.quote)}</blockquote>` : ''}
@@ -146,11 +146,13 @@ export function createSummaryArchive({ getData, getSelectedCharacter, onSelectCh
     function refreshIndexes() {
         const data = getData();
         const counts = { round: (data.rounds || []).length, stage: 0, chapter: 0 };
-        for (const unit of data.narrativeUnits || []) counts[unit.level]++;
-        const roles = Object.keys(timelineLabels).filter(level => counts[level]);
+        for (const unit of data.narrativeUnits || []) counts[unit.level] = (counts[unit.level] || 0) + 1;
+        const extraLevels = [...new Set((data.narrativeUnits || []).map(unit => String(unit.level)))].filter(level => !Object.hasOwn(timelineLabels, level));
+        const roles = [...Object.keys(timelineLabels), ...extraLevels].filter(level => counts[level]);
         if (role && !roles.includes(role)) role = '';
-        setHtml($('archive-story-index'), ['', ...roles].map(item => `<button class="archive-index-button" data-archive-role="${h(item)}" aria-pressed="${item === role}">${h(timelineLabels[item] || ARCHIVE_COPY.allEvents)}<span>${item ? counts[item] : counts.round + counts.stage + counts.chapter}</span></button>`).join(''));
-        $('archive-story-heading').textContent = timelineLabels[role] || ARCHIVE_COPY.allEvents;
+        const totalUnits = Object.values(counts).reduce((sum, count) => sum + count, 0);
+        setHtml($('archive-story-index'), ['', ...roles].map(item => `<button class="archive-index-button" data-archive-role="${h(item)}" aria-pressed="${item === role}">${h(timelineLabel(item) || ARCHIVE_COPY.allEvents)}<span>${item ? counts[item] : totalUnits}</span></button>`).join(''));
+        $('archive-story-heading').textContent = timelineLabel(role) || ARCHIVE_COPY.allEvents;
         $('archive-order').textContent = descending ? ARCHIVE_COPY.newest : ARCHIVE_COPY.oldest;
         const facts = worldFacts();
         const subjects = [...new Set(facts.map(f => f.s))];

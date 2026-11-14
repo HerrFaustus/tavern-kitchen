@@ -240,10 +240,22 @@ export async function generateFloorSummary({ store, floorText, timeout = 180000,
 }
 
 export async function generateReviewedLayer({ level, children, reason, signal }) {
-    const prompt = getSummaryPanelConfig().prompts[level] || LAYER_PROMPTS[level];
+    const prompt = getSummaryPanelConfig().prompts[level] || LAYER_PROMPTS[level] || LAYER_PROMPTS.chapter;
     const messages = [
         { role: 'system', content: prompt + '\n' + layerSuffix() },
-        { role: 'user', content: JSON.stringify({ reason, children: children.map(n => ({ from: n.start + 1, to: n.end + 1, summary: n.text })) }) },
+        {
+            role: 'user',
+            content: JSON.stringify({
+                reason,
+                children: children.map(n => ({
+                    from: n.start + 1,
+                    to: n.end + 1,
+                    ...(n.timeStart ? { timeStart: n.timeStart } : {}),
+                    ...(n.timeEnd ? { timeEnd: n.timeEnd } : {}),
+                    summary: n.text,
+                })),
+            }),
+        },
     ];
     assertUpdateBudget(JSON.stringify(messages));
     return (await generateFeatureText('summary', { messages, signal })).text;
