@@ -61,7 +61,7 @@ export function installPlanner({snapshot, loadSnapshot, isVisible = () => true, 
     const unsubscribeBridge = subscribeWorldBridge(changed);
     const unsubscribeSources = subscribeWorldSources(changed);
     const reset = () => { invalidate(); writer.cancel(); };
-    const resetForeground = () => { invalidate(); if (settings.autoPrepare === true) writer.cancel(); };
+    const resetForeground = invalidate;
     const events = createModuleEvents(ID);
     events.on(event_types.GENERATION_STARTED, (_type,_options,dryRun) => { if (!dryRun) resetForeground(); });
     events.on(event_types.CHAT_CHANGED, () => { viewVersion++; view?.note({state:'loading'}); reset(); status(''); });
@@ -69,15 +69,11 @@ export function installPlanner({snapshot, loadSnapshot, isVisible = () => true, 
     registerGenerateInterceptor(ID, async (_chat,contextSize,_abort,type,run) => {
         clear();
         if (!enabled()) return;
-        if (!['','normal','continue','regenerate','swipe'].includes(type || '')) return;
+        if (!['','normal','continue','regenerate','swipe','group'].includes(type || '')) return;
         const epoch = ++generation;
         try {
-            let text;
-            if (settings.autoPrepare === true) text = await writer.prepare(run?.signal);
-            else {
-                const cached = await writer.inspect();
-                if (cached.state === 'ready') text = cached.note.chapter.text;
-            }
+            const cached = await writer.inspect();
+            const text = cached.state === 'ready' ? cached.note.chapter.text : '';
             if (!text || generation !== epoch || run?.signal?.aborted) return;
             const ctx = getContext();
             const block = '【本章札记】\n' + text;
@@ -96,28 +92,30 @@ export function installPlanner({snapshot, loadSnapshot, isVisible = () => true, 
             view?.removeControls();
             view = createPlannerSettings(root, {
                 controlsRoot, enabled:enabled(), visitBinding,
-                autoPrepare: settings.autoPrepare === true,
+                autoPrepare: settings.onChapter === true,
                 async setAutoPrepare(enabled) {
                     if (enabled) await checkBinding?.();
-                    const previous = settings.autoPrepare === true;
-                    settings.autoPrepare = enabled;
+                    const previous = settings.onChapter === true;
+                    settings.onChapter = enabled;
                     if (!enabled) reset();
                     try {
                         if (await saveSettings?.() === false) throw new Error();
+                        globalThis.window?.dispatchEvent?.(new Event('tavernKitchen:floor-settings'));
                     } catch {
-                        settings.autoPrepare = previous;
+                        settings.onChapter = previous;
                         throw new Error('编剧设置保存失败，请重试。');
                     }
                 },
                 async prepare() {
                     await checkBinding?.();
+                    await loadSnapshot?.(true);
                     writer.retry();
                     await writer.prepare();
                     await refreshView();
                 },
-                retry() {
-                    writer.retry();
-                    status('将在下次需要审稿时重试');
+                async retry() {
+                    await checkBinding?.(); await loadSnapshot?.(true); writer.retry();
+                    await writer.prepare(); await refreshView();
                 },
             });
             view.status(message, canRetry);
@@ -128,6 +126,11 @@ export function installPlanner({snapshot, loadSnapshot, isVisible = () => true, 
                 loading--;
                 if (!loading && refreshPending) { refreshPending = false; scheduleRefresh(); }
             }
+        },
+        async onChapter(signal, end) {
+            if (!enabled() || !settings.onChapter) return;
+            await checkBinding?.(); await loadSnapshot?.(true); writer.retry();
+            if (!await writer.prepare(signal, end)) throw new Error('编剧札记尚未保存，请重试');
         },
         dispose() { disposed = true; viewVersion++; view?.removeControls(); view = null; unsubscribeBridge(); unsubscribeSources(); reset(); events.cleanup(); unregisterGenerateInterceptor(ID); },
     };

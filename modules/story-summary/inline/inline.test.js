@@ -49,7 +49,7 @@ test('new floor records share stable candidate provenance while legacy floor rec
     const chat = [{ is_user: true, mes: '走吧' }, { mes: '渡口见', send_date: 'selected', swipe_id: 1,
         swipes: ['旧回复', '渡口见'], swipe_info: [{ send_date: 'old' }, { send_date: 'selected' }] }];
     const source = floorSource(chat, 1), entry = { floor: 1, source };
-    assert.equal(source.version, 2); assert.equal(isFloorEntryCurrent(entry, chat), true);
+    assert.equal(source.version, 3); assert.equal(isFloorEntryCurrent(entry, chat), true);
     chat[1].swipes.shift(); chat[1].swipe_info.shift(); chat[1].swipe_id = 0;
     assert.equal(isFloorEntryCurrent(entry, chat), true);
     const legacy = { floor: 1, source: floorSource(chat, 1, 1) };
@@ -157,9 +157,9 @@ test('completed replies schedule independent updates without consuming attached 
         scheduleAutoSummary: reason => reasons.push(reason),
     });
     await mod.handleMessageReceived('test-chat', 1);
-    assert.deepEqual(reasons, ['after_ai']);
+    assert.deepEqual(reasons, []);
     await mod.handleMessageReceived('test-chat', 0);
-    assert.deepEqual(reasons, ['after_ai']);
+    assert.deepEqual(reasons, []);
 });
 
 test('changing source while an editor is open blocks stale save and cancel reloads the current view', () => {
@@ -197,7 +197,7 @@ test('native system notices are not narrative floors, while hidden real replies 
 
 test('old v2 floor cards remain current across visibility changes without accepting a prose edit', () => {
     const chat = [{ mes: '问题', is_user: true }, { mes: '旧正文', is_system: true, send_date: '2026-11-05' }];
-    const source = floorSource(chat, 1), legacy = captureRangeSource(chat, 0, 1);
+    const source = floorSource(chat, 1, 2), legacy = captureRangeSource(chat, 0, 1);
     legacy.messages.at(-1).role = 'system';
     source.digest = memoryDigest(legacy.messages.map(({ floor, ...message }) => message));
     const entry = { floor: 1, source };

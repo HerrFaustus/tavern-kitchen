@@ -14,7 +14,6 @@ function makeBaseline() {
         keywords: [{ text: '旧关键词', weight: '核心', _addedAt: 10 }],
         events: [{ id: 'evt-1', summary: '旧事件', participants: ['小红'], _addedAt: 10 }],
         characters: { main: [{ name: '小红', _addedAt: 10 }] },
-        arcs: [{ name: '小红', trajectory: '尚未靠近', progress: 0.2, moments: [], _addedAt: 10 }],
         facts: [
             { id: 'f-1', s: '小红', p: '住处', o: '城南', _addedAt: 10 },
             { id: 'f-2', s: '乙', p: '身份', o: '学生', _addedAt: 10 },
@@ -29,11 +28,12 @@ test('one batch undo restores all summary collections atomically', () => {
     after.keywords = [{ text: '新关键词', weight: '重要', _addedAt: 20 }];
     after.events.push({ id: 'evt-2', summary: '新事件', participants: ['乙'], _addedAt: 20 });
     after.characters.main.push({ name: '丙', _addedAt: 20 });
-    after.arcs[0] = { ...after.arcs[0], trajectory: '开始靠近', progress: 0.5 };
+    after.arcs = [{ name:'小红',trajectory:'开始靠近',progress:0.5 }];
     after.facts[0] = { ...after.facts[0], o: '城北' };
 
     const restored = applySummaryUndo(after, buildSummaryUndo(before, after));
-    assert.deepEqual(restored, before);
+    const active = {...before}; delete active.arcs;
+    assert.deepEqual(restored, active);
 });
 
 test('undo preserves unrelated manual additions', () => {

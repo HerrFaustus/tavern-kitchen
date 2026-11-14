@@ -27,6 +27,7 @@ function applyRecordEdits(before, edited, current, keyOf, fields) {
 }
 
 export function applySummarySectionEdit(section, before, edited, current) {
+    if (!Object.hasOwn(EDITABLE_FIELDS, section) && section !== 'characters') throw new Error('不支持的记忆栏目');
     if (section === 'characters') {
         return {
             ...current,

@@ -207,7 +207,7 @@ export async function generateFloorSummary({ store, floorText, timeout = 180000,
     }
 }
 
-export async function generateReviewedLayer({ level, children, plotLineSnapshots, reason, signal }) {
+export async function generateReviewedLayer({ level, children, plotLineSnapshots, reason, signal, agentTask }) {
     const prompt = LAYER_PROMPTS[level] || LAYER_PROMPTS.chapter;
     const messages = [
         { role: 'system', content: prompt + '\n' + LAYER_SUFFIX },
@@ -227,5 +227,5 @@ export async function generateReviewedLayer({ level, children, plotLineSnapshots
         },
     ];
     assertUpdateBudget(JSON.stringify(messages));
-    return (await generateFeatureText('summary', { messages, signal })).text;
+    return (await generateFeatureText('summary', { messages, signal, agentTask })).text;
 }

@@ -102,14 +102,14 @@ test('fork, branch selection, export and restoration include map data and detect
     const f = await fixture(t); const first = await f.map.refreshCurrent(); const original = await f.service.read();
     const next = structuredClone(first.map); next.atlas.actors[0].locationKey = 'port';
     await f.map.replaceCurrent(next, { expectedRevision: first.map.revision });
-    const later = await f.service.read(); const branch = await f.service.fork(later, original.version);
+    const later = await f.service.read(); const branch = await f.service.rewind(later, original.version);
     assert.equal(f.map.readCurrent().map.atlas.actors[0].locationKey, 'smithy');
-    await f.service.selectBranch(later.branchId, branch);
+    await f.service.restore(later, branch);
     assert.equal(f.map.readCurrent().map.atlas.actors[0].locationKey, 'port');
     const backup = structuredClone(await f.service.read()); backup.modules.map.atlas.locations[0].name = '伪造存档';
     await assert.rejects(f.service.restore(backup, later), /历史不一致/);
     const restored = await f.service.restore(later, later);
-    assert.notEqual(restored.branchId, later.branchId);
+    assert.equal(restored.branchId, later.branchId);
     assert.equal(readWorldMap(restored).atlas.actors[0].locationKey, 'port');
 });
 
@@ -143,7 +143,7 @@ test('a rejected or throwing commit guard keeps both semantic fields and geometr
 
 test('a branch before map adoption stays empty instead of importing a future sidecar', async t => {
     const f = await fixture(t); await f.map.refreshCurrent();
-    const state = await f.service.read(); await f.service.fork(state, 0);
+    const state = await f.service.read(); await f.service.rewind(state, 0);
     const reads = f.reads();
     assert.equal((await f.map.refreshCurrent()).map.atlas.actors.length, 0);
     assert.equal(f.reads(), reads);
@@ -217,13 +217,13 @@ test('a failed old map command cannot overwrite another writer; explicit reload 
 test('equal world versions on different branches cannot revive stale map editors or documents', async t => {
     const f = await fixture(t); const old = await f.map.refreshCurrent(); const original = await f.service.read();
     const document = await f.map.document.read();
-    const branch = await f.service.fork(original, original.version);
+    const branch = await f.service.rewind(original, original.version);
     assert.equal(branch.version, original.version);
     assert.notEqual(f.map.readCurrent().map.revision, old.map.revision);
     const edit = structuredClone(old.map); edit.atlas.locations[0].brief = '旧分支编辑';
     await assert.rejects(f.map.replaceCurrent(edit, { expectedRevision: old.map.revision }), /map_revision_conflict/);
     await assert.rejects(f.map.document.replace(document.snapshot, edit, () => true), /management_context_changed/);
-    await f.service.selectBranch(original.branchId, branch);
+    await f.service.restore(original, branch);
     assert.notEqual(f.map.readCurrent().map.revision, old.map.revision);
     await assert.rejects(f.map.replaceCurrent(edit, { expectedRevision: old.map.revision }), /map_revision_conflict/);
 });
@@ -246,15 +246,15 @@ test('switching branches abandons a failed old candidate without blocking edits 
     f.service.commit = async () => { throw new Error('before dispatch failure'); };
     await assert.rejects(f.map.replaceCurrent(next, { expectedRevision: old.map.revision }), /before dispatch/);
     f.service.commit = commit;
-    const branch = await f.service.fork(original, original.version);
+    const branch = await f.service.rewind(original, original.version);
     assert.equal(f.adapter.files.hasPendingCommit(), false);
     const selected = f.map.readCurrent().map;
     const edit = structuredClone(selected); edit.atlas.locations[0].brief = '仅修改新分支';
     await f.map.replaceCurrent(edit, { expectedRevision: selected.revision });
-    await f.service.selectBranch(original.branchId, await f.service.read());
+    await f.service.restore(original, await f.service.read());
     assert.equal(f.map.readCurrent().map.atlas.actors[0].locationKey, 'smithy');
     assert.notEqual(f.map.readCurrent().map.atlas.locations[0].brief, '仅修改新分支');
-    assert.notEqual(branch.branchId, original.branchId);
+    assert.equal(branch.branchId, original.branchId);
 });
 
 test('returning to an unchanged chat cannot revive an editor from before the chat switch', async t => {

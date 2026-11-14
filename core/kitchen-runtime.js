@@ -1,3 +1,4 @@
+import { floorTasks, installFloorHost } from './floor-host.js';
 import { createKitchenCards } from '../modules/kitchen-data/card.js';
 // 酒馆后厨 0.1 — Based on LittleWhiteBox by biex.
 import { installFloorSummaries } from '../modules/story-summary/floor-summary.js';
@@ -17,6 +18,7 @@ const { saveSettings } = hostScript;
 
 const settings = extension_settings[EXT_ID] ??= {
     enabled: true,
+    panels: Object.fromEntries(['overview','people','places','map','situation','opening','memory','proofreading','clues','suspense','planner'].map(key => [key,false])),
     storySummary: { enabled: true },
     enaPlanner: { enabled: false },
     xiaobaiOs: createDefaultXiaobaiOsSettings(),
@@ -26,7 +28,7 @@ settings.enabled ??= true;
 settings.enaPlanner ??= {enabled:false};
 usePanelSettings(settings);
 window.isTavernKitchenEnabled = settings.enabled;
-let clearWorldPrompt, stopWorld, floorPanels;
+let clearWorldPrompt, stopWorld, floorPanels, floorHost;
 let settingsQueue = Promise.resolve();
 function enqueue(work) {
     const next = settingsQueue.then(work);
@@ -45,11 +47,15 @@ async function updatePanel(id,enabled) {
     if (enabled && !master) await requireAgent(panelAgent(id));
     await saveValue(master ? settings : (settings.panels ??= {}),id,enabled);
     window.isTavernKitchenEnabled = settings.enabled;
-    if (master && enabled) await startWorld();
+    if (master && enabled) {
+        await startWorld();
+        if (!floorHost && memory) floorHost = installFloorHost({ settings,getContext,memory,archive:() => worldArchive,planner:() => planner,workspace:kitchen });
+    }
     if (master && !enabled) { stopWorld?.(); cleanupXiaobaiOs(); }
     if (master || id === 'opening') worldArchive?.initialize?.cancel?.();
     if (master || id === 'memory' || id === 'proofreading') await memory?.refreshPanelState(id);
     if (master || id === 'planner') await syncPlanner();
+    floorHost?.settingsChanged();
     configureWorkspace();
     clearWorldPrompt?.();
     if (master || id === 'memory') floorPanels?.schedule();
@@ -168,6 +174,12 @@ function configureWorkspace() {
     };
     kitchen.configure({
         actions, visiblePanel:() => true,
+        configurePanel(id, bar) {
+            if (id !== 'map') return;
+            const label=document.createElement('label'), input=document.createElement('input'); input.type='checkbox';input.checked=panelEnabled('places');
+            input.onchange=async()=>{ try { await enqueue(()=>updatePanel('places',input.checked)); } catch(error) { input.checked=panelEnabled('places'); showError(error); if(error.agent) kitchen.visitBinding(error.agent,'[data-panel="map"]'); } };
+            label.append(input,document.createTextNode('记录地点变化'));bar.append(label);bar.hidden=false;
+        },
         panelSwitch:(id,label) => {
             const paused = settings.enabled === false;
             const key = paused ? 'enabled' : id;
@@ -190,16 +202,19 @@ async function startWorld() {
     if (worldArchive) return;
     const { createWorldArchive } = await import('../modules/world-records/host.js');
     let removeWorldGeneration;
-    worldArchive = createWorldArchive({ getContext, createOpening:createOpeningHost, getAmbientPreferences: () => settings.xiaobaiOs?.enabled ? {
+    worldArchive = createWorldArchive({ getContext, ordered:true, active:() => floorTasks(settings).some(s => s.group === 'update' || s.group === 'simulation'), recoverMemory: () => memory, createOpening:createOpeningHost, getAmbientPreferences: () => settings.xiaobaiOs?.enabled ? {
             ...settings.xiaobaiOs.apps?.world,
-            peopleEvolution:panelEnabled('people') && settings.xiaobaiOs.apps?.world?.peopleEvolution,
-            subscribed:panelEnabled('situation') && settings.xiaobaiOs.apps?.world?.subscribed,
-            encounterFrequency:panelEnabled('situation') ? settings.xiaobaiOs.apps?.world?.encounterFrequency : 'off',
+            peopleEvolution:settings.xiaobaiOs.apps?.world?.peopleEvolution,
+            subscribed:settings.xiaobaiOs.apps?.world?.subscribed,
+            encounterFrequency:settings.xiaobaiOs.apps?.world?.encounterFrequency,
         } : { encounterFrequency: 'off' }, getAccountId: getCurrentUserHandle, getMemorySnapshot: () => memory?.getWorldMemorySnapshot(),
         getMount: id => kitchen.getMount(id), isVisible: id => kitchen.isActive(id), onError: showError,
         onAuthorityChange: () => { removeWorldGeneration?.clear(); memory?.invalidateWorldContext(); } });
     const { installWorldAuthorityGeneration } = await import('../modules/world-records/generation-host.js');
-    removeWorldGeneration = installWorldAuthorityGeneration({ getContext, prepare: (query, type) => settings.enabled ? worldArchive.prepareInjection(query, type) : '', onError: showError });
+    removeWorldGeneration = installWorldAuthorityGeneration({ getContext, prepare: (query, type) => {
+        const tasks = floorTasks(settings).map(step => step.key).filter(key => !['memory','clues','review','chapter'].includes(key));
+        return tasks.length ? worldArchive.prepareInjection(query, type, tasks) : '';
+    }, onError: showError });
     stopWorld = () => {
         worldArchive.initialize?.cancel?.();
         removeWorldGeneration();
@@ -238,6 +253,8 @@ export async function startKitchen(workspace) {
     window.registerKitchenModuleCleanup('kitchen-floor-summaries', () => { panels.dispose(); floorEvents.cleanup(); });
     
     await syncPlanner();
+    if (worldArchive) floorHost = installFloorHost({ settings, getContext, memory, archive:() => worldArchive, planner:() => planner, workspace:kitchen });
+    window.registerKitchenModuleCleanup('ordered-floors', () => floorHost?.dispose());
     window.registerKitchenModuleCleanup('story-planner',() => planner?.dispose());
     if (settings.enabled && settings.xiaobaiOs?.enabled) await initXiaobaiOs();
     configureWorkspace();

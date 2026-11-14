@@ -14,8 +14,8 @@ function captureSnapshot(snapshot, snap, signal) {
 }
 
 export function createPlanner({snapshot, store, write, status}) {
-    let current, failed;
-    const cancel = () => { current?.abort(); current = null; };
+    let current, failed, pending;
+    const cancel = () => { current?.abort(); current = null; pending = null; };
     return {
         cancel,
         retry() { failed = null; },
@@ -25,9 +25,13 @@ export function createPlanner({snapshot, store, write, status}) {
             const { fresh } = captureSnapshot(snapshot, snap);
             try {
                 if (store.recoverLegacy && snap.legacyOwner) await store.recoverLegacy(snap.legacyOwner, snap.owner, fresh);
-                const note = selectVersion(await store.list(snap.owner),snap);
+                const rows = await store.list(snap.owner);
+                const note = selectVersion(rows,snap);
                 if (!fresh()) return { state:'changed' };
-                if (!note) return { state:'empty' };
+                if (!note) {
+                    const prior = rows.filter(row=>row.owner===snap.owner).sort((a,b)=>b.revision-a.revision)[0];
+                    return prior ? {state:'stale',note:prior,reason:'札记依据的原文已改写'} : {state:'empty'};
+                }
                 const reason = reviewReason(note, snap);
                 return reason
                     ? { state: 'stale', note, staleTargets: staleTargetsForNote(note, snap, reason) }
@@ -37,16 +41,27 @@ export function createPlanner({snapshot, store, write, status}) {
                 throw error;
             }
         },
-        async prepare(signal) {
+        prepare(signal, end) {
+            const read = () => snapshot(end);
+            const snap = read();
+            if (!snap || signal?.aborted) return Promise.resolve('');
+            const key = JSON.stringify([snap.owner,snap.world.version,snap.boundary,snap.lineState,prefix(snap.chat,snap.chat.length-1)]);
+            if (pending?.key === key) return pending.promise;
             cancel();
+            const job = {key}; pending = job;
+            job.promise = run(signal, read).finally(() => { if(pending === job) pending = null; });
+            return job.promise;
+        },
+    };
+    async function run(signal, read) {
             const controller = new AbortController();
             current = controller;
             const stop = () => controller.abort();
             signal?.addEventListener('abort',stop,{once:true});
             try {
-                const snap = snapshot();
+                const snap = read();
                 if (!snap || signal?.aborted) return '';
-                const { fresh } = captureSnapshot(snapshot, snap, controller.signal);
+                const { fresh } = captureSnapshot(read, snap, controller.signal);
                 if (store.recoverLegacy && snap.legacyOwner) await store.recoverLegacy(snap.legacyOwner, snap.owner, fresh);
                 const previous = selectVersion(await store.list(snap.owner),snap);
                 if (!fresh()) return '';
@@ -63,7 +78,7 @@ export function createPlanner({snapshot, store, write, status}) {
                     const saved = await store.put(publishNotes(raw, previous, snap, reason, {
                         mode: request.mode,
                         staleTargets: request.staleTargets,
-                    }));
+                    }),fresh);
                     if (!fresh()) return '';
                     failed = null;
                     status('当前章节札记已就绪');
@@ -76,6 +91,5 @@ export function createPlanner({snapshot, store, write, status}) {
                 signal?.removeEventListener('abort',stop);
                 if (current === controller) current = null;
             }
-        },
-    };
+    }
 }

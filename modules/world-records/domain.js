@@ -5,6 +5,7 @@ import { validateUpdateRecord } from './update-ledger.js';
 import { prepareProposalReview, repeatedProposalReview, validateProposalReviewHistory } from './proposal-review.js';
 import { validateWorldStoryState } from './world-story-state.js';
 import { validatePersonField } from './person-fields.js';
+import { memoryDigest } from '../story-summary/data/memory-policy.js';
 
 // Host-independent world archive. Only established fields participate in commands.
 export const SCHEMA = 3;
@@ -57,7 +58,7 @@ function checkGraph(state) {
 }
 function sourceOf(value) {
     invariant(value && typeof value === 'object', '缺少状态来源');
-    return { module: text(value.module, '来源类型', 100), key: text(value.key, '来源标识', 1000), label: text(value.label, '来源说明', 4000) };
+    return { module: text(value.module, '来源类型', 100), key: text(value.key, '来源标识', 1000), label: text(value.label, '来源说明', 4000), ...(value.task && {task:text(value.task,'来源功能',80)}), ...(value.proof && Number.isSafeInteger(value.proof.floor) && {proof:{floor:value.proof.floor,quote:text(value.proof.quote,'来源引文',1200)}}), ...(value.module === 'simulation' && {knownBy: (value.knownBy || []).map(id => text(id, '知情人', 200))}) };
 }
 export function validateWorld(state) {
     invariant([1, 2, SCHEMA].includes(state?.schema), '不支持的世界档案版本');
@@ -153,7 +154,7 @@ export function applyCommand(previous, command, reviewContext = {}) {
     const isReview = command.operations.some(op => op.type === 'review_update');
     invariant(isReview || !command.reviewMode && !command.origins, '同轮确认只能处理世界提案');
     const operations = isReview ? prepareProposalReview(previous, command, reviewContext) : command.operations;
-    const state = structuredClone(previous); const effects = []; const version = state.version + 1;
+    const state = structuredClone(previous); const effects = [], trades = []; const version = state.version + 1;
     if (isReview) state.schema = SCHEMA;
     const eventId = `event:${command.id}`;
     const record = (type, id, before, after) => effects.push({ type, id, before: before ?? null, after: structuredClone(after) });
@@ -220,18 +221,40 @@ export function applyCommand(previous, command, reviewContext = {}) {
             const buyer = entityById(state, op.buyerId), seller = entityById(state, op.sellerId), item = entityById(state, op.itemId);
             invariant(buyer.id !== seller.id && ['person', 'organization'].includes(buyer.kind) && ['person', 'organization'].includes(seller.kind) && item.kind === 'item', '交易参与者或物品无效');
             invariant(Number.isSafeInteger(op.price) && op.price > 0, '价格必须是正整数');
-            const balance = fieldValue(buyer, 'coins'), income = fieldValue(seller, 'coins');
-            invariant(Number.isSafeInteger(balance) && Number.isSafeInteger(income) && balance >= op.price, '金币尚未确认或余额不足');
-            invariant(Number.isSafeInteger(income + op.price), '交易金额超过支持范围');
-            invariant(fieldValue(item, 'owner')?.entityId === seller.id, '卖方已不再持有这件物品');
-            setField(buyer.id, 'coins', balance - op.price, op.source); setField(seller.id, 'coins', income + op.price, op.source);
-            setField(item.id, 'owner', { entityId: buyer.id }, op.source);
+            invariant((op.heroId || reviewContext.heroId) && (!reviewContext.heroId || !op.heroId || reviewContext.heroId === op.heroId), '请先核对交易涉及的主角身份');
+            const hero = entityById(state, op.heroId || reviewContext.heroId);
+            invariant(hero.id === buyer.id || hero.id === seller.id, '交易须涉及已辨认的主角');
+            const owner = fieldValue(item, 'owner')?.entityId;
+            invariant(owner === seller.id || !owner && hero.id === buyer.id, '卖方已不再持有这件物品');
+            const quantity = op.quantity ?? 1;
+            const quantityField = item.fields.quantity ? 'quantity' : '数量';
+            const available = fieldValue(item,quantityField) ?? 1;
+            invariant(Number.isSafeInteger(available) && Number.isSafeInteger(quantity) && quantity > 0 && quantity <= available, '成交数量无效或库存不足');
+            const balance = fieldValue(hero, 'coins');
+            const next = balance + (hero.id === buyer.id ? -op.price : op.price);
+            invariant(Number.isSafeInteger(balance) && Number.isSafeInteger(next) && next >= 0, '主角余额未知、不足或超出支持范围');
+            setField(hero.id, 'coins', next, op.source);
+            let transferred = item.id;
+            if (quantity < available) {
+                // Only a counted lot can split. A unique prop keeps its identity through every handover.
+                transferred = 'lot:' + memoryDigest([command.id,item.id,trades.length]);
+                invariant(!state.entities.some(e => e.id === transferred),'成交物品标识已存在');
+                const lot = {id:transferred,kind:'item',name:item.name,aliases:[...item.aliases],bindings:[],fields:{},revision:version,source:sourceOf(op.source)};
+                state.entities.push(lot); record('entity',transferred,null,lot);
+                setField(item.id,quantityField,available-quantity,op.source);
+                setField(transferred,quantityField,quantity,op.source);
+                setField(transferred,'原物品',{entityId:item.id},op.source);
+            }
+            setField(transferred, 'owner', { entityId: buyer.id }, op.source);
+            trades.push({heroId:hero.id,direction:buyer.id===hero.id?'buy':'sell',counterparty:buyer.id===hero.id?seller.id:buyer.id,
+                itemId:item.id,transferredItemId:transferred,quantity,price:op.price,source:sourceOf(op.source)});
         } else throw new Error('不支持的世界命令');
     }
     state.version = version;
     const origin = command.origin ? { origin: structuredClone(command.origin), ...(command.origins ? { origins: structuredClone(command.origins) } : {}) } : {};
     state.events.push({ id: eventId, commandId: command.id, title: command.title, at: command.at, version, effects, ...origin });
     const nextReceipt = { commandId: command.id, fingerprint, eventId, version, ...origin,
+        ...(trades.length && {trades}),
         ...(command.origin ? { effectFingerprint: canonical(command.operations) } : {}) };
     state.receipts.push(nextReceipt); validateWorld(state);
     return { state, receipt: nextReceipt, repeated: false };
@@ -251,5 +274,6 @@ export function forkWorld(state, version, branchId) {
         else { const list = change.type === 'entity' ? next.entities : next.claims; const index = list.findIndex(x => x.id === change.id); invariant(canonical(list[index] ?? null) === canonical(change.before), '对象历史不连续'); if (index < 0) list.push(structuredClone(change.after)); else list[index] = structuredClone(change.after); }
     }
     next.version = version; next.events = structuredClone(state.events.slice(0, version)); next.receipts = structuredClone(state.receipts.slice(0, version));
+    if (state.withdrawn) next.withdrawn = structuredClone(state.withdrawn);
     next.parent = { branchId: state.branchId, version }; return validateWorld(next);
 }

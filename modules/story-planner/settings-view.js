@@ -107,7 +107,7 @@ export function createPlannerSettings(root, { retry, prepare, autoPrepare = fals
     panel.className = 'tk-planner-settings';
     const heading = doc.createElement('h4');
     heading.className = 'standoutHeader tk-planner-heading';
-    heading.textContent = '当前分支札记';
+    heading.textContent = '当前聊天札记';
     const state = doc.createElement('span');
     state.className = 'tk-planner-live-state';
     state.setAttribute('role', 'status');
@@ -160,14 +160,14 @@ export function createPlannerSettings(root, { retry, prepare, autoPrepare = fals
     const retryButton = doc.createElement('button');
     retryButton.type = 'button';
     retryButton.className = 'menu_button';
-    retryButton.textContent = '下次正文重试';
+    retryButton.textContent = '重试更新札记';
     retryButton.onclick = retry;
     const autoLabel = doc.createElement('label');
     autoLabel.className = 'checkbox_label';
     const auto = doc.createElement('input');
     auto.type = 'checkbox';
     auto.checked = autoPrepare; auto.dataset.plannerAuto = ''; auto.disabled = !enabled;
-    autoLabel.append(auto, doc.createTextNode('生成前自动更新章节札记'));
+    autoLabel.append(auto, doc.createTextNode('章节（L2）保存后自动更新札记'));
     let retryable = false;
     auto.onchange = async () => {
         auto.disabled = true;
@@ -286,10 +286,10 @@ export function createPlannerSettings(root, { retry, prepare, autoPrepare = fals
             searchInput.hidden = !hasStructuredEntities;
             copyButton.hidden = !currentChapterText;
             applyFilter();
-            const staleDetail = staleSummaryText(staleTargets);
+            const staleDetail = result?.reason || staleSummaryText(staleTargets);
             noteStatus.textContent = result?.state === 'ready'
                 ? (saved?.revision ? `已保存 · 第 ${saved.revision} 版` : '已保存')
-                : result?.state === 'stale' ? `剧情或世界前提已变化，这份札记需要更新。${staleDetail}`
+                : result?.state === 'stale' ? `待更新 · 剧情或世界前提已变化。${staleDetail}`
                     : result?.state === 'empty' ? '暂无札记。'
                         : result?.state === 'unavailable' ? '请先打开聊天并准备剧情和世界资料。'
                             : result?.state === 'changed' ? '资料已变化，请重新打开编剧面板。'

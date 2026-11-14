@@ -1,3 +1,4 @@
+import { protagonistIdentity } from '../story-state/protagonist-identity.js';
 import { createIdentifier } from '../../shared/common/identifier.js';
 import { FIELD_LABELS, KINDS, NATURES } from './domain.js';
 import { PERSON_SECTIONS, POSSESSION_ROLES, RELATION_PREFIX } from './person-fields.js';
@@ -28,7 +29,7 @@ const PLACE_REFERENCE_FIELDS = new Set(['location', 'parent']);
  * Every mutation goes through createWorldService commands so provenance, branch scope
  * and optimistic version checks remain uniform with automatic updates.
  */
-export function createWorldEditorPanel({ service, getIdentity, section = 'situation', getSelectedPerson }) {
+export function createWorldEditorPanel({ service, getIdentity, section = 'situation', getSelectedPerson, getPlayerName = () => '' }) {
     let root;
     let doc;
     let state = null;
@@ -37,6 +38,7 @@ export function createWorldEditorPanel({ service, getIdentity, section = 'situat
     let epoch = 0;
     let message = '';
 
+    const isInventory = section === 'overview';
     const isPeople = section === 'people';
     const el = (tag, text, className) => {
         const node = doc.createElement(tag);
@@ -444,34 +446,42 @@ export function createWorldEditorPanel({ service, getIdentity, section = 'situat
         const actors = state.entities.filter(item => ['person', 'organization'].includes(item.kind));
         const items = state.entities.filter(item => item.kind === 'item');
         if (actors.length < 2 || !items.length) return;
-        const buyerSelect = select(actors.map(item => [item.id, item.name]), actors[0].id);
-        const sellerSelect = select(actors.map(item => [item.id, item.name]), actors[1].id);
+        const { hero } = protagonistIdentity(state.entities, getPlayerName());
+        if (!hero) throw new Error('请先在主角档案核对玩家身份');
+        const peers = actors.filter(actor => actor.id !== hero.id);
+        const direction = select([['buy', '买入'], ['sell', '卖出']], 'buy');
+        const counterparty = select(peers.map(item => [item.id, item.name]), peers[0].id);
         const itemSelect = select(items.map(item => [item.id, item.name]), items[0].id);
         const priceInput = input('number', '1');
         priceInput.min = '1';
         priceInput.step = '1';
         priceInput.required = true;
+        const quantityInput = input('number','1');
+        quantityInput.min = '1'; quantityInput.step = '1'; quantityInput.required = true;
         const reasonInput = input('text', '玩家确认的交易');
         reasonInput.required = true;
-        const hint = el('p', '保存后在单笔事务内同步扣除买方金币、增加卖方金币并转移物品归属。', 'tk-record-note');
+        const hint = el('p', '按本次实际收付的总价，同笔保存主角余额、物品归属和成交回执。', 'tk-record-note');
         openForm(
             drawer,
             '登记交易',
             [
-                fieldLabel('买方', buyerSelect),
-                fieldLabel('卖方', sellerSelect),
+                fieldLabel('主角收支方向', direction),
+                fieldLabel('交易对象', counterparty),
                 fieldLabel('物品', itemSelect),
                 fieldLabel('价格（金币）', priceInput),
+                fieldLabel('成交数量',quantityInput),
                 fieldLabel('交易依据', reasonInput),
                 hint,
             ],
             '手动登记交易',
             () => [{
                 type: 'purchase',
-                buyerId: getSelectValue(buyerSelect),
-                sellerId: getSelectValue(sellerSelect),
+                heroId: hero.id,
+                buyerId: getSelectValue(direction) === 'buy' ? hero.id : getSelectValue(counterparty),
+                sellerId: getSelectValue(direction) === 'sell' ? hero.id : getSelectValue(counterparty),
                 itemId: getSelectValue(itemSelect),
                 price: Number(priceInput.value),
+                quantity: Number(quantityInput.value),
                 source: manualSource(reasonInput.value),
             }],
         );
@@ -495,7 +505,7 @@ export function createWorldEditorPanel({ service, getIdentity, section = 'situat
             message = '';
         }
 
-        const summaryLabel = isPeople ? '编辑人物' : '手动维护世界对象与交易';
+        const summaryLabel = isPeople ? '编辑人物' : isInventory ? '主角物品栏交易' : '手动维护世界对象';
         const drawer = el('details', undefined, 'tk-world-editor-drawer');
         drawer.dataset.summaryLabel = summaryLabel;
         drawer.open = wasOpen;
@@ -507,9 +517,9 @@ export function createWorldEditorPanel({ service, getIdentity, section = 'situat
         const itemCount = entities.filter(item => item.kind === 'item').length;
 
         const actions = el('div', undefined, 'tk-world-editor-actions');
-        actions.append(button(isPeople ? '+ 新增人物' : '+ 新增对象', () => renderCreateForm(drawer)));
+        if (!isInventory) actions.append(button(isPeople ? '+ 新增人物' : '+ 新增对象', () => renderCreateForm(drawer)));
 
-        if (entities.length && (!isPeople || preferredEntity())) {
+        if (!isInventory && entities.length && (!isPeople || preferredEntity())) {
             actions.append(
                 button('编辑名称', () => renderRenameForm(drawer)),
                 button('设置属性', () => renderFieldForm(drawer)),
@@ -518,7 +528,7 @@ export function createWorldEditorPanel({ service, getIdentity, section = 'situat
         if (isPeople && peopleCount >= 2 && preferredEntity()) {
             actions.append(button('绑定关系', () => renderRelationForm(drawer)));
         }
-        if (actorCount >= 2 && itemCount >= 1) {
+        if (isInventory && protagonistIdentity(entities, getPlayerName()).hero && actorCount >= 2 && itemCount >= 1) {
             actions.append(button('登记交易', () => renderPurchaseForm(drawer)));
         }
 

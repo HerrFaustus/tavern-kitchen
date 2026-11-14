@@ -1,3 +1,5 @@
+import { memoryDigest } from '../story-summary/data/memory-policy.js';
+import { isRangeSourceCurrent } from '../story-summary/data/turn-source.js';
 import { panelEnabled } from '../../core/panel-policy.js';
 import { reviewedRounds, roundSourceId, selectViewNodes, summaryLayers } from '../story-summary/data/summary-layers.js';
 
@@ -78,6 +80,28 @@ export function readPlotLines(rows, summary) {
         });
 }
 
+export function readSourcePlotLines(rows, source, known) {
+    if (!Array.isArray(rows) || rows.length > 8) throw new Error('剧情线清单无效');
+    const lines = rows.map(row => {
+        const message = source.messages.find(m => m.floor === row.floor);
+        const parsed = readPlotLines([row], message?.text)[0];
+        if (!parsed) throw new Error('剧情线转折须引用本轮原文');
+        const matches = known.filter(line => row.id ? line.id === row.id : line.title === row.title);
+        if (matches.length > 1) throw new Error('剧情线身份不明确，请核对');
+        const prior = matches[0];
+        const question = String(row.question || prior?.question || row.title).trim().slice(0, 300);
+        const id = prior?.id || 'line:' + memoryDigest([source.digest, question]).slice(0, 24);
+        return { ...parsed, id, question, relatedIds: cleanList(row.relatedIds, 12, 80), evidence: { floor: row.floor, candidate: message.candidate, quote: row.quote } };
+    });
+    const ids = new Set([...known, ...lines].map(line => line.id));
+    if (lines.some(line => line.relatedIds.some(id => !ids.has(id) || id === line.id))) throw new Error('关联剧情线编号无效');
+    return lines;
+}
+
+function partyNames(record) {
+    return [...(record.holders || []), ...(Array.isArray(record.parties) ? record.parties : String(record.parties || '').split(/[、，,]/u).filter(Boolean))];
+}
+
 function collectCoveredLeafIds(selectedNodes, byId) {
     const covered = new Set();
     const visit = node => {
@@ -95,9 +119,10 @@ function collectCoveredLeafIds(selectedNodes, byId) {
 }
 
 function applyTimelineUpdate(entry, item, { floor, firstFloor, storyTime, situationByTitle, compressed = false, beatCount = 1 }) {
+    if (item.id) Object.assign(entry, { id: item.id, title: item.title, question: item.question, relatedIds: item.relatedIds || entry.relatedIds || [] });
     const readingText = compressed ? (item.summary || item.reading) : item.reading;
     entry.beats.push({
-        floor: floor ?? null,
+        floor: item.evidence?.floor ?? floor ?? null, ...(item.evidence && {evidence:item.evidence}), ...(item.evidenceKind && {evidenceKind:item.evidenceKind}),
         storyTime,
         status: item.status,
         reading: readingText,
@@ -129,7 +154,7 @@ export function collectPlotLines(history = [], records = [], options = {}) {
     for (const record of records) {
         if (record.kind === 'person' && record.name) knownNames.add(record.name);
         if (record.kind === 'knowledge' && record.person) knownNames.add(record.person);
-        for (const name of [...(record.holders || []), ...(record.parties || [])]) if (name) knownNames.add(name);
+        for (const name of partyNames(record)) if (name) knownNames.add(name);
         if (record.kind === 'situation' && record.id && record.title) situationByTitle.set(record.title, record.id);
     }
 
@@ -167,7 +192,7 @@ export function collectPlotLines(history = [], records = [], options = {}) {
         entry.recordFloor = record._addedAt;
         entry.recordId = record.id;
         entry.nextFocus = status === 'closed' ? '' : String(record.releaseCondition || record.conditions || record.statusNote || '').trim();
-        for (const name of [...(record.holders || []), ...(record.parties || [])]) if (name) entry.characters.add(name);
+        for (const name of partyNames(record)) if (name) entry.characters.add(name);
         if (record.kind === 'situation' && record.id) entry.situationIds.add(record.id);
         entry.beats.push({ floor: record._addedAt ?? null, storyTime: '', status, reading, quote: record.description, source: 'record' });
     }
@@ -181,11 +206,11 @@ export function collectPlotLines(history = [], records = [], options = {}) {
     }
 
     const rounds = options.rounds || reviewedRounds(history);
-    for (const round of rounds) {
+    for (const round of rounds.flatMap(row => [...(row.plotLineIncrements || []),row])) {
         for (const name of round.memoryTags?.characters || []) if (name) knownNames.add(name);
         const sid = roundSourceId(round);
         if (sid && coveredLeafIds.has(sid)) continue;
-        if (sid && options.chat && !resolvedLayers.byId.has(sid)) continue;
+        if (sid && options.chat && !isRangeSourceCurrent(round.sourceReceipt?.source || round.roundSource, options.chat)) continue;
         timeline.push({ sortFloor: round.endMesId ?? -1, sortStart: round.endMesId ?? -1, kind: 'round', round });
     }
     timeline.sort((a, b) => a.sortFloor - b.sortFloor || a.sortStart - b.sortStart);
@@ -201,7 +226,7 @@ export function collectPlotLines(history = [], records = [], options = {}) {
                 const snapFloor = Number.isInteger(snap.floor) ? snap.floor : node.end;
                 const snapFirst = Number.isInteger(snap.firstFloor) ? snap.firstFloor : (Number.isInteger(snapFloor) ? snapFloor : node.start);
                 const beatCount = Number.isInteger(snap.beatCount) && snap.beatCount > 0 ? snap.beatCount : 1;
-                applyTimelineUpdate(ensure(snap.title), { ...snap, reading }, {
+                applyTimelineUpdate(ensure(snap.id || snap.title), { ...snap, reading }, {
                     floor: snapFloor,
                     firstFloor: snapFirst,
                     storyTime: node.storyTime || '',
@@ -214,8 +239,14 @@ export function collectPlotLines(history = [], records = [], options = {}) {
         }
         const { round } = item;
         const storyTime = String(round.timeEnd || round.timeStart || round.storyTime || '').trim();
-        for (const row of readPlotLines(round.plotLines, round.summary)) {
-            applyTimelineUpdate(ensure(row.title), row, {
+        const source = round.sourceReceipt?.source || round.roundSource;
+        const rows = (round.plotLines || []).flatMap(row => {
+            if (!row.evidence) return readPlotLines([row], round.summary).map(item => ({ ...item, evidenceKind: '摘要依据' }));
+            const proof = source?.messages.find(m => m.floor === row.evidence.floor && m.candidate === row.evidence.candidate && m.text.includes(row.quote));
+            return proof ? [row] : [];
+        });
+        for (const row of rows) {
+            applyTimelineUpdate(ensure(row.id || row.title), row, {
                 floor: round.endMesId,
                 storyTime,
                 situationByTitle,
@@ -232,6 +263,7 @@ export function collectPlotLines(history = [], records = [], options = {}) {
         const textBlob = `${entry.title}\n${summary}\n${entry.reading}`;
         for (const name of knownNames) if (name && textBlob.includes(name)) entry.characters.add(name);
         return {
+            ...(entry.id && { id:entry.id, question:entry.question, relatedIds:entry.relatedIds }),
             title: entry.title,
             status: entry.status,
             reading: entry.reading,

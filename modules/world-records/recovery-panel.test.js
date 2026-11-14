@@ -37,28 +37,27 @@ async function fixture(t) {
     return {root,panel,service,storage,chat,state,original,click,set,wait,setIdentity:value=>{identity=value;service.invalidate();},setSummary:value=>{summary=value;}};
 }
 
-test('restore forks history, preserves the old branch, and can switch back without disclosing event titles',async t=>{
+test('restore retains the withdrawn receipts in the same world without disclosing event titles',async t=>{
     const f=await fixture(t);assert.doesNotMatch(f.root.textContent,/秘密行动|新刻痕/);
     f.set('恢复到的世界版本',String(f.original.version));f.click('恢复到此版本');
-    assert.match(f.root.textContent,/聊天和总结不变/);
+    assert.match(f.root.textContent,/原位恢复/);
     const confirm=f.click('确认恢复');confirm.click();
-    await f.wait(()=>f.root.textContent.includes('已切换到第'));
-    let next=await f.service.read();assert.notEqual(next.branchId,f.state.branchId);assert.equal(next.version,f.original.version);
+    await f.wait(()=>f.root.textContent.includes('已原位恢复到第'));
+    let next=await f.service.read();assert.equal(next.branchId,f.state.branchId);assert.equal(next.version,f.original.version);
     assert.equal(next.entities[0].fields.description,undefined);assert.deepEqual(next.receipts,f.original.receipts);
-    assert.equal((await f.service.branches()).length,2);
-    f.set('保留的世界分支',f.state.branchId);f.click('切换分支');f.click('确认切换');
-    await f.wait(()=>f.root.textContent.includes(`已切换到第 ${f.state.version} 版`));
-    next=await f.service.read();assert.equal(next.branchId,f.state.branchId);assert.equal(next.entities[0].fields.description.value,'新刻痕');
-    assert.equal((await f.service.branches()).length,2);
+    assert.equal((await f.service.branches()).length,1);
+    assert.equal(f.root.querySelector('[aria-label="保留的世界分支"]'),null);
+    assert.ok(next.withdrawn.at(-1).receipts.some(r=>r.eventId === f.state.receipts.at(-1).eventId));
+
 });
 
 test('changed source recommends a version before the first affected receipt and resolves its conflict on synchronization',async t=>{
     const f=await fixture(t);f.chat[1].mes='没有买剑。';await f.panel.refresh();
     assert.match(f.root.textContent,new RegExp(`建议恢复到第 ${f.original.version-1} 版`));
     assert.equal(f.root.querySelector('[aria-label="恢复到的世界版本"]').value,String(f.original.version-1));
-    f.click('恢复到此版本');f.click('确认恢复');await f.wait(()=>f.root.textContent.includes('已切换到第'));
+    f.click('恢复到此版本');f.click('确认恢复');await f.wait(()=>f.root.textContent.includes('已原位恢复到第'));
     const restored=await f.service.syncTurns(f.chat);assert.deepEqual(turnEffectConflicts(restored),[]);
-    assert.equal(restored.entities.length,0);assert.equal((await f.service.branches()).length,2);
+    assert.equal(restored.entities.length,0);assert.equal((await f.service.branches()).length,1);
 });
 
 test('moving an unchanged source to another floor does not suggest a destructive rollback',async t=>{
@@ -74,10 +73,10 @@ test('stale summary or branch scope rejects a previously displayed confirmation 
     await f.wait(()=>!!f.root.querySelector('[role="alert"]'));assert.match(f.root.textContent,/已变化/);
     assert.equal((await f.service.read()).branchId,f.state.branchId);assert.equal((await f.service.branches()).length,1);
     f.click('重新读取');await f.wait(()=>!f.root.querySelector('[role="alert"]'));
-    f.click('恢复到此版本');const fork=await f.service.fork(f.state,f.state.version);
-    await f.service.selectBranch(f.state.branchId,fork);
+    f.click('恢复到此版本');const fork=await f.service.rewind(f.state,f.state.version);
+    await f.service.restore(f.state,fork);
     f.click('确认恢复');await f.wait(()=>!!f.root.querySelector('[role="alert"]'));
-    assert.equal((await f.service.read()).branchId,f.state.branchId);assert.equal((await f.service.branches()).length,2);
+    assert.equal((await f.service.read()).branchId,f.state.branchId);assert.equal((await f.service.branches()).length,1);
 });
 
 test('a source change during the IndexedDB transaction aborts the fork',async t=>{

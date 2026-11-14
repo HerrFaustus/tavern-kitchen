@@ -29,7 +29,7 @@ async function fixture(t, makeProposals = () => [change('hero','coins',10,5)]) {
     const service = createWorldService({storage:store,getIdentity:()=>identity,id:()=>`fixture-${++seq}`,
         isSourceCurrent:turn=>!!turn && isRangeSourceCurrent(turn.source,chat),
         isUpdateSourceCurrent:update=>!!update && isRangeSourceCurrent(update.source,chat),
-        getReviewContext:()=>({available:true,history,storyRecords:[]})});
+        getReviewContext:()=>({heroId:'hero',available:true,history,storyRecords:[]})});
     let state = await service.syncTurns(chat);
     state = (await service.commit(service.command(state,[
         ...[['hero','主角','person'],['smith','铁匠','person'],['sword','铁剑','item']].map(([id,name,kind])=>({type:'create',id,name,kind,source:seed})),
@@ -61,7 +61,7 @@ test('one visible group confirms a related trade atomically with evidence and du
     const next=await f.service.read(), updates=worldUpdates(next)[0];
     assert.equal(calls,1); assert.equal(next.version,f.state.version+1);
     assert.equal(next.entities.find(item=>item.id==='hero').fields.coins.value,5);
-    assert.equal(next.entities.find(item=>item.id==='smith').fields.coins.value,5);
+    assert.equal(next.entities.find(item=>item.id==='smith').fields.coins.value,0);
     assert.equal(next.entities.find(item=>item.id==='sword').fields.owner.value.entityId,'hero');
     assert.equal(updates.reviews.length,3); assert.equal(new Set(updates.reviews.map(row=>row.eventId)).size,1);
     assert.equal(next.receipts.at(-1).origins.length,3);
@@ -135,9 +135,13 @@ test('an entire related group is modified and rejected as one decision',async t=
     const make=()=>[change('hero','coins',10,5),change('smith','coins',0,5),change('sword','owner',{entityId:'smith'},{entityId:'hero'})];
     const f=await fixture(t,make);f.click('修改');
     const controls=f.root.querySelectorAll('[aria-label="新值"]');assert.equal(controls.length,3);
-    controls[0].value='4';controls[1].value='4';f.submit();await f.wait(()=>f.root.textContent.includes('已保存'));
-    let next=await f.service.read();assert.equal(next.entities.find(row=>row.id==='hero').fields.coins.value,4);
-    assert.equal(next.entities.find(row=>row.id==='smith').fields.coins.value,4);
+    controls[0].value='4';controls[1].value='4';f.submit();
+    await f.wait(()=>f.root.textContent.includes('成交价与原文实际收付不符'));
+    assert.equal((await f.service.read()).entities.find(row=>row.id==='hero').fields.coins.value,10);
+    const corrected=f.root.querySelectorAll('[aria-label="新值"]');
+    corrected[0].value='5';corrected[1].value='5';corrected[0].dispatchEvent(new f.window.Event('input',{bubbles:true}));f.submit();await f.wait(()=>f.root.textContent.includes('已保存'));
+    let next=await f.service.read();assert.equal(next.entities.find(row=>row.id==='hero').fields.coins.value,5);
+    assert.equal(next.entities.find(row=>row.id==='smith').fields.coins.value,0);
     assert.equal(worldUpdates(next)[0].reviews.length,3);assert.equal(new Set(worldUpdates(next)[0].reviews.map(row=>row.eventId)).size,1);
     const r=await fixture(t,make);r.click('拒绝');r.inputValue('处理说明（可选）','交易没有完成');r.submit();
     await r.wait(()=>r.root.textContent.includes('已保存'));next=await r.service.read();

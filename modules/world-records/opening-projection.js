@@ -90,7 +90,14 @@ export function openingOperations(state, rows, {fingerprint,player,oldChat,allow
                 if (!features.some(f => f.name === row.name)) features.push({name:row.name,description:row.value.replace(/\s+/gu,' ')});
             }
         } else if (['person','lore','organization','item'].includes(row.kind)) {
+            if (row.kind === 'person' && ['coins','金币','余额','钱包'].includes(row.field) && norm(row.name) !== norm(player)) continue;
+            if (row.kind === 'item' && !row.importance && (!row.owner || norm(row.owner) !== norm(player))) continue;
             const e = entity(row.kind === 'lore' ? 'subject' : row.kind,row.name,row);
+            if (row.kind === 'item' && row.importance) field(e,'剧情意义',row.importance,row);
+            if (row.kind === 'item' && row.owner) {
+                const owners=entities.filter(person=>['person','organization'].includes(person.kind) && [person.name,...person.aliases].includes(row.owner));
+                if(owners.length===1) field(e,'owner',{entityId:owners[0].id},row);
+            }
             field(e,personFields.has(row.field) ? row.field : 'description',row.value,row);
         } else if (row.kind === 'position' && !oldChat && positions.get(norm(row.name)).size === 1) {
             const p = place(row.value,row), e = entity('person',row.name,row);

@@ -58,12 +58,12 @@ try {
     assert.ok(await selector.isHidden());
     await page.getByText('编辑连接',{exact:true}).click();
     await selector.waitFor();
-    await page.locator('.text-api-call-stats output').filter({ hasText: '本次调用 3 次 · 失败 1 · 累计 2.4 秒' }).waitFor();
+    await page.locator('.text-api-call-stats output').filter({ hasText: '实际请求 3 次 · 失败 1 · 累计 2.4 秒' }).waitFor();
     await page.evaluate(() => Object.defineProperty(globalThis.navigator, 'clipboard', { value: { writeText: async text => { globalThis.copiedStats = JSON.parse(text); } } }));
     await page.getByRole('button', { name: '复制统计' }).click();
     await page.waitForFunction(() => globalThis.copiedStats?.features.summary.calls === 3);
     await page.getByRole('button', { name: '清空统计' }).click();
-    await page.locator('.text-api-call-stats output').filter({ hasText: '本次调用 0 次' }).waitFor();
+    await page.locator('.text-api-call-stats output').filter({ hasText: '实际请求 0 次' }).waitFor();
     assert.ok((await selector.boundingBox()).height <= 50);
     assert.equal(await selector.evaluate(el => !!el.closest('.tk-module-settings')), false);
     assert.equal(await settings.evaluate(el => el.tagName), 'DIV');

@@ -12,7 +12,6 @@ export const EDITABLE_FIELDS = Object.freeze({
     events: ['title', 'timeLabel', 'summary', 'participants', 'causedBy', 'memoryRole'],
     facts: ['s', 'p', 'o', 'trend', '_isState'],
     characters: ['name'],
-    arcs: ['name', 'trajectory', 'progress', 'moments'],
     // Historical edits and receipts still require their original field projection.
     keywords: ['text', 'weight'],
     characterAliases: ['from', 'to', 'evidence'],
@@ -108,10 +107,6 @@ export function validateRecord(collection, value, cutoff) {
         requireMemory(Number.isInteger(value.floor) && value.floor >= 0 && value.floor <= cutoff, 'source_boundary');
     } else if (collection === 'characters') {
         requireMemory(text(value.name), 'invalid_record');
-    } else if (collection === 'arcs') {
-        requireMemory(text(value.name) && text(value.trajectory) && Number.isFinite(value.progress)
-            && value.progress >= 0 && value.progress <= 1 && Array.isArray(value.moments)
-            && value.moments.every(moment => typeof moment === 'string' || text(moment?.text)), 'invalid_record');
     } else if (collection === 'characterAliases') {
         requireMemory(text(value.from) && text(value.to) && value.from !== value.to
             && typeof value.evidence === 'string' && value.evidence.length <= 120, 'invalid_record');
@@ -198,13 +193,6 @@ function applyMemoryEdit(memory, command, cutoff) {
         }
         if (collection === 'characterAliases') value = normalizeCharacterAliases([value])[0];
         if (collection === 'anchors' && Object.keys(patch).length) value.quality = calcAtomQuality(value.semantic, value.edges, value.where);
-        if (collection === 'arcs' && Object.hasOwn(patch, 'moments')) {
-            requireMemory(texts(patch.moments), 'invalid_record');
-            value.moments = patch.moments.map(moment => {
-                const existing = (before.moments || []).find(item => (typeof item === 'string' ? item : item.text) === moment);
-                return existing ?? { text: moment, _addedAt: cutoff };
-            });
-        }
         if (kind === 'merge') {
             requireMemory(text(patch.summary), 'invalid_record');
             requireMemory(collection === 'events' && removeIds.length > 0 && !removeIds.includes(key)

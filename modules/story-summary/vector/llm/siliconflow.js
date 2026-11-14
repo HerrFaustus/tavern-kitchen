@@ -1,3 +1,4 @@
+import { featureCalls } from '../../../text-api/call-stats.js';
 import { fetchWithExtras } from '../../../../shared/common/request-extras.js';
 // ═══════════════════════════════════════════════════════════════════════════
 // siliconflow.js - OpenAI-compatible Embedding + 多 Key 轮询
@@ -97,6 +98,7 @@ export async function embed(texts, options = {}) {
         controller.abort();
     }, timeout);
 
+    let finish;
     try {
         signal?.addEventListener('abort', onAbort, { once: true });
         throwIfSignalAborted(signal);
@@ -115,7 +117,10 @@ export async function embed(texts, options = {}) {
                 error,
             );
         }
-        const response = await fetchWithExtras(apiCfg)(endpoint.href, {
+        controller.signal.throwIfAborted();
+        const send = fetchWithExtras(apiCfg);
+        finish = featureCalls.start(options.statFeature || 'embedding');
+        const response = await send(endpoint.href, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${key}`,
@@ -147,8 +152,11 @@ export async function embed(texts, options = {}) {
                 error,
             );
         }
-        return readEmbeddingVectors(data, texts.length);
+        const vectors = readEmbeddingVectors(data, texts.length);
+        finish(data.usage);
+        return vectors;
     } catch (error) {
+        finish?.(undefined,error);
         if (signal?.aborted) throw error;
         if (error?.embeddingFailure) throw error;
         if (error?.name === 'AbortError' && timedOut) {

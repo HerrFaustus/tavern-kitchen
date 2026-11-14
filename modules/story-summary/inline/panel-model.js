@@ -7,16 +7,16 @@ import { inlineAnchorInputs } from './anchors.js';
 export const EMPTY_FLOOR_PAYLOAD = { summary: '', timeStart: '', timeEnd: '', date: '', location: '', updates: {} };
 export const FIELD_LABELS = { summary: '摘要', title: '标题', participants: '涉及人物', causedBy: '前因事件编号', timeLabel: '故事时间', memoryRole: '记忆类型',
     s: '对象', p: '属性', o: '值', isState: '随剧情变化', retracted: '撤回事实', trend: '关系趋势',
-    name: '人物', trajectory: '轨迹', progress: '进度（0–100）', newMoment: '本轮节点',
+    name: '人物',
     text: '关键词', weight: '重要程度', to: '规范称呼', from: '旧称呼', evidence: '依据', ...STORY_FIELDS };
 const fields = { 
-    factUpdates: ['s', 'p', 'o', 'isState', 'retracted', 'trend'], arcUpdates: ['name', 'trajectory', 'progress', 'newMoment'],
+    factUpdates: ['s', 'p', 'o', 'isState', 'retracted', 'trend'],
     newCharacters: ['name'], keywords: ['text', 'weight'], characterAliasUpdates: ['to', 'from', 'evidence'] };
 const storyFields = { clock: ['label', 'date'],
     person: ['name', 'presence', 'note'], knowledge: ['person', 'content', 'certainty', 'evidence', 'learnedAt'],
     plan: ['title', 'description', 'holders', 'conditions', 'status', 'statusNote', 'reason', 'due'], goal: ['title', 'description', 'holders', 'conditions', 'status', 'statusNote', 'reason', 'due'], suspense: ['title', 'description', 'status', 'reason', 'due'],
     situation: ['title', 'description', 'parties', 'scope', 'impact', 'releaseCondition', 'status', 'reason', 'due'] };
-const groups = { factUpdates: '世界', arcUpdates: '人物', newCharacters: '人物', keywords: '关键词', characterAliasUpdates: '人物' };
+const groups = { factUpdates: '世界', newCharacters: '人物', keywords: '关键词', characterAliasUpdates: '人物' };
 
 export function floorEditItems(payload, store) {
     const items = Object.entries(payload.updates || {}).filter(([bucket]) => bucket !== 'events' && bucket !== 'arcUpdates').flatMap(([bucket, rows]) => (rows || []).flatMap((raw, index) => {
@@ -31,11 +31,11 @@ export function floorEditItems(payload, store) {
         }
         const removed = value.remove || value.retracted;
         const known = bucket === 'storyUpdates' && store?.json?.storyRecords?.some(record => record.id === value.id);
-        const operation = removed ? '撤回' : value.status && value.status !== 'open' ? '了结' : known || bucket === 'arcUpdates' ? '更新' : '新增';
+        const operation = removed ? '撤回' : value.status && value.status !== 'open' ? '了结' : known ? '更新' : '新增';
         const title = value.title || value.name || value.person || value.s || value.text || value.to || STORY_KINDS[value.kind] || '变化';
         const sub = bucket === 'storyUpdates' ? storyRecordText(value)
             : bucket === 'factUpdates' ? `${value.p}${value.o ? `：${value.o}` : ''}`
-                : value.summary || value.trajectory || value.evidence || '';
+                : value.summary || value.evidence || '';
         const keys = bucket === 'storyUpdates' ? (removed ? [] : storyFields[value.kind] || []) : fields[bucket] || [];
         return { key: `${bucket}:${index}`, bucket, index, value, group, operation, title, sub,
             fields: keys.filter(key => !removed || !['o', 'isState', 'trend'].includes(key)) };

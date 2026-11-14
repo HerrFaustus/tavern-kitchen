@@ -29,7 +29,7 @@ test('one writer publishes once, full chapter only; change, rollback and chat is
     assert.equal(shown.note.global.text,'后台方向');
     assert.equal(calls,1,'reading the panel must not call the writer');
     chat[0].mes = '原文已改写';
-    assert.equal((await runtime.inspect()).state,'empty','a note from a different source must not be shown');
+    assert.equal((await runtime.inspect()).state,'stale','the earlier note remains readable while excluded from the reply');
     chat[0].mes = '进镇';
     assert.equal((await runtime.inspect()).state,'ready');
     chat.push({mes:'去河边'});
@@ -371,6 +371,20 @@ test('partial incremental rewrite updates only staleTargets while preserving unt
     assert.match(partialText, /城门戒严[\s\S]*夜禁未解/);
     assert.deepEqual(afterPartial.note.chapter.entities.characters.map(c => c.target), ['林疏', '沈砚']);
     assert.equal(afterPartial.note.chapter.dependencies.length, 4);
+
+    const scope={mode:'partial',staleTargets:{characters:['林疏'],plotLines:[],situations:[]}};
+    const author=chapter=>publishNotes(JSON.stringify({chapter}),afterPartial.note,snapshot(),'chapter-change',scope);
+    const [lin,shen]=afterPartial.note.chapter.entities.characters;
+    for(const chapter of [
+        {text:'整章替换',dependencies:[]},
+        {entities:{characters:[]},dependencies:[]},
+        {entities:{characters:[lin,shen]},dependencies:[]},
+        {entities:{characters:[lin]},removed:{characters:['沈砚']},dependencies:[]},
+        {entities:{characters:[lin]},dependencies:[{entityId:'c2',field:'disposition'}]},
+    ]) assert.throws(()=>author(chapter));
+    const removal=author({entities:{characters:[]},removed:{characters:['林疏']},dependencies:[]});
+    assert.deepEqual(removal.chapter.entities.characters,[shen]);
+    assert.deepEqual((await runtime.inspect()).note,afterPartial.note);
 
     // Partial leak guard: private fields rejected cleanly even in partial update.
     store.json.storyRecords[0].presence = 'present';

@@ -61,10 +61,6 @@ function collectTrustedCharacters(store, context, aliasResolver = buildAliasReso
         add(typeof m === 'string' ? m : m.name);
     }
 
-    const arcs = store?.json?.arcs || [];
-    for (const a of arcs) {
-        add(a.name);
-    }
 
     if (context?.name2) {
         add(context.name2);
@@ -89,7 +85,7 @@ function collectTrustedCharacters(store, context, aliasResolver = buildAliasReso
 
 /**
  * Build trusted character pool only (without scanning L0 candidate atoms).
- * trustedCharacters: main/arcs/name2/L2 participants, excludes name1.
+ * trustedCharacters: main/name2/L2 participants, excludes name1.
  *
  * @param {object} store
  * @param {object} context
@@ -113,7 +109,7 @@ function collectCandidateCharactersFromL0(context, atoms) {
 
 /**
  * Build character pools with trust tiers.
- * trustedCharacters: main/arcs/name2/L2 participants (clean source)
+ * trustedCharacters: main/name2/L2 participants (clean source)
  * candidateCharacters: L0 edges.s/t (blacklist-cleaned)
  */
 function buildCharacterPools(store, context, atoms, aliasResolver) {
@@ -151,10 +147,6 @@ function buildDisplayNameMap(store, context, atoms, aliasResolver) {
         register(raw, aliasResolver.resolveName(raw));
     }
 
-    const arcs = store?.json?.arcs || [];
-    for (const a of arcs) {
-        register(a.name, aliasResolver.resolveName(a.name));
-    }
 
     if (context?.name2) register(context.name2, aliasResolver.resolveName(context.name2));
 
@@ -201,7 +193,6 @@ function* vocabularyInputs(store, context, atoms) {
     yield context?.name2;
     for (const item of store?.json?.characters?.main || []) yield typeof item === 'string' ? item : item.name;
     yield SOURCE_BOUNDARY;
-    for (const arc of store?.json?.arcs || []) yield arc.name;
     yield SOURCE_BOUNDARY;
     for (const event of store?.json?.events || []) yield* event?.participants || [];
     yield SOURCE_BOUNDARY;

@@ -74,6 +74,12 @@ export function assertSettings(value) {
     return structuredClone(value);
 }
 
+export function resolveBoundPreset(settings, feature) {
+    const agent = Object.keys(AGENT_BINDINGS).find(key => AGENT_BINDINGS[key].features.includes(feature));
+    if (agent && !readAgentBinding(settings, agent).id) throw new Error('请先在API界面中配置' + AGENT_BINDINGS[agent].name + 'agent');
+    return resolveFeaturePreset(settings, feature);
+}
+
 export function resolveFeaturePreset(settings, feature) {
     const id = featureBinding(settings, feature);
     if (id === HOST_BINDING) return createPreset(HOST_BINDING, COPY.host);

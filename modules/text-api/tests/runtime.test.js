@@ -161,7 +161,7 @@ test('bare, explicit and custom prefixes are resolved once; explicit zero temper
 test('tests generate exactly once, authentication errors do not retry or switch identity', async t => {
     const wire = await service(t, 'openai-compatible');
     const preset = createPreset('p', 'P', { provider: 'openai-compatible', baseUrl: wire.url, model: 'fixture', stream: false });
-    assert.deepEqual(await testTextConnection(preset), { ok: true });
+    assert.deepEqual(await testTextConnection(preset), { ok:true, usage:{prompt_tokens:1,completion_tokens:1} });
     assert.equal(wire.requests.length, 1); assert.ok(wire.requests[0].body.messages);
     const denied = await service(t, 'openai-compatible', { status: 401 });
     await assert.rejects(testTextConnection({ ...preset, baseUrl: denied.url }));
@@ -274,4 +274,24 @@ test('Tavern proxy forwards configured extras to the upstream custom endpoint on
     assert.deepEqual(JSON.parse(body.custom_include_body),{seed:12});
     assert.deepEqual(JSON.parse(body.custom_exclude_body),['top_p']);
     assert.equal(headers['x-example'],undefined);
+});
+
+test('saved advanced parameters cannot replace or remove the packaged prompt, messages, tools or output contract',async t=>{
+    const wire=await service(t,'openai-compatible');
+    const requestExtras={includeBody:JSON.stringify({messages:[{role:'system',content:'legacy-template'}],instructions:'replace',tools:[],response_format:{},seed:7}),
+        excludeBody:'[messages, system, instructions, tools, tool_choice, response_format, top_p]',includeHeaders:'X-System-Prompt: replace\nX-Client-Name: test'};
+    const preset=createPreset('guard','本地',{provider:'openai-compatible',model:'fixture',baseUrl:wire.url,stream:false,requestExtras});
+    await generateText(preset,{messages});
+    assert.equal(wire.requests[0].body.messages[0].content,'fixture');
+    assert.equal(wire.requests[0].body.seed,7);
+    assert.equal(wire.requests[0].headers['x-system-prompt'],undefined);
+    assert.equal(wire.requests[0].headers['x-client-name'],'test');
+    assert.doesNotMatch(JSON.stringify(wire.requests[0].body),/legacy-template|replace/);
+    const proxy={...preset,provider:'sillytavern-openai-compatible',apiKey:'fixture'};
+    const hostClient=createHostChatCompletionsClient({requestHeadersProvider:()=>({}),fetch:(url,options)=>fetch(wire.url+url,options)});
+    await generateText(proxy,{messages},{createAdapter:config=>createAgentAdapter(config,{hostClient})});
+    const forwarded=wire.requests[1].body;
+    assert.deepEqual(JSON.parse(forwarded.custom_include_body),{seed:7});
+    assert.deepEqual(JSON.parse(forwarded.custom_exclude_body),['top_p']);
+    assert.doesNotMatch(forwarded.custom_include_headers,/system-prompt/);
 });

@@ -1,3 +1,4 @@
+import {historicalWorld} from './historical.js';
 import { createNoteStore } from '../story-planner/storage.js';
 import { createWorldCardData } from '../kitchen-data/world.js';
 import { createProposalPanel } from './proposal-panel.js';
@@ -20,13 +21,13 @@ import { createAuthorityRuntime } from './authority-runtime.js';
 import { captureStoryIdentity } from '../xiaobai-os/host/story-identity.js';
 import { registerWorldBridge, publishWorldBridgeState } from './bridge.js';
 import { registerTurnRuntime } from './turn-runtime.js';
-import { turnById } from './turn-ledger.js';
+import { prepareTurnOperations, turnById } from './turn-ledger.js';
 import { getSummarySourceEnd } from '../story-summary/generate/source-boundary.js';
 import { captureRangeSource, isRangeSourceCurrent } from '../story-summary/data/turn-source.js';
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
 import { buildUpdateContext, UPDATE_PREFIX } from './update-context.js';
 
-export function createWorldArchive({ getContext, createOpening, getAccountId = () => 'default-user', getMemorySnapshot, getAmbientPreferences, getMount, isVisible, onError, onAuthorityChange = () => {} }) {
+export function createWorldArchive({ getContext, createOpening, getAccountId = () => 'default-user', getMemorySnapshot, getAmbientPreferences, active = () => true, ordered = false, recoverMemory, getMount, isVisible, onError, onAuthorityChange = () => {} }) {
     const sourceIdentity = () => storyIdentityKey(captureStoryIdentity(getContext()));
     const identity = (branch = getMemorySnapshot()?.store?.dataBranch) => { const story = sourceIdentity(); return story ? JSON.stringify([getAccountId(), story, ...(branch ? [branch] : [])]) : ''; };
     const storage = createWorldStorage();
@@ -38,7 +39,7 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
             && getSummarySourceEnd(getContext().chat, update.source.end) >= update.source.end,
         getReviewContext: () => {
             const snapshot = getMemorySnapshot();
-            return { available: !!snapshot?.enabled && snapshot.invalidFrom === undefined && !snapshot.store?.summaryInvalid,
+            return { heroId: protagonistIdentity(latestState?.entities || [],getContext().name1).hero?.id, available: !!snapshot?.enabled && snapshot.invalidFrom === undefined && !snapshot.store?.summaryInvalid,
                 history: snapshot?.store?.summaryHistory || [], storyRecords: snapshot?.store?.json?.storyRecords || [] };
         }, onChanged: (state, owner) => {
         if (owner === identity()) {
@@ -60,16 +61,28 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
             end:getSummarySourceEnd(chat,chat.length-1),enabled:!!memory?.enabled,invalidFrom:memory?.invalidFrom ?? null,
             history:memory?.store?.summaryHistory || [],data:memory?.store?.json || null});
     };
-    recoveryPanel = createWorldRecoveryPanel({service,getIdentity:identity,getStamp:recoveryStamp,readState:async()=>{
+    recoveryPanel = createWorldRecoveryPanel({service,getIdentity:identity,getStamp:recoveryStamp,
+        previewMemory:()=>recoverMemory?.()?.summaryRecoveryPreview(),
+        restoreMemory:async plan=>{const owner=identity(); await recoverMemory().recoverSummaryTail(getContext().chatId,plan.token,()=>{if(owner!==identity()) throw new Error('聊天已切换');});
+            globalThis.window?.dispatchEvent?.(new Event('tavernKitchen:floor-settings'));},readState:async()=>{
         const owner=identity(),token=epoch,scope=service.scopeVersion(),stamp=recoveryStamp(),input=observation();
         const current=()=>!disposed && token===epoch && owner===identity() && scope===service.scopeVersion() && stamp===recoveryStamp();
         const existing=await service.read();
-        if (!current()) throw new Error('聊天、总结或世界分支已变化，请重试');
+        if (!current()) throw new Error('聊天、总结或世界版本已变化，请重试');
         if (!existing) return null;
         if (!input.snapshot?.enabled || !input.snapshot.store) throw new Error('剧情资料尚未就绪，请稍后重新读取');
+        if (ordered) {
+            // Reconciliation for a preview must not append receipts to an imported archive.
+            let sequence = 0;
+            const operations = prepareTurnOperations(existing,input.chat,{end:input.end,history:input.snapshot.store.summaryHistory || [],
+                id:() => 'preview:' + ++sequence});
+            const sources = {...existing.sources};
+            for (const op of operations) sources[op.module] = op.snapshot;
+            return {...existing,sources};
+        }
         const state=await service.syncTurns(input.chat,{end:input.end,history:input.snapshot?.store?.summaryHistory || [],
             memoryAvailable:!!input.snapshot?.enabled,guard:current});
-        if (!current()) throw new Error('聊天、总结或世界分支已变化，请重试');
+        if (!current()) throw new Error('聊天、总结或世界版本已变化，请重试');
         return state;
     }});
     const initialize = createOpening?.({getContext,identity,service});
@@ -89,14 +102,15 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
     });
     const involvementFor = (world, options) => readInvolvement(world, getMemorySnapshot(), getContext().name1, options);
     const disconnectFocus = registerInvolvement(key => key && captureStoryIdentity(getContext())?.key === key ? involvementFor(authority.read()?.state, {includeAgendas:true}) : []);
-    const protagonist = createProtagonistView({ getInvolvement: involvementFor, getSnapshot: getMemorySnapshot, getPlayerName: () => getContext().name1 });
+    const inventory = createWorldEditorPanel({ service, getIdentity:identity, section:'overview', getPlayerName:() => getContext().name1 });
+    const protagonist = createProtagonistView({ inventory, getInvolvement: involvementFor, getSnapshot: getMemorySnapshot, getPlayerName: () => getContext().name1 });
     const bookOptions = {getSnapshot:getMemorySnapshot, openSource(floor) {
         const context = getContext(), message = context.chat?.[floor], snapshot = getMemorySnapshot();
         const available = message && snapshot?.enabled && snapshot.invalidFrom == null && !snapshot.store?.summaryInvalid && snapshot.store?.sourceInvalidFromFloor == null;
         const content = document.createElement('div'), title = document.createElement('h3'), text = document.createElement('p');
         title.textContent = '第 ' + (floor + 1) + ' 楼' + (available && message.name ? ' · ' + message.name : '');
         text.style.whiteSpace = 'pre-wrap';
-        text.textContent = available ? String(message.mes || '') : '当前分支无法核对这条原文。';
+        text.textContent = available ? String(message.mes || '') : '当前聊天无法核对这条原文。';
         content.append(title, text);
         return new context.Popup(content, context.POPUP_TYPE.TEXT).show().catch(onError);
     }};
@@ -117,8 +131,7 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
         const owner = identity(), token = epoch;
         if (!owner) { panel.show(null); return; }
         Promise.resolve()
-            .then(() => service.ensure(getContext().chatId || '当前故事'))
-            .then(() => sync())
+            .then(() => active() ? sync() : service.read())
             .then(state => {
                 if (!disposed && owner === identity() && token === epoch && isVisible(section) && !panel.isEditing()) {
                     panel.show(state);
@@ -163,6 +176,7 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
         end: value.end, enabled: !!value.snapshot?.enabled, invalidFrom: value.snapshot?.invalidFrom ?? null, history: value.snapshot?.store?.summaryHistory || [] });
     async function sync() {
         const key = identity(), token = epoch; if (!key || disposed) return null;
+        if (ordered) return service.read();
         for (let attempt = 0; attempt < 3; attempt++) {
             const input = observation(), digest = observationDigest(input);
             try {
@@ -186,7 +200,7 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
     }
     async function prepareRecovery(scope) {
         const owner = identity(), token = epoch, generation = service.scopeVersion();
-        const changed = () => new Error('聊天或世界分支已变化，请重新核对恢复范围。');
+        const changed = () => new Error('聊天或世界版本已变化，请重新核对恢复范围。');
         if (!owner || disposed || scope !== recoveryScope()) throw changed();
         const state = await service.read();
         if (scope !== recoveryScope()) throw changed();
@@ -229,7 +243,7 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
             if (disposed || owner !== identity() || token !== epoch || scope !== service.scopeVersion()
                 || latestState?.worldId !== state.worldId || latestState?.branchId !== state.branchId
                 || !isRangeSourceCurrent(receipt.source, getContext().chat || [])
-                || getSummarySourceEnd(getContext().chat, end) < end) throw new Error('聊天、世界分支或正文来源已变化，本次记忆未写入');
+                || getSummarySourceEnd(getContext().chat, end) < end) throw new Error('聊天、世界版本或正文来源已变化，本次记忆未写入');
             if (unified && (latestState?.version !== state.version || memoryVersion(getMemorySnapshot()?.store) !== memoryBasis)) {
                 throw new Error('完整世界或记忆基线已更新，本次整理结果未保存，请重新整理');
             }
@@ -237,7 +251,7 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
         assertCurrent();
         return { receipt, updateContext, getAmbientPreferences, assertCurrent, async validate() { await service.read(); assertCurrent(); },
             async deliver() {
-                if (disposed || owner !== identity() || token !== epoch || scope !== service.scopeVersion()) throw new Error('世界分支已切换，提案仍保留在原摘要批次中');
+                if (disposed || owner !== identity() || token !== epoch || scope !== service.scopeVersion()) throw new Error('当前世界已变化，提案仍保留在原摘要批次中');
                 const delivered = await sync();
                 return delivered?.sources[`${UPDATE_PREFIX}${receipt.id}`] || null;
             } };
@@ -247,7 +261,7 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
         return { available: !!snapshot?.enabled, identity: sourceIdentity(), label: '剧情记忆', records: snapshot?.invalidFrom === undefined ? memoryRecords(snapshot?.store) : [] };
     });
     const unsubscribe = subscribeWorldSources(() => {
-        if (scheduled || disposed) return;
+        if (scheduled || disposed || !active() || ordered) return;
         scheduled = true;
         queueMicrotask(() => {
             scheduled = false;
@@ -256,14 +270,22 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
     });
     const noteStore = createNoteStore();
     return {
+        service,
         cardData: createWorldCardData({ identity, storage, service, noteStore }),
         showProposals,
         showEditor,
         showRecovery,
         initialize,
-        plannerSnapshot() {
-            const ctx = getContext();
-            const snap = plannerSnapshot(authority.read()?.state, getMemorySnapshot(), ctx.chat || [], identity());
+        plannerSnapshot(end) {
+            const ctx = getContext(), chat = ctx.chat || [], memory = getMemorySnapshot();
+            let world = authority.read()?.state, view = memory, evidence = chat;
+            if (world && Number.isInteger(end)) {
+                world = historicalWorld(world,end); evidence = chat.slice(0,end+1);
+                const store = memory?.store || {};
+                view = {...memory,store:{...store,summaryHistory:(store.summaryHistory || []).filter(row=>row.endMesId<=end),
+                    json:{...store.json,storyRecords:(store.json?.storyRecords || []).filter(row=>Number.isInteger(row._addedAt) && row._addedAt<=end)}}};
+            }
+            const snap = plannerSnapshot(world, view, evidence, identity());
             if (snap) {
                 const card = ctx.characters?.[ctx.characterId];
                 snap.cast = { player: ctx.name1, character: ctx.name2, description: card?.description,
@@ -271,22 +293,22 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
             }
             return snap;
         },
-        async loadPlannerSnapshot() {
+        async loadPlannerSnapshot(create = false) {
             if (!identity() || disposed || authority.read()) return;
-            await service.read();
+            if (create) await service.ensure(); else await service.read();
         },
-        async prepare(query) {
-            const factText = await authority.prepare(query, getContext().name1, state => involvementFor(state));
+        async prepare(query, tasks) {
+            const factText = await authority.prepare(query, getContext().name1, state => involvementFor(state), {tasks});
             const state = authority.read()?.state, memory = getMemorySnapshot();
-            const local = state && memory?.enabled && memory.invalidFrom == null
+            const local = (!tasks || tasks.some(key=>['peopleEvolution','subscribed','sceneryEvolution','encounter'].includes(key))) && state && memory?.enabled && memory.invalidFrom == null
                 ? ambientPrompt(memory.store, state, worldStoryRecords(state, availableStoryRecords(memory.store)), getAmbientPreferences?.() || {})
                 : '';
             const raw = [factText, local].filter(Boolean).join('\n');
             if (!raw) return '';
             return `[以下为只读当前状态简报，仅帮你对齐事实与角色知情范围，严禁在正文中复述或仿写状态格式]\n${raw}\n[简报结束：请作为已了解上述前情的叙述者自然续写]`;
         },
-        async prepareInjection(query, type) {
-            const value = await this.prepare(query);
+        async prepareInjection(query, type, tasks) {
+            const value = await this.prepare(query,tasks);
             if (!value) return '';
             return { value, depth: resolveStateInjectionDepth(getContext().chat, getMemorySnapshot(), type) };
         },
@@ -294,10 +316,9 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
             const view = views[route]; if (!view) return;
             view.mount(getMount(route));
             if (!identity()) { view.empty(); return; }
-            await service.ensure(getContext().chatId || '当前故事');
-            const state = await sync(); if (isVisible(route) && !disposed) view.show(state || await service.read());
+            const state = active() ? await sync() : await service.read(); if (isVisible(route) && !disposed) { if (state) view.show(state); else view.empty(); }
         },
-        reset() { epoch++; latestState = null; proposalPanel.reset(); peopleEditor.reset(); situationEditor.reset(); recoveryPanel.reset(); service.invalidate(); authority.reset(); for (const view of Object.values(views)) view.reset(); },
-        dispose() { disposed = true; for (const binding of frameBindings.values()) binding.frame.removeEventListener('load', binding.onLoad); frameBindings.clear(); proposalPanel.reset(); peopleEditor.reset(); situationEditor.reset(); recoveryPanel.reset(); service.invalidate(); authority.reset(); disconnectFocus(); unregisterConditions(); unregisterCatalog(); unregisterTurns(); unregisterBridge(); unregisterAuthority(); unsubscribe(); unregisterMemory(); for (const view of Object.values(views)) view.reset(); storage.close().catch(error => onError(error)); },
+        reset() { epoch++; latestState = null; proposalPanel.reset(); peopleEditor.reset(); inventory.reset(); situationEditor.reset(); recoveryPanel.reset(); service.invalidate(); authority.reset(); for (const view of Object.values(views)) view.reset(); },
+        dispose() { disposed = true; for (const binding of frameBindings.values()) binding.frame.removeEventListener('load', binding.onLoad); frameBindings.clear(); proposalPanel.reset(); peopleEditor.reset(); inventory.reset(); situationEditor.reset(); recoveryPanel.reset(); service.invalidate(); authority.reset(); disconnectFocus(); unregisterConditions(); unregisterCatalog(); unregisterTurns(); unregisterBridge(); unregisterAuthority(); unsubscribe(); unregisterMemory(); for (const view of Object.values(views)) view.reset(); storage.close().catch(error => onError(error)); },
     };
 }

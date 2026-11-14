@@ -1,4 +1,4 @@
-import { TEXT_API_SETTINGS_KEY as KEY, assertSettings, applyPresetAction } from './model.js';
+import { TEXT_API_SETTINGS_KEY as KEY, createPreset, assertSettings, applyPresetAction } from './model.js';
 import { migrateLegacySettings, withoutLegacySummaryApi, withoutLegacyPlannerApi } from './migration.js';
 import { upgradeProfiles, assertProfileBinding } from './profiles.js';
 import { TEXT_API_COPY as COPY } from './copy.js';
@@ -50,9 +50,10 @@ export function createTextApiRepository({ common, planner, local, agent }) {
             const [summaryServer, planning] = await Promise.all([
                 common.getStrict(SUMMARY_KEY, null), planner.getStrict('config', null),
             ]);
-            const next = migrateLegacySettings({
-                summary: summaryServer ?? readLocal(LOCAL_SUMMARY) ?? {}, planner: planning ?? {},
-            });
+            const summary = summaryServer ?? readLocal(LOCAL_SUMMARY);
+            const legacyAgent = await agent?.getStrict('settings', null);
+            const next = summary || planning || legacyAgent ? migrateLegacySettings({summary:summary || {}, planner:planning || {}})
+                : {version:1, profilesVersion:1, presets:[createPreset('local', '自定义连接', {provider:'openai-compatible'})], bindings:{} };
             await common.updateAndSave(draft => { if (!draft[KEY]) draft[KEY] = next; }, { silent: false });
             const saved = await verify();
             if (JSON.stringify(saved) !== JSON.stringify(next)) throw new Error(COPY.saveFailed);

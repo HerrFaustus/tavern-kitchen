@@ -43,7 +43,7 @@ try {
     await state.filter({hasText:'暂无札记'}).waitFor();
     const functionSettings=page.locator('#tk-module-native-controls [data-settings-group="function"]');
     await page.getByRole('button',{name:'编剧设置'}).click();
-    const auto = functionSettings.getByRole('checkbox',{name:'生成前自动更新章节札记'});
+    const auto = functionSettings.getByRole('checkbox',{name:'章节（L2）保存后自动更新札记'});
     assert.equal(await auto.isChecked(),false);
     assert.equal(await page.evaluate(()=>globalThis.__plannerFixture.generate()),undefined);
     assert.equal(await page.evaluate(()=>globalThis.__plannerFixture.calls),0);
@@ -57,23 +57,23 @@ try {
     await global.locator('summary').click();
     assert.equal(await global.locator('.tk-planner-note-text').innerText(),'幕后线索尚未揭晓。');
     await page.evaluate(()=>globalThis.__plannerFixture.editSource());
-    await state.filter({hasText:'暂无札记'}).waitFor();
-    assert.ok(await chapter.isHidden());
+    await state.filter({hasText:'待更新'}).waitFor();
+    assert.equal(await page.evaluate(()=>globalThis.__plannerFixture.generate()),undefined);
     await page.evaluate(()=>globalThis.__plannerFixture.restoreSource());
-    await chapter.filter({hasText:'旅人站在码头'}).waitFor();
-    assert.equal(await global.evaluate(el=>el.open),false);
-    await page.evaluate(()=>globalThis.__plannerFixture.fork());
+    await state.filter({hasText:'已保存'}).waitFor();
+    assert.equal(await global.evaluate(el=>el.open),true);
+    await page.evaluate(()=>globalThis.__plannerFixture.switchChat());
     await state.filter({hasText:'暂无札记'}).waitFor();
     assert.ok(await chapter.isHidden());
     await auto.check();
-    await page.evaluate(async()=>{globalThis.__plannerFixture.failNext();await globalThis.__plannerFixture.generate();});
-    await functionSettings.getByRole('button',{name:'下次正文重试'}).waitFor();
-    await functionSettings.getByRole('button',{name:'下次正文重试'}).click();
-    assert.ok(await functionSettings.getByRole('button',{name:'下次正文重试'}).isHidden());
+    await page.evaluate(async()=>{globalThis.__plannerFixture.failNext();try{await globalThis.__plannerFixture.savedChapter();}catch(error){if(!error.message.includes('尚未保存'))throw error;}});
+    await functionSettings.getByRole('button',{name:'重试更新札记'}).waitFor();
+    await functionSettings.getByRole('button',{name:'重试更新札记'}).click();
+    await functionSettings.getByRole('button',{name:'重试更新札记'}).waitFor({state:'hidden'});
     await page.evaluate(()=>globalThis.__plannerFixture.restore());
     await chapter.filter({hasText:'旅人站在码头'}).waitFor();
     assert.equal(await global.evaluate(el=>el.open),false);
-    assert.equal(await page.evaluate(()=>globalThis.__plannerFixture.calls),2);
+    assert.equal(await page.evaluate(()=>globalThis.__plannerFixture.calls),3);
     await page.reload();
     await mount();
     await chapter.filter({hasText:'旅人站在码头'}).waitFor();
@@ -91,5 +91,5 @@ try {
     }
     assert.deepEqual(await page.evaluate(()=>globalThis.__plannerFixture.errors),[]);
     assert.deepEqual(errors,[]);
-    console.log('Verified saved chapter, spoiler-gated global note, live branch changes and reload using browser IndexedDB.');
+    console.log('Verified saved chapter, spoiler-gated global note, chat switches and source revisions and reload using browser IndexedDB.');
 } finally { await browser.close(); }

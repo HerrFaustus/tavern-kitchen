@@ -268,7 +268,7 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
 
     onProgress?.({ stage: 'merge' });
     const previous = readSummaryMemory();
-    // Append to the latest published memory. Incoming facts/arcs take precedence;
+    // Append to the latest published memory. Incoming facts take precedence;
     // untouched maintenance edits and their receipts remain in the same snapshot.
     const mergeResult = mergeNewData(previous.storySummary.json || {}, parsed, slice.endMesId, { returnMeta: true, sourceStart: lastSummarized + 1 });
     const merged = mergeResult.json;

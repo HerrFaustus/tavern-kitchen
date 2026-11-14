@@ -1,5 +1,6 @@
 // 删掉：getRequestHeaders, extractMessageFromData, getStreamingReply, tryParseStreamingError, getEventSourceStream
 
+import { parseRequestExtras } from '../shared/common/request-extras.js';
 import { eventSource, event_types, chat, name1, activateSendButtons, deactivateSendButtons, substituteParams } from "../../../../../script.js";
 import { chat_completion_sources, oai_settings, promptManager, getChatCompletionModel } from "../../../../openai.js";
 import { ChatCompletionService } from "../../../../custom-request.js";
@@ -271,15 +272,16 @@ class StreamingGeneration {
                 } else {
                     throw new Error('未配置自定义后端URL，请在命令中提供 apiurl 或在设置中填写 custom_url');
                 }
-                const customIncludeHeaders = String(oai_settings?.custom_include_headers || '').trim();
-                if (cmdApiPwd) {
-                    const authHeader = `Authorization: ${JSON.stringify(`Bearer ${cmdApiPwd}`)}`;
-                    body.custom_include_headers = customIncludeHeaders ? `${customIncludeHeaders}\n${authHeader}` : authHeader;
-                } else if (customIncludeHeaders) {
-                    body.custom_include_headers = customIncludeHeaders;
-                }
-                if (oai_settings?.custom_include_body) body.custom_include_body = oai_settings.custom_include_body;
-                if (oai_settings?.custom_exclude_body) body.custom_exclude_body = oai_settings.custom_exclude_body;
+                const extras = parseRequestExtras({requestExtras:{
+                    includeHeaders:oai_settings?.custom_include_headers,
+                    includeBody:oai_settings?.custom_include_body,
+                    excludeBody:oai_settings?.custom_exclude_body,
+                }});
+                const headers = {...extras.includeHeaders};
+                if (cmdApiPwd) headers.authorization = 'Bearer ' + cmdApiPwd;
+                if (Object.keys(headers).length) body.custom_include_headers = JSON.stringify(headers);
+                if (extras.includeBody) body.custom_include_body = JSON.stringify(extras.includeBody);
+                if (extras.excludeBody) body.custom_exclude_body = JSON.stringify(extras.excludeBody);
             }
             
             

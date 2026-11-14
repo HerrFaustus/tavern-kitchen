@@ -1,0 +1,1653 @@
+{
+  "commit": "5061466",
+  "chat": [
+    {
+      "name": "旅人",
+      "mes": "进镇。",
+      "is_user": true,
+      "send_date": "u1"
+    },
+    {
+      "name": "店主",
+      "mes": "东桥有守卫。",
+      "send_date": "a1"
+    }
+  ],
+  "identity": "[\"fixture-user\",\"[\\\"character\\\",\\\"merchant.png\\\",\\\"清河县\\\"]\"]",
+  "selected": "old-4",
+  "branches": [
+    {
+      "schema": 3,
+      "worldId": "old-1",
+      "branchId": "old-2",
+      "title": "清河县旧档",
+      "version": 1,
+      "entities": [
+        {
+          "id": "hero",
+          "name": "旅人",
+          "kind": "person",
+          "aliases": [],
+          "bindings": [],
+          "fields": {
+            "coins": {
+              "value": 10,
+              "nature": "established_fact",
+              "source": {
+                "module": "manual",
+                "key": "清河旧事",
+                "label": "开局清册"
+              },
+              "eventId": "event:old-3",
+              "version": 1
+            }
+          },
+          "revision": 1,
+          "source": {
+            "module": "manual",
+            "key": "清河旧事",
+            "label": "开局清册"
+          }
+        },
+        {
+          "id": "shop",
+          "name": "店主",
+          "kind": "person",
+          "aliases": [],
+          "bindings": [],
+          "fields": {
+            "coins": {
+              "value": 37,
+              "nature": "established_fact",
+              "source": {
+                "module": "manual",
+                "key": "清河旧事",
+                "label": "开局清册"
+              },
+              "eventId": "event:old-3",
+              "version": 1
+            }
+          },
+          "revision": 1,
+          "source": {
+            "module": "manual",
+            "key": "清河旧事",
+            "label": "开局清册"
+          }
+        },
+        {
+          "id": "bell",
+          "name": "铜铃",
+          "kind": "item",
+          "aliases": [],
+          "bindings": [],
+          "fields": {
+            "owner": {
+              "value": {
+                "entityId": "shop"
+              },
+              "nature": "established_fact",
+              "source": {
+                "module": "manual",
+                "key": "清河旧事",
+                "label": "开局清册"
+              },
+              "eventId": "event:old-3",
+              "version": 1
+            }
+          },
+          "revision": 1,
+          "source": {
+            "module": "manual",
+            "key": "清河旧事",
+            "label": "开局清册"
+          }
+        },
+        {
+          "id": "bridge",
+          "name": "东桥",
+          "kind": "place",
+          "aliases": [],
+          "bindings": [
+            "[\"map\",\"place:bridge\"]"
+          ],
+          "fields": {
+            "通行状态": {
+              "value": "可通行",
+              "nature": "established_fact",
+              "source": {
+                "module": "manual",
+                "key": "清河旧事",
+                "label": "开局清册"
+              },
+              "eventId": "event:old-3",
+              "version": 1
+            }
+          },
+          "revision": 1,
+          "source": {
+            "module": "manual",
+            "key": "清河旧事",
+            "label": "开局清册"
+          }
+        }
+      ],
+      "claims": [],
+      "sources": {},
+      "modules": {},
+      "events": [
+        {
+          "id": "event:old-3",
+          "commandId": "old-3",
+          "title": "旧世界开局",
+          "at": "2026-11-01T00:00:00.000Z",
+          "version": 1,
+          "effects": [
+            {
+              "type": "entity",
+              "id": "hero",
+              "before": null,
+              "after": {
+                "id": "hero",
+                "name": "旅人",
+                "kind": "person",
+                "aliases": [],
+                "bindings": [],
+                "fields": {},
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              }
+            },
+            {
+              "type": "entity",
+              "id": "shop",
+              "before": null,
+              "after": {
+                "id": "shop",
+                "name": "店主",
+                "kind": "person",
+                "aliases": [],
+                "bindings": [],
+                "fields": {},
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              }
+            },
+            {
+              "type": "entity",
+              "id": "bell",
+              "before": null,
+              "after": {
+                "id": "bell",
+                "name": "铜铃",
+                "kind": "item",
+                "aliases": [],
+                "bindings": [],
+                "fields": {},
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              }
+            },
+            {
+              "type": "entity",
+              "id": "bridge",
+              "before": null,
+              "after": {
+                "id": "bridge",
+                "name": "东桥",
+                "kind": "place",
+                "aliases": [],
+                "bindings": [],
+                "fields": {},
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              }
+            },
+            {
+              "type": "entity",
+              "id": "hero",
+              "before": {
+                "id": "hero",
+                "name": "旅人",
+                "kind": "person",
+                "aliases": [],
+                "bindings": [],
+                "fields": {},
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              },
+              "after": {
+                "id": "hero",
+                "name": "旅人",
+                "kind": "person",
+                "aliases": [],
+                "bindings": [],
+                "fields": {
+                  "coins": {
+                    "value": 10,
+                    "nature": "established_fact",
+                    "source": {
+                      "module": "manual",
+                      "key": "清河旧事",
+                      "label": "开局清册"
+                    },
+                    "eventId": "event:old-3",
+                    "version": 1
+                  }
+                },
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              }
+            },
+            {
+              "type": "entity",
+              "id": "shop",
+              "before": {
+                "id": "shop",
+                "name": "店主",
+                "kind": "person",
+                "aliases": [],
+                "bindings": [],
+                "fields": {},
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              },
+              "after": {
+                "id": "shop",
+                "name": "店主",
+                "kind": "person",
+                "aliases": [],
+                "bindings": [],
+                "fields": {
+                  "coins": {
+                    "value": 37,
+                    "nature": "established_fact",
+                    "source": {
+                      "module": "manual",
+                      "key": "清河旧事",
+                      "label": "开局清册"
+                    },
+                    "eventId": "event:old-3",
+                    "version": 1
+                  }
+                },
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              }
+            },
+            {
+              "type": "entity",
+              "id": "bell",
+              "before": {
+                "id": "bell",
+                "name": "铜铃",
+                "kind": "item",
+                "aliases": [],
+                "bindings": [],
+                "fields": {},
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              },
+              "after": {
+                "id": "bell",
+                "name": "铜铃",
+                "kind": "item",
+                "aliases": [],
+                "bindings": [],
+                "fields": {
+                  "owner": {
+                    "value": {
+                      "entityId": "shop"
+                    },
+                    "nature": "established_fact",
+                    "source": {
+                      "module": "manual",
+                      "key": "清河旧事",
+                      "label": "开局清册"
+                    },
+                    "eventId": "event:old-3",
+                    "version": 1
+                  }
+                },
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              }
+            },
+            {
+              "type": "entity",
+              "id": "bridge",
+              "before": {
+                "id": "bridge",
+                "name": "东桥",
+                "kind": "place",
+                "aliases": [],
+                "bindings": [],
+                "fields": {},
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              },
+              "after": {
+                "id": "bridge",
+                "name": "东桥",
+                "kind": "place",
+                "aliases": [],
+                "bindings": [],
+                "fields": {
+                  "通行状态": {
+                    "value": "可通行",
+                    "nature": "established_fact",
+                    "source": {
+                      "module": "manual",
+                      "key": "清河旧事",
+                      "label": "开局清册"
+                    },
+                    "eventId": "event:old-3",
+                    "version": 1
+                  }
+                },
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              }
+            },
+            {
+              "type": "entity",
+              "id": "bridge",
+              "before": {
+                "id": "bridge",
+                "name": "东桥",
+                "kind": "place",
+                "aliases": [],
+                "bindings": [],
+                "fields": {
+                  "通行状态": {
+                    "value": "可通行",
+                    "nature": "established_fact",
+                    "source": {
+                      "module": "manual",
+                      "key": "清河旧事",
+                      "label": "开局清册"
+                    },
+                    "eventId": "event:old-3",
+                    "version": 1
+                  }
+                },
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              },
+              "after": {
+                "id": "bridge",
+                "name": "东桥",
+                "kind": "place",
+                "aliases": [],
+                "bindings": [
+                  "[\"map\",\"place:bridge\"]"
+                ],
+                "fields": {
+                  "通行状态": {
+                    "value": "可通行",
+                    "nature": "established_fact",
+                    "source": {
+                      "module": "manual",
+                      "key": "清河旧事",
+                      "label": "开局清册"
+                    },
+                    "eventId": "event:old-3",
+                    "version": 1
+                  }
+                },
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "receipts": [
+        {
+          "commandId": "old-3",
+          "fingerprint": "{\"at\":\"2026-11-01T00:00:00.000Z\",\"branchId\":\"old-2\",\"expectedVersion\":0,\"id\":\"old-3\",\"operations\":[{\"id\":\"hero\",\"kind\":\"person\",\"name\":\"旅人\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"create\"},{\"id\":\"shop\",\"kind\":\"person\",\"name\":\"店主\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"create\"},{\"id\":\"bell\",\"kind\":\"item\",\"name\":\"铜铃\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"create\"},{\"id\":\"bridge\",\"kind\":\"place\",\"name\":\"东桥\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"create\"},{\"entityId\":\"hero\",\"field\":\"coins\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"set\",\"value\":10},{\"entityId\":\"shop\",\"field\":\"coins\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"set\",\"value\":37},{\"entityId\":\"bell\",\"field\":\"owner\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"set\",\"value\":{\"entityId\":\"shop\"}},{\"entityId\":\"bridge\",\"field\":\"通行状态\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"set\",\"value\":\"可通行\"},{\"binding\":\"[\\\"map\\\",\\\"place:bridge\\\"]\",\"entityId\":\"bridge\",\"type\":\"bind\"}],\"title\":\"旧世界开局\",\"worldId\":\"old-1\"}",
+          "eventId": "event:old-3",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "schema": 3,
+      "worldId": "old-1",
+      "branchId": "old-4",
+      "title": "清河县旧档",
+      "version": 2,
+      "entities": [
+        {
+          "id": "hero",
+          "name": "旅人",
+          "kind": "person",
+          "aliases": [],
+          "bindings": [],
+          "fields": {
+            "coins": {
+              "value": 10,
+              "nature": "established_fact",
+              "source": {
+                "module": "manual",
+                "key": "清河旧事",
+                "label": "开局清册"
+              },
+              "eventId": "event:old-3",
+              "version": 1
+            }
+          },
+          "revision": 1,
+          "source": {
+            "module": "manual",
+            "key": "清河旧事",
+            "label": "开局清册"
+          }
+        },
+        {
+          "id": "shop",
+          "name": "店主",
+          "kind": "person",
+          "aliases": [],
+          "bindings": [],
+          "fields": {
+            "coins": {
+              "value": 37,
+              "nature": "established_fact",
+              "source": {
+                "module": "manual",
+                "key": "清河旧事",
+                "label": "开局清册"
+              },
+              "eventId": "event:old-3",
+              "version": 1
+            }
+          },
+          "revision": 1,
+          "source": {
+            "module": "manual",
+            "key": "清河旧事",
+            "label": "开局清册"
+          }
+        },
+        {
+          "id": "bell",
+          "name": "铜铃",
+          "kind": "item",
+          "aliases": [],
+          "bindings": [],
+          "fields": {
+            "owner": {
+              "value": {
+                "entityId": "shop"
+              },
+              "nature": "established_fact",
+              "source": {
+                "module": "manual",
+                "key": "清河旧事",
+                "label": "开局清册"
+              },
+              "eventId": "event:old-3",
+              "version": 1
+            }
+          },
+          "revision": 1,
+          "source": {
+            "module": "manual",
+            "key": "清河旧事",
+            "label": "开局清册"
+          }
+        },
+        {
+          "id": "bridge",
+          "name": "东桥",
+          "kind": "place",
+          "aliases": [],
+          "bindings": [
+            "[\"map\",\"place:bridge\"]"
+          ],
+          "fields": {
+            "通行状态": {
+              "value": "已封锁",
+              "nature": "established_fact",
+              "source": {
+                "module": "manual",
+                "key": "清河旧事",
+                "label": "开局清册"
+              },
+              "eventId": "event:old-5",
+              "version": 2
+            }
+          },
+          "revision": 2,
+          "source": {
+            "module": "manual",
+            "key": "清河旧事",
+            "label": "开局清册"
+          }
+        }
+      ],
+      "claims": [],
+      "sources": {},
+      "modules": {},
+      "events": [
+        {
+          "id": "event:old-3",
+          "commandId": "old-3",
+          "title": "旧世界开局",
+          "at": "2026-11-01T00:00:00.000Z",
+          "version": 1,
+          "effects": [
+            {
+              "type": "entity",
+              "id": "hero",
+              "before": null,
+              "after": {
+                "id": "hero",
+                "name": "旅人",
+                "kind": "person",
+                "aliases": [],
+                "bindings": [],
+                "fields": {},
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              }
+            },
+            {
+              "type": "entity",
+              "id": "shop",
+              "before": null,
+              "after": {
+                "id": "shop",
+                "name": "店主",
+                "kind": "person",
+                "aliases": [],
+                "bindings": [],
+                "fields": {},
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              }
+            },
+            {
+              "type": "entity",
+              "id": "bell",
+              "before": null,
+              "after": {
+                "id": "bell",
+                "name": "铜铃",
+                "kind": "item",
+                "aliases": [],
+                "bindings": [],
+                "fields": {},
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              }
+            },
+            {
+              "type": "entity",
+              "id": "bridge",
+              "before": null,
+              "after": {
+                "id": "bridge",
+                "name": "东桥",
+                "kind": "place",
+                "aliases": [],
+                "bindings": [],
+                "fields": {},
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              }
+            },
+            {
+              "type": "entity",
+              "id": "hero",
+              "before": {
+                "id": "hero",
+                "name": "旅人",
+                "kind": "person",
+                "aliases": [],
+                "bindings": [],
+                "fields": {},
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              },
+              "after": {
+                "id": "hero",
+                "name": "旅人",
+                "kind": "person",
+                "aliases": [],
+                "bindings": [],
+                "fields": {
+                  "coins": {
+                    "value": 10,
+                    "nature": "established_fact",
+                    "source": {
+                      "module": "manual",
+                      "key": "清河旧事",
+                      "label": "开局清册"
+                    },
+                    "eventId": "event:old-3",
+                    "version": 1
+                  }
+                },
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              }
+            },
+            {
+              "type": "entity",
+              "id": "shop",
+              "before": {
+                "id": "shop",
+                "name": "店主",
+                "kind": "person",
+                "aliases": [],
+                "bindings": [],
+                "fields": {},
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              },
+              "after": {
+                "id": "shop",
+                "name": "店主",
+                "kind": "person",
+                "aliases": [],
+                "bindings": [],
+                "fields": {
+                  "coins": {
+                    "value": 37,
+                    "nature": "established_fact",
+                    "source": {
+                      "module": "manual",
+                      "key": "清河旧事",
+                      "label": "开局清册"
+                    },
+                    "eventId": "event:old-3",
+                    "version": 1
+                  }
+                },
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              }
+            },
+            {
+              "type": "entity",
+              "id": "bell",
+              "before": {
+                "id": "bell",
+                "name": "铜铃",
+                "kind": "item",
+                "aliases": [],
+                "bindings": [],
+                "fields": {},
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              },
+              "after": {
+                "id": "bell",
+                "name": "铜铃",
+                "kind": "item",
+                "aliases": [],
+                "bindings": [],
+                "fields": {
+                  "owner": {
+                    "value": {
+                      "entityId": "shop"
+                    },
+                    "nature": "established_fact",
+                    "source": {
+                      "module": "manual",
+                      "key": "清河旧事",
+                      "label": "开局清册"
+                    },
+                    "eventId": "event:old-3",
+                    "version": 1
+                  }
+                },
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              }
+            },
+            {
+              "type": "entity",
+              "id": "bridge",
+              "before": {
+                "id": "bridge",
+                "name": "东桥",
+                "kind": "place",
+                "aliases": [],
+                "bindings": [],
+                "fields": {},
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              },
+              "after": {
+                "id": "bridge",
+                "name": "东桥",
+                "kind": "place",
+                "aliases": [],
+                "bindings": [],
+                "fields": {
+                  "通行状态": {
+                    "value": "可通行",
+                    "nature": "established_fact",
+                    "source": {
+                      "module": "manual",
+                      "key": "清河旧事",
+                      "label": "开局清册"
+                    },
+                    "eventId": "event:old-3",
+                    "version": 1
+                  }
+                },
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              }
+            },
+            {
+              "type": "entity",
+              "id": "bridge",
+              "before": {
+                "id": "bridge",
+                "name": "东桥",
+                "kind": "place",
+                "aliases": [],
+                "bindings": [],
+                "fields": {
+                  "通行状态": {
+                    "value": "可通行",
+                    "nature": "established_fact",
+                    "source": {
+                      "module": "manual",
+                      "key": "清河旧事",
+                      "label": "开局清册"
+                    },
+                    "eventId": "event:old-3",
+                    "version": 1
+                  }
+                },
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              },
+              "after": {
+                "id": "bridge",
+                "name": "东桥",
+                "kind": "place",
+                "aliases": [],
+                "bindings": [
+                  "[\"map\",\"place:bridge\"]"
+                ],
+                "fields": {
+                  "通行状态": {
+                    "value": "可通行",
+                    "nature": "established_fact",
+                    "source": {
+                      "module": "manual",
+                      "key": "清河旧事",
+                      "label": "开局清册"
+                    },
+                    "eventId": "event:old-3",
+                    "version": 1
+                  }
+                },
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "event:old-5",
+          "commandId": "old-5",
+          "title": "东桥封锁",
+          "at": "2026-11-01T00:00:00.000Z",
+          "version": 2,
+          "effects": [
+            {
+              "type": "entity",
+              "id": "bridge",
+              "before": {
+                "id": "bridge",
+                "name": "东桥",
+                "kind": "place",
+                "aliases": [],
+                "bindings": [
+                  "[\"map\",\"place:bridge\"]"
+                ],
+                "fields": {
+                  "通行状态": {
+                    "value": "可通行",
+                    "nature": "established_fact",
+                    "source": {
+                      "module": "manual",
+                      "key": "清河旧事",
+                      "label": "开局清册"
+                    },
+                    "eventId": "event:old-3",
+                    "version": 1
+                  }
+                },
+                "revision": 1,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              },
+              "after": {
+                "id": "bridge",
+                "name": "东桥",
+                "kind": "place",
+                "aliases": [],
+                "bindings": [
+                  "[\"map\",\"place:bridge\"]"
+                ],
+                "fields": {
+                  "通行状态": {
+                    "value": "已封锁",
+                    "nature": "established_fact",
+                    "source": {
+                      "module": "manual",
+                      "key": "清河旧事",
+                      "label": "开局清册"
+                    },
+                    "eventId": "event:old-5",
+                    "version": 2
+                  }
+                },
+                "revision": 2,
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "receipts": [
+        {
+          "commandId": "old-3",
+          "fingerprint": "{\"at\":\"2026-11-01T00:00:00.000Z\",\"branchId\":\"old-2\",\"expectedVersion\":0,\"id\":\"old-3\",\"operations\":[{\"id\":\"hero\",\"kind\":\"person\",\"name\":\"旅人\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"create\"},{\"id\":\"shop\",\"kind\":\"person\",\"name\":\"店主\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"create\"},{\"id\":\"bell\",\"kind\":\"item\",\"name\":\"铜铃\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"create\"},{\"id\":\"bridge\",\"kind\":\"place\",\"name\":\"东桥\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"create\"},{\"entityId\":\"hero\",\"field\":\"coins\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"set\",\"value\":10},{\"entityId\":\"shop\",\"field\":\"coins\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"set\",\"value\":37},{\"entityId\":\"bell\",\"field\":\"owner\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"set\",\"value\":{\"entityId\":\"shop\"}},{\"entityId\":\"bridge\",\"field\":\"通行状态\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"set\",\"value\":\"可通行\"},{\"binding\":\"[\\\"map\\\",\\\"place:bridge\\\"]\",\"entityId\":\"bridge\",\"type\":\"bind\"}],\"title\":\"旧世界开局\",\"worldId\":\"old-1\"}",
+          "eventId": "event:old-3",
+          "version": 1
+        },
+        {
+          "commandId": "old-5",
+          "fingerprint": "{\"at\":\"2026-11-01T00:00:00.000Z\",\"branchId\":\"old-4\",\"expectedVersion\":1,\"id\":\"old-5\",\"operations\":[{\"entityId\":\"bridge\",\"field\":\"通行状态\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"set\",\"value\":\"已封锁\"}],\"title\":\"东桥封锁\",\"worldId\":\"old-1\"}",
+          "eventId": "event:old-5",
+          "version": 2
+        }
+      ],
+      "parent": {
+        "branchId": "old-2",
+        "version": 1
+      }
+    }
+  ],
+  "notes": [
+    {
+      "id": "note-0",
+      "revision": 1,
+      "owner": "[\"[\\\"fixture-user\\\",\\\"[\\\\\\\"character\\\\\\\",\\\\\\\"merchant.png\\\\\\\",\\\\\\\"清河县\\\\\\\"]\\\"]\",\"old-1\",\"old-2\"]",
+      "end": 1,
+      "source": "7daa4324247307428a02016b7be6172272c68ffb3ff903088a2d697aab493e2f",
+      "basis": 1,
+      "chapter": {
+        "text": "东桥通行旧稿",
+        "dependencies": []
+      },
+      "global": {
+        "text": "清河调查",
+        "dependencies": []
+      }
+    },
+    {
+      "id": "note-1",
+      "revision": 1,
+      "owner": "[\"[\\\"fixture-user\\\",\\\"[\\\\\\\"character\\\\\\\",\\\\\\\"merchant.png\\\\\\\",\\\\\\\"清河县\\\\\\\"]\\\"]\",\"old-1\",\"old-4\"]",
+      "end": 1,
+      "source": "7daa4324247307428a02016b7be6172272c68ffb3ff903088a2d697aab493e2f",
+      "basis": 2,
+      "chapter": {
+        "text": "东桥封锁旧稿",
+        "dependencies": []
+      },
+      "global": {
+        "text": "清河调查",
+        "dependencies": []
+      }
+    }
+  ],
+  "metadata": {
+    "extensions": {
+      "TavernKitchen": {
+        "storySummary": {
+          "summaryHistory": [],
+          "lastSummarizedMesId": -1,
+          "json": {
+            "facts": [],
+            "arcs": [
+              {
+                "name": "阿棠",
+                "progress": 30
+              }
+            ]
+          }
+        },
+        "stateAtoms": [],
+        "l0Index": {
+          "version": 1,
+          "byFloor": {}
+        }
+      }
+    }
+  },
+  "card": {
+    "type": "TavernKitchenCard",
+    "version": 1,
+    "createdAt": "2026-11-01T00:00:00.000Z",
+    "data": {
+      "memory": {
+        "storySummary": {
+          "json": {
+            "facts": [],
+            "arcs": [
+              {
+                "name": "阿棠",
+                "progress": 30
+              }
+            ]
+          },
+          "lastSummarizedMesId": -1,
+          "summaryHistory": []
+        },
+        "stateAtoms": [],
+        "l0Index": {
+          "version": 1,
+          "byFloor": {}
+        }
+      },
+      "summary": {
+        "type": "TavernKitchenStorySummaryMemory",
+        "version": 1,
+        "exportedAt": "2026-11-01T00:00:00.000Z",
+        "data": {
+          "facts": [],
+          "rounds": [],
+          "arcs": [
+            {
+              "name": "阿棠",
+              "progress": 30
+            }
+          ]
+        }
+      },
+      "source": {
+        "digest": "7daa4324247307428a02016b7be6172272c68ffb3ff903088a2d697aab493e2f",
+        "length": 2
+      },
+      "world": {
+        "schema": 3,
+        "worldId": "old-1",
+        "branchId": "old-4",
+        "title": "清河县旧档",
+        "version": 2,
+        "entities": [
+          {
+            "id": "hero",
+            "name": "旅人",
+            "kind": "person",
+            "aliases": [],
+            "bindings": [],
+            "fields": {
+              "coins": {
+                "value": 10,
+                "nature": "established_fact",
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                },
+                "eventId": "event:old-3",
+                "version": 1
+              }
+            },
+            "revision": 1,
+            "source": {
+              "module": "manual",
+              "key": "清河旧事",
+              "label": "开局清册"
+            }
+          },
+          {
+            "id": "shop",
+            "name": "店主",
+            "kind": "person",
+            "aliases": [],
+            "bindings": [],
+            "fields": {
+              "coins": {
+                "value": 37,
+                "nature": "established_fact",
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                },
+                "eventId": "event:old-3",
+                "version": 1
+              }
+            },
+            "revision": 1,
+            "source": {
+              "module": "manual",
+              "key": "清河旧事",
+              "label": "开局清册"
+            }
+          },
+          {
+            "id": "bell",
+            "name": "铜铃",
+            "kind": "item",
+            "aliases": [],
+            "bindings": [],
+            "fields": {
+              "owner": {
+                "value": {
+                  "entityId": "shop"
+                },
+                "nature": "established_fact",
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                },
+                "eventId": "event:old-3",
+                "version": 1
+              }
+            },
+            "revision": 1,
+            "source": {
+              "module": "manual",
+              "key": "清河旧事",
+              "label": "开局清册"
+            }
+          },
+          {
+            "id": "bridge",
+            "name": "东桥",
+            "kind": "place",
+            "aliases": [],
+            "bindings": [
+              "[\"map\",\"place:bridge\"]"
+            ],
+            "fields": {
+              "通行状态": {
+                "value": "已封锁",
+                "nature": "established_fact",
+                "source": {
+                  "module": "manual",
+                  "key": "清河旧事",
+                  "label": "开局清册"
+                },
+                "eventId": "event:old-5",
+                "version": 2
+              }
+            },
+            "revision": 2,
+            "source": {
+              "module": "manual",
+              "key": "清河旧事",
+              "label": "开局清册"
+            }
+          }
+        ],
+        "claims": [],
+        "sources": {},
+        "modules": {},
+        "events": [
+          {
+            "id": "event:old-3",
+            "commandId": "old-3",
+            "title": "旧世界开局",
+            "at": "2026-11-01T00:00:00.000Z",
+            "version": 1,
+            "effects": [
+              {
+                "type": "entity",
+                "id": "hero",
+                "before": null,
+                "after": {
+                  "id": "hero",
+                  "name": "旅人",
+                  "kind": "person",
+                  "aliases": [],
+                  "bindings": [],
+                  "fields": {},
+                  "revision": 1,
+                  "source": {
+                    "module": "manual",
+                    "key": "清河旧事",
+                    "label": "开局清册"
+                  }
+                }
+              },
+              {
+                "type": "entity",
+                "id": "shop",
+                "before": null,
+                "after": {
+                  "id": "shop",
+                  "name": "店主",
+                  "kind": "person",
+                  "aliases": [],
+                  "bindings": [],
+                  "fields": {},
+                  "revision": 1,
+                  "source": {
+                    "module": "manual",
+                    "key": "清河旧事",
+                    "label": "开局清册"
+                  }
+                }
+              },
+              {
+                "type": "entity",
+                "id": "bell",
+                "before": null,
+                "after": {
+                  "id": "bell",
+                  "name": "铜铃",
+                  "kind": "item",
+                  "aliases": [],
+                  "bindings": [],
+                  "fields": {},
+                  "revision": 1,
+                  "source": {
+                    "module": "manual",
+                    "key": "清河旧事",
+                    "label": "开局清册"
+                  }
+                }
+              },
+              {
+                "type": "entity",
+                "id": "bridge",
+                "before": null,
+                "after": {
+                  "id": "bridge",
+                  "name": "东桥",
+                  "kind": "place",
+                  "aliases": [],
+                  "bindings": [],
+                  "fields": {},
+                  "revision": 1,
+                  "source": {
+                    "module": "manual",
+                    "key": "清河旧事",
+                    "label": "开局清册"
+                  }
+                }
+              },
+              {
+                "type": "entity",
+                "id": "hero",
+                "before": {
+                  "id": "hero",
+                  "name": "旅人",
+                  "kind": "person",
+                  "aliases": [],
+                  "bindings": [],
+                  "fields": {},
+                  "revision": 1,
+                  "source": {
+                    "module": "manual",
+                    "key": "清河旧事",
+                    "label": "开局清册"
+                  }
+                },
+                "after": {
+                  "id": "hero",
+                  "name": "旅人",
+                  "kind": "person",
+                  "aliases": [],
+                  "bindings": [],
+                  "fields": {
+                    "coins": {
+                      "value": 10,
+                      "nature": "established_fact",
+                      "source": {
+                        "module": "manual",
+                        "key": "清河旧事",
+                        "label": "开局清册"
+                      },
+                      "eventId": "event:old-3",
+                      "version": 1
+                    }
+                  },
+                  "revision": 1,
+                  "source": {
+                    "module": "manual",
+                    "key": "清河旧事",
+                    "label": "开局清册"
+                  }
+                }
+              },
+              {
+                "type": "entity",
+                "id": "shop",
+                "before": {
+                  "id": "shop",
+                  "name": "店主",
+                  "kind": "person",
+                  "aliases": [],
+                  "bindings": [],
+                  "fields": {},
+                  "revision": 1,
+                  "source": {
+                    "module": "manual",
+                    "key": "清河旧事",
+                    "label": "开局清册"
+                  }
+                },
+                "after": {
+                  "id": "shop",
+                  "name": "店主",
+                  "kind": "person",
+                  "aliases": [],
+                  "bindings": [],
+                  "fields": {
+                    "coins": {
+                      "value": 37,
+                      "nature": "established_fact",
+                      "source": {
+                        "module": "manual",
+                        "key": "清河旧事",
+                        "label": "开局清册"
+                      },
+                      "eventId": "event:old-3",
+                      "version": 1
+                    }
+                  },
+                  "revision": 1,
+                  "source": {
+                    "module": "manual",
+                    "key": "清河旧事",
+                    "label": "开局清册"
+                  }
+                }
+              },
+              {
+                "type": "entity",
+                "id": "bell",
+                "before": {
+                  "id": "bell",
+                  "name": "铜铃",
+                  "kind": "item",
+                  "aliases": [],
+                  "bindings": [],
+                  "fields": {},
+                  "revision": 1,
+                  "source": {
+                    "module": "manual",
+                    "key": "清河旧事",
+                    "label": "开局清册"
+                  }
+                },
+                "after": {
+                  "id": "bell",
+                  "name": "铜铃",
+                  "kind": "item",
+                  "aliases": [],
+                  "bindings": [],
+                  "fields": {
+                    "owner": {
+                      "value": {
+                        "entityId": "shop"
+                      },
+                      "nature": "established_fact",
+                      "source": {
+                        "module": "manual",
+                        "key": "清河旧事",
+                        "label": "开局清册"
+                      },
+                      "eventId": "event:old-3",
+                      "version": 1
+                    }
+                  },
+                  "revision": 1,
+                  "source": {
+                    "module": "manual",
+                    "key": "清河旧事",
+                    "label": "开局清册"
+                  }
+                }
+              },
+              {
+                "type": "entity",
+                "id": "bridge",
+                "before": {
+                  "id": "bridge",
+                  "name": "东桥",
+                  "kind": "place",
+                  "aliases": [],
+                  "bindings": [],
+                  "fields": {},
+                  "revision": 1,
+                  "source": {
+                    "module": "manual",
+                    "key": "清河旧事",
+                    "label": "开局清册"
+                  }
+                },
+                "after": {
+                  "id": "bridge",
+                  "name": "东桥",
+                  "kind": "place",
+                  "aliases": [],
+                  "bindings": [],
+                  "fields": {
+                    "通行状态": {
+                      "value": "可通行",
+                      "nature": "established_fact",
+                      "source": {
+                        "module": "manual",
+                        "key": "清河旧事",
+                        "label": "开局清册"
+                      },
+                      "eventId": "event:old-3",
+                      "version": 1
+                    }
+                  },
+                  "revision": 1,
+                  "source": {
+                    "module": "manual",
+                    "key": "清河旧事",
+                    "label": "开局清册"
+                  }
+                }
+              },
+              {
+                "type": "entity",
+                "id": "bridge",
+                "before": {
+                  "id": "bridge",
+                  "name": "东桥",
+                  "kind": "place",
+                  "aliases": [],
+                  "bindings": [],
+                  "fields": {
+                    "通行状态": {
+                      "value": "可通行",
+                      "nature": "established_fact",
+                      "source": {
+                        "module": "manual",
+                        "key": "清河旧事",
+                        "label": "开局清册"
+                      },
+                      "eventId": "event:old-3",
+                      "version": 1
+                    }
+                  },
+                  "revision": 1,
+                  "source": {
+                    "module": "manual",
+                    "key": "清河旧事",
+                    "label": "开局清册"
+                  }
+                },
+                "after": {
+                  "id": "bridge",
+                  "name": "东桥",
+                  "kind": "place",
+                  "aliases": [],
+                  "bindings": [
+                    "[\"map\",\"place:bridge\"]"
+                  ],
+                  "fields": {
+                    "通行状态": {
+                      "value": "可通行",
+                      "nature": "established_fact",
+                      "source": {
+                        "module": "manual",
+                        "key": "清河旧事",
+                        "label": "开局清册"
+                      },
+                      "eventId": "event:old-3",
+                      "version": 1
+                    }
+                  },
+                  "revision": 1,
+                  "source": {
+                    "module": "manual",
+                    "key": "清河旧事",
+                    "label": "开局清册"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "id": "event:old-5",
+            "commandId": "old-5",
+            "title": "东桥封锁",
+            "at": "2026-11-01T00:00:00.000Z",
+            "version": 2,
+            "effects": [
+              {
+                "type": "entity",
+                "id": "bridge",
+                "before": {
+                  "id": "bridge",
+                  "name": "东桥",
+                  "kind": "place",
+                  "aliases": [],
+                  "bindings": [
+                    "[\"map\",\"place:bridge\"]"
+                  ],
+                  "fields": {
+                    "通行状态": {
+                      "value": "可通行",
+                      "nature": "established_fact",
+                      "source": {
+                        "module": "manual",
+                        "key": "清河旧事",
+                        "label": "开局清册"
+                      },
+                      "eventId": "event:old-3",
+                      "version": 1
+                    }
+                  },
+                  "revision": 1,
+                  "source": {
+                    "module": "manual",
+                    "key": "清河旧事",
+                    "label": "开局清册"
+                  }
+                },
+                "after": {
+                  "id": "bridge",
+                  "name": "东桥",
+                  "kind": "place",
+                  "aliases": [],
+                  "bindings": [
+                    "[\"map\",\"place:bridge\"]"
+                  ],
+                  "fields": {
+                    "通行状态": {
+                      "value": "已封锁",
+                      "nature": "established_fact",
+                      "source": {
+                        "module": "manual",
+                        "key": "清河旧事",
+                        "label": "开局清册"
+                      },
+                      "eventId": "event:old-5",
+                      "version": 2
+                    }
+                  },
+                  "revision": 2,
+                  "source": {
+                    "module": "manual",
+                    "key": "清河旧事",
+                    "label": "开局清册"
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "receipts": [
+          {
+            "commandId": "old-3",
+            "fingerprint": "{\"at\":\"2026-11-01T00:00:00.000Z\",\"branchId\":\"old-2\",\"expectedVersion\":0,\"id\":\"old-3\",\"operations\":[{\"id\":\"hero\",\"kind\":\"person\",\"name\":\"旅人\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"create\"},{\"id\":\"shop\",\"kind\":\"person\",\"name\":\"店主\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"create\"},{\"id\":\"bell\",\"kind\":\"item\",\"name\":\"铜铃\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"create\"},{\"id\":\"bridge\",\"kind\":\"place\",\"name\":\"东桥\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"create\"},{\"entityId\":\"hero\",\"field\":\"coins\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"set\",\"value\":10},{\"entityId\":\"shop\",\"field\":\"coins\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"set\",\"value\":37},{\"entityId\":\"bell\",\"field\":\"owner\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"set\",\"value\":{\"entityId\":\"shop\"}},{\"entityId\":\"bridge\",\"field\":\"通行状态\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"set\",\"value\":\"可通行\"},{\"binding\":\"[\\\"map\\\",\\\"place:bridge\\\"]\",\"entityId\":\"bridge\",\"type\":\"bind\"}],\"title\":\"旧世界开局\",\"worldId\":\"old-1\"}",
+            "eventId": "event:old-3",
+            "version": 1
+          },
+          {
+            "commandId": "old-5",
+            "fingerprint": "{\"at\":\"2026-11-01T00:00:00.000Z\",\"branchId\":\"old-4\",\"expectedVersion\":1,\"id\":\"old-5\",\"operations\":[{\"entityId\":\"bridge\",\"field\":\"通行状态\",\"source\":{\"key\":\"清河旧事\",\"label\":\"开局清册\",\"module\":\"manual\"},\"type\":\"set\",\"value\":\"已封锁\"}],\"title\":\"东桥封锁\",\"worldId\":\"old-1\"}",
+            "eventId": "event:old-5",
+            "version": 2
+          }
+        ],
+        "parent": {
+          "branchId": "old-2",
+          "version": 1
+        }
+      },
+      "notes": [
+        {
+          "id": "note-1",
+          "revision": 1,
+          "owner": "[\"[\\\"fixture-user\\\",\\\"[\\\\\\\"character\\\\\\\",\\\\\\\"merchant.png\\\\\\\",\\\\\\\"清河县\\\\\\\"]\\\"]\",\"old-1\",\"old-4\"]",
+          "end": 1,
+          "source": "7daa4324247307428a02016b7be6172272c68ffb3ff903088a2d697aab493e2f",
+          "basis": 2,
+          "chapter": {
+            "text": "东桥封锁旧稿",
+            "dependencies": []
+          },
+          "global": {
+            "text": "清河调查",
+            "dependencies": []
+          }
+        }
+      ]
+    }
+  }
+}

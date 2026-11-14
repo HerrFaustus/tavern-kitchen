@@ -14,6 +14,15 @@ export function worldAuthorityForContext(context) {
 export function worldFieldSource(world, context, request) {
     const result = { key: request.key, chatId: context.chatId, branchId: world?.branchId || '' };
     if (!world || request.chatId !== result.chatId || request.branchId !== result.branchId || typeof request.key !== 'string') return result;
+    const receipt = world.receipts?.find(r => r.origin?.effectId === request.key);
+    if (receipt) {
+        const turn = Object.values(world.sources || {}).find(row => row.id === receipt.origin.sourceId);
+        const proof = world.events.find(e => e.id === receipt.eventId)?.effects.flatMap(e => [
+            e.after?.source, ...Object.values(e.after?.fields || {}).map(f => f.source),
+        ]).find(source => source?.key === request.key && source.proof)?.proof;
+        if (proof && isRangeSourceCurrent(turn?.source,context.chat) && context.chat[proof.floor]?.mes.includes(proof.quote))
+            return {...result,floor:proof.floor,text:context.chat[proof.floor].mes,quote:proof.quote};
+    }
     const match = /^(.*)\/(\d+)$/.exec(request.key);
     if (!match) return result;
     const update = world.sources?.[UPDATE_PREFIX + match[1]]?.update;

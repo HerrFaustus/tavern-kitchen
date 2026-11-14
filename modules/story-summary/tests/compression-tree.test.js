@@ -127,7 +127,8 @@ test('thresholdForLevel and planNextCompression keep newest L0 leaves and cascad
     assert.equal(planNextCompression(underLimit.store.summaryHistory, { chat: underLimit.chat }), null);
 
     const atLimit = makeRoundsFixture(15);
-    const plan = planNextCompression(atLimit.store.summaryHistory, { chat: atLimit.chat });
+    assert.equal(planNextCompression(atLimit.store.summaryHistory, {chat:atLimit.chat}), null);
+    const plan = planNextCompression(atLimit.store.summaryHistory, { chat: atLimit.chat, minDepth:0 });
     assert.equal(plan.level, 'stage');
     assert.equal(plan.nodes.length, 12);
     assert.equal(plan.start, 0);
@@ -136,7 +137,7 @@ test('thresholdForLevel and planNextCompression keep newest L0 leaves and cascad
     // 18 * 12 = 216 leaves: with leafKeepRecent=0 cascades 18 L1 -> 3 L2 -> 1 L3 recursively.
     const deep = makeRoundsFixture(216);
     let calls = 0;
-    const staged = await runRecursiveCompressionCascade(deep.store, {
+    const staged = await runRecursiveCompressionCascade(deep.store, { minDepth:0,
         chat: deep.chat,
         leafKeepRecent: 0,
         maxNodes: 30,
@@ -317,7 +318,7 @@ test('runRecursiveCompressionCascade propagates plotLineSnapshots through L1 and
         sourceReceipt: { id: `pl:${i}`, source: captureRangeSource(chat, 2 * i, 2 * i + 1) },
     }));
     const seenCalls = [];
-    const staged = await runRecursiveCompressionCascade({ summaryHistory }, {
+    const staged = await runRecursiveCompressionCascade({ summaryHistory }, { minDepth:0,
         chat,
         summarizeLayer: async payload => {
             seenCalls.push(payload);

@@ -1,5 +1,4 @@
 export { memoryDigest, memoryPolicy } from '../data/memory-policy.js';
-import { ARC_PROGRESS_MAX } from '../generate/arc-progress.js';
 
 export const recordHandle = record => `${record.collection}:${record.key}`;
 
@@ -20,10 +19,7 @@ export function projectMemoryRecord(record, history = [], ownership) {
         }
         if (record.collection === 'facts') delete value.retracted;
         if (Object.hasOwn(value, '_isState')) { value.isState = value._isState; delete value._isState; }
-        if (record.collection === 'arcs') {
-            value.progress = Math.round(value.progress * ARC_PROGRESS_MAX);
-            value.moments = (value.moments || []).map(moment => typeof moment === 'string' ? moment : moment.text);
-        }
+
     }
     const batch = ownership?.batch || (record.collection !== 'anchors' && history.find(item => item.kind === 'batch' && item.endMesId === record.value?._addedAt));
     return { collection: record.collection, key: record.key, value,

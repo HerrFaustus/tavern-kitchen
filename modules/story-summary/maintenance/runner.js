@@ -1,6 +1,8 @@
+import { countRemoteRequest, featureCalls } from '../../text-api/call-stats.js';
 import { loadSharedAgentSettings } from '../../agent-core/settings-repository.js';
 import { normalizeWebSettings } from '../../agent-core/web/settings.js';
 import { getTextApiRepository } from '../../text-api/repository.js';
+import { resolveBoundPreset } from '../../text-api/model.js';
 import { resolveAgentProfile } from '../../text-api/profile-runtime.js';
 import { isSillyTavernProvider } from '../../agent-core/provider-resolution.js';
 import { buildProviderAssistantToolCallMessage, buildProviderToolResultMessage, resolveResultToolCalls, dropInvalidatedThinkingFromMessage } from '../../agent-core/runtime/protocol.js';
@@ -16,7 +18,9 @@ export { REVIEW_LIMITS } from './limits.js';
 export { estimateMemoryChatContext } from './conversation.js';
 
 export async function createSharedMemoryAgent() {
-    const config = { ...normalizeWebSettings(await loadSharedAgentSettings()), ...resolveAgentProfile(await (await getTextApiRepository()).load(), 'memory') };
+    const settings = await (await getTextApiRepository()).load();
+    resolveBoundPreset(settings, 'memory');
+    const config = { ...normalizeWebSettings(await loadSharedAgentSettings()), ...resolveAgentProfile(settings, 'memory') };
     requireMemory(config.model?.trim() && (isSillyTavernProvider(config.provider) || config.baseUrl?.trim()), 'not_configured');
     const core = await import('../../agent-core/browser-entry.js');
     const { getRequestHeaders } = await import('../../../../../../../script.js');
@@ -29,7 +33,7 @@ export const memoryRunId = () => Array.from(crypto.getRandomValues(new Uint8Arra
 /** A turn owns its provider session and write baseline; chat history is only material. */
 export async function runMemoryAgent(session, { adapter, config, signal, onCall = () => {}, onProgress = () => {},
     onStream = () => {}, onContext = () => {}, mode = 'auto', question = '', history = [], readMaintenance,
-    onFinish, onRecover, readCurrent, summaryStyle, limits: requestedLimits = REVIEW_LIMITS, runId = memoryRunId(), createSummaryAdapter, countTokens } = {}) {
+    onFinish, onRecover, readCurrent, summaryStyle, agentTask, limits: requestedLimits = REVIEW_LIMITS, runId = memoryRunId(), createSummaryAdapter, countTokens } = {}) {
     const limits = { ...REVIEW_LIMITS, ...requestedLimits };
     const calls = [], receipts = [];
     const tools = [...(session ? MEMORY_TOOLS : []), ...(session?.canReviewUnits ? NARRATIVE_UNIT_TOOLS : []), ...(mode === 'chat' || readMaintenance ? [READ_MAINTENANCE_TOOL] : [])];
@@ -95,6 +99,7 @@ export async function runMemoryAgent(session, { adapter, config, signal, onCall 
         }
     }
 
+    const taskStarted = agentTask ?? featureCalls.task('memory');
     async function requestModel(target, request, measured, kind) {
         requireMemory(!signal?.aborted, 'cancelled');
         requireMemory(calls.length < limits.turns, 'turn_limit');
@@ -104,9 +109,9 @@ export async function runMemoryAgent(session, { adapter, config, signal, onCall 
         calls.push(call);
         try {
             if (kind === 'maintenance') session?.inputProvided();
-            const result = await target.chat({ temperature: config.temperature, maxTokens: config.maxTokens,
+            const result = await countRemoteRequest('memory', dispatch => { dispatch(); return target.chat({ temperature: config.temperature, maxTokens: config.maxTokens,
                 reasoning: config.reasoning, signal, captureRawAssistantMessage: true,
-                ...(kind === 'maintenance' ? { onStreamProgress: snapshot => onStream(snapshot) } : {}), ...request });
+                ...(kind === 'maintenance' ? { onStreamProgress: snapshot => onStream(snapshot) } : {}), ...request }); }, taskStarted);
             recordMemoryResponse(call, result);
             return { result, call };
         } catch (error) {

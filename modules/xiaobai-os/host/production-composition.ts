@@ -15,7 +15,6 @@ import { createAgentCapabilityRegistration } from '../capabilities/agent/index.j
 import { createManagementCapabilityRegistration } from '../capabilities/management/index.js';
 import {
     createMaintenanceCapabilityRegistration,
-    MAINTENANCE_CAPABILITY,
 } from '../capabilities/maintenance/index.js';
 import { createChatBindingManager } from '../storage/chat-binding.js';
 import { createChatBindingLifecycle } from '../storage/chat-binding-lifecycle.js';
@@ -43,7 +42,6 @@ import {
 import {
     createChatBindingEventAdapter,
     createSillyTavernMainGenerationRuntime,
-    subscribeMaintenanceMessages,
     subscribeMapPromptEvents,
     subscribeWorldPromptEvents,
     subscribeXiaobaiOsChatChanged,
@@ -150,8 +148,6 @@ export function createProductionBootstrap(
                 bindingLifecycle.start();
                 await bindingLifecycle.ready();
                 await composition.install();
-                const maintenance = composition.capabilities.require(MAINTENANCE_CAPABILITY);
-                maintenance.runner.startBackground(subscribeMaintenanceMessages);
                 productionInstalled = true;
             } catch (error) {
                 await bindingLifecycle.stop();

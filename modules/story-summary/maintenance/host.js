@@ -1,3 +1,4 @@
+import { registerMemoryMaintenance } from './notification.js';
 import { crossesReviewInterval } from '../data/narrative-window.js';
 import { getContext } from '../../../../../../extensions.js';
 import { getSummaryStore } from '../data/store.js';
@@ -7,7 +8,6 @@ import { getStateAtoms, getL0Index } from '../vector/storage/state-store.js';
 import { getChatIdentity } from '../data/chat-identity.js';
 import { createMemoryScheduler } from './scheduler.js';
 import { projectMaintenanceReceipts, maintenanceHistoryImpact } from './history.js';
-import { registerMemoryMaintenance } from './notification.js';
 import { inspectMaintenanceIndexes, repairMaintenanceIndexes } from './indexes.js';
 import { requireMemory } from './errors.js';
 import { presentMaintenanceReceipt } from './presentation.js';
@@ -17,7 +17,7 @@ import { executeMemoryTask, hasMaintenanceBoundary } from './execution.js';
 import { readMaintenanceDiagnostics, createMaintenanceStatusReader } from './diagnostics.js';
 import { createMemoryChatController } from './chat-controller.js';
 
-export function createMemoryMaintenanceHost({ generateReviewedLayer, isEnabled, invalidateRecall, refreshSummary, changed, readSummaryDiagnostics, chatChanged = () => {} }) {
+export function createMemoryMaintenanceHost({ generateReviewedLayer, isEnabled, invalidateRecall, refreshSummary, changed, readSummaryDiagnostics, submitted, chatChanged = () => {} }) {
     let unregister = null, chat = null, executing = 0, refreshAfterRun = false, publishedRevision = 0;
     const readStatus = createMaintenanceStatusReader();
     const enabled = () => isEnabled() && getSummaryPanelConfig().memoryMaintenanceEnabled;
@@ -84,12 +84,23 @@ export function createMemoryMaintenanceHost({ generateReviewedLayer, isEnabled, 
     });
     return {
         chat,
+        pending(source, store) {
+            const batch = store.summaryHistory?.find(row => row.endMesId === source.end && row.summary);
+            return !!batch && enabled() && crossesReviewInterval(getContext().chat, source.start, source.end, getSummaryPanelConfig().proofreadingInterval ?? 5)
+                && maintenanceRanges(store.summaryHistory, source.end).pending.length > 0;
+        },
+        async run(source, signal) {
+            const current = read();
+            const result = await execute({ identity:current.identity,chatId:current.chatId,start:source.start,cutoff:source.end,historical:true }, {signal});
+            if (result.status !== 'completed') throw new Error(result.error?.message || '本楼校对未完成，请重试');
+        },
         start() {
             if (!unregister) unregister = registerMemoryMaintenance(batch => {
                 if (batch.identity !== getChatIdentity(getContext()) || !enabled()) return;
                 const interval = getSummaryPanelConfig().proofreadingInterval ?? 5;
                 if (batch.cutoff >= 0 && !crossesReviewInterval(getContext().chat, batch.start, batch.cutoff, interval)) return;
-                scheduler.submitted(batch);
+                if (submitted) submitted(batch);
+                else scheduler.submitted(batch);
             });
         },
         stop() { scheduler.cancel(); chat.reset({ preview: false }); unregister?.(); unregister = null; },

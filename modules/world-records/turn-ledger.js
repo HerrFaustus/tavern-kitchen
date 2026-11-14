@@ -34,8 +34,7 @@ function frames(chat, end) {
     for (let floor = 0; floor <= end; floor++) {
         const message = chat[floor];
         if (!isNarrativeReply(message)) continue;
-        let start = floor;
-        while (start > 0 && chat[start - 1]?.is_user) start--;
+        const start = chat[floor - 1]?.is_user ? floor - 1 : floor;
         result.push({ source: captureRangeSource(chat, start, floor), ...messageCandidates(message) });
     }
     return result;
@@ -43,13 +42,17 @@ function frames(chat, end) {
 
 // Each turn is its own world source record, so one append does not write the
 // entire source catalog into every event. All former revisions remain on disk.
-export function prepareTurnOperations(state, chat, { end = chat.length - 1, history = [], id, memoryAvailable = true } = {}) {
+export function prepareTurnOperations(state, chat, { end = chat.length - 1, history = [], id, memoryAvailable = true, preserveLater = false } = {}) {
     const records = turnRecords(state), active = currentTurns(state), observed = frames(chat, end);
     const operations = [], retained = new Set(), usedMessages = new Set();
     const receipts = memoryAvailable ? history.filter(batch => {
         if (!batch.sourceReceipt || batch.floorEntry?.deleted) return false;
         validateMemorySourceReceipt(batch.sourceReceipt);
         const receipt = batch.sourceReceipt, digest = memoryDigest(batch);
+        const revoked = (state.withdrawn || []).some(revision => revision.events.some(event =>
+            event.effects.some(effect => effect.type === 'source' && effect.after?.memory?.some(item => item.id === receipt.id)
+                && !effect.before?.memory?.some(item => item.id === receipt.id))));
+        if (revoked && !active.some(turn => turn.memory?.some(item => item.id === receipt.id))) return false;
         const inherited = records.some(turn => turn.memory.some(delivery => delivery.id === receipt.id && delivery.digest === digest));
         return receipt.worldId === state.worldId && (receipt.branchId === state.branchId || inherited)
             && receipt.turns.every(sourceId => turnById(state, sourceId))
@@ -70,12 +73,16 @@ export function prepareTurnOperations(state, chat, { end = chat.length - 1, hist
         usedMessages.add(messageId);
         const candidates = records.filter(turn => turn.messageId === messageId && turn.candidateKey === frame.selected);
         const candidateId = candidates[0]?.candidateId || id();
-        const existing = candidates.find(turn => turn.source.digest === frame.source.digest);
+        // A 0.2.32 receipt can cover several consecutive player messages. Keep
+        // its original evidence and identity while it still verifies in full.
+        const existing = candidates.find(turn => turn.source.digest === frame.source.digest)
+            || candidates.find(turn => turn.source.end === frame.source.end && turn.source.start < frame.source.start
+                && isRangeSourceCurrent(turn.source, chat));
         const turn = existing ? structuredClone(existing) : { kind: 'narrative_turn', version: 1, id: id(), messageId, candidateId,
             revision: Math.max(0, ...candidates.map(item => item.revision)) + 1, candidateKey: frame.selected,
             messageKeys: [], source: frame.source, memory: [] };
         turn.status = 'current';
-        turn.source = frame.source;
+        turn.source = existing && existing.source.start < frame.source.start ? existing.source : frame.source;
         turn.identity = ambiguous ? 'ambiguous' : frame.anchored ? 'anchored' : 'content';
         turn.messageKeys = [...new Set([...turn.messageKeys, ...frame.keys])].sort();
         const covering = receipts.filter(receipt => receipt.source.end >= frame.source.start && receipt.source.start <= frame.source.end)
@@ -88,6 +95,7 @@ export function prepareTurnOperations(state, chat, { end = chat.length - 1, hist
         if (!existing || !same(turn, existing)) operations.push({ type: 'source', module: `${TURN_PREFIX}${turn.id}`, snapshot: turn });
     }
     for (const turn of active) if (!retained.has(turn.id)) {
+        if (preserveLater && turn.source.end > end && turn.source.end < chat.length) continue;
         const stillPresent = chat[turn.source.end] && isRangeSourceCurrent(turn.source, chat);
         // An in-flight suffix is withheld, never treated as a confirmed source.
         const status = stillPresent || observed.some(frame => frame.keys.some(key => turn.messageKeys.includes(key))) ? 'superseded' : 'removed';

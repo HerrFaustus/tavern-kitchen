@@ -1,3 +1,4 @@
+import { retireArcData } from '../data/legacy-arcs.js';
 import { runMemoryAgent } from '../maintenance/runner.js';
 import { createTestModuleUrl } from './helpers/bundle-module.js';
 // Real summary/anchor/history transaction, HTTP confirmation and IndexedDB boundary.
@@ -649,7 +650,7 @@ function summaryExecutionHarness(overrides = {}) {
     return { ...ui, messages, errors, toasts, summaryDiagnostics, isRunning: () => running };
 }
 
-for (const automatic of [false, true]) test(`${automatic ? 'automatic' : 'manual'} summary catches up in confirmed batches through the requested completed reply`, async () => {
+test(`manual summary catches up in confirmed batches through the requested completed reply`, async () => {
     await importFixture();
     host.context.chat.push(...Array.from({ length: 6 }, (_, index) => ({ mes: `新增原文 ${index}`, is_user: index % 2 === 0 })));
     const run = summaryExecutionHarness(), ranges = [], writes = host.writes;
@@ -657,7 +658,7 @@ for (const automatic of [false, true]) test(`${automatic ? 'automatic' : 'manual
         ranges.push(newHistoryText);
         return JSON.stringify({ events: [], factUpdates: [{ s: '旅人', p: '行程', o: `第${ranges.length}段`, isState: false }] });
     };
-    await (automatic ? run.autoRunSummaryWithRetry : run.handleManualGenerate)(29, { trigger: { maxPerRun: 2, delayFloors: 0 } });
+    await run.handleManualGenerate(29, { trigger: { maxPerRun: 2, delayFloors: 0 } });
     assert.equal(ranges.length, 3); assert.equal(mod.getSummaryStore().lastSummarizedMesId, 29);
     assert.equal(disk().storySummary.lastSummarizedMesId, 29); assert.equal(host.writes - writes, 3); assert.equal(run.isRunning(), false);
     for (const [index, text] of ranges.entries()) {
@@ -701,15 +702,15 @@ for (const failure of ['request', 'empty', 'parse', 'structure']) {
         };
         const run = summaryExecutionHarness();
         const config = { trigger: { delayFloors: 0 } };
-        await run.autoRunSummaryWithRetry(999, config);
-        assert.equal(requests.length, 3);
+        await run.handleManualGenerate(999, config);
+        assert.equal(requests.length, 1);
         assert.equal(run.isRunning(), false);
         assert.equal(run.messages.at(-2).isGenerating, false);
         assert.equal(run.messages.at(-1).type, 'CHAT_SUMMARY_STATE');
         assert.equal(run.messages.filter(message => message.type === 'SUMMARY_ERROR').at(-1).uncertain, false);
         const reason = summaryFailureReason(run.errors.at(-1));
         assert.ok(run.messages.filter(message => message.type === 'SUMMARY_ERROR').at(-1).message.includes(reason));
-        assert.ok(run.toasts.at(-1).includes(reason));
+        assert.ok(run.messages.some(message => message.type === 'SUMMARY_ERROR' && message.message.includes(reason)));
         if (failure === 'request') assert.ok(reason.includes('HTTP 429'));
         if (failure === 'structure') {
             assert.equal(run.errors.at(-1).cause.path, 'summary');
@@ -731,16 +732,16 @@ for (const failure of ['request', 'empty', 'parse', 'structure']) {
             return JSON.stringify({ events: [], factUpdates: [{ s: '旅人', p: '行程', o: '继续出发', isState: false }] });
         };
         await run.handleManualGenerate(999, config);
-        assert.equal(requests.length, 5);
+        assert.equal(requests.length, 3);
         assert.equal(mod.getPublishedSummaryStore().lastSummarizedMesId, pending.endMesId);
         assert.equal(run.isRunning(), false);
         const attempts = run.summaryDiagnostics.read(getChatIdentity(host.context)).attempts;
-        assert.equal(attempts.length, 5);
+        assert.equal(attempts.length, 3);
         assert.equal(attempts[0].outcome, 'completed');
         assert.equal(attempts[0].saveState, 'confirmed');
         assert.equal(attempts[1].automatic, false);
-        assert.deepEqual(attempts.slice(2).map(item => item.attempt), [3, 2, 1]);
-        assert.equal(new Set(attempts.slice(2).map(item => item.runId)).size, 1);
+        assert.ok(attempts.every(item => !item.automatic && item.attempt === 1));
+        assert.equal(new Set(attempts.map(item => item.runId)).size, 3);
         for (const item of attempts.slice(1)) {
             assert.equal(item.outcome, 'failed');
             assert.equal(item.stage, failure === 'empty' ? 'response' : failure);
@@ -822,7 +823,7 @@ test('unconfirmed new summary keeps published hiding and never saves its draft t
 
 // Acceptance: confirmation without new content must publish the recovered view.
 // Cost: stale summary / wrong hidden range, or a duplicate paid model request.
-for (const automatic of [false, true]) test(`confirmed retry refreshes data and hiding without another model request (automatic: ${automatic})`, async () => {
+test('confirmed manual retry refreshes data and hiding without another model request', async () => {
     await importFixture();
     host.context.chat.push({ mes: 'new question', is_user: true }, { mes: 'new answer', is_user: false });
     const visibility = memoryVisibility();
@@ -846,7 +847,7 @@ for (const automatic of [false, true]) test(`confirmed retry refreshes data and 
     assert.equal(run.messages.filter(message => message.type === 'SUMMARY_ERROR').at(-1).uncertain, true);
     const messageCount = run.messages.length;
     host.mode = 'save';
-    await (automatic ? run.autoRunSummaryWithRetry : run.handleManualGenerate)(25, { trigger: { delayFloors: 0 } });
+    await run.handleManualGenerate(25, { trigger: { delayFloors: 0 } });
     assert.equal(mod.getMemoryCommitState(), 'ready');
     assert.deepEqual(mod.readPublishedSummaryMemory(), next);
     assert.equal(host.writes, writes);
@@ -871,8 +872,8 @@ for (const automatic of [false, true]) test(`confirmed retry refreshes data and 
 
 // Acceptance: stop frees this run while independent consistency/IO work continues.
 // Cost: locked retry entry, cross-chat late results, or duplicate model requests.
-for (const stage of ['source', 'writer']) for (const automatic of [false, true]) {
-    test(`stop during ${stage} preparation frees the run before independent work settles (automatic: ${automatic})`, async t => {
+for (const stage of ['source', 'writer']) {
+    test(`stop during ${stage} preparation frees the manual run before independent work settles`, async t => {
         await importFixture();
         let finish, entered, requests = 0;
         const pending = new Promise(resolve => { finish = resolve; });
@@ -887,7 +888,7 @@ for (const stage of ['source', 'writer']) for (const automatic of [false, true])
             synchronizeCurrentSources: stage === 'source' ? () => writing : async () => {},
             runSummaryGeneration: async () => { requests++; return { success: true }; },
         });
-        const generate = automatic ? run.autoRunSummaryWithRetry : run.handleManualGenerate;
+        const generate = run.handleManualGenerate;
         const first = generate(23, {});
         await nextTurn();
         await run.handleFrameMessage({ data: { type: 'REQUEST_CANCEL' } });
@@ -1465,13 +1466,12 @@ test('generation merges concurrent factual corrections and preserves their exact
         assert.equal(ext().storySummary.json.events, undefined);
         assert.equal(ext().storySummary.json.facts.find(fact => fact.id === 'f-1').o, '新剧情确认的原因');
         assert.equal(ext().storySummary.json.facts.find(fact => fact.id === 'f-3').o, '北京');
-        assert.equal(ext().storySummary.json.arcs[0].trajectory, '出发前');
-        assert.equal(ext().storySummary.json.arcs[0].progress, 0.1);
+        assert.equal(ext().storySummary.json.arcs, undefined);
         assert.equal(ext().storySummary.json.characters.main.at(-1).name, '同行者');
         assert.deepEqual(ext().storySummary.summaryHistory[0], maintained.storySummary.summaryHistory[0]);
         assert.deepEqual(disk(), ext());
         assert.equal((await mod.rollbackSummaryOnce(host.context.chatId)).success, true);
-        assert.deepEqual(ext().storySummary.json, maintained.storySummary.json);
+        assert.deepEqual(ext().storySummary.json, retireArcData(maintained.storySummary.json));
         assert.deepEqual(ext().storySummary.summaryHistory, maintained.storySummary.summaryHistory);
         assert.deepEqual(disk(), ext());
 });
@@ -2587,6 +2587,7 @@ function appendSourceTurn() {
 const unifiedBlock = (context, proposals = []) => ({ basis: { worldId: context.basis.worldId, branchId: context.basis.branchId, version: context.basis.version },
     proposals, acknowledgedReceipts: context.executionReceipts.map(receipt => receipt.commandId), conflicts: [] });
 async function seedUpdateWorld(f) {
+    host.context.name1 = '主角';
     await f.archive.prepare(); const service = f.service(), state = await service.read();
     const source = { module: 'manual', key: 'seed', label: '测试开局' };
     return (await service.commit(service.command(state, [{ type: 'create', id: 'resource-holder', name: '主角', kind: 'person', source },

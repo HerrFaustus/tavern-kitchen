@@ -45,7 +45,7 @@ test('confirmed world fields supersede only explicitly bound memory facts; rumou
     const state = world(), before = canonical(state);
     assert.deepEqual(projectAuthorityFacts(facts, state), facts.slice(2));
     const text = buildAuthorityContext(state, '铁匠有多少钱');
-    assert.match(text, /70/); assert.match(text, /新渡口/); assert.doesNotMatch(text, /国王|100/);
+    assert.doesNotMatch(text, /70/); assert.match(buildAuthorityContext(state,'铁匠',4000,'阿伦'),/70/); assert.match(text, /新渡口/); assert.doesNotMatch(text, /国王|100/);
     assert.equal(canonical(state), before);
     const renamed = update(state, [{ type: 'rename', entityId: 'alan', name: '阿伦先生' }]);
     assert.equal(authorityIndex(renamed).bindings.get(JSON.stringify(['map', 'actor:alan'])).id, 'alan');
@@ -61,7 +61,7 @@ test('same-name unrelated entities and ambiguous source names never suppress ano
 });
 test('bounded world context skips whole oversized values and keeps confirmed data out of unrelated source ownership', () => {
     const state = update(world(), [set('alan', 'description', '长'.repeat(6000))]);
-    const text = buildAuthorityContext(state, '阿伦', 600);
+    const text = buildAuthorityContext(state, '阿伦', 600, '阿伦');
     assert.ok(text.length <= 600); assert.match(text, /70/); assert.doesNotMatch(text, /长/);
     assert.equal(buildAuthorityContext(state, '', 1), '');
     assert.deepEqual(projectAuthorityFacts(facts, state), facts.slice(2));
@@ -117,15 +117,15 @@ test('real IDB publication waits for durable commit; other-tab updates are read 
     assert.equal(await runtime.prepare(), ''); assert.equal((await service.branches()).length, 0);
     let state = await service.ensure();
     state = (await service.commit(service.command(state, [make('a', '阿伦', 'person'), set('a', 'coins', 5)], '登记'))).state;
-    assert.match(await runtime.prepare(), /5/);
+    assert.match(await runtime.prepare('', '阿伦'), /5/);
     await assert.rejects(service.commit(service.command(state, [set('a', 'coins', -1)], '非法更新')));
     assert.equal(runtime.read().state.entities[0].fields.coins.value, 5);
     const second = createWorldStorage({ indexedDB }); t.after(() => second.close());
     const another = createWorldService({ storage: second, getIdentity: () => owner });
     await another.commit(another.command(await another.read(), [set('a', 'coins', 9)], '其他标签更新'));
     assert.equal(runtime.read().state.entities[0].fields.coins.value, 5);
-    assert.match(await runtime.prepare(), /9/);
-    const branch = await service.fork(await service.read(), 1); assert.equal(runtime.read().state.branchId, branch.branchId);
+    assert.match(await runtime.prepare('', '阿伦'), /9/);
+    const branch = await service.rewind(await service.read(), 1); assert.equal(runtime.read().state.branchId, branch.branchId);
     owner = 'b'; service.invalidate(); assert.equal(runtime.read(), null);
 });
 

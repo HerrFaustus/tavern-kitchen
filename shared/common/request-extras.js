@@ -10,6 +10,7 @@ export function supportsRequestExtras(provider) {
     return ['openai-compatible', 'openai-responses', 'anthropic', 'sillytavern-openai-compatible'].includes(provider);
 }
 
+const samplingFields = new Set(['temperature','top_p','top_k','min_p','top_a','typical_p','seed','max_tokens','max_completion_tokens','max_output_tokens','presence_penalty','frequency_penalty','repetition_penalty','reasoning_effort']);
 export function parseRequestExtras(config) {
     const result = {};
     for (const [key, label] of requestFields) {
@@ -21,13 +22,14 @@ export function parseRequestExtras(config) {
                 if (!value || !['string','object'].includes(typeof value)) throw Error();
                 const names = typeof value === 'string' ? [value] : Array.isArray(value) ? value : Object.keys(value);
                 if (!names.every(name => typeof name === 'string' && name.trim())) throw Error();
-                result[key] = names;
+                result[key] = names.filter(name => samplingFields.has(name));
             } else {
                 if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error();
                 if (key === 'includeHeaders') {
                     if (!Object.values(value).every(v => ['string','number','boolean'].includes(typeof v))) throw Error();
-                    result[key] = Object.fromEntries(new Headers(value));
-                } else result[key] = value;
+                    result[key] = Object.fromEntries([...new Headers(value)].filter(([name]) =>
+                        !/(?:^|[-_])(?:system|prompt|messages?|instructions?|tools?|schema|response-format)(?:$|[-_])/i.test(name)));
+                } else result[key] = Object.fromEntries(Object.entries(value).filter(([name, item]) => samplingFields.has(name) && ['number','string','boolean'].includes(typeof item)));
             }
         } catch { throw new Error(label + '格式无效，请检查 YAML 或 JSON。'); }
     }

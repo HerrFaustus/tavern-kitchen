@@ -2,7 +2,7 @@ import { collectPlotLines } from './plot-lines.js';
 import { nameKey, protagonistIdentity } from './protagonist-identity.js';
 import { isPersonalAgenda, projectPersonalAgendas, availableStoryRecords, characterStoryState, PRESENCE, BELIEFS, THREAD_STATUS, SITUATION_FIELDS, STORY_KINDS, storyRecordText, relativeStoryTime } from './records.js';
 import { FIELD_LABELS } from '../world-records/domain.js';
-import { PERSON_FIELDS, PERSON_SECTIONS, POSSESSION_ROLES, RELATION_PREFIX } from '../world-records/person-fields.js';
+import { importantPossession, PERSON_FIELDS, PERSON_SECTIONS, POSSESSION_ROLES, RELATION_PREFIX } from '../world-records/person-fields.js';
 import { worldStoryRecords } from '../world-records/world-story-state.js';
 
 const el = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
@@ -182,7 +182,7 @@ export function createSuspenseBook({ getSnapshot, clues = false, openSource }) {
         reset() { renderedWorld = ''; root?.replaceChildren(); },
     };
 }
-export function renderWorldAttributes(root, entities, person, aliases = [], showProof = false) {
+export function renderWorldAttributes(root, entities, person, aliases = [], showProof = false, personalInventory = true) {
     const byId = new Map(entities.map(entity => [entity.id, entity.name]));
     const fields = Object.entries(person?.fields || {}).filter(([, record]) => record.nature === 'established_fact');
     const groups = new Map();
@@ -202,7 +202,7 @@ export function renderWorldAttributes(root, entities, person, aliases = [], show
         }
     }
     for (const [field, record] of fields) {
-        if (PERSON_FIELDS.has(field)) continue;
+        if (PERSON_FIELDS.has(field) || !personalInventory && ['coins','金币'].includes(field)) continue;
         const value = record.value;
         if (field.startsWith(RELATION_PREFIX)) {
             if (value?.role) line(group('关系身份'), byId.get(value.entityId) || '未知人物', '本人是对方的' + value.role);
@@ -220,13 +220,14 @@ export function renderWorldAttributes(root, entities, person, aliases = [], show
         });
         const asset = other.kind === 'place' || other.fields?.['持有类别']?.nature === 'established_fact' && other.fields['持有类别'].value === '资产';
         const possession = asset || other.kind === 'item';
+        if (possession && !personalInventory && !importantPossession(other)) continue;
         if (possession && roles.some(role => role.id === person.id)) {
             const list = group(asset ? '资产' : '物品');
             const labels = roles.map(role => role.label + '：' + role.name);
             if (!roles.some(role => role.key === 'owner')) labels.unshift('所有人：未知');
             line(list, other.name, labels.join('，'));
             for (const origin of new Map(roles.filter(role => role.id === person.id && role.source).map(role => [role.source.key, role.source])).values()) {
-                if (origin.module === 'world_update' && showProof) {
+                if (['world_update','turn-update','simulation'].includes(origin.module) && showProof) {
                     const show = el('button', '查看交接原楼', 'archive-text'); show.type = 'button'; show.dataset.worldProof = origin.key;
                     list.append(show);
                 } else if (origin.label) list.append(el('small', origin.label, 'tk-record-note'));
@@ -241,7 +242,7 @@ export function renderWorldAttributes(root, entities, person, aliases = [], show
     }
 }
 
-export function createProtagonistView({ getSnapshot, getPlayerName, getInvolvement }) {
+export function createProtagonistView({ getSnapshot, getPlayerName, getInvolvement, inventory }) {
     let root;
     return {
         mount(parent) {
@@ -257,7 +258,15 @@ export function createProtagonistView({ getSnapshot, getPlayerName, getInvolveme
                 root.append(el('p', '尚无法确定当前玩家对应的人物。', 'tk-record-note'));
                 return;
             }
-            if (hero) renderWorldAttributes(root, entities, hero);
+            if (hero) {
+                renderWorldAttributes(root, entities, hero);
+                if (inventory) {
+                    const target = el('section');
+                    root.append(target);
+                    inventory.mount(target);
+                    inventory.show(world);
+                }
+            }
             const snapshot = getSnapshot();
             const records = worldStoryRecords(world, snapshot?.enabled ? availableStoryRecords(snapshot.store, snapshot.invalidFrom) : []);
             const matches = name => names.has(nameKey(name));
@@ -279,14 +288,14 @@ export function createProtagonistView({ getSnapshot, getPlayerName, getInvolveme
             }
             if (root.childElementCount === 1) root.append(el('p', '尚无与主角明确相关的世界记录。', 'tk-record-note'));
         },
-        isEditing: () => false,
+        isEditing: () => inventory?.isEditing() || false,
         empty() { root.replaceChildren(el('p', '选择一段对话后查看主角状态。', 'tk-record-note')); },
         reset() { root?.replaceChildren(); },
     };
 }
 
 export function floorChangeText(change) {
-    const label = STORY_KINDS[(change.after || change.before)?.kind] || { events: '剧情', facts: '世界', characters: '人物', arcs: '叙事线', keywords: '关键词', storyRecords: '状态' }[change.collection] || '变化';
+    const label = STORY_KINDS[(change.after || change.before)?.kind] || { events: '剧情', facts: '世界', characters: '人物', keywords: '关键词', storyRecords: '状态' }[change.collection] || '变化';
     const describe = value => {
         if (Array.isArray(value)) return value.map(describe).filter(Boolean).join('；');
         if (!value) return '';

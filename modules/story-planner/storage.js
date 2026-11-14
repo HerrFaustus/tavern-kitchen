@@ -69,7 +69,7 @@ export function createNoteStore() {
                 request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
             });
         },
-        async put(note) {
+        async put(note, guard = () => true) {
             const tx = (await db()).transaction('notes','readwrite'), store = tx.objectStore('notes');
             return new Promise((resolve,reject) => {
                 let saved;
@@ -78,6 +78,7 @@ export function createNoteStore() {
                     if (get.result) { saved = get.result; return; }
                     const rows = store.index('owner').getAll(note.owner);
                     rows.onsuccess = () => {
+                        if (!guard()) { tx.abort(); return; }
                         saved = {...note,revision:rows.result.reduce((n,r)=>Math.max(n,r.revision),0)+1};
                         store.add(saved);
                     };

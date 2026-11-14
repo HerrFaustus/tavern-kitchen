@@ -1,3 +1,4 @@
+import { retireArcData } from './legacy-arcs.js';
 import { migrateRoundSummaries } from './migrations/round-summaries.js';
 import { createSummaryBaseline } from './summary-history.js';
 import { assignImportedFactIds } from './fact-identity.js';
@@ -7,7 +8,7 @@ import { parseStoryUpdates } from '../../story-state/records.js';
 export const SUMMARY_MEMORY_PACKAGE = Object.freeze({ type: 'TavernKitchenStorySummaryMemory', version: 1 });
 
 export function readSummaryPackageData(raw) {
-    const data = raw?.data;
+    const data = retireArcData(raw?.data);
     if (raw?.type !== SUMMARY_MEMORY_PACKAGE.type || raw?.version !== SUMMARY_MEMORY_PACKAGE.version
         || !data || typeof data !== 'object' || Array.isArray(data)
         || !Array.isArray(data.facts)
@@ -54,14 +55,6 @@ function stampImportedSummaryJson(json, boundary) {
         if (alias && typeof alias === "object") alias._addedAt = boundary;
     }
 
-    for (const arc of (json.arcs || [])) {
-        if (!arc || typeof arc !== "object") continue;
-        arc._addedAt = boundary;
-        for (const moment of (arc.moments || [])) {
-            if (moment && typeof moment === "object") moment._addedAt = boundary;
-        }
-    }
-
     for (const fact of (json.facts || [])) {
         if (fact && typeof fact === "object") fact._addedAt = boundary;
     }
@@ -91,7 +84,9 @@ export function applyImportedSummaryBoundary(store, boundary) {
 export function prepareImportedSummary(previous, json, boundary) {
     const next = structuredClone(previous);
     const store = next.storySummary;
-    store.json = structuredClone(json);
+    const active = retireArcData(json);
+    if (active !== json) store.legacyArcArchive ??= { json:structuredClone(json) };
+    store.json = structuredClone(active);
     delete store.floorDrafts;
     store.json.facts = assignImportedFactIds(store.json.facts);
     delete store.summaryInvalid;

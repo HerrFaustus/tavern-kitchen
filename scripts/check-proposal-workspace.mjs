@@ -56,7 +56,7 @@ try {
     await rootPanel.getByRole('status').filter({hasText:'已保存'}).waitFor();
     const result=await page.evaluate(()=>globalThis.fixture.read());
     assert.equal(result.entities.find(item=>item.id==='hero').fields.coins.value,5);
-    assert.equal(result.entities.find(item=>item.id==='smith').fields.coins.value,5);
+    assert.equal(result.entities.find(item=>item.id==='smith').fields.coins.value,0);
     assert.equal(result.entities.find(item=>item.id==='sword').fields.owner.value.entityId,'hero');
     assert.equal(result.updates[0].reviews.length,3);
     assert.equal(new Set(result.updates[0].reviews.map(item=>item.eventId)).size,1);
@@ -94,24 +94,17 @@ try {
     await recovery.getByRole('status').filter({hasText:'正文来源有变'}).waitFor();
     assert.match(await recovery.innerText(),/正文来源有变/);
     await recovery.getByRole('button',{name:'恢复到此版本'}).click();
-    assert.match(await recovery.innerText(),/聊天和总结不变/);
+    assert.match(await recovery.innerText(),/在当前世界恢复/);
     await recovery.getByRole('button',{name:'确认恢复'}).click();
-    await recovery.getByRole('status').filter({hasText:'已切换到第'}).waitFor();
+    await recovery.getByRole('status').filter({hasText:'已原位恢复到第'}).waitFor();
     const restored=await page.evaluate(async()=>{await globalThis.fixture.archive.prepare();return globalThis.fixture.read();});
-    assert.notEqual(restored.branchId,originalBranch);
+    assert.equal(restored.branchId,originalBranch);
     assert.equal(restored.entities.find(item=>item.id==='hero').fields.coins.value,10);
     assert.equal(restored.entities.find(item=>item.id==='smith').fields.coins.value,0);
-    assert.equal((await page.evaluate(()=>globalThis.fixture.service.branches())).length,2);
+    assert.equal((await page.evaluate(()=>globalThis.fixture.service.branches())).length,1);
     await recovery.getByRole('button',{name:'重新读取'}).click();
-    await recovery.getByLabel('保留的世界分支').selectOption(originalBranch);
-    await recovery.getByRole('button',{name:'切换分支'}).click();
-    await recovery.getByRole('button',{name:'确认切换'}).click();
-    await page.waitForFunction(async original=>{try{return (await globalThis.fixture.read()).branchId===original;}catch{return false;}},originalBranch);
-    const original=await page.evaluate(()=>globalThis.fixture.read());
-    assert.equal(original.entities.find(item=>item.id==='hero').fields.coins.value,5);
-    const blocked=await page.evaluate(async()=>{try {await globalThis.fixture.archive.prepare();return false;}catch{return true;}});
-    assert.equal(blocked,true,'switching back does not erase the old source conflict');
-
+    assert.equal(await recovery.getByLabel('保留的世界分支').count(),0);
+    assert.match(await recovery.innerText(),/已撤销的回执/);
     const second=await openFixture(), next=second.page.frameLocator('iframe').locator('#world-proposals');
     await next.waitFor({state:'visible'});
     await next.locator('.tk-proposal-queue > summary').click();
@@ -122,16 +115,19 @@ try {
     await values.nth(1).fill('4');
     await next.getByLabel('处理说明（可选）').fill('核对后修改数额');
     await next.getByRole('button',{name:'确认并保存'}).click();
+    await next.getByRole('alert').filter({hasText:'成交价与原文实际收付不符'}).waitFor();
+    await values.nth(0).fill('5'); await values.nth(1).fill('5');
+    await next.getByRole('button',{name:'确认并保存'}).click();
     await next.getByRole('status').filter({hasText:'已保存'}).waitFor();
     const edited=await second.page.evaluate(()=>globalThis.fixture.read());
-    assert.equal(edited.entities.find(item=>item.id==='hero').fields.coins.value,4);
-    assert.equal(edited.entities.find(item=>item.id==='smith').fields.coins.value,4);
+    assert.equal(edited.entities.find(item=>item.id==='hero').fields.coins.value,5);
+    assert.equal(edited.entities.find(item=>item.id==='smith').fields.coins.value,0);
     assert.equal(edited.updates[0].update.proposals[0].value,5);
-    assert.equal(edited.updates[0].reviews[0].proposal.value,4);
+    assert.equal(edited.updates[0].reviews[0].proposal.value,5);
     assert.deepEqual(await second.page.evaluate(()=>globalThis.fixture.errors),[]);
     const card=await second.page.evaluate(async()=>{const {testCardRoundTrip}=await import('/card.js');return testCardRoundTrip();});
     assert.deepEqual(card,{exportedNotes:1,containsSetting:false,branchChanged:true,chapter:'灯塔等待来客',recovered:'旧导入章节札记',
         calls:0,rejected:true,activeUnchanged:true,notesAfterRecovery:1,sourcePreserved:true,revisionPreserved:true});
     assert.deepEqual(errors,[]);
-    console.log('Verified isolated workspace, grouped proposal review, world history restoration and switching, source conflicts, and actual IndexedDB card/notes round trip.');
+    console.log('Verified isolated workspace, grouped proposal review, in-place world restoration, source conflicts, and actual IndexedDB card/notes round trip.');
 } finally { await browser.close(); }

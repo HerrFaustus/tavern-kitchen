@@ -132,6 +132,7 @@ export function storyRecordText(record) {
     if (record.kind === 'person') return `${record.name} · ${PRESENCE[record.presence]}${record.note ? `：${record.note}` : ''}`;
     if (record.kind === 'knowledge') return `${record.person} · ${BELIEFS[record.certainty]}：${record.content}（依据：${record.evidence}）${record.learnedAt ? ` · ${record.learnedAt}` : ''}`;
     if (record.kind === 'situation') return [record.title, THREAD_STATUS[record.status], record.description,
+        Array.isArray(record._knownBy) && '已知情人物：' + (record._knownBy.join('、') || '尚无已知情人物') + '。其他人物须在场观察或收到消息。',
         ...Object.entries(SITUATION_FIELDS).filter(([key]) => record[key]).map(([key, label]) => label + '：' + record[key]),
         record.due && '期限：' + record.due, record.reason && '结案原因：' + record.reason].filter(Boolean).join('；');
     return [`${record.title} · ${THREAD_STATUS[record.status]}${record.description ? `：${record.description}` : ''}`,record.holders?.length && '持有人：' + record.holders.join('、'),

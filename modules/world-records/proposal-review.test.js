@@ -94,8 +94,8 @@ test('a late source edit, another world write, a branch round trip and a chat sw
     const newer = (await f.service.commit(f.service.command(f.state, [set('hero', 'description', 'changed')], '并发修改'))).state;
     await assert.rejects(f.service.commit(command), /档案已更新/);
     const fresh = f.service.proposalCommand(newer, f.requestId, 0, 'accepted', { rechecked: true });
-    const fork = await f.service.fork(newer, newer.version); await f.service.selectBranch(newer.branchId, fork);
-    await assert.rejects(f.service.commit(fresh), /世界分支已变化/);
+    const fork = await f.service.rewind(newer, newer.version); await f.service.restore(newer, fork);
+    await assert.rejects(f.service.commit(fresh), /世界版本已变化/);
     f.setIdentity('other'); await assert.rejects(f.service.commit(command));
 });
 
@@ -138,7 +138,7 @@ test('knowledge and plans are written to authoritative story state while creativ
     assert.equal(worldStoryRecords(state).find(record => record.id === 'return').due, '明天');
     const context = buildUpdateContext(state, { json: {}, summaryHistory: f.history }, f.chat, f.service.memorySourceReceipt(state, f.chat, 0, 1));
     assert.equal(context.world.storyRecords[0].person, '主角'); assert.equal(context.world.storyCandidates[0].nature, 'creative_proposal');
-    const fork = await f.service.fork(state, f.state.version); assert.equal(fork.modules.story, undefined); assert.equal(f.readReview(fork).length, 0);
+    const fork = await f.service.rewind(state, f.state.version); assert.equal(fork.modules.story, undefined); assert.equal(f.readReview(fork).length, 0);
 });
 
 test('editing an approved source keeps its receipt and blocks new effects until explicitly resolved', async t => {
@@ -191,5 +191,5 @@ test('confirmed story removal overrides legacy data while preserving the raw mem
     const { state } = await f.service.commit(f.service.proposalCommand(f.state, f.requestId, 1, 'accepted'));
     assert.equal(worldStoryRecords(state, f.baseline).length, 0); assert.deepEqual(f.baseline, [old]);
     const restored = await f.service.restore(state, state); assert.equal(worldStoryRecords(restored, f.baseline).length, 0);
-    const fork = await f.service.fork(restored, f.state.version); assert.deepEqual(worldStoryRecords(fork, f.baseline), [old]);
+    const fork = await f.service.rewind(restored, f.state.version); assert.deepEqual(worldStoryRecords(fork, f.baseline), [old]);
 });

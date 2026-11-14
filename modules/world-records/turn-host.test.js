@@ -94,7 +94,7 @@ test('real host confirmation updates subsequent narration and administrator inpu
     await assert.rejects(prepareSummaryRecovery(scope), /数据 → 世界版本与恢复/);
     assert.equal((await service.read()).version, next.updateContext.basis.version);
     f.archive.reset();
-    await assert.rejects(prepareSummaryRecovery(scope), /分支已变化/);
+    await assert.rejects(prepareSummaryRecovery(scope), /版本已变化/);
 });
 
 test('real host checks the whole incremental source when evidence belongs to an earlier turn', async t => {
@@ -131,21 +131,21 @@ test('real host guards reject source edits before a delayed edit notification', 
     f.context.chat[1].mes = '原文已修改';
     assert.throws(() => assertMemorySources(prepared), /正文来源已变化/);
     await assert.rejects(validateMemorySources(prepared), /正文来源已变化/);
-    await assert.rejects(service.commit(command), /正文来源或世界分支/);
+    await assert.rejects(service.commit(command), /正文来源或世界版本/);
     assert.equal((await service.read()).entities.length, 0);
 });
 
-test('source guards detect a branch switch even after returning to the original branch', async t => {
+test('source guards detect a rewind even after restoring the same world version', async t => {
     const f = setup(t), prepared = await prepareMemorySources(0, 1), service = f.bridge().service;
-    const initial = await service.read(), fork = await service.fork(initial, initial.version);
-    await service.selectBranch(initial.branchId, fork);
-    assert.throws(() => assertMemorySources(prepared), /世界分支/);
+    const initial = await service.read(), fork = await service.rewind(initial, initial.version);
+    await service.restore(initial, fork);
+    assert.throws(() => assertMemorySources(prepared), /世界版本/);
     const next = await prepareMemorySources(0, 1); assertMemorySources(next);
 });
 
 test('changing accounts with the same chat ID cannot retain the old source token', async t => {
     const f = setup(t), prepared = await prepareMemorySources(0, 1), before = await f.bridge().service.read();
-    f.setAccount('account-b'); assert.throws(() => assertMemorySources(prepared), /聊天、世界分支/);
+    f.setAccount('account-b'); assert.throws(() => assertMemorySources(prepared), /聊天、世界版本/);
     const fresh = await prepareMemorySources(0, 1); assert.notEqual(fresh.receipt.worldId, before.worldId);
 });
 
@@ -163,7 +163,7 @@ test('narration stops on stale executed effects while the archive remains availa
     f.context.chat[1].mes = '其实没有买剑。';
     await assert.rejects(f.archive.prepare(), /关联的世界效果需要核对/);
     const conflict = await service.read(); assert.equal(conflict.entities.length, 1); assert.equal(turnProgress(conflict).conflicts.length, 1);
-    await service.fork(conflict, state.version - 1); await f.archive.prepare();
+    await service.rewind(conflict, state.version - 1); await f.archive.prepare();
     assert.equal(turnProgress(await service.read()).conflicts.length, 0); assert.deepEqual(f.errors, []);
 });
 

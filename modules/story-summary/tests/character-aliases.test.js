@@ -82,7 +82,7 @@ test('character alias update canonicalizes structured names and keeps natural su
     assert.deepEqual(json.characters.main.map(item => item.name), ['李玄清', '大小姐']);
     assert.deepEqual(json.events[0].participants, ['李玄清', '大小姐']);
     assert.equal(json.events[0].summary.includes('道长在山门'), true);
-    assert.deepEqual(json.arcs.map(arc => arc.name), ['李玄清']);
+    assert.equal(json.arcs, undefined);
     assert.deepEqual(json.facts.map(fact => `${fact.s}::${fact.p}`), [
         '李玄清::身份',
         '大小姐::对李玄清的看法',
@@ -158,7 +158,7 @@ test('existing alias table canonicalizes later incremental data without a new al
 
     assert.deepEqual(parsed.events[0].participants, ['李玄清', '大小姐']);
     assert.deepEqual(parsed.newCharacters, ['李玄清']);
-    assert.equal(parsed.arcUpdates[0].name, '李玄清');
+    assert.equal(parsed.arcUpdates, undefined);
     assert.deepEqual(parsed.factUpdates.map(fact => `${fact.s}::${fact.p}`), [
         '李玄清::身份',
         '大小姐::对李玄清的看法',

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
+import { readFileSync } from 'node:fs';
 import { applyCommand, emptyWorld, canonical, forkWorld, validateWorld } from './domain.js';
 import { createWorldStorage } from './storage.js';
 import { createWorldService } from './service.js';
@@ -38,10 +39,40 @@ test('old archives survive restore, export and branches without a variable runti
     const restored = await service.restore(JSON.parse(JSON.stringify(backup)), initial);
     assert.deepEqual(restored.modules, backup.modules);
     assert.deepEqual((await service.read()).entities, []);
-    const branch = await service.fork(restored, restored.version);
+    const branch = await service.rewind(restored, restored.version);
     assert.deepEqual(branch.modules.variables, backup.modules.variables);
     const tampered = structuredClone(backup); tampered.modules.variables.values['主角.金币'] = 999;
     await assert.rejects(service.restore(tampered, branch), /历史不一致/);
     assert.equal((await service.read()).branchId, branch.branchId);
     assert.deepEqual((await service.read()).modules.variables, backup.modules.variables);
+});
+
+test('0.2.32 selected world survives upgrade and an ambiguous pointer needs an explicit choice from the same chat',async t=>{
+    const old=JSON.parse(readFileSync(new URL('../../scripts/fixtures/chat-0.2.32.json',import.meta.url),'utf8'));
+    const indexedDB=new IDBFactory(), storage=createWorldStorage({indexedDB});t.after(()=>storage.close());
+    let identity=old.identity;
+    const service=createWorldService({storage,getIdentity:()=>identity});
+    await service.read();
+    const db=await new Promise(resolve=>{const req=indexedDB.open('TavernKitchen_WorldArchive');req.onsuccess=()=>resolve(req.result);});t.after(()=>db.close());
+    const change=apply=>new Promise((resolve,reject)=>{const tx=db.transaction(['owners','bindings','branches'],'readwrite');apply(tx);tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error);});
+    const original=()=>new Promise(resolve=>{const req=db.transaction('branches').objectStore('branches').getAll();req.onsuccess=()=>resolve(req.result);});
+    await change(tx=>{
+        for(const world of old.branches) {
+            tx.objectStore('branches').put(world);
+            tx.objectStore('owners').put({branchId:world.branchId,identity,title:world.title,version:world.version});
+        }
+        tx.objectStore('bindings').put(old.selected,identity);
+    });
+    const all=await original();
+    assert.equal((await service.read()).branchId,old.selected);assert.equal((await service.branches()).length,1);
+    await change(tx=>tx.objectStore('bindings').put('lost-pointer',identity));
+    await assert.rejects(service.ensure(),error=>error.candidates?.length===2);
+    await assert.rejects(service.recoverBinding('another-chat'),/不属于/);
+    assert.deepEqual(await original(),all);
+    await service.recoverBinding(old.selected);
+    const a=await service.read();assert.equal(a.branchId,old.selected);
+    await assert.rejects(service.recoverBinding(old.branches.find(b=>b.branchId!==old.selected).branchId),/已确认/);
+    identity='新聊天';assert.equal(await service.read(),null);await service.ensure();
+    identity=old.identity;assert.deepEqual(await service.read(),a);
+    assert.deepEqual((await original()).filter(row=>old.branches.some(b=>b.branchId===row.branchId)),all);
 });

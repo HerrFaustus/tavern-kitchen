@@ -6,6 +6,6 @@
   "js": "dist/host/plugin.js",
   "css": "style.css",
   "author": "酒馆后厨",
-  "version": "0.2.32",
+  "version": "0.2.33",
   "generate_interceptor": "tavernKitchenGenerateInterceptor"
 }

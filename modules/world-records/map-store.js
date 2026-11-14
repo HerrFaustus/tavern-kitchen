@@ -41,7 +41,7 @@ export function createWorldMapStore({ legacyStore, legacyFiles, getStoryIdentity
         catch (error) { value = null; invalid = error; console.error('[TavernKitchen] 世界地图投影失败', error); }
         if (value) value.revision = worldMapViewRevision(identity, state);
         cachedOwner = identity; cachedEpoch = epoch;
-        cached = { identityKey: JSON.stringify([identity, state.branchId]), osId: state.worldId, envelopeRevision: state.version, value };
+        cached = { identityKey: JSON.stringify([identity, state.branchId, epoch]), osId: state.worldId, envelopeRevision: state.version, value };
         if (invalid) status('failed');
         if (value && !writing && !pending) status('ready');
         for (const listener of listeners) {
@@ -67,7 +67,7 @@ export function createWorldMapStore({ legacyStore, legacyFiles, getStoryIdentity
         if (!state) state = await owner.service.ensure();
         invariant(current(owner), '对话已切换，地图操作已取消');
         let raw = state.modules?.map;
-        if (raw === undefined && state.parent) raw = createEmptyMapDomain();
+        if (raw === undefined && (state.parent || state.withdrawn?.length)) raw = createEmptyMapDomain();
         if (raw === undefined) {
             const legacy = await legacyStore.readRaw();
             invariant(current(owner), '对话已切换，地图导入已取消');
@@ -86,7 +86,7 @@ export function createWorldMapStore({ legacyStore, legacyFiles, getStoryIdentity
         let value = raw;
         try { value = project(state, raw, owner.identity); } catch { value = copy(raw); }
         publish(state, owner.identity);
-        return { identityKey: JSON.stringify([owner.identity, state.branchId]), osId: state.worldId, envelopeRevision: state.version, value: copy(value) };
+        return { identityKey: JSON.stringify([owner.identity, state.branchId, owner.epoch]), osId: state.worldId, envelopeRevision: state.version, value: copy(value) };
     }
     async function read() {
         try {

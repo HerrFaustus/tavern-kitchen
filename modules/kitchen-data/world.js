@@ -1,5 +1,5 @@
 import { plannerOwner } from '../story-planner/identity.js';
-import { emptyWorld, validateWorld, forkWorld, canonical } from '../world-records/domain.js';
+import { emptyWorld, validateWorld, canonical } from '../world-records/domain.js';
 import { createIdentifier } from '../../shared/common/identifier.js';
 
 // Prepare an inactive namespace. A confirmed memory publication activates it.
@@ -18,8 +18,8 @@ export function createWorldCardData({ identity, storage, service, noteStore }) {
                 const owner = identity(), target = identity(namespace), before = await storage.read(owner);
                 assertCurrent();
                 const parsed = backup ? validateWorld(structuredClone(backup)) : emptyWorld(createIdentifier(), createIdentifier(), '导入的世界');
-                const next = forkWorld(parsed, parsed.version, createIdentifier());
-                await storage.update(target, () => ({ state: next, result: next }), () => { assertCurrent(); return owner === identity(); });
+                const next = parsed;
+                await storage.update(target, () => ({ state: next, result: next, slot:namespace }), () => { assertCurrent(); return owner === identity(); });
                 const noteOwner = plannerOwner(target, next);
                 await noteStore.putImported(noteOwner, notes.map(note => ({ ...structuredClone(note), owner: noteOwner, id: namespace + ':' + note.id })),
                     () => { assertCurrent(); return owner === identity(); });

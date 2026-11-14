@@ -6,7 +6,7 @@ const displayFields = {
     storyRecords: Object.keys(STORY_FIELDS),
     events: ['title', 'timeLabel', 'summary', 'participants', 'causedBy', 'memoryRole'],
     facts: ['s', 'p', 'o', 'since', 'retracted', 'trend', '_isState'],
-    characters: ['name'], arcs: ['name', 'trajectory', 'progress', 'moments'],
+    characters: ['name'],
     characterAliases: ['from', 'to', 'evidence'],
     anchors: ['semantic', 'where', 'edges'],
 };

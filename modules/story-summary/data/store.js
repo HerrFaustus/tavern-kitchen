@@ -1,7 +1,8 @@
+import { retireArcData } from './legacy-arcs.js';
 import { migrateRoundSummaries } from './migrations/round-summaries.js';
 import { isFloorEntryCurrent, replaySummaryPrefix, restoreFloorRoundSources } from '../inline/ledger.js';
 // Story Summary - Store
-// 大总结以一份 JSON 保存 events、characters、arcs、facts 等；L3 Facts 是召回时的投影名称，不是另一份总结存储。
+// 大总结以一份 JSON 保存 events、characters、facts 等；L3 Facts 是召回时的投影名称，不是另一份总结存储。
 
 import { getContext } from "../../../../../../extensions.js";
 import { mergeStoryRecords } from '../../story-state/records.js';
@@ -57,7 +58,6 @@ function normalizeSummaryJson(json) {
                 keywords: [],
                 events: [],
                 characters: { main: [] },
-                arcs: [],
                 facts: [],
             },
             changed: true,
@@ -124,38 +124,6 @@ function normalizeSummaryJson(json) {
         }
     }
 
-    if (!Array.isArray(next.arcs)) {
-        next.arcs = [];
-        changed = true;
-    } else {
-        const arcs = [];
-        for (const arc of next.arcs) {
-            if (!isPlainObject(arc)) {
-                changed = true;
-                continue;
-            }
-
-            const moments = Array.isArray(arc.moments)
-                ? arc.moments.filter(item => typeof item === 'string' || isPlainObject(item))
-                : [];
-
-            if (!Array.isArray(arc.moments) || moments.length !== arc.moments.length) {
-                arcs.push({ ...arc, moments });
-                changed = true;
-                continue;
-            }
-
-            arcs.push(arc);
-        }
-
-        if (arcs.length !== next.arcs.length) {
-            changed = true;
-        }
-        if (changed) {
-            next.arcs = arcs;
-        }
-    }
-
     const normalizedAliases = normalizeCharacterAliases(next.characterAliases);
     if (next.characterAliases == null) {
         // Keep the optional alias table absent until it is actually needed.
@@ -211,6 +179,13 @@ function normalizeSummaryStore(store) {
         }
     }
 
+    // Keep the original legacy fields and inverse records for offline recovery.
+    if (Object.hasOwn(store.json || {}, 'arcs') || /"(?:arcChanges|previousArcs|generatedArcs|arcUpdates)"|"collection":"arcs"/.test(JSON.stringify(store.summaryHistory || []))) {
+        store.legacyArcArchive ??= { arcs:structuredClone(store.json?.arcs || []), history:structuredClone(store.summaryHistory || []) };
+        if (store.json) store.json = retireArcData(store.json);
+        store.summaryHistory = retireArcData(store.summaryHistory || []);
+        changed = true;
+    }
     const history = normalizeSummaryHistory(store.summaryHistory);
     if (history.changed) {
         store.summaryHistory = history.value;
@@ -368,18 +343,18 @@ function recoveryPrefix(store, chat, rollbackFloor, atoms) {
 }
 
 function recoveryPlan(store, atoms) {
-    const rollbackFloor = Math.min(store?.sourceRollbackFromFloor ?? Infinity, getRuntimeSourceRollbackFloor() ?? Infinity);
+    const rollbackFloor = Math.min(store?.sourceRollbackFromFloor ?? Infinity, getRuntimeSourceRollbackFloor() ?? Infinity, firstInvalidMemorySource(store,getContext().chat || []) ?? Infinity);
     if (!store || !store.summaryInvalid && !Number.isFinite(rollbackFloor)) return null;
     const context = getContext(), chat = context.chat || [];
     const prefix = recoveryPrefix(store, chat, rollbackFloor, atoms);
     const fromFloor = (prefix.history.at(-1)?.endMesId ?? -1) + 1;
     const token = memoryDigest([getChatIdentity(context), store.dataBranch, store.updatedAt, rollbackFloor, fromFloor,
-        chat.length ? captureRangeSource(chat, 0, chat.length - 1).digest : null, store.summaryHistory, store.json]);
+        chat.length ? captureRangeSource(chat, 0, chat.length - 1).digest : null, store.summaryHistory, store.json, store.floorWork]);
     return { fromFloor, token, prefix };
 }
 
 export function summaryRecoveryPreview(store = getPublishedSummaryStore()) {
-    if (!store || !store.summaryInvalid && store.sourceRollbackFromFloor == null && getRuntimeSourceRollbackFloor() == null) return null;
+    if (!store || !store.summaryInvalid && store.sourceRollbackFromFloor == null && getRuntimeSourceRollbackFloor() == null && firstInvalidMemorySource(store,getContext().chat || []) == null) return null;
     const plan = recoveryPlan(store, getPublishedSummaryMemory().stateAtoms);
     return { fromFloor: plan.fromFloor, token: plan.token };
 }
@@ -393,6 +368,7 @@ export async function recoverSummaryTail(chatId, token, validate) {
     const cacheFrom = Math.min(fromFloor, store.sourceInvalidFromFloor ?? Infinity, getRuntimeInvalidSourceFloor() ?? Infinity);
     // Drop the untrusted suffix before visiting maintenance receipts in a damaged history.
     const draft = { ...store, summaryHistory: prefix.history, lastSummarizedMesId: fromFloor - 1, json: prefix.json, updatedAt: Date.now() };
+    if (draft.floorWork) draft.floorWork = Object.fromEntries(Object.entries(draft.floorWork).filter(([floor]) => +floor < fromFloor));
     if (draft.floorDrafts) draft.floorDrafts = { ...draft.floorDrafts };
     delete draft.summaryInvalid;
     delete draft.sourceInvalidFromFloor;
@@ -590,7 +566,7 @@ export function mergeNewData(oldJson, parsed, endMesId, options = {}) {
 
     merged.characters ||= {};
     merged.characters.main ||= [];
-    merged.arcs ||= [];
+    delete merged.arcs;
 
     merged.facts ||= [];
 
@@ -753,7 +729,6 @@ function hasSummaryContent(json) {
         (json.keywords || []).length > 0
         || (json.events || []).length > 0
         || (json.characters?.main || []).length > 0
-        || (json.arcs || []).length > 0
         || (json.facts || []).length > 0
         || (json.characterAliases || []).length > 0
         || (json.storyRecords || []).length > 0

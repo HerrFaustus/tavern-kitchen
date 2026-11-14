@@ -1,3 +1,4 @@
+import { retireArcData } from './legacy-arcs.js';
 import { restoreMaintenance, sameMemory as sameJson } from '../maintenance/domain.js';
 
 const UNDO_VERSION = 1;
@@ -101,13 +102,6 @@ export function buildSummaryUndo(beforeJson = {}, afterJson = {}, { aliasChanged
         generatedField: 'generatedMainCharacters',
         changesField: 'mainCharacterChanges',
         getKey: characterKey,
-        forceSnapshot: aliasChanged,
-    });
-    recordCollection(undo, beforeJson.arcs || [], afterJson.arcs || [], {
-        previousField: 'previousArcs',
-        generatedField: 'generatedArcs',
-        changesField: 'arcChanges',
-        getKey: arcKey,
         forceSnapshot: aliasChanged,
     });
     recordCollection(undo, beforeJson.facts || [], afterJson.facts || [], {
@@ -281,7 +275,6 @@ function collections(json) {
         keywords: Array.isArray(json.keywords) ? json.keywords : [],
         events: Array.isArray(json.events) ? json.events : [],
         mainCharacters: Array.isArray(json.characters?.main) ? json.characters.main : [],
-        arcs: Array.isArray(json.arcs) ? json.arcs : [],
         facts: Array.isArray(json.facts) ? json.facts : [],
         storyRecords: Array.isArray(json.storyRecords) ? json.storyRecords : [],
         characterAliases: Array.isArray(json.characterAliases) ? json.characterAliases : [],
@@ -289,14 +282,14 @@ function collections(json) {
 }
 
 export function applySummaryUndo(json = {}, rawUndo, { discardChanged = false } = {}) {
-    const undo = normalizeSummaryUndo(rawUndo);
+    json = retireArcData(json);
+    const undo = normalizeSummaryUndo(retireArcData(rawUndo));
     if (!undo) return null;
     const current = collections(json);
     const snapshots = [
         ['previousKeywords', 'generatedKeywords', 'keywords'],
         ['previousEvents', 'generatedEvents', 'events'],
         ['previousMainCharacters', 'generatedMainCharacters', 'mainCharacters'],
-        ['previousArcs', 'generatedArcs', 'arcs'],
         ['previousFacts', 'generatedFacts', 'facts'],
         ['previousStoryRecords', 'generatedStoryRecords', 'storyRecords'],
         ['previousCharacterAliases', 'generatedCharacterAliases', 'characterAliases'],
@@ -310,7 +303,6 @@ export function applySummaryUndo(json = {}, rawUndo, { discardChanged = false } 
     const changeSets = [
         ['eventChanges', 'events', eventKey],
         ['mainCharacterChanges', 'mainCharacters', characterKey],
-        ['arcChanges', 'arcs', arcKey],
         ['factChanges', 'facts', factKey],
         ['storyRecordChanges', 'storyRecords', eventKey],
         ['characterAliasChanges', 'characterAliases', item => normalizedName(item?.from)],

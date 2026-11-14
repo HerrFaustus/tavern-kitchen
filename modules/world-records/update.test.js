@@ -115,7 +115,7 @@ for (const mode of ['old-value', 'unknown-id', 'bad-reference', 'invalid-coins',
 
 test('already executed effects require acknowledgement and never become another payment proposal', async t => {
     const f = await setup(t), turn = currentTurns(f.state)[0];
-    const command = f.service.effectCommand(f.state, turn.id, 'buy', [{ type: 'purchase', buyerId: 'hero', sellerId: 'smith', itemId: 'sword', price: 5, source }], '买剑');
+    const command = f.service.effectCommand(f.state, turn.id, 'buy', [{ type: 'purchase', heroId:'hero', buyerId: 'hero', sellerId: 'smith', itemId: 'sword', price: 5, source }], '买剑');
     f.state = (await f.service.commit(command)).state; f.receipt = f.service.memorySourceReceipt(f.state, f.messages, 0, 1);
     f.context = buildUpdateContext(f.state, f.store, f.messages, f.receipt);
     f.raw.basis.version = f.state.version; f.raw.acknowledgedReceipts = f.context.executionReceipts.map(item => item.commandId);
@@ -149,7 +149,7 @@ test('a proposal delivery survives fork and restore but never arrives late in a 
     const f = await setup(t), update = prepareWorldUpdate(f.raw, f.context), basis = f.state;
     let state = await f.service.syncTurns(f.messages, { history: history(f, update) });
     const restored = await f.service.restore(state, state); assert.deepEqual(restored.sources, state.sources);
-    state = await f.service.fork(restored, basis.version);
+    state = await f.service.rewind(restored, basis.version);
     state = await f.service.syncTurns(f.messages, { history: history(f, update) }); assert.equal(worldUpdates(state).length, 0);
 });
 

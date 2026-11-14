@@ -384,7 +384,7 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
             featureBar.hidden = false;
             groups.master.append(row);
             body.hidden = !!paused;
-            groups.function.hidden = !enabled;
+            groups.function.hidden = !enabled && !['people','situation','map'].includes(id);
             if (paused) return;
         }
         if (id === 'opening' && initializeWorld) {

@@ -1,7 +1,7 @@
 import { indexGeography } from '../story-state/regional-proximity.js';
 import { nameKey, protagonistIdentity } from '../story-state/protagonist-identity.js';
 import { ageDisplay, latestStoryTime } from '../story-state/time-rel.js';
-import { POSSESSION_ROLES } from './person-fields.js';
+import { importantPossession, POSSESSION_ROLES } from './person-fields.js';
 import { FIELD_LABELS } from './domain.js';
 import { worldStoryRecords } from './world-story-state.js';
 import { storyContextGroups, storyRecordText } from '../story-state/records.js';
@@ -67,9 +67,19 @@ export function buildAuthorityContext(state, query = '', maxChars = 4000, player
     if (!state) return '';
     const { entities } = authorityIndex(state);
     const context = normalize(query);
-    const candidates = state.entities.filter(entity => entity.kind === 'person' || Object.values(entity.fields).some(established));
     const relevant = entity => [entity.name, ...entity.aliases].some(name => normalize(name) && context.includes(normalize(name)));
     const player = protagonistIdentity(state.entities, playerName);
+    const enabled = options.tasks && new Set(options.tasks);
+    const accepts = (...keys) => !enabled || keys.some(key => enabled.has(key));
+    const inventory = entity => entity.kind === 'item' && player.hero && Object.entries(entity.fields).some(
+        ([field, record]) => Object.hasOwn(POSSESSION_ROLES, field) && established(record) && record.value?.entityId === player.hero.id);
+    const candidates = state.entities.filter(entity => {
+        if (!enabled) return entity.kind === 'person' || Object.values(entity.fields).some(established);
+        if (entity.kind === 'place') return accepts('places','mapEvolution','subscribed','sceneryEvolution','encounter');
+        if (entity.kind === 'item') return accepts('overview') && inventory(entity)
+            || accepts('people','peopleEvolution') && importantPossession(entity);
+        return accepts('people','peopleEvolution') || entity === player.hero && accepts('overview');
+    });
     const geo = indexGeography(state.entities, state.modules?.map?.atlas || {});
     const heroPlaceId = player.hero?.fields?.location?.value?.entityId || '';
     const here = heroPlaceId ? geo.ancestry('entity:' + heroPlaceId) : [];
@@ -92,7 +102,10 @@ export function buildAuthorityContext(state, query = '', maxChars = 4000, player
     const importantSet = new Set(involvement.filter(row => row.important || row.core).map(row => row.key));
     const inFocus = entity => entity === player.hero || near.has('person/' + entity.id) || relevant(entity) || local('entity:' + (entity.kind === 'place' ? entity.id : entity.fields.location?.value?.entityId));
 
-    const records = Array.isArray(options.storyRecords) ? options.storyRecords : worldStoryRecords(state);
+    const recordTasks = {person:['people','peopleEvolution'], knowledge:['people','peopleEvolution'], goal:['people','peopleEvolution'], plan:['people','peopleEvolution','situation','subscribed'],
+        situation:['situation','subscribed','sceneryEvolution','encounter'], clock:['situation','subscribed'], suspense:['suspense']};
+    const records = (Array.isArray(options.storyRecords) ? options.storyRecords : worldStoryRecords(state))
+        .filter(record => accepts(...(recordTasks[record.kind] || [])) && (!record._task || accepts(record._task)));
     const nowTime = options.nowTime || latestStoryTime(null, null, records);
     const hasSceneAnchor = Boolean(heroPlaceId) || records.some(r => r.kind === 'person');
 
@@ -203,6 +216,10 @@ export function buildAuthorityContext(state, query = '', maxChars = 4000, player
 
         for (const [field, record] of fieldEntries) {
             if (!established(record) || isPrivateStoryField(field)) continue;
+            if (['coins','金币'].includes(field) && (entity.id !== player.hero?.id || !accepts('overview'))) continue;
+            if (record.source?.task && !accepts(record.source.task)) continue;
+            if (enabled && entity === player.hero && !accepts('people','peopleEvolution') && !['coins','金币','location','status','condition'].includes(field)) continue;
+
             if (record.source?.module === 'world-opening' && !inFocus(entity) && !heldByHero(field, record)) continue;
             if (entity.kind === 'person' && tier === 'nearby') {
                 const allowShortDesc = field === 'description' && hit && typeof record.value === 'string' && record.value.length <= 160;
@@ -219,6 +236,10 @@ export function buildAuthorityContext(state, query = '', maxChars = 4000, player
                 if (anchor) value = ageDisplay(value, anchor, nowTime);
             }
             const entry = { id: entity.id, name: entity.name, field: FIELD_LABELS[field] || field, value };
+            if (record.source?.module === 'simulation') {
+                entry['已知情人物'] = (record.source.knownBy || []).map(id=>entities.get(id)?.name).filter(Boolean);
+                entry['知情限制'] = '仅列出的人物已知，其他人物须在场观察或收到消息';
+            }
             if (entity.kind === 'person' && tier !== 'hero' && hasSceneAnchor && !entry.scope) {
                 entry.scope = PERSON_TIER_LABELS[tier];
             }
@@ -278,6 +299,12 @@ export function projectAuthorityMap(map, state) {
             const value = entity.fields.description.value;
             if (typeof value === 'string' && value.trim()) location.brief = value;
             else delete location.brief;
+        }
+        const access = entity.fields['通行状态']?.value;
+        if (access) {
+            location.brief = [location.brief, '通行状态：' + access].filter(Boolean).join(' · ');
+            copy.atlas.links = (copy.atlas.links || []).map(link => link.from === location.key || link.to === location.key
+                ? {...link,label:[link.label, access].filter(Boolean).join(' · ')} : link);
         }
         if (established(entity.fields.parent)) {
             const key = placeKey(entity.fields.parent.value?.entityId);

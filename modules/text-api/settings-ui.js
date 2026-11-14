@@ -100,7 +100,7 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
         if (destroyed || ticket !== statsRevision) return snapshot;
         const rows = Object.values(snapshot.features);
         const sum = key => rows.reduce((total, row) => total + row[key], 0);
-        statsText.textContent = `本次调用 ${sum('calls')} 次 · 失败 ${sum('failures')} · 累计 ${(sum('totalMs') / 1000).toFixed(1)} 秒`;
+        statsText.textContent = `Agent 任务 ${Object.values(snapshot.tasks || {}).reduce((a,b) => a+b,0)} 次 · 实际请求 ${sum('calls')} 次 · 失败 ${sum('failures')} · 累计 ${(sum('totalMs') / 1000).toFixed(1)} 秒`;
         return snapshot;
     }
     function readStats() {

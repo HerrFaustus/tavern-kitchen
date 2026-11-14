@@ -129,6 +129,7 @@ export function createSettingsRepository(adapter: XiaobaiOsSettingsAdapter): Xia
         committed = cloneSettings(installed);
         publishMutationInstalled(installed);
         publish(installed);
+        globalThis.window?.dispatchEvent?.(new Event('tavernKitchen:floor-settings'));
         return cloneSettings(installed);
     }
 

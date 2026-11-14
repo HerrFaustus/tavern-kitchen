@@ -1,3 +1,4 @@
+import { paidPrice } from './turn-actions.js';
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
 import { UPDATE_PREFIX, worldSnapshotDigest, worldUpdates } from './update-context.js';
 import { prepareWorldUpdate } from './update-result.js';
@@ -192,7 +193,8 @@ function prepareReviewItem(state, command, operation, context, storyState) {
         const key = `proposal:${memoryDigest([state.worldId, operation.requestId, operation.index])}`;
         outcome = 'applied';
         if (approved.type === 'field') {
-            if (approved.nature === 'established_fact') operations.push({ type: 'set', entityId: approved.entityId, field: approved.field, value: approved.value, source });
+            if (approved.entityId === context.tradePeer && fieldName(approved.field) === 'coins') outcome = 'archived';
+            else if (approved.nature === 'established_fact') operations.push({ type: 'set', entityId: approved.entityId, field: approved.field, value: approved.value, source });
             else { outcome = 'claim'; operations.push({ type: 'claim', id: key, entityId: approved.entityId, field: approved.field, value: approved.value, nature: approved.nature, source }); }
         } else if (approved.type === 'entity') {
             operations.push({ type: 'create', id: key, name: approved.name, kind: approved.kind, aliases: approved.aliases, source });
@@ -237,6 +239,26 @@ export function prepareProposalReview(state, command, context = {}) {
                 originalFor(record, item.index), context.storyRecords || []))), '自动确认不能修改提案内容');
         }
     }
+    // A pending 0.2.32 purchase described each wallet separately. An accepted
+    // batch keeps those original proposals for audit, but only the hero's wallet settles.
+    const accepted = items.filter(item => item.action === 'accepted').map(item => item.proposal);
+    const wallets = accepted.filter(p => p.type === 'field' && fieldName(p.field) === 'coins' && p.nature === 'established_fact');
+    const transfers = accepted.filter(p => p.type === 'field' && fieldName(p.field) === 'owner');
+    if (wallets.length && transfers.length) {
+        const hero = context.heroId;
+        const own = wallets.filter(p => p.entityId === hero);
+        check(own.length === 1 && transfers.length === 1, '不能唯一核对本次主角收支与物品');
+        const [money] = own, [item] = transfers;
+        const delta = money.value - money.before?.value;
+        const seller = item.before?.value?.entityId, buyer = item.value?.entityId;
+        const peer = delta < 0 ? seller : buyer;
+        check(hero && peer && peer !== hero && (delta < 0 ? buyer === hero : seller === hero)
+            && wallets.every(row => row.entityId === hero || row.entityId === peer), '交易方向与主角归属不符');
+        check(delta !== 0 && paidPrice(money.evidence.quote) === Math.abs(delta), '成交价与原文实际收付不符');
+        context = {...context, tradePeer:peer};
+    } else if (wallets.length && 'heroId' in context) {
+        check(wallets.every(p=>p.entityId === context.heroId), '配角钱包不能参与结算');
+    }
     const scratch = { ...state, modules: { ...state.modules } };
     const operations = items.flatMap(item => prepareReviewItem(state, command, item, context, scratch));
     const created = operations.filter(operation => operation.type === 'create');
@@ -265,7 +287,11 @@ export function validateProposalReviewHistory(state) {
         const proposal = review.proposal;
         const outcome = review.action === 'rejected' ? 'rejected' : proposal.type === 'story'
             ? isCurrentStoryProposal(proposal) ? 'applied' : 'candidate' : proposal.nature === 'established_fact' ? 'applied' : 'claim';
-        check(review.outcome === outcome && review.edited === (review.action === 'accepted' && !equal(record.update.proposals[review.index], proposal)), '处理结果与确认内容不一致');
+        const archivedPeer = review.outcome === 'archived' && review.action === 'accepted' && proposal?.type === 'field'
+            && fieldName(proposal.field) === 'coins' && event.effects.some(e => e.type === 'entity' && e.id !== proposal.entityId
+                && e.before?.fields?.coins?.value !== e.after?.fields?.coins?.value)
+            && !event.effects.some(e => e.type === 'entity' && e.id === proposal.entityId && e.before?.fields?.coins?.value !== e.after?.fields?.coins?.value);
+        check((review.outcome === outcome || archivedPeer) && review.edited === (review.action === 'accepted' && !equal(record.update.proposals[review.index], proposal)), '处理结果与确认内容不一致');
         if (review.action === 'rejected') check(!receipt.origin && event.effects.every(effect => effect.type === 'review'), '拒绝记录不能包含世界效果');
         else {
             check(!!receipt.origin, '确认记录缺少来源效果回执');
@@ -281,6 +307,7 @@ export function validateProposalReviewHistory(state) {
                     && !record.update.conflicts.some(conflict => conflict.evidence.floor >= turn.source.start && conflict.evidence.floor <= turn.source.end), '自动确认历史与明确依据不一致');
             }
             const key = `proposal:${memoryDigest([state.worldId, record.update.requestId, review.index])}`;
+            if (archivedPeer) continue;
             if (proposal.type === 'field') check(event.effects.some(effect => outcome === 'applied'
                 ? effect.type === 'entity' && effect.id === proposal.entityId && equal(effect.after.fields[proposal.field]?.value, proposal.value)
                     && equal(effect.before?.fields[proposal.field] ? { present: true, value: effect.before.fields[proposal.field].value } : { present: false }, proposal.before)

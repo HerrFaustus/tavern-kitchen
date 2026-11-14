@@ -14,7 +14,8 @@ test('normal exported memory packages retain their contents, including an empty 
         const raw = exportedPackage();
         raw.data.facts = structuredClone(facts);
         const before = structuredClone(raw);
-        assert.deepEqual(readSummaryPackageData(raw), raw.data);
+        const active = {...raw.data}; delete active.arcs;
+        assert.deepEqual(readSummaryPackageData(raw), active);
         assert.deepEqual(raw, before);
     }
 });

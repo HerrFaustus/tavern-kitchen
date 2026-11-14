@@ -1,3 +1,4 @@
+import { featureCalls } from '../../../text-api/call-stats.js';
 import { fetchWithExtras } from '../../../../shared/common/request-extras.js';
 // ═══════════════════════════════════════════════════════════════════════════
 // Reranker - 硅基 bge-reranker-v2-m3
@@ -145,12 +146,16 @@ export async function rerank(query, documents, options = {}) {
     const requestSignal = mergeAbortSignals(signal, controller.signal);
     const T0 = performance.now();
 
+    let finish;
     try {
         const baseUrl = resolveApiBaseUrl(
             String(apiCfg.url || DEFAULT_RERANK_URL),
             getDefaultApiPrefix(apiCfg.provider || 'siliconflow')
         );
-        const response = await fetchWithExtras(apiCfg)(`${baseUrl}/rerank`, {
+        requestSignal.throwIfAborted();
+        const send = fetchWithExtras(apiCfg);
+        finish = featureCalls.start('rerank');
+        const response = await send(`${baseUrl}/rerank`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${key}`,
@@ -187,6 +192,7 @@ export async function rerank(query, documents, options = {}) {
         const elapsed = Math.round(performance.now() - T0);
         xbLog.info(MODULE_ID, `Rerank 完成: ${validDocs.length} docs → ${results.length} selected (${elapsed}ms)`);
 
+        finish(data.usage);
         return {
             results: mapped,
             failed: false,
@@ -194,6 +200,7 @@ export async function rerank(query, documents, options = {}) {
         };
 
     } catch (e) {
+        finish?.(undefined,e);
         // Caller cancellation ends the whole recall. Only this request's own
         // timeout/provider failure may use the atomic rerank fallback.
         if (signal?.aborted) throw signal.reason || e;
@@ -381,12 +388,16 @@ export async function testRerankService(apiConfig = {}, { signal } = {}) {
     if (signal?.aborted) onAbort();
     else signal?.addEventListener('abort', onAbort, { once: true });
     const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT);
+    let finish;
     try {
         const baseUrl = resolveApiBaseUrl(
             String(next.url || DEFAULT_RERANK_URL),
             getDefaultApiPrefix(next.provider || 'siliconflow')
         );
-        const response = await fetchWithExtras(apiConfig)(`${baseUrl}/rerank`, {
+        controller.signal.throwIfAborted();
+        const send = fetchWithExtras(apiConfig);
+        finish = featureCalls.start('test-rerank');
+        const response = await send(`${baseUrl}/rerank`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${key}`,
@@ -407,11 +418,13 @@ export async function testRerankService(apiConfig = {}, { signal } = {}) {
         }
         const data = await response.json();
         const results = Array.isArray(data.results) ? data.results : [];
+        finish(data.usage);
         return {
             success: true,
             message: `连接成功：返回 ${results.length} 个结果`,
         };
     } catch (e) {
+        finish?.(undefined,e);
         if (signal?.aborted) throw e;
         throw new Error(`连接失败: ${e.message}`, { cause: e });
     } finally {

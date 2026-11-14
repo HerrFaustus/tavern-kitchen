@@ -5,6 +5,7 @@ import { deleteEventVectorsByIds } from '../vector/storage/chunk-store.js';
 import { clearRecallRuntime } from '../vector/runtime/runtime.js';
 import { runVectorWriteTask, VECTOR_WRITE_SCOPES, cancelEmbeddingWriteTasks } from '../vector/runtime/maintenance-coordinator.js';
 import { createMemorySession } from './session.js';
+import { featureCalls } from '../../text-api/call-stats.js';
 import { commitMemorySession, publishedMaintenanceCommit } from './commit.js';
 import { createSharedMemoryAgent, runMemoryAgent, memoryRunId } from './runner.js';
 import { repairMaintenanceIndexes } from './indexes.js';
@@ -66,11 +67,13 @@ export async function executeMemoryTask(task, {
         task = { ...task, start: 0, cutoff: current.cutoff };
     } else {
         current = await waitWritable();
-        requireMemory(current.cutoff === task.cutoff, 'conflict');
+        requireMemory(task.historical ? current.cutoff >= task.cutoff : current.cutoff === task.cutoff, 'conflict');
     }
     const canMaintain = enabled() && hasMaintenanceBoundary(current) && getMemoryCommitState() !== 'unconfirmed';
     const batch = canMaintain ? current.store.summaryHistory.find(entry => entry.endMesId === task.cutoff) : null;
-    const session = canMaintain ? createMemorySession({ ...current, ...task, generateReviewedLayer,
+    const agentTask = featureCalls.task('memory');
+    const session = canMaintain ? createMemorySession({ ...current, ...task,
+        generateReviewedLayer: generateReviewedLayer && (request => generateReviewedLayer({...request,agentTask})),
         filterRules: batch?.policy ? batch.policy.filterRules : currentFilterRules() }) : null;
     owner = current.store;
     let index = { status: 'ready' }, latest = null, prepared = null, saveError = null;
@@ -175,7 +178,7 @@ export async function executeMemoryTask(task, {
         throw error;
     }
     assertIdentity();
-    const result = await runMemoryAgent(session, { ...agent, signal, mode, question, history, runId,
+    const result = await runMemoryAgent(session, { ...agent, agentTask, signal, mode, question, history, runId,
         summaryStyle: summaryStyle(),
         readMaintenance: async args => {
             assertIdentity();

@@ -10,6 +10,7 @@ export async function runRecursiveCompressionCascade(store, {
     chat = null,
     isLeafCurrent = null,
     leafKeepRecent = DEFAULT_LEAF_KEEP_RECENT,
+    minDepth = 2,
     summarizeLayer,
     maxNodes = 16,
     signal = null,
@@ -20,7 +21,7 @@ export async function runRecursiveCompressionCascade(store, {
         if (signal?.aborted) break;
         const plan = planNextCompression(store.summaryHistory, {
             chat,
-            staged,
+            staged, minDepth,
             isLeafCurrent,
             leafKeepRecent,
         });

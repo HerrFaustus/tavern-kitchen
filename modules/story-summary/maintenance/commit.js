@@ -1,3 +1,4 @@
+import { chapterNotesEnabled, observeSavedChapter } from './notification.js';
 import { maintenanceImpact, sameMemory } from './domain.js';
 import { appendMaintenanceReceipt } from '../data/summary-history.js';
 import { updateMaintainedAnchorIndex } from '../data/anchor-invalidation.js';
@@ -35,7 +36,7 @@ export async function commitMemorySession(session, result, ports, signal) {
     const operations = edit.operations, impact = maintenanceImpact(operations);
     if (edit.layers?.length || edit.revisions?.length) impact.summary = true;
     const previous = projection(current);
-    const boundary = current.store.lastSummarizedMesId;
+    const boundary = session.cutoff;
     const store = { ...current.store, json: memory.json,
         summaryHistory: current.store.summaryHistory.map(batch => batch.endMesId === boundary
             ? { ...batch, maintenance: [...batch.maintenance] } : batch),
@@ -45,7 +46,8 @@ export async function commitMemorySession(session, result, ports, signal) {
         const index = store.summaryHistory.findIndex(batch => batch.endMesId === boundary);
         requireMemory(index >= 0, 'conflict');
         const batch = store.summaryHistory[index];
-        store.summaryHistory[index] = { ...batch, ...(edit.layers?.length && { reviewLayers: [...(batch.reviewLayers || []), ...structuredClone(edit.layers)] }),
+        const chapter = edit.layers?.filter(node => node.level === 'chapter').at(-1);
+        store.summaryHistory[index] = { ...batch, ...(chapter && chapterNotesEnabled() && { pendingPlannerChapter: chapter.sourceId }), ...(edit.layers?.length && { reviewLayers: [...(batch.reviewLayers || []), ...structuredClone(edit.layers)] }),
             ...(edit.revisions?.length && { roundRevisions: [...(batch.roundRevisions || []), ...structuredClone(edit.revisions)] }) };
     }
     const receipts = [];
@@ -54,14 +56,14 @@ export async function commitMemorySession(session, result, ports, signal) {
         coverage: { supplied: [], missingAnchors: [] }, summary: '', calls: [], ...extra });
     for (const completion of edit.completions) {
         const receipt = create({ completion });
-        appendMaintenanceReceipt(store, receipt); receipts.push(receipt);
+        appendMaintenanceReceipt(store, receipt, boundary); receipts.push(receipt);
     }
     let outcome = edit.outcome;
     if (outcome && result.mode !== 'chat' && outcome.status === 'completed'
         && maintenanceRanges(store.summaryHistory, session.cutoff).pending.length) outcome = { ...outcome, status: 'partial' };
     if (operations.length || outcome || !receipts.length) {
         const receipt = create({ operations, ...(outcome ? { outcome } : {}) });
-        appendMaintenanceReceipt(store, receipt); receipts.push(receipt);
+        appendMaintenanceReceipt(store, receipt, boundary); receipts.push(receipt);
     }
     const receipt = receipts.at(-1);
     if (edit.revisions?.length) receipt.roundRevisionCount = edit.revisions.length;
@@ -78,7 +80,9 @@ export async function commitMemorySession(session, result, ports, signal) {
             session.assertCurrent(fresh);
             requireMemory(sameMemory(projection(fresh), previous), 'conflict');
         });
-        return publishedMaintenanceCommit(prepared, published);
+        const result = publishedMaintenanceCommit(prepared, published);
+        if (edit.layers?.some(n => n.level === 'chapter')) observeSavedChapter();
+        return result;
     } catch (error) {
         if (error.uncertain) {
             // Recovery confirms this exact transaction; it must not mint IDs or send the edit again.

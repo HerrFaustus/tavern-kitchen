@@ -98,7 +98,7 @@ import { notifyWorldSourcesChanged } from '../world-records/sources.js';
 import { prepareMemorySources, prepareSummaryRecovery, summaryRecoveryScope, validateMemorySources } from '../world-records/turn-runtime.js';
 import { captureRangeSource, firstInvalidMemorySource } from './data/turn-source.js';
 import { worldAuthorityForContext, authorityStoryStore, worldFieldSource } from '../world-records/authority-context.js';
-import { getAutoSummaryPlan } from './generate/summary-trigger.js';
+
 import { getSummarySourceEnd } from './generate/source-boundary.js';
 import { createHideStateController } from './hide-state.js';
 
@@ -209,6 +209,7 @@ const serviceTests = createServiceTests({
 });
 const summaryDiagnostics = createSummaryDiagnostics();
 const memoryMaintenance = createMemoryMaintenanceHost({
+    submitted: () => window.dispatchEvent(new Event('tavernKitchen:summary-saved')),
     generateReviewedLayer,
     readSummaryDiagnostics: args => summaryDiagnostics.read(getChatIdentity(getContext()), args),
     isEnabled: () => panelEnabled('proofreading') && isXiaobaiMasterEnabled() && Boolean(getContext()?.chatId),
@@ -243,7 +244,6 @@ const messageButtonOwnership = createMessageButtonOwnership();
 const iframePath = `${extensionFolderPath}/modules/story-summary/story-summary.html`;
 const VALID_SECTIONS = ["characters", "facts"];
 const MESSAGE_EVENT = "message";
-const AUTO_SUMMARY_MAX_ATTEMPTS = 3;
 let activeSummaryExecution = null;
 let floorSummaryRequest = null;
 
@@ -402,12 +402,10 @@ const pendingVectorMaintenanceByChat = new Map();
 const autoSummaryTimers = new Map();
 
 const CHAT_CHANGE_LEXICAL_WARMUP_MS = 3000;
-const AUTO_SUMMARY_DELAY_MS = 3000;
 const AUTO_L0_BACKFILL_DELAY_MS = 5000;
 const BACKGROUND_VISIBLE_GRACE_MS = 6000;
 const VECTOR_RETRY_MAX_MS = 300000;
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let lastForegroundAt = Date.now();
 
 function getBackgroundQuietWaitMs() {
@@ -1427,7 +1425,6 @@ function buildFramePayload(store) {
             main: json.characters?.main || [],
             relationships: extractRelationshipsFromFacts(facts),
         },
-        legacyCharacterNames: (json.arcs || []).map(arc => arc.name),
         facts,
         ...(valid && store?.summaryHistory?.some(batch => batch.layers || batch.reviewLayers || batch.compressionNodes)
             ? { narrativeUnits: (() => {
@@ -1549,20 +1546,6 @@ function cloneSummaryJsonForPortability(json) {
                 to: item.to,
                 evidence: item.evidence,
             })),
-        arcs: Array.isArray(src.arcs)
-            ? src.arcs.map((item) => ({
-                name: String(item?.name || "").trim(),
-                trajectory: String(item?.trajectory || "").trim(),
-                progress: Number.isFinite(Number(item?.progress)) ? Number(item.progress) : 0,
-                moments: Array.isArray(item?.moments)
-                    ? item.moments
-                        .map((moment) => typeof moment === "string"
-                            ? { text: String(moment).trim() }
-                            : { text: String(moment?.text || "").trim() })
-                        .filter((moment) => moment.text)
-                    : [],
-            })).filter((item) => item.name)
-            : [],
         facts: Array.isArray(src.facts)
             ? src.facts.map(normalizeInternalFact).filter((item) => item.s && item.p && item.o)
             : [],
@@ -1594,7 +1577,6 @@ function buildSummaryExportPackage(store) {
             rounds: data.rounds.length,
             characters: json.characters.main.length,
             aliases: json.characterAliases.length,
-            arcs: json.arcs.length,
             facts: json.facts.length,
         },
     };
@@ -1810,24 +1792,6 @@ function scheduleLexicalWarmup() {
     refreshEntityLexiconAndWarmup();
 }
 
-function scheduleAutoSummary(reason, delayMs = AUTO_SUMMARY_DELAY_MS) {
-    const scheduledChatId = getContext().chatId || null;
-    const previous = autoSummaryTimers.get(reason);
-    if (previous) clearTimeout(previous);
-
-    const timer = setTimeout(() => {
-        autoSummaryTimers.delete(reason);
-        if (isChatStale(scheduledChatId)) return;
-        const quietWait = getBackgroundQuietWaitMs();
-        if (quietWait > 0) {
-            scheduleAutoSummary(reason, quietWait);
-            return;
-        }
-        observeBackgroundTask(maybeAutoRunSummary(reason), { source: import.meta.url, operation: "callback" });
-    }, delayMs);
-    autoSummaryTimers.set(reason, timer);
-}
-
 function scheduleAutoL0Backfill(delayMs = AUTO_L0_BACKFILL_DELAY_MS, chatIdOverride = null) {
     vectorMaintenanceScheduler.schedule(delayMs, chatIdOverride);
 }
@@ -1885,102 +1849,6 @@ function clearHideState(options) {
 // ═══════════════════════════════════════════════════════════════════════════
 // 自动总结
 // ═══════════════════════════════════════════════════════════════════════════
-
-async function maybeAutoRunSummary(reason) {
-    const { chatId, chat } = getContext();
-    if (!chatId || !Array.isArray(chat)) return;
-    if (!isStorySummaryEnabledForCurrentChat()) return;
-    if (isSummaryGenerating()) return;
-    const initiallyTriggered = getAutoSummaryPlan(chat, getPublishedSummaryStore()?.lastSummarizedMesId ?? -1,
-        getSummaryPanelConfig().trigger || {}, reason).triggered;
-    if (!initiallyTriggered) return;
-    if (['saving', 'unconfirmed'].includes(getMemoryCommitState())) {
-        await waitForMemoryCommit();
-        if (isChatStale(chatId)) return;
-    }
-    if (!isStorySummaryConsumableForCurrentChat()) return;
-
-    const cfgAll = getSummaryPanelConfig();
-    const trig = cfgAll.trigger || {};
-
-    if (isSummaryGenerating()) return;
-
-    const store = getSummaryStore();
-    const lastSummarized = store?.lastSummarizedMesId ?? -1;
-    const { target, triggered } = getAutoSummaryPlan(getContext().chat, lastSummarized, trig, reason);
-    if (!triggered) return;
-
-    await autoRunSummaryWithRetry(target, { trigger: trig });
-}
-
-async function autoRunSummaryWithRetry(targetMesId, configForRun) {
-    const release = guard.acquire('summary');
-    if (!release) return;
-    const execution = beginSummaryExecution(true);
-    if (!execution) {
-        release();
-        return;
-    }
-    notifySummaryState();
-
-    let attempts = 0;
-    try {
-        let lastResult = null;
-        for (let attempt = 1; attempt <= AUTO_SUMMARY_MAX_ATTEMPTS; attempt++) {
-            attempts = attempt;
-            if (!isSummaryExecutionActive(execution)) {
-                postSummaryExecution(execution, { type: 'SUMMARY_STATUS', statusText: SUMMARY_FEEDBACK_COPY.summaryStopped });
-                return;
-            }
-            const result = await runSummaryAttempt(execution, targetMesId, configForRun, {
-                onStatus: (text) => postSummaryExecution(execution, { type: 'SUMMARY_STATUS', statusText: SUMMARY_FEEDBACK_COPY.summaryAttempt(attempt, AUTO_SUMMARY_MAX_ATTEMPTS, text) }),
-                onError: (msg) => postSummaryExecution(execution, { type: 'SUMMARY_ERROR', message: msg }),
-                onComplete: async ({ store }) => {
-                    assertSummaryExecutionActive(execution);
-                    postToFrame({ type: "SUMMARY_FULL_DATA", payload: buildFramePayload(store) });
-
-                    // Alias migration can also change existing participants.
-                    // The corpus skips unchanged documents; no full rebuild.
-                    refreshEntityLexiconAndWarmup();
-
-                    if (isStorySummaryEnabledForCurrentChat() && getHideUiSettings().hideSummarized) {
-                        applyHideStateDebounced();
-                    }
-                    await updateFrameStatsAfterSummary(store, execution);
-
-                    await autoVectorizeMissingEvents(store, execution);
-                    await rebuildActiveVectorCacheAfterSummary(execution);
-                },
-            });
-            lastResult = result;
-
-            if (result.cancelled) {
-                if (result.committed && isStorySummaryConsumableForCurrentChat()) {
-                    scheduleVectorIntegrityCheck();
-                }
-                return;
-            }
-
-            if (result.success) {
-                if (isStorySummaryConsumableForCurrentChat()) scheduleVectorIntegrityCheck();
-                return;
-            }
-
-            if (attempt < AUTO_SUMMARY_MAX_ATTEMPTS) await sleep(1000);
-        }
-
-        if (!isSummaryExecutionActive(execution)) return;
-        const message = reportSummaryExecutionFailure(execution, lastResult?.error, {
-            automatic: true, attempts, stale: lastResult?.stale,
-        });
-        if (!shouldNotifyMemoryFailure(lastResult?.error, getMemoryCommitState())) return;
-        window.toastr?.[lastResult?.stale ? 'warning' : 'error'](message, SUMMARY_FEEDBACK_COPY.title, { escapeHtml: true });
-    } catch (error) {
-        reportSummaryExecutionFailure(execution, error, { automatic: true, attempts });
-    } finally {
-        finishSummaryExecution(execution, release);
-    }
-}
 
 async function updateFrameStatsAfterSummary(store, execution) {
     assertSummaryExecutionActive(execution);
@@ -2410,7 +2278,7 @@ async function handleManualGenerate(mesId, config, recovery) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 async function handleChatChanged(scheduledChatId = getContext()?.chatId || '', { reload = false } = {}) {
-    if (!events) return;
+    if (!events || !panelEnabled('memory')) return;
     if (isChatStale(scheduledChatId)) return;
     clearDeferredBackgroundTasks();
     lastRecallLogText = "";
@@ -2641,7 +2509,7 @@ async function handleMessageReceived(scheduledChatId, targetMesId = null) {
     initButtonsForAll();
 
     applyHideStateDebounced();
-    scheduleAutoSummary("after_ai");
+
 
     // Refresh entity lexicon after new message (new roles may appear)
     refreshEntityLexiconAndWarmup();
@@ -2651,7 +2519,7 @@ function handleMessageSent(scheduledChatId) {
     if (isChatStale(scheduledChatId)) return;
     initButtonForLatestMessage();
     if (!isStorySummaryEnabledForCurrentChat()) return;
-    scheduleAutoSummary("before_user");
+
     if (getVectorConfig()?.enabled) scheduleAutoL0Backfill(AUTO_L0_BACKFILL_DELAY_MS, scheduledChatId);
 }
 
@@ -3443,13 +3311,13 @@ $(document).on(STORY_SUMMARY_TOGGLE_EVENT, observeAsyncCallback(async (_e, enabl
 // 初始化
 // ═══════════════════════════════════════════════════════════════════════════
 
-export async function refreshPanelState(id) {
+export async function refreshPanelState() {
     if (!panelEnabled('proofreading')) { memoryMaintenance.cancel(); memoryMaintenance.chat.reset({preview:false}); }
-    if (id === 'proofreading') return;
+
     if (!panelEnabled('memory')) {
         messageButtonOwnership.runOwnedCleanup(() => $('.tavernKitchen-story-summary-btn').remove());
     }
-    if (!isXiaobaiMasterEnabled()) {
+    if (!isXiaobaiMasterEnabled() || !panelEnabled('memory') && !panelEnabled('proofreading')) {
         cancelActiveSummaryExecution();
         cancelRecallAndClearPrompt('disabled');
         await unregisterEvents();
@@ -3468,6 +3336,7 @@ function reportStartupFailure(error) {
 // 首次加载和重新开启必须先同步配置，再注册事件和应用聊天隐藏状态。
 async function initializeStorySummary() {
     if (!isXiaobaiMasterEnabled() || !getSettings().storySummary?.enabled) return;
+    if (!panelEnabled('memory') && !panelEnabled('proofreading')) return;
     try {
         await loadConfigFromServer();
     } catch (e) {
@@ -3503,11 +3372,11 @@ export function openStoryWorld(route = 'world') {
     postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view: route });
 }
 export function getWorldMemorySnapshot() {
-    const snapshot = getFloorSummarySnapshot();
-    return {...snapshot,enabled:isXiaobaiMasterEnabled() && Boolean(getContext()?.chatId)};
+    const snapshot = getFloorSummarySnapshot(true);
+    return {...snapshot,store:snapshot.store || {},enabled:isXiaobaiMasterEnabled() && Boolean(getContext()?.chatId)};
 }
-export function getFloorSummarySnapshot() {
-    const store = getPublishedSummaryStore();
+export function getFloorSummarySnapshot(readWorld = false) {
+    const store = panelEnabled('memory') || readWorld && chat_metadata?.extensions?.[EXT_ID]?.storySummary ? getPublishedSummaryStore() : null;
     const invalid = Array.isArray(store?.summaryHistory) && store.summaryHistory.find(batch => batch?.floorEntry && !isFloorEntryCurrent(batch.floorEntry, getContext().chat));
     const sourceInvalid = firstInvalidMemorySource(store, getContext().chat || []);
     const invalidFrom = Math.min(sourceInvalid ?? Infinity, invalid?.floorEntry?.source?.start ?? Infinity,
@@ -3623,4 +3492,17 @@ export function kitchenCardMemory() {
             });
         },
     };
+}
+
+export const floorReview = memoryMaintenance;
+export { getPublishedSummaryStore, generateReviewedLayer, summaryRecoveryPreview, recoverSummaryTail };
+export async function saveFloorWork(source, check, update) {
+    check(); await waitForMemoryCommit(); check();
+    const chatId = getContext().chatId, previous = readSummaryMemory(), next = structuredClone(previous);
+    const store = next.storySummary;
+    const entry = (store.floorWork ??= {})[source.end] ??= { source, digest:source.digest, done:[] };
+    if (entry.digest !== source.digest) throw new Error('本楼来源已变化，请先在数据页预览恢复');
+    update(entry,store);
+    await commitSummaryMemory(chatId,next,{previous,validate:check});
+    if (isStorySummaryEnabledForCurrentChat()) notifySummaryState();
 }

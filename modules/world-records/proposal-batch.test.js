@@ -20,7 +20,7 @@ async function fixture(t, { transform = value => value, text = `${quote}。主�
     const storage = createWorldStorage({ indexedDB: new IDBFactory() }); t.after(() => storage.close());
     const chat = [{ mes: '买下铁剑。', is_user: true, send_date: 'u' }, { mes: text, send_date: 'a' }];
     const history = []; let sequence = 0, identity = 'batch', available = true;
-    const context = () => ({ available, history, storyRecords: [] });
+    const context = () => ({ heroId:'hero', available, history, storyRecords: [] });
     const service = createWorldService({ storage, getIdentity: () => identity, id: () => `batch-${++sequence}`,
         isSourceCurrent: turn => !!turn && isRangeSourceCurrent(turn.source, chat),
         isUpdateSourceCurrent: update => !!update && isRangeSourceCurrent(update.source, chat), getReviewContext: context });
@@ -56,7 +56,7 @@ test('an evidenced loan automatically changes who holds the sword without transf
 });
 function assertTrade(state, applied) {
     assert.equal(state.entities.find(item => item.id === 'hero').fields.coins.value, applied ? 5 : 10);
-    assert.equal(state.entities.find(item => item.id === 'smith').fields.coins.value, applied ? 5 : 0);
+    assert.equal(state.entities.find(item => item.id === 'smith').fields.coins.value, 0);
     assert.equal(state.entities.find(item => item.id === 'sword').fields.owner.value.entityId, applied ? 'hero' : 'smith');
 }
 
@@ -142,7 +142,7 @@ test('automatic clear beliefs and intentions keep their nature; multiple story c
     assert.equal(state.events.at(-1).effects.filter(effect => effect.type === 'module').length, 1);
     assert.equal(new Set(state.modules.story.records.map(record => record.eventId)).size, 1);
     const restored = await f.service.restore(state, state); assertTrade(restored, true); assert.equal(restored.modules.story.records.length, 2);
-    const before = await f.service.fork(restored, f.state.version); assertTrade(before, false); assert.equal(reviews(before).length, 0);
+    const before = await f.service.rewind(restored, f.state.version); assertTrade(before, false); assert.equal(reviews(before).length, 0);
 });
 
 test('a late invalid combined graph rolls back all automatic and manual changes', async t => {
@@ -151,7 +151,7 @@ test('a late invalid combined graph rolls back all automatic and manual changes'
         ? { ...proposal, before: { present: false } } : proposal) });
     assertTrade(await f.service.autoConfirm(), false);
     const command = f.service.proposalBatchCommand(f.state, f.requestId, [0, 1, 2, 3], 'accepted');
-    await assert.rejects(f.service.commit(command), /循环/);
+    await assert.rejects(f.service.commit(command), /不能唯一核对|循环/);
     assert.equal((await f.service.read()).version, f.state.version); assert.equal(reviews(await f.service.read()).length, 0);
 });
 
@@ -175,10 +175,12 @@ test('manual group edits and rejection preserve every original proposal and sour
     const f = await fixture(t);
     const command = f.service.proposalBatchCommand(f.state, f.requestId, [0, 1, 2], 'accepted', {
         reason: '实际成交四金币', items: { 0: { edit: { value: 6 } }, 1: { edit: { value: 4 } } } });
-    const { state } = await f.service.commit(command); assert.equal(state.entities[0].fields.coins.value, 6);
+    await assert.rejects(f.service.commit(command), /成交价/);
+    assertTrade(await f.service.read(), false);
+    const {state} = await f.service.commit(f.service.proposalBatchCommand(f.state,f.requestId,[0,1,2],'accepted')); assertTrade(state,true);
     assert.equal(worldUpdates(state)[0].update.proposals[0].value, 5);
-    assert.deepEqual(reviews(state).map(review => review.edited), [true, true, false]);
-    const before = await f.service.fork(state, f.state.version);
+    assert.deepEqual(reviews(state).map(review => review.edited), [false, false, false]);
+    const before = await f.service.rewind(state, f.state.version);
     const rejected = (await f.service.commit(f.service.proposalBatchCommand(before, f.requestId, [0, 1, 2], 'rejected', { reason: '不予采纳' }))).state;
     assertTrade(rejected, false); assert.ok(reviews(rejected).every(review => review.action === 'rejected'));
     assert.equal(rejected.receipts.at(-1).origin, undefined);
@@ -217,8 +219,8 @@ test('late chat, branch or world changes and an explicit host guard cancel a fro
     const f = await fixture(t), command = f.service.proposalBatchCommand(f.state, f.requestId, [0, 1, 2], 'accepted');
     await assert.rejects(f.service.autoConfirm({ guard: () => false }), /操作已取消/);
     f.setIdentity('other'); await assert.rejects(f.service.commit(command), /建立世界/); f.setIdentity('batch');
-    const fork = await f.service.fork(f.state, f.state.version); await f.service.selectBranch(f.state.branchId, fork);
-    await assert.rejects(f.service.commit(command), /分支已变化/);
+    const fork = await f.service.rewind(f.state, f.state.version); await f.service.restore(f.state, fork);
+    await assert.rejects(f.service.commit(command), /版本已变化/);
     assertTrade(await f.service.read(), false);
 });
 

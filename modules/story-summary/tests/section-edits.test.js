@@ -33,7 +33,7 @@ test('character and relationship edits preserve independent maintenance', () => 
     });
 });
 
-for (const [section, key] of [['keywords', 'text'], ['arcs', 'name']]) {
+for (const [section, key] of [['keywords', 'text']]) {
     test(`${section} preserves background additions while applying explicit additions and deletions`, () => {
         const before = [{ [key]: 'old' }];
         const edited = [{ [key]: 'user added' }];
@@ -41,6 +41,8 @@ for (const [section, key] of [['keywords', 'text'], ['arcs', 'name']]) {
             [{ [key]: 'agent added' }, { [key]: 'user added' }]);
     });
 }
+
+test('retired arc edits never create records', () => { assert.throws(() => applySummarySectionEdit('arcs', [], [], []), /不支持/); });
 
 // Acceptance: receiving a background refresh while editing must not change the
 // user's comparison baseline. Cost: accidentally undoing confirmed Agent edits.

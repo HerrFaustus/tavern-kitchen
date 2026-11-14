@@ -173,7 +173,7 @@ export function describeQueryFocusOwnership(bundle) {
  * @property {string[]} focusEntities   - Deprecated alias of focusTerms
  * @property {Set<string>} allEntities         - Full entity lexicon (includes non-character entities)
  * @property {Set<string>} allCharacters       - Character spellings eligible for text matching, including aliases
- * @property {Set<string>} trustedCharacters   - Clean character pool (main/arcs/name2/L2 participants)
+ * @property {Set<string>} trustedCharacters   - Clean character pool (main/name2/L2 participants)
  * @property {Set<string>} candidateCharacters - Extended character pool from L0 edges.s/t after cleanup
  * @property {function(string): string[]} _extractEntities - 本查询词典快照的实体提取
  */

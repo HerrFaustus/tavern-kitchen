@@ -26,13 +26,23 @@ function errorDescription(error) {
 }
 
 export function createCallStats({ now = Date.now, timer = () => performance.now() } = {}) {
-    let features = new Map();
+    let features = new Map(), tasks = new Map();
     const recent = [];
     return {
+        task(feature) {
+            const scope = tasks, agent = ({summary:'update', memory:'update', opening:'update', world:'simulation', planner:'planner'})[feature];
+            let started = false;
+            return () => {
+                if (agent && !started && scope === tasks) tasks.set(agent,(tasks.get(agent) || 0) + 1);
+                started = true;
+            };
+        },
         start(feature) {
             const started = timer(), scope = features;
+            let finished = false;
             return (rawUsage, error) => {
-                if (scope !== features) return;
+                if (scope !== features || finished) return;
+                finished = true;
                 const ms = Math.max(0, Math.round(timer() - started)), at = now();
                 const usage = tokenUsage(rawUsage);
                 const totals = features.get(feature) || { calls: 0, failures: 0, totalMs: 0, lastError: '', lastAt: null };
@@ -50,9 +60,16 @@ export function createCallStats({ now = Date.now, timer = () => performance.now(
                 if (recent.length > 100) recent.shift();
             };
         },
-        snapshot() { return structuredClone({ features: Object.fromEntries(features), recent }); },
-        clear() { features = new Map(); recent.length = 0; },
+        snapshot() { return structuredClone({ features: Object.fromEntries(features), ...(tasks.size && {tasks:Object.fromEntries(tasks)}), recent }); },
+        clear() { features = new Map(); tasks = new Map(); recent.length = 0; },
     };
 }
 
 export const featureCalls = createCallStats();
+
+export async function countRemoteRequest(feature, run, task = featureCalls.task(feature)) {
+    let finish;
+    const dispatch = () => { task(); finish ??= featureCalls.start(feature); };
+    try { const result = await run(dispatch); finish?.(result?.usage ?? result?.responseInfo?.usage); return result; }
+    catch (error) { finish?.(undefined,error); throw error; }
+}

@@ -1,7 +1,7 @@
 import { getCharaFilename } from '../../../../../utils.js';
 import { loadWorldInfo, METADATA_KEY, selected_world_info, world_info } from '../../../../../world-info.js';
 import { generateFeatureText, resolveTextApi } from '../text-api/host.js';
-import { HOST_PROVIDER } from '../text-api/model.js';
+import { featureCalls } from '../text-api/call-stats.js';
 import { collectOpening, openingMessages } from './opening-input.js';
 import { initializeOpening } from './opening.js';
 import { readMapBeforeOpening } from './map-store.js';
@@ -28,12 +28,12 @@ export function createOpeningHost({getContext,identity,service}) {
         const controller = new AbortController();
         const activeSignal = signal ? AbortSignal.any([signal,controller.signal]) : controller.signal;
         const task = {key,controller};
+        const agentTask = featureCalls.task('opening');
         let preset;
         task.promise = initializeOpening({service,readInput,guard,oldChat:!opening.fresh,signal:activeSignal,project:openingOperations,prepareMap:readMapBeforeOpening,
             async write(messages,abortSignal) {
                 preset ??= await resolveTextApi('opening');
-                if (preset.provider === HOST_PROVIDER) throw new Error('请在「世界 → 世界生成」下方选择独立模型');
-                return (await generateFeatureText('opening',{messages,signal:abortSignal,timeoutMs:120000},preset)).text;
+                return (await generateFeatureText('opening',{messages,signal:abortSignal,agentTask,timeoutMs:120000},preset)).text;
             }}).finally(() => { if (pending === task) pending = null; });
         pending = task;
         return task.promise;

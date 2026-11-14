@@ -37,14 +37,24 @@ export function createWorldStorage({ indexedDB = globalThis.indexedDB, name = 'T
                         const next = transform(state || null);
                         invariant(!next?.then, '存储事务中不能等待外部任务');
                         if (write && next?.state && next.state !== state) {
-                            branches.put(next.state); bindings.put(next.state.branchId, identity);
-                            transaction.objectStore('owners').put({ branchId: next.state.branchId, identity, title: next.state.title, version: next.state.version });
+                            const slot = found.result || (next.slot || next.state.branchId);
+                            const stored = slot === next.state.branchId ? next.state : {...next.state, branchId:slot, activeWorldBranch:next.state.branchId};
+                            branches.put(stored); bindings.put(slot, identity);
+                            transaction.objectStore('owners').put({ branchId: slot, identity, title: next.state.title, version: next.state.version });
                         }
                         result = next?.result;
                     } catch (error) { abort(error); }
                 };
-                if (!found.result) finish(null);
-                else { const read = branches.get(found.result); read.onsuccess = () => { if (!read.result) abort(new Error('世界档案绑定损坏，请从备份恢复')); else finish(read.result); }; }
+                const owners = transaction.objectStore('owners');
+                const verify = owners.index('identity').getAll(identity);
+                verify.onsuccess = () => {
+                    const candidates = verify.result;
+                    const missing = () => abort(Object.assign(new Error('旧档的活动世界指针不明确，请核对原存档来源'), {candidates}));
+                    if (!found.result && !candidates.length) { finish(null); return; }
+                    if (!candidates.some(row => row.branchId === found.result)) { missing(); return; }
+                    const read = branches.get(found.result);
+                    read.onsuccess = () => { if (!read.result) missing(); else { const value=read.result; if (value.activeWorldBranch) {value.branchId=value.activeWorldBranch;delete value.activeWorldBranch;} finish(value); } };
+                };
             };
         });
     }
@@ -58,28 +68,25 @@ export function createWorldStorage({ indexedDB = globalThis.indexedDB, name = 'T
                 request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
             });
         },
-        async select(identity, target, expected, guard) {
+        async recoverBinding(identity,target,guard) {
             const db = await open();
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction(['branches', 'bindings', 'owners'], 'readwrite');
-                let result, failure;
-                tx.onabort = () => reject(failure || tx.error || new Error('分支切换失败'));
-                tx.oncomplete = () => resolve(result);
-                const found = tx.objectStore('bindings').get(identity);
-                found.onsuccess = () => {
-                    const current = tx.objectStore('branches').get(found.result || '');
-                    current.onsuccess = () => {
-                        const owner = tx.objectStore('owners').get(target);
-                        owner.onsuccess = () => {
-                            const branch = tx.objectStore('branches').get(target);
-                            branch.onsuccess = () => {
-                                try {
-                                    invariant(guard(), '对话已切换');
-                                    invariant(current.result?.branchId === expected.branchId && current.result.version === expected.version, '档案已更新，请重新加载');
-                                    invariant(owner.result?.identity === identity && branch.result, '该分支不属于当前对话');
-                                    tx.objectStore('bindings').put(target, identity); result = branch.result;
-                                } catch (error) { failure = error; tx.abort(); }
-                            };
+            return new Promise((resolve,reject) => {
+                const tx = db.transaction(['branches','owners','bindings'],'readwrite');
+                const bindings=tx.objectStore('bindings'), branches=tx.objectStore('branches'), owners=tx.objectStore('owners');
+                let state, failure;
+                tx.onabort=()=>reject(failure || tx.error); tx.oncomplete=()=>resolve(state);
+                const candidates=owners.index('identity').getAll(identity);
+                candidates.onsuccess=()=>{
+                    const current=bindings.get(identity);
+                    current.onsuccess=()=>{
+                        const original=branches.get(current.result || '');
+                        original.onsuccess=()=>{
+                            const chosen=branches.get(target);
+                            chosen.onsuccess=()=>{try {
+                                invariant(guard() && (!original.result || !candidates.result.some(row=>row.branchId===current.result)), '活动世界已确认，请重新读取');
+                                invariant(chosen.result && candidates.result.some(row=>row.branchId===target), '旧资料不属于当前聊天');
+                                state=chosen.result; bindings.put(target,identity);
+                            } catch(error) {failure=error;tx.abort();}};
                         };
                     };
                 };

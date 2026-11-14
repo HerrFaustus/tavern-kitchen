@@ -66,6 +66,9 @@ export function firstInvalidMemorySource(store, chat) {
     const history = Array.isArray(store?.summaryHistory) ? store.summaryHistory : [];
     const invalid = history.map(batch => batch?.sourceReceipt?.source || batch?.roundSource)
         .filter(source => source && !isRangeSourceCurrent(source, chat)).map(source => source.start);
+    for (const [floor,row] of Object.entries(store?.floorWork || {})) {
+        if (!isRangeSourceCurrent(row?.source,chat)) invalid.push(row?.source?.start ?? Math.max(0, Number(floor) - 1));
+    }
     return invalid.length ? Math.min(...invalid) : null;
 }
 

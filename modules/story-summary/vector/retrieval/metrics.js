@@ -240,7 +240,6 @@ export function createMetrics() {
                 causalEvidence: 0,
                 distantEvidence: 0,
                 recentEvidence: 0,
-                arcs: 0,
             },
         },
 
@@ -664,7 +663,6 @@ export function formatMetricsLog(metrics, { complete = true } = {}) {
     lines.push(`    ├─ causal_evidence: ${bd.causalEvidence || 0}`);
     lines.push(`    ├─ distant_evidence: ${bd.distantEvidence || 0}`);
     lines.push(`    ├─ recent_evidence: ${bd.recentEvidence || 0}`);
-    lines.push(`    └─ arcs: ${bd.arcs || 0}`);
     lines.push('');
 
     // Timing

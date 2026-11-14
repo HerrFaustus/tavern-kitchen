@@ -1,3 +1,4 @@
+import { importantPossession, POSSESSION_ROLES } from '../world-records/person-fields.js';
 import { plannerOwner } from './identity.js';
 import { collectPlotLines, plotLineStateDigest } from '../story-state/plot-lines.js';
 import { panelEnabled } from '../../core/panel-policy.js';
@@ -7,7 +8,7 @@ import { captureRangeSource } from '../story-summary/data/turn-source.js';
 import { worldStoryRecords } from '../world-records/world-story-state.js';
 import { isPrivateStoryField } from '../world-records/authority.js';
 import { isPersonalAgenda } from '../story-state/records.js';
-import { nameKey } from '../story-state/protagonist-identity.js';
+import { nameKey, protagonistIdentity } from '../story-state/protagonist-identity.js';
 
 export const PLANNER_ENTITY_GROUPS = [
     ['characters', '人物'],
@@ -22,15 +23,15 @@ export const WRITER = `你是后台唯一的编剧。你的创作札记必须完
 - entities 为 {"characters":[...],"plotLines":[...],"situations":[...]}，每项为 {"target":"实体名或标题","commentary":"点评","prediction":"走向预测","suggestion":"建议"}。无相关实体可留空数组，但每层至少需针对已出现的重点人物、剧情线或局势给出实质条目或 text。
 - 只在首次或全局前提失效时提交 global，其余仅提交 chapter。
 - dependencies 是少量决定本稿能否成立的前提，支持单实体字段级引用：人物/世界实体 {entityId,field}（field 可取实体字段名或 name/aliases/presence/knowledge/agendas）、局势/记录 {recordId,field?}（可指定 status/description/releaseCondition/due/presence/note 等字段或省略整条）、剧情线 {lineTitle,field?}（可指定 status/summary/nextFocus/characters 或省略整线版本摘要）。plotLines 是已汇总的剧情线总结；potential 仅代表未证实联系，不得在章节稿写成谜底或必经事件；closed 只能作背景依据。严禁虚构引用。
-- 当输入包含 mode:"partial" 及 staleTargets（与 previousChapterEntities）时，仅需在 chapter.entities 中输出受影响的变更目标或新增目标及其对应 dependencies；未列出的实体和仍成立的前提由系统保留合并并重排章节稿。`;
+- 当输入包含 mode:"partial" 及 staleTargets（与 previousChapterEntities）时，仅需在 chapter.entities 中输出受影响的变更目标或新增目标及其对应 dependencies；每个请求目标必须作答；明确移除须在 chapter.removed 的对应分类列出目标，不能借缺项删除。不得改动其他目标及依赖。`;
 
 export function plannerSnapshot(world, memory, chat, identity) {
     if (!world || !identity || !memory?.enabled || memory.invalidFrom != null || memory.store?.summaryInvalid
         || memory.store?.sourceInvalidFromFloor != null || memory.store?.sourceRollbackFromFloor != null) return null;
-    const layers = summaryLayers(memory.store?.summaryHistory || []);
+    const layers = summaryLayers(memory.store?.summaryHistory || [], [], {chat});
     const last = layers.parents.filter(unit => unit.level === 'chapter').at(-1);
     const records = worldStoryRecords(world, memory.store?.json?.storyRecords || []);
-    const plotLines = panelEnabled('clues') ? collectPlotLines(memory.store?.summaryHistory, records, { layers }) : [];
+    const plotLines = panelEnabled('clues') ? collectPlotLines(memory.store?.summaryHistory, records, { layers, chat }) : [];
     return {
         world,
         records,
@@ -120,6 +121,7 @@ function collectEntityTexts(entities) {
 export function buildPlanningTargets(snap) {
     const plotLines = snap.plotLines || [];
     const entities = snap.world?.entities || [];
+    const hero = protagonistIdentity(entities,snap.cast?.player).hero;
     const records = snap.records || [];
     const plotLineTitlesForName = names => plotLines
         .filter(line => (line.characters || []).some(name => names.has(nameKey(name))))
@@ -134,7 +136,7 @@ export function buildPlanningTargets(snap) {
         for (const key of names) seenPersonKeys.add(key);
         const publicFields = {}, privateFields = {};
         for (const [key, record] of Object.entries(entity.fields || {})) {
-            if (!record || record.value === undefined) continue;
+            if (!record || record.value === undefined || ['coins','金币'].includes(key) && entity.id !== hero?.id) continue;
             if (isPrivateStoryField(key)) privateFields[key] = record.value;
             else publicFields[key] = record.value;
         }
@@ -302,7 +304,7 @@ function readNote(raw, snap, limit) {
     const dependencies = readDependencies(raw?.dependencies, snap);
     return { text, ...(entities && { entities }), dependencies };
 }
-const valid = (note, snap) => note.dependencies.every(ref => {
+const valid = (note, snap) => (note.dependencies || []).every(ref => {
     const resolved = resolveDependency(ref, snap, false);
     return resolved !== null && resolved.value !== undefined && ref.digest === memoryDigest(resolved.value);
 });
@@ -376,10 +378,10 @@ export function selectVersion(rows, snap) {
 }
 export function reviewReason(previous, snap) {
     if (!previous) return 'opening';
-    if (!valid(previous.global, snap)) return 'global-change';
+    if (!valid(previous.global, snap) || !previous.global?.dependencies?.length && !previous.chapter?.dependencies?.length && previous.basis !== snap.world.version) return 'global-change';
     if (previous.boundary !== snap.boundary) return 'chapter';
     if ((previous.lineState || '') !== (snap.lineState || '')) return 'chapter-change';
-    return valid(previous.chapter, snap) ? '' : 'chapter-change';
+    return valid(previous.chapter, snap) && (previous.chapter.dependencies?.length || previous.basis === snap.world.version) ? '' : 'chapter-change';
 }
 const WRITER_BUDGET_CHARS = 180000;
 
@@ -409,9 +411,6 @@ function mergePartialChapter(rawChapter, previous, snap, staleTargets) {
     }
     const incomingEntities = readEntities(rawChapter.entities, { allowEmpty: true });
     if (!incomingEntities) {
-        if (typeof rawChapter.text === 'string' && rawChapter.text.trim()) {
-            return readNote(rawChapter, snap, 24000);
-        }
         throw new Error('札记格式无效');
     }
 
@@ -422,7 +421,12 @@ function mergePartialChapter(rawChapter, previous, snap, staleTargets) {
         const prevList = previousEntities[group] || [];
         const incList = incomingEntities[group] || [];
         const staleKeys = new Set((staleTargets?.[group] || []).map(nameKey));
-        const removedKeys = new Set((rawChapter.removed?.[group] || []).map(nameKey));
+        const removed = rawChapter.removed?.[group] || [];
+        if (!Array.isArray(removed) || removed.some(item=>typeof item !== 'string') || new Set(removed.map(nameKey)).size !== removed.length)
+            throw new Error('局部改稿的删除清单无效');
+        const removedKeys = new Set(removed.map(nameKey));
+        const answers = [...incList.map(item => nameKey(item.target)), ...removedKeys];
+        if (answers.length !== staleKeys.size || new Set(answers).size !== staleKeys.size || answers.some(key => !staleKeys.has(key))) throw new Error('局部改稿越界或漏答，请明确给出每个目标的改稿或删除决定');
         const incByKey = new Map(incList.map(item => [nameKey(item.target), item]));
         const used = new Set();
         const nextList = [];
@@ -452,6 +456,11 @@ function mergePartialChapter(rawChapter, previous, snap, staleTargets) {
     if (!text || text.length > 24000) throw new Error('札记格式无效');
 
     const freshDeps = readDependencies(rawChapter.dependencies, snap);
+    for (const ref of freshDeps) {
+        const target = resolveDependency(ref, snap, false);
+        const group = ref.group || target?.group;
+        if (!group || !(staleTargets[group] || []).some(name => nameKey(name) === nameKey(ref.target || target?.target))) throw new Error('局部改稿修改了范围外的依赖');
+    }
     const freshKeys = new Set(freshDeps.map(depKey));
     const mergedDeps = [];
     const seenDeps = new Set();
@@ -537,7 +546,7 @@ function buildPartialPayload(snap, previous, reason, staleTargets) {
         for (const alias of item.aliases || []) staleCharacterNames.add(nameKey(alias));
     }
 
-    const scopedWorld = (snap.world?.entities || []).filter(entity =>
+    const scopedWorld = plannerWorldEntities(snap).filter(entity =>
         staleEntityIds.has(entity.id)
         || staleCharacterNames.has(nameKey(entity.name))
         || (entity.aliases || []).some(alias => staleCharacterNames.has(nameKey(alias)))
@@ -546,7 +555,7 @@ function buildPartialPayload(snap, previous, reason, staleTargets) {
         staleRecordIds.has(record.id)
         || staleCharacterNames.has(nameKey(record.person || record.name || ''))
         || staleKeys.situations.has(nameKey(record.title || record.name || ''))
-        || [...(record.holders || []), ...(record.parties || [])].some(name => staleCharacterNames.has(nameKey(name))));
+        || [...(record.holders || []), ...(Array.isArray(record.parties) ? record.parties : String(record.parties || '').split(/[、，,]/))].some(name => staleCharacterNames.has(nameKey(name))));
 
     return {
         mode: 'partial',
@@ -571,6 +580,15 @@ function buildPartialPayload(snap, previous, reason, staleTargets) {
     };
 }
 
+function plannerWorldEntities(snap) {
+    const entities = snap.world?.entities || [];
+    const hero = protagonistIdentity(entities, snap.cast?.player).hero;
+    return entities.filter(entity => entity.kind !== 'item' || importantPossession(entity) || hero &&
+        Object.keys(POSSESSION_ROLES).some(key => entity.fields?.[key]?.value?.entityId === hero.id)).map(entity => entity.id === hero?.id || !entity.fields ? entity : {
+        ...entity, fields: Object.fromEntries(Object.entries(entity.fields).filter(([key]) => !['coins', '金币'].includes(key))),
+    });
+}
+
 function serializeFullPayload(snap, previous, reason) {
     const planningTargets = buildPlanningTargets(snap);
     const payload = {
@@ -581,7 +599,7 @@ function serializeFullPayload(snap, previous, reason) {
         characters: planningTargets.characters,
         plotLines: snap.plotLines,
         situations: planningTargets.situations,
-        world: snap.world.entities,
+        world: plannerWorldEntities(snap),
         records: snap.records,
         chapterHistory: snap.layers.parents.filter(unit => unit.level === 'chapter').map(unit => unit.text),
         recentSummaries: snap.layers.leaves.slice(-10).map(unit => unit.text),
@@ -602,7 +620,7 @@ function serializeFullPayload(snap, previous, reason) {
         delete payload.records;
         body = JSON.stringify(payload);
     }
-    if (body.length > WRITER_BUDGET_CHARS) throw new Error('作家材料超出单次预算');
+    if (JSON.stringify([{role:'system',content:WRITER},{role:'user',content:body}]).length > 200000) throw new Error('作家材料超出单次预算');
     return body;
 }
 

@@ -5,5 +5,5 @@ export function usePanelSettings(value) {
 }
 
 export function panelEnabled(panel) {
-    return settings.enabled !== false && (settings.panels?.[panel] ?? (panel === 'planner' ? settings.enaPlanner?.enabled !== false : true));
+    return settings.enabled !== false && (settings.panels?.[panel] ?? (panel === 'places' ? settings.panels?.map === true : panel === 'planner' ? settings.enaPlanner?.enabled !== false : true));
 }

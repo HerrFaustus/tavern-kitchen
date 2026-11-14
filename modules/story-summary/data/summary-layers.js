@@ -172,7 +172,8 @@ export function mergePlotLineSnapshots(children = []) {
                 if (!snap?.title || !['active', 'potential', 'closed'].includes(snap.status)) continue;
                 const reading = String(snap.reading || snap.summary || '').trim();
                 if (!reading) continue;
-                const entry = ensure(String(snap.title).trim());
+                const entry = ensure(snap.id || String(snap.title).trim());
+                if (snap.id) Object.assign(entry, {id:snap.id,title:snap.title,question:snap.question,relatedIds:snap.relatedIds});
                 const snapFirst = Number.isInteger(snap.firstFloor) ? snap.firstFloor : (Number.isInteger(snap.floor) ? snap.floor : child.start);
                 const snapFloor = Number.isInteger(snap.floor) ? snap.floor : child.end;
                 if (Number.isInteger(snapFirst)) entry.firstFloor = entry.firstFloor === undefined ? snapFirst : Math.min(entry.firstFloor, snapFirst);
@@ -195,8 +196,9 @@ export function mergePlotLineSnapshots(children = []) {
             const title = typeof row.title === 'string' ? row.title.trim() : '';
             const reading = typeof row.reading === 'string' ? row.reading.trim() : '';
             const quote = typeof row.quote === 'string' ? row.quote : '';
-            if (!title || !reading || !quote.trim() || (leafText && !leafText.includes(quote))) continue;
-            const entry = ensure(title);
+            if (!title || !reading || !quote.trim() || (!row.evidence && leafText && !leafText.includes(quote))) continue;
+            const entry = ensure(row.id || title);
+            if (row.id) Object.assign(entry, {id:row.id,title,question:row.question,relatedIds:row.relatedIds});
             const floor = Number.isInteger(child.end) ? child.end : undefined;
             if (Number.isInteger(floor)) {
                 entry.firstFloor = entry.firstFloor === undefined ? floor : Math.min(entry.firstFloor, floor);
@@ -214,6 +216,7 @@ export function mergePlotLineSnapshots(children = []) {
         }
     }
     return [...lines.values()].map(entry => ({
+        ...(entry.id && {id:entry.id,question:entry.question,relatedIds:entry.relatedIds}),
         title: entry.title,
         status: entry.status,
         reading: entry.reading,
@@ -445,22 +448,19 @@ export function rootsAtCompressionLevel(history = [], level = 0, { chat = null, 
         .sort((a, b) => (a.start ?? 0) - (b.start ?? 0) || (a.end ?? 0) - (b.end ?? 0));
 }
 
-export function planNextCompression(history = [], { chat = null, staged = [], isLeafCurrent = null, leafKeepRecent = DEFAULT_LEAF_KEEP_RECENT } = {}) {
+export function planNextCompression(history = [], { chat = null, staged = [], isLeafCurrent = null, leafKeepRecent = DEFAULT_LEAF_KEEP_RECENT, minDepth = 2 } = {}) {
     const view = summaryLayers(history, staged, { chat, isLeafCurrent });
-    const collected = new Set();
-    for (const parent of view.parents) {
-        for (const cid of parent.childIds || []) collected.add(cid);
-    }
-    const maxDepth = view.parents.reduce((max, node) => Math.max(max, node.depth || 1), 0);
-    for (let depth = 0; depth <= maxDepth + 1; depth++) {
-        const threshold = thresholdForLevel(depth);
-        const keep = depth === 0 ? Math.max(0, leafKeepRecent) : 0;
-        const pool = depth === 0 ? view.leaves : view.parents.filter(node => node.depth === depth);
-        const roots = pool
-            .filter(node => !collected.has(node.id))
-            .sort((a, b) => (a.start ?? 0) - (b.start ?? 0) || (a.end ?? 0) - (b.end ?? 0));
-        if (roots.length < threshold + keep) continue;
-        const nodes = roots.slice(0, threshold);
+    const maxDepth = view.roots.reduce((max, node) => Math.max(max, node.depth), 0);
+    for (let depth = minDepth; depth <= maxDepth; depth++) {
+        const threshold = thresholdForLevel(depth), keep = depth === 0 ? Math.max(0, leafKeepRecent) : 0;
+        const roots = view.roots.filter(node => node.depth === depth).sort((a,b) => a.start - b.start);
+        let nodes = [];
+        for (const node of roots.slice(0, Math.max(0, roots.length - keep))) {
+            if (nodes.length && nodes.at(-1).end + 1 !== node.start) nodes = [];
+            nodes.push(node);
+            if (nodes.length === threshold) break;
+        }
+        if (nodes.length !== threshold) continue;
         const targetDepth = depth + 1;
         const targetLevel = layerLevelName(targetDepth);
         const start = nodes[0].start;

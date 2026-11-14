@@ -15,15 +15,15 @@ function setup() {
     return applyCommand(empty, command(empty, [create('旅人'), create('铁匠'), create('长剑', 'item'), create('铁匠铺', 'place'),
         set('旅人', 'coins', 100), set('铁匠', 'coins', 10), set('长剑', 'owner', { entityId: '铁匠' }), set('铁匠', 'location', { entityId: '铁匠铺' })])).state;
 }
-const buy = { type: 'purchase', buyerId: '旅人', sellerId: '铁匠', itemId: '长剑', price: 30, source };
+const buy = { type: 'purchase', heroId:'旅人', buyerId: '旅人', sellerId: '铁匠', itemId: '长剑', price: 30, source };
 const value = (state, id, field) => fieldValue(state.entities.find(e => e.id === id), field);
 
 test('purchase commits coins, ownership, derived inventory and history together', () => {
     const before = setup(), next = applyCommand(before, command(before, [buy])).state;
-    assert.equal(value(next, '旅人', 'coins'), 70); assert.equal(value(next, '铁匠', 'coins'), 40);
+    assert.equal(value(next, '旅人', 'coins'), 70); assert.equal(value(next, '铁匠', 'coins'), 10);
     assert.equal(value(next, '长剑', 'owner').entityId, '旅人'); assert.equal(value(before, '旅人', 'coins'), 100);
     assert.equal(next.entities.filter(e => value(next, e.id, 'owner')?.entityId === '铁匠').length, 0);
-    assert.equal(next.events.at(-1).effects.length, 3); assert.equal(next.events.at(-1).version, 2);
+    assert.equal(next.events.at(-1).effects.length, 2); assert.equal(next.events.at(-1).version, 2);
     assert.equal(next.entities[0].fields.coins.source.label, source.label);
 });
 test('retry returns the persisted receipt; changed payload under same key is rejected', () => {
@@ -33,7 +33,7 @@ test('retry returns the persisted receipt; changed payload under same key is rej
 });
 test('failed batch leaves no partial coins, fields or history', () => {
     const before = setup(), original = canonical(before);
-    assert.throws(() => applyCommand(before, command(before, [set('旅人', 'coins', 5), buy])), /余额不足/);
+    assert.throws(() => applyCommand(before, command(before, [set('旅人', 'coins', 5), buy])), /余额未知、不足/);
     assert.equal(canonical(before), original);
     assert.throws(() => applyCommand(before, command(before, [{ ...buy, sellerId: '旅人' }])), /参与者/);
     assert.throws(() => applyCommand(before, command(before, [{ ...buy, price: -1 }])), /价格/);
@@ -48,7 +48,7 @@ test('non-factual claims cannot supply a trade balance and creative proposals re
     state = applyCommand(state, command(state, [create('a'), create('b'), create('s', 'item'), set('b', 'coins', 0), set('s', 'owner', { entityId: 'b' }),
         { type: 'claim', id: 'c', entityId: 'a', field: 'coins', value: 100, nature: 'creative_proposal', source }])).state;
     assert.equal(value(state, 'a', 'coins'), undefined);
-    assert.throws(() => applyCommand(state, command(state, [{ ...buy, buyerId: 'a', sellerId: 'b', itemId: 's' }])), /尚未确认/);
+    assert.throws(() => applyCommand(state, command(state, [{ ...buy, heroId:'a', buyerId: 'a', sellerId: 'b', itemId: 's' }])), /余额未知|尚未确认/);
 });
 test('confirming a source claim retains evidence and rejects a second decision', () => {
     let state = setup(); state = applyCommand(state, command(state, [{ type: 'claim', id: 'c', entityId: '旅人', field: 'description', value: '受伤', nature: 'rumor', source }])).state;
@@ -107,32 +107,32 @@ test('same owner and chat under different account scopes cannot share archives',
     const f = fixtures(); f.select(JSON.stringify(['alice', 'same-chat'])); const a = await f.service.ensure();
     f.select(JSON.stringify(['bob', 'same-chat'])); const b = await f.service.ensure();
     assert.notEqual(a.worldId, b.worldId); assert.equal((await f.service.branches()).length, 1);
-    await assert.rejects(f.service.selectBranch(a.branchId, b), /不属于/); await f.storage.close();
+    await assert.rejects(f.service.recoverBinding(a.branchId), /活动世界|不属于/); assert.notEqual(a.branchId,b.branchId); await f.storage.close();
 });
 test('same names in separate chats have separate worlds; stale command cannot enter another chat', async () => {
     const f = fixtures(); const a = await f.service.ensure(); const cmd = f.service.command(a, [create('a')], '登记');
     f.select('chat-b'); const b = await f.service.ensure(); assert.notEqual(a.worldId, b.worldId);
-    await assert.rejects(f.service.commit(cmd), /世界或分支/); await f.storage.close();
+    await assert.rejects(f.service.commit(cmd), /世界或分支|世界版本已变化/); await f.storage.close();
 });
-test('export restoration creates a branch, preserves provenance, and rejects corrupted history', async () => {
+test('export restoration retains one active world, preserves provenance, and rejects corrupted history', async () => {
     const f = fixtures(); let state = await f.service.ensure(); state = (await f.service.commit(f.service.command(state, [create('a'), set('a', 'coins', 3)], '登记'))).state;
     const backup = JSON.parse(JSON.stringify(state)); const restored = await f.service.restore(backup, state);
-    assert.notEqual(restored.branchId, state.branchId); assert.equal(restored.entities[0].id, state.entities[0].id);
+    assert.equal(restored.branchId, state.branchId); assert.equal(restored.entities[0].id, state.entities[0].id);
     assert.deepEqual(restored.entities, state.entities);
     backup.entities[0].fields.coins.value = 999;
     await assert.rejects(f.service.restore(backup, restored), /历史不一致/);
     await assert.rejects(f.service.restore({ ...backup, schema: 999 }, restored), /不支持/); await f.storage.close();
 });
-test('old branches remain selectable and another chat cannot select them', async () => {
+test('in-place recovery preserves its owner and rejects foreign archives', async () => {
     const f = fixtures(); let original = await f.service.ensure();
     original = (await f.service.commit(f.service.command(original, [create('a')], '登记'))).state;
-    const branch = await f.service.fork(original, 0);
-    assert.equal((await f.service.branches()).length, 2);
-    const selected = await f.service.selectBranch(original.branchId, branch);
+    const branch = await f.service.rewind(original, 0);
+    assert.equal((await f.service.branches()).length, 1);
+    const selected = await f.service.restore(original, branch);
     assert.equal(selected.entities[0].id, 'a');
     f.select('chat-b'); const other = await f.service.ensure();
     assert.equal((await f.service.branches()).length, 1);
-    await assert.rejects(f.service.selectBranch(original.branchId, other), /不属于当前对话/); await f.storage.close();
+    await assert.rejects(f.service.recoverBinding(original.branchId), /活动世界|不属于/); assert.notEqual(other.worldId,original.worldId); await f.storage.close();
 });
 test('corrupted before-images cannot be replayed into an apparently valid backup', () => {
     const state = setup(); state.events[0].effects[0].before = { id: 'invented' };

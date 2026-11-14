@@ -1,6 +1,6 @@
 import { AGENT_BINDINGS, readAgentBinding } from '../modules/text-api/model.js';
 
-const moduleAgents = { overview:'update', people:'update', map:'update', situation:'update', opening:'update',
+const moduleAgents = { overview:'update', people:'update', places:'update', situation:'update', opening:'update',
     memory:'update', proofreading:'update', clues:'update', suspense:'update', planner:'planner' };
 
 export function panelAgent(route) { return moduleAgents[route]; }

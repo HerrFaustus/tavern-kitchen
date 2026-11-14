@@ -2,9 +2,9 @@ import { getRequestHeaders } from '../../../../../../script.js';
 import { createIdentifier } from '../../shared/common/identifier.js';
 import { setHostChatCompletionsRequestHeadersProvider } from '../../shared/host-llm/chat-completions/client.js';
 import { getTextApiRepository } from './repository.js';
-import { resolveFeaturePreset } from './model.js';
+import { resolveBoundPreset } from './model.js';
 import { connectionError, generateText } from './runtime.js';
-import { featureCalls } from './call-stats.js';
+import { countRemoteRequest } from './call-stats.js';
 import { createTextApiRequestHandler } from './bridge.js';
 
 function encodeMessages(messages) {
@@ -28,21 +28,19 @@ export async function generateHost(preset, { messages, signal, onDelta }) {
 }
 
 export async function resolveTextApi(feature) {
-    return resolveFeaturePreset(await (await getTextApiRepository()).load(), feature);
+    return resolveBoundPreset(await (await getTextApiRepository()).load(), feature);
 }
 
 export async function generateFeatureText(feature, options, snapshot) {
-    const finish = featureCalls.start(feature);
     let preset = snapshot;
     try {
         setHostChatCompletionsRequestHeadersProvider(() => getRequestHeaders());
         preset ??= await resolveTextApi(feature);
-        const result = await generateText(preset, options, { generateHost });
-        finish(result.usage);
-        return result;
+        return await countRemoteRequest(feature, dispatch => generateText(preset, { ...options, onDispatch(messages) {
+            dispatch(); options.onDispatch?.(messages);
+        } }, {generateHost}), options.agentTask);
     } catch (error) {
         const safe = connectionError(error, preset);
-        finish(undefined, safe);
         throw safe;
     }
 }

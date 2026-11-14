@@ -10,7 +10,8 @@ test('enabling a module checks only its own Agent without writing or starting a 
     const settings = { presets:[{id:'p',kind:'text',provider:'openai-compatible',model:'local',baseUrl:'http://localhost'}], bindings:{world:'p'} };
     const repository = async () => ({load:async () => settings});
     await requireAgent('simulation', repository);
-    await assert.rejects(requireAgent(panelAgent('map'), repository), {message:'请先在API界面中配置更新agent'});
+    await requireAgent(panelAgent('map'), repository);
+    await assert.rejects(requireAgent(panelAgent('places'), repository), {message:'请先在API界面中配置更新agent'});
     await assert.rejects(requireAgent(panelAgent('planner'), repository), {message:'请先在API界面中配置编剧agent'});
     usePanelSettings({panels:{map:false}}); assert.equal(panelEnabled('map'),false); usePanelSettings({});
 });

@@ -1,3 +1,4 @@
+import { featureCalls } from '../../../text-api/call-stats.js';
 import { fetchWithExtras } from '../../../../shared/common/request-extras.js';
 // ═══════════════════════════════════════════════════════════════════════════
 // vector/llm/llm-service.js - L0 前端直连 Chat Completions
@@ -146,8 +147,12 @@ export async function callLLM(messages, options = {}) {
         timeoutController.abort();
     }, timeout);
 
+    let finish;
     try {
-        const response = await fetchWithExtras(apiCfg)(`${baseUrl}/chat/completions`, {
+        requestSignal.throwIfAborted();
+        const send = fetchWithExtras(apiCfg);
+        finish = featureCalls.start(options.statFeature || 'l0');
+        const response = await send(`${baseUrl}/chat/completions`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
@@ -183,8 +188,11 @@ export async function callLLM(messages, options = {}) {
             }
             throw createL0FailureError('L0 API 响应不是有效 JSON', { kind: 'invalid_json' }, error);
         }
-        return String(extractMessageText(data) ?? '');
+        const text = String(extractMessageText(data) ?? '');
+        finish(data.usage);
+        return text;
     } catch (e) {
+        finish?.(undefined,e);
         if (e?.name === 'AbortError' && timedOut) {
             throw createL0FailureError(
                 `L0 request timeout after ${timeout}ms`,

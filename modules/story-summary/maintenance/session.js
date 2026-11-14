@@ -10,7 +10,6 @@ import { MemoryMaintenanceError, requireMemory, memoryUpdated } from './errors.j
 import { projectMemoryRecord, memoryPolicy, recordHandle } from './records.js';
 import { maintenanceTask, memoryOwnership, subtractRanges, unionRanges, overlaps } from './ranges.js';
 import { buildMemoryOpening } from './opening.js';
-import { ARC_PROGRESS_MAX } from '../generate/arc-progress.js';
 import { MEMORY_TOOLS } from './tools.js';
 import { normalizeToolArguments, validateToolArguments } from './arguments.js';
 import { MEMORY_PAGE_CHARS, MEMORY_PAGE_SIZE, OPENING_TOKENS } from './limits.js';
@@ -264,7 +263,6 @@ export function createMemorySession({ chatId, chat, json, atoms, l0Index, cutoff
                     if (kind !== 'merge') requireMemory(removeIds === undefined, 'invalid_arguments', '', 'removeIds');
                     const patch = structuredClone(operation.patch || {});
                     if (collection === 'facts' && Object.hasOwn(patch, 'isState')) { patch._isState = patch.isState; delete patch.isState; }
-                    if (collection === 'arcs' && Object.hasOwn(patch, 'progress')) patch.progress /= ARC_PROGRESS_MAX;
                     return [{ kind, collection, key, ...(removeIds ? { removeIds } : {}), ...(operation.patch ? { patch } : {}) }];
                 } catch (error) {
                     if (!(error instanceof MemoryMaintenanceError)) throw error;

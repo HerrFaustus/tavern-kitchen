@@ -8,7 +8,7 @@ import { createWorldEditorPanel } from './editor-panel.js';
 import { RELATION_PREFIX } from './person-fields.js';
 
 async function setupFixture(section = 'people', initialOps = []) {
-    const storage = createWorldStorage({ dbName: `tk-editor-test-${section}-${Date.now()}-${Math.random()}` });
+    const storage = createWorldStorage({ name: `tk-editor-test-${section}-${Date.now()}-${Math.random()}` });
     let owner = JSON.stringify(['default-user', 'story-1']);
     const service = createWorldService({ storage, getIdentity: () => owner });
     await service.ensure('故事一');
@@ -18,7 +18,7 @@ async function setupFixture(section = 'people', initialOps = []) {
     }
     const { document, window } = parseHTML('<!doctype html><html><body><div id="profile-content"><div class="prof-name">林晚</div></div><section id="world-editor"></section></body></html>');
     const root = document.getElementById('world-editor');
-    const panel = createWorldEditorPanel({ service, getIdentity: () => owner, section });
+    const panel = createWorldEditorPanel({ service, getIdentity: () => owner, section, getPlayerName:()=> '林晚' });
     panel.mount(root);
     panel.show(await service.read());
     return {
@@ -122,8 +122,8 @@ test('people editor creates person, updates field and binds directed relationshi
     assert.deepEqual(rel.value, { entityId: mentor.id, role: '师父' });
 });
 
-test('situation editor commits atomic purchase transactions and preserves form state on errors', async t => {
-    const f = await setupFixture('situation', [
+test('protagonist inventory commits atomic purchase transactions and preserves form state on errors', async t => {
+    const f = await setupFixture('overview', [
         { type: 'create', id: 'hero', name: '林晚', kind: 'person', aliases: [], source: { module: 'manual', key: 'k1', label: 'setup' } },
         { type: 'create', id: 'smith', name: '铁匠', kind: 'person', aliases: [], source: { module: 'manual', key: 'k2', label: 'setup' } },
         { type: 'create', id: 'sword', name: '玄铁剑', kind: 'item', aliases: [], source: { module: 'manual', key: 'k3', label: 'setup' } },
@@ -134,8 +134,8 @@ test('situation editor commits atomic purchase transactions and preserves form s
     t.after(() => f.storage.close());
 
     f.clickButton('登记交易');
-    f.setField('买方', 'hero');
-    f.setField('卖方', 'smith');
+    f.setField('主角收支方向', 'buy');
+    f.setField('交易对象', 'smith');
     f.setField('物品', 'sword');
     f.setField('价格（金币）', '999');
     f.submit();
@@ -150,7 +150,7 @@ test('situation editor commits atomic purchase transactions and preserves form s
     assert.equal(f.panel.isEditing(), false);
     const state = await f.service.read();
     assert.equal(state.entities.find(item => item.id === 'hero').fields.coins.value, 7);
-    assert.equal(state.entities.find(item => item.id === 'smith').fields.coins.value, 8);
+    assert.equal(state.entities.find(item => item.id === 'smith').fields.coins.value, 3);
     assert.equal(state.entities.find(item => item.id === 'sword').fields.owner.value.entityId, 'hero');
 
     f.panel.reset();

@@ -27,3 +27,11 @@ export function validatePersonField(subject, field, value, entities) {
         if (value && peer.fields?.[RELATION_PREFIX + subject.id]?.value?.entityId === subject.id) throw new Error('双方已有关系身份，请更新原方向的记录');
     }
 }
+
+// Older saves keep their entire inventory on disk. Only evidenced custody, use,
+// narrative significance or an explicit commitment belongs on another person's sheet.
+export function importantPossession(entity) {
+    const fields = entity?.fields || {};
+    return ['剧情意义','importance','归还条件','归还约定','保管人','使用人','物证','重要性'].some(key =>
+        fields[key]?.nature === 'established_fact' && Boolean(fields[key].value));
+}

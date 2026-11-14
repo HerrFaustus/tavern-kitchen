@@ -28,7 +28,9 @@ export function worldStoryRecords(state, baseline = []) {
         if (entry.record.kind === 'scene') continue;
         if (entry.record.remove) records.delete(entry.record.id);
         else records.set(entry.record.id, { ...structuredClone(entry.record), _addedAt: entry.end, _sourceStart: entry.start,
-            _worldVersion: entry.version, _nature: entry.nature });
+            _worldVersion: entry.version, _nature: entry.nature,
+            ...(entry.source?.task && {_task:entry.source.task}),
+            ...(entry.source?.module === 'simulation' && {_knownBy:(entry.source.knownBy || []).map(id => state.entities.find(person => person.id === id)?.name || id)}) });
     }
     return [...records.values()];
 }

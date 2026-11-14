@@ -39,7 +39,11 @@ export function createWorldService({ storage, getIdentity, id = createIdentifier
             const bound = capture();
             return publish(bound, storage.update(bound.identity, state => { const next = state || emptyWorld(id(), id(), title); return { state: next, result: next }; }, bound.current));
         },
-        command: commandFor,
+        command(state, operations, title, origin) {
+            const command = commandFor(state, operations, title, origin);
+            effectLeases.set(command,generation);
+            return command;
+        },
         proposalView(state, requestId, index) { return proposalReviewView(state, requestId, index, getReviewContext()); },
         proposalGroup(state, requestId, index) { return proposalReviewGroup(state, requestId, index); },
         proposalBatchCommand(state, requestId, indices, action, options = {}) { return batchFor(state, requestId, indices, action, options); },
@@ -49,21 +53,21 @@ export function createWorldService({ storage, getIdentity, id = createIdentifier
             const command = commandFor(state, [operation], action === 'accepted' ? '确认世界变化提案' : '拒绝世界变化提案', origin);
             effectLeases.set(command, generation); return command;
         },
-        async branches() { const bound = capture(); const branches = await storage.list(bound.identity); invariant(bound.current(), '对话已切换'); return branches; },
-        async selectBranch(branchId, expected, { guard = () => true } = {}) {
+        async branches() { const state = await this.read(); return state ? [{branchId:state.branchId,version:state.version,title:state.title}] : []; },
+        async recoverBinding(branchId) {
             const bound = capture();
-            return publish(bound, storage.select(bound.identity, branchId, expected, () => bound.current() && guard()), true);
+            return publish(bound,storage.recoverBinding(bound.identity,branchId,bound.current),true);
         },
         async commit(command, { guard = () => true } = {}) {
             const bound = capture();
             return publish(bound, storage.update(bound.identity, state => {
                 invariant(state, '请先建立世界档案');
-                invariant(!effectLeases.has(command) || effectLeases.get(command) === generation, '正文来源或世界分支已变化，请重新核对');
+                invariant(!effectLeases.has(command) || effectLeases.get(command) === generation, '正文来源或世界版本已变化，请重新核对');
                 for (const operation of command.operations || []) if (operation.type === 'review_update' && operation.action === 'accepted') {
                     invariant(isUpdateSourceCurrent(state.sources[`${UPDATE_PREFIX}${operation.requestId}`]?.update), '正文来源已变化，请重新核对');
                 }
                 if (command.origin) invariant((!effectLeases.has(command) || effectLeases.get(command) === generation)
-                    && isSourceCurrent(turnById(state, command.origin.sourceId)), '正文来源或世界分支已变化，请重新核对');
+                    && isSourceCurrent(turnById(state, command.origin.sourceId)), '正文来源或世界版本已变化，请重新核对');
                 const applied = applyCommand(state, command, getReviewContext()); return { state: applied.state, result: applied };
             }, () => bound.current() && guard()));
         },
@@ -77,23 +81,24 @@ export function createWorldService({ storage, getIdentity, id = createIdentifier
                 return { state: applied.state, result: applied.state };
             }, bound.current));
         },
-        async syncTurns(chat, { end = chat.length - 1, history = [], memoryAvailable = true, guard = () => true } = {}) {
+        async syncTurns(chat, { end = chat.length - 1, history = [], memoryAvailable = true, preserveLater = false, guard = () => true } = {}) {
             const bound = capture();
             return publish(bound, storage.update(bound.identity, state => {
                 state ||= emptyWorld(id(), id(), '当前故事');
                 const operations = [...(memoryAvailable ? prepareUpdateOperations(state, history, chat) : []),
-                    ...prepareTurnOperations(state, chat, { end, history, memoryAvailable, id })];
+                    ...prepareTurnOperations(state, chat, { end, history, memoryAvailable, preserveLater, id })];
                 if (!operations.length) return { state, result: state };
                 const applied = applyCommand(state, commandFor(state, operations, '核对正文来源与记忆交付'));
                 return { state: applied.state, result: applied.state };
             }, () => bound.current() && guard()));
         },
-        async autoConfirm({ guard = () => true } = {}) {
+        async autoConfirm({ guard = () => true, permits = () => true } = {}) {
             const bound = capture();
             return publish(bound, storage.update(bound.identity, state => {
                 if (!state) return { result: null };
                 const context = getReviewContext(); let next = state;
                 for (const record of worldUpdates(state)) {
+                    if (!permits(record)) continue;
                     const indices = automaticProposalIndices(next, record.update.requestId, context);
                     if (!indices.length || !isUpdateSourceCurrent(record.update)) continue;
                     const command = batchFor(next, record.update.requestId, indices, 'accepted', {}, 'automatic', context);
@@ -118,25 +123,30 @@ export function createWorldService({ storage, getIdentity, id = createIdentifier
             const command = commandFor(state, operations, title, origin); effectLeases.set(command, generation); return command;
         },
         executionReceipts(state, sourceId) { return state.receipts.filter(receipt => receipt.origin?.sourceId === sourceId).map(receipt => structuredClone(receipt)); },
-        assertSourcesConsistent(state) { invariant(!turnEffectConflicts(state).length, '正文来源已变化，关联的世界效果需要核对；请先回到变更前的世界分支'); },
-        async fork(expected, version, { guard = () => true } = {}) {
-            const bound = capture();
-            return publish(bound, storage.update(bound.identity, state => {
-                invariant(state?.branchId === expected.branchId && state.version === expected.version, '档案已更新，请重新加载');
-                const next = forkWorld(state, version, id()); return { state: next, result: next };
-            }, () => bound.current() && guard()), true);
-        },
+        assertSourcesConsistent(state) { invariant(!turnEffectConflicts(state).length, '正文来源已变化，关联的世界效果需要核对；请先到数据页预览并原位恢复'); },
         async restore(backup, expected) {
             const parsed = validateWorld(structuredClone(backup));
-            const replay = forkWorld(parsed, parsed.version, id());
-            invariant(['entities', 'claims', 'sources'].every(key => canonical(parsed[key]) === canonical(replay[key]))
-                && canonical(parsed.modules || {}) === canonical(replay.modules || {}), '备份状态与历史不一致');
+            const rebuilt = forkWorld(parsed, parsed.version, parsed.branchId);
+            invariant(['entities','claims','sources','modules'].every(key => canonical(parsed[key] ?? null) === canonical(rebuilt[key] ?? null)), '备份状态与历史不一致');
             const bound = capture();
             return publish(bound, storage.update(bound.identity, state => {
-                invariant(state?.branchId === expected.branchId && state.version === expected.version, '档案已更新，请重新加载');
-                // Restoring creates a new branch; the previous branch stays on disk.
-                return { state: replay, result: replay };
+                invariant(state?.worldId === expected.worldId && state.branchId === expected.branchId && state.version === expected.version, '档案已更新，请重新加载');
+                invariant(parsed.worldId === state.worldId || state.version === 0, '备份来自另一世界，请经后厨卡导入');
+                if (parsed.worldId !== state.worldId) return { state:parsed, result:parsed };
+                const next = {...parsed, branchId:state.branchId};
+                return { state:next, result:next };
             }, bound.current), true);
+        },
+        async rewind(expected, version, { guard = () => true } = {}) {
+            const bound = capture();
+            return publish(bound, storage.update(bound.identity, state => {
+                invariant(state?.worldId === expected.worldId && state.branchId === expected.branchId && state.version === expected.version, '档案已更新，请重新加载');
+                const next = forkWorld(state, version, state.branchId);
+                delete next.parent;
+                next.withdrawn = [...(state.withdrawn || []), { at:now(), fromVersion:version + 1,
+                    events:state.events.slice(version), receipts:state.receipts.slice(version) }];
+                return { state: next, result: next };
+            }, () => bound.current() && guard()), true);
         },
     };
 }

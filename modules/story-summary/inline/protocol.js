@@ -18,10 +18,14 @@ const text = (value, label, required = false) => {
     return value.trim();
 };
 
-export function floorSource(chat, floor, version = 2) {
+export function floorSource(chat, floor, version = 3) {
     const message = chat?.[floor];
     if (!isNarrativeReply(message) || !Number.isInteger(floor) || floor < 0) return null;
     let start = floor;
+    if (version === 3) {
+        start = chat[floor - 1]?.is_user ? floor - 1 : floor;
+        return { version, start, floor, digest:captureRangeSource(chat,start,floor).digest };
+    }
     while (start > 0 && chat[start - 1]?.is_user) start--;
     if (version === 2) return { version: 2, start, floor, digest: captureRangeSource(chat, start, floor).digest };
     return { start, floor, digest: memoryDigest(chat.slice(start, floor + 1).map(m => ({

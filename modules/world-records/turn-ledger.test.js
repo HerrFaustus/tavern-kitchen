@@ -121,13 +121,13 @@ test('memory is linked only after a confirmed receipt is supplied; retry does no
     state = (await f.service.commit(f.service.command(state, [create('buyer'), create('seller'), create('sword', 'item'),
         set('buyer', 'coins', 10), set('seller', 'coins', 0), set('sword', 'owner', { entityId: 'seller' })], '登记'))).state;
     const turn = currentTurns(state)[0];
-    const ops = [{ type: 'purchase', buyerId: 'buyer', sellerId: 'seller', itemId: 'sword', price: 5, source }];
+    const ops = [{ type: 'purchase', heroId:'buyer', buyerId: 'buyer', sellerId: 'seller', itemId: 'sword', price: 5, source }];
     const execution = await f.service.commit(f.service.effectCommand(state, turn.id, 'purchase-sword', ops, '买剑'));
     state = execution.state; const history = [batch(f.service, state, chat)];
     assert.equal(turnProgress(state).memoryThroughFloor, -1);
     state = await f.service.syncTurns(chat, { history: [] }); assert.equal(currentTurns(state)[0].memory.length, 0);
     state = await f.service.syncTurns(chat, { history }); assert.equal(turnProgress(state).memoryThroughFloor, 1);
-    assert.equal(field(state, 'buyer', 'coins'), 5); assert.equal(field(state, 'seller', 'coins'), 5);
+    assert.equal(field(state, 'buyer', 'coins'), 5); assert.equal(field(state, 'seller', 'coins'), 0);
     const retry = await f.service.commit(f.service.effectCommand(state, turn.id, 'purchase-sword', ops, '换一次请求编号'));
     assert.equal(retry.repeated, true); assert.equal(retry.receipt.commandId, execution.receipt.commandId);
     assert.equal(field(retry.state, 'buyer', 'coins'), 5);
@@ -164,9 +164,9 @@ test('editing an executed source identifies its receipt and blocks new automatic
     assert.throws(() => f.service.effectCommand(state, currentTurns(state)[0].id, 'new-change', [set('a', 'coins', 2)], '执行'), /待核对/);
     assert.equal(field(state, 'a', 'coins'), 5);
     // An explicit historical fork is recoverable; the old effect branch stays on disk.
-    state = await f.service.fork(state, receipt.version - 1); state = await f.service.syncTurns(chat);
+    state = await f.service.rewind(state, receipt.version - 1); state = await f.service.syncTurns(chat);
     f.service.assertSourcesConsistent(state); assert.equal(state.entities.length, 0);
-    assert.equal((await f.service.branches()).length, 2);
+    assert.equal((await f.service.branches()).length, 1);
 });
 
 test('manual world edits remain independent of prose changes', async t => {
@@ -179,7 +179,7 @@ test('manual world edits remain independent of prose changes', async t => {
 test('a source changed before its notification cannot execute through a stale catalog', async t => {
     const chat = chatFixture(), f = fixture(t, () => chat); const state = await f.service.syncTurns(chat);
     const command = f.service.effectCommand(state, currentTurns(state)[0].id, 'create', [create('a')], '执行');
-    chat[1].mes = '原文已变'; await assert.rejects(f.service.commit(command), /正文来源或世界分支已变化/);
+    chat[1].mes = '原文已变'; await assert.rejects(f.service.commit(command), /正文来源或世界版本已变化/);
     assert.equal((await f.service.read()).version, state.version);
 });
 
@@ -187,7 +187,7 @@ test('switching away and back invalidates an in-flight effect even at the same a
     const f = fixture(t), chat = chatFixture(), state = await f.service.syncTurns(chat);
     const command = f.service.effectCommand(state, currentTurns(state)[0].id, 'create', [create('a')], '执行');
     f.switchOwner('chat-b'); await f.service.ensure(); f.switchOwner('chat-a');
-    await assert.rejects(f.service.commit(command), /世界分支已变化/);
+    await assert.rejects(f.service.commit(command), /世界版本已变化/);
     assert.equal((await f.service.read()).version, state.version);
 });
 
@@ -214,9 +214,9 @@ test('failed memory delivery can reconcile after restart without model replay or
 test('forks retain delivered memory but do not adopt a late delivery from another branch', async t => {
     const f = fixture(t), chat = chatFixture(); let state = await f.service.syncTurns(chat);
     const basis = state, history = [batch(f.service, state, chat)];
-    state = await f.service.syncTurns(chat, { history }); state = await f.service.fork(state, state.version);
+    state = await f.service.syncTurns(chat, { history }); state = await f.service.rewind(state, state.version);
     state = await f.service.syncTurns(chat, { history }); assert.equal(turnProgress(state).memoryThroughFloor, 1);
-    state = await f.service.fork(state, basis.version); state = await f.service.syncTurns(chat, { history });
+    state = await f.service.rewind(state, basis.version); state = await f.service.syncTurns(chat, { history });
     assert.equal(currentTurns(state)[0].memory.length, 0);
 });
 

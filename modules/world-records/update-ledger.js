@@ -12,7 +12,7 @@ export function validateUpdateRecord(key, record) {
         if (!Array.isArray(record.reviews) || new Set(record.reviews.map(review => review.index)).size !== record.reviews.length) throw new Error('提案处理记录重复或无效');
         for (const review of record.reviews) {
             if (review?.version !== 1 || !Number.isSafeInteger(review.index) || review.index < 0 || review.index >= record.update.proposals.length
-                || !['accepted', 'rejected'].includes(review.action) || !['applied', 'claim', 'candidate', 'rejected'].includes(review.outcome)
+                || !['accepted', 'rejected'].includes(review.action) || !['applied', 'claim', 'candidate', 'rejected','archived'].includes(review.outcome)
                 || typeof review.reason !== 'string' || review.reason.length > 1000 || typeof review.edited !== 'boolean'
                 || review.mode !== undefined && !['manual', 'automatic'].includes(review.mode)
                 || typeof review.commandId !== 'string' || !review.commandId || review.eventId !== `event:${review.commandId}`
@@ -32,7 +32,8 @@ export function prepareUpdateOperations(state, history, chat) {
         const update = validateStoredUpdate(batch.worldUpdate), key = `${UPDATE_PREFIX}${update.requestId}`, previous = state.sources[key];
         if (update.basis.worldId !== state.worldId) continue;
         // A fork inherits only deliveries that were actually on that branch.
-        if (update.basis.branchId !== state.branchId && !previous) continue;
+        if (!previous && (update.basis.branchId !== state.branchId || (state.withdrawn || []).some(revision =>
+            revision.events.some(event => event.effects.some(effect => effect.type === 'source' && effect.id === key))))) continue;
         const fingerprint = memoryDigest(update);
         if (previous && previous.fingerprint !== fingerprint) throw new Error('同一世界更新编号不能交付不同内容');
         const sourceCurrent = !batch.floorEntry?.deleted && isRangeSourceCurrent(update.source, chat);

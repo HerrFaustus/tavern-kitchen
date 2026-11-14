@@ -1,3 +1,4 @@
+import { countRemoteRequest } from './call-stats.js';
 import { fetchWithExtras } from '../../shared/common/request-extras.js';
 import { getModelListApiPrefix, pullModelsForProvider } from '../agent-core/model-list.js';
 import { resolveRuntimeReasoning } from '../agent-core/reasoning-capabilities.js';
@@ -74,6 +75,7 @@ export async function generateText(preset, { messages, signal, onDelta, onDispat
             const createAdapter = dependencies.createAdapter || (await import('../agent-core/provider-config.js')).createAgentAdapter;
             const adapter = createAdapter({ ...config, timeoutMs });
             let previous = '';
+            controller.signal.throwIfAborted();
             onDispatch?.(messages);
             const result = await adapter.chat({
                 messages, signal: controller.signal, reasoning: config.reasoning,
@@ -98,6 +100,9 @@ export async function generateText(preset, { messages, signal, onDelta, onDispat
 }
 
 export async function testTextConnection(preset, options = {}, dependencies = {}) {
+    return countRemoteRequest('test-' + (preset.kind || 'text'), dispatch => probe(preset, {...options,onDispatch:dispatch}, dependencies));
+}
+async function probe(preset, options, dependencies) {
     if (['embedding', 'rerank'].includes(preset.kind)) {
         const config = resolveConnection(preset);
         if (!config.model.trim() || !config.baseUrl.trim()) throw new Error(COPY.modelRequired);
@@ -107,6 +112,8 @@ export async function testTextConnection(preset, options = {}, dependencies = {}
         options.signal?.addEventListener('abort', abort, { once: true });
         try {
             return await runWithAbortDeadline(async () => {
+                controller.signal.throwIfAborted();
+                options.onDispatch();
                 const embedding = preset.kind === 'embedding';
                 const response = await fetchWithExtras(config)(config.baseUrl.replace(/\/$/, '') + (embedding ? '/embeddings' : '/rerank'), {
                     method: 'POST', signal: controller.signal, headers: {
@@ -118,7 +125,7 @@ export async function testTextConnection(preset, options = {}, dependencies = {}
                 const result = await response.json();
                 if (embedding ? !Array.isArray(result.data?.[0]?.embedding) : !Array.isArray(result.results))
                     throw new Error('接口返回格式与所选用途不匹配');
-                return { ok: true };
+                return { ok: true, ...(result.usage && {usage:result.usage}) };
             }, { controller, timeoutMs: options.timeoutMs || 30000, timeoutMessage: COPY.timeout });
         } catch (error) { throw connectionError(error, preset); }
         finally { options.signal?.removeEventListener('abort', abort); }
@@ -127,5 +134,5 @@ export async function testTextConnection(preset, options = {}, dependencies = {}
         ...options, messages: [{ role: 'user', content: CONNECTION_TEST_PROMPT }],
     }, dependencies);
     if (!String(result.text || '').trim()) throw new Error(COPY.emptyResponse);
-    return { ok: true };
+    return { ok:true, ...(result.usage && {usage:result.usage}) };
 }

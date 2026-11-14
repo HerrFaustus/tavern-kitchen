@@ -1,8 +1,7 @@
-import { turnEffectConflicts } from './turn-ledger.js';
+import { turnEffectConflicts, turnById } from './turn-ledger.js';
 
-// History remains in the existing data page; it never displays event titles or
-// hidden world contents. A restore forks the selected prefix, preserving the old branch.
-export function createWorldRecoveryPanel({ service, getIdentity, getStamp, readState = () => service.read() }) {
+// Recovery compares a read-only preview with the still-current chat before committing.
+export function createWorldRecoveryPanel({ service, getIdentity, getStamp, previewMemory = () => null, restoreMemory = async () => {}, readState = () => service.read() }) {
     let root, doc, epoch=0, request=0, editing=false, busy=false, loading=false, message='', viewed, statusNode;
     const el = (tag,text,className) => {
         const node=doc.createElement(tag);
@@ -17,13 +16,16 @@ export function createWorldRecoveryPanel({ service, getIdentity, getStamp, readS
         for (const [key,title] of items) { const option=el('option',title);option.value=String(key);node.append(option); }
         node.value=String(value);return node;
     };
-    const branchLabel = item => `分支 ${item.branchId.slice(-8)} · 第 ${item.version} 版`;
+    const branchLabel = item => `世界 ${item.branchId.slice(-8)} · 第 ${item.version} 版`;
     function valid(owner,scope,stamp) { return owner === getIdentity() && scope === service.scopeVersion() && stamp === getStamp(); }
     function errorView(error) {
         if (!root) return;
         viewed=statusNode=null;
         root.hidden=false;const details=el('details',undefined,'tk-world-history');details.open=true;
         details.append(el('summary','世界版本与恢复'),el('p',`${message ? '已切换，但' : ''}读取世界版本失败：${error.message || '请重试。'}`,'settings-hint'));
+        for (const item of error.candidates || []) details.append(button('采用已核对的旧档 · ' + item.title + ' · ' + item.branchId + ' · 第 ' + item.version + ' 版', async () => {
+            try { await service.recoverBinding(item.branchId); await refresh(); } catch (failure) { errorView(failure); }
+        }));
         details.append(button('重新读取',()=>{refresh().catch(error=>errorView(error));}));root.replaceChildren(details);
     }
     async function show(state) {
@@ -46,7 +48,13 @@ export function createWorldRecoveryPanel({ service, getIdentity, getStamp, readS
         if (message) { const saved=el('p',message,'settings-hint');saved.setAttribute('role','status');details.append(saved);message=''; }
         if (!owner || !state) { viewed=statusNode=null;details.append(el('p',owner ? '当前聊天还没有世界记录。' : '选择聊天后可查看世界版本。','settings-hint'));root.append(details);return; }
         details.append(el('p',`当前${branchLabel(state)}`,'settings-hint'));
-        details.append(el('p','恢复会建立新分支，原分支仍可切回。聊天和剧情总结不会回退；编剧札记按分支独立保存。当前总结和地图仍可能重新提供资料。后厨卡只包含导出时的当前分支。','settings-hint'));
+        details.append(el('p','聊天内原位恢复。撤销的回执可在此查阅，失效的楼层按原文重记。','settings-hint'));
+        for (const past of state.withdrawn || []) {
+            const audit=el('details'); audit.append(el('summary','已撤销的回执 · '+past.receipts.length+' 笔'));
+            for(const receipt of past.receipts) audit.append(el('p',receipt.eventId+' · 第 '+receipt.version+' 版'));
+            details.append(audit);
+        }
+        const memoryPlan=previewMemory();
         const conflicts=turnEffectConflicts(state);
         const recommended=conflicts.length ? Math.max(0,conflicts.reduce((min,receipt)=>Math.min(min,receipt.version),state.version)-1) : Math.max(0,state.version-1);
         if (conflicts.length) {
@@ -67,7 +75,7 @@ export function createWorldRecoveryPanel({ service, getIdentity, getStamp, readS
                 if (!guard()) throw new Error('聊天、总结或世界已变化，请重新读取后再操作。');
                 const next=await task();
                 if (actionEpoch !== epoch || owner !== getIdentity()) return;
-                message=`已切换到第 ${next.version} 版；原分支保留。`;
+                message=`已原位恢复到第 ${next.version} 版。`;
                 editing=false;busy=false;
                 await refresh();
             } catch (error) {
@@ -76,11 +84,11 @@ export function createWorldRecoveryPanel({ service, getIdentity, getStamp, readS
                 if (actionEpoch === epoch) {busy=false;controls.forEach((node,index)=>{node.disabled=disabled[index];});}
             }
         };
-        function confirm(kind,description,task) {
+        function confirm(_kind,description,task) {
             editing=true;confirmation.replaceChildren(el('p',description,'settings-hint'));
             const inputs=[...details.querySelectorAll('select,input')], disabled=inputs.map(node=>node.disabled);
             inputs.forEach(node=>{node.disabled=true;});
-            const yes=button(kind==='fork' ? '确认恢复' : '确认切换',()=>run(task));
+            const yes=button('确认恢复',()=>run(task));
             const cancel=button('取消',()=>{confirmation.replaceChildren();editing=false;actions.forEach(node=>{node.disabled=false;});inputs.forEach((node,index)=>{node.disabled=disabled[index];});});
             confirmation.append(yes,cancel);actions.forEach(node=>{node.disabled=true;});yes.focus();
         }
@@ -103,22 +111,24 @@ export function createWorldRecoveryPanel({ service, getIdentity, getStamp, readS
                 if (!value.trim() || !Number.isSafeInteger(target) || target<0 || target>=state.version) {
                     status.setAttribute('role','alert');status.textContent='请输入当前版本之前的有效版本号。';return;
                 }
-                confirm('fork',`从第 ${target} 版建立新世界分支？该版本之后的世界变化不进入新分支；原分支保留。聊天和总结不变。`,
-                    ()=>service.fork(state,target,{guard}));
+                const affected=state.events.slice(target).flatMap(event=>{
+                    const turn=event.origin && turnById(state,event.origin.sourceId);
+                    const changes=event.effects.filter(effect=>['entity','claim','module'].includes(effect.type));
+                    if (!changes.length) return [];
+                    const location=turn ? `第 ${turn.source.start+1}–${turn.source.end+1} 楼` : '无对应楼层';
+                    return [location+' · '+changes.map(c=>c.type==='entity' ? (c.after?.name || c.before?.name)+' '+Object.keys(c.after?.fields || {}).filter(k=>c.after.fields[k].eventId===event.id).join('、') : c.id).join('、')];
+                });
+                const restart=memoryPlan ? `保留前 ${memoryPlan.fromFloor} 楼，从第 ${memoryPlan.fromFloor+1} 楼重记相关摘要、章节和札记。` : '没有失效的摘要来源。';
+                confirm('rewind',`在当前世界恢复第 ${target} 版。${restart} ${affected.join('；')}`,async()=>{
+                    const next=await service.rewind(state,target,{guard});
+                    if (memoryPlan) await restoreMemory(memoryPlan);
+                    return next;
+                });
             });
             actions.push(restore);details.append(label('恢复到的世界版本',version),customLabel,restore);
         }
-        if (branches.length>1) {
-            const options=branches.slice().sort((a,b)=>a.branchId===state.branchId?-1:b.branchId===state.branchId?1:a.branchId.localeCompare(b.branchId));
-            const target=select(options.map(item=>[item.branchId,branchLabel(item)+(item.branchId===state.branchId?' · 当前':'')]),state.branchId);
-            const change=button('切换分支',()=>{
-                if (!target.value || target.value===state.branchId) {status.setAttribute('role','alert');status.textContent='请选择另一条分支。';return;}
-                const chosen=options.find(item=>item.branchId===target.value);
-                if (!chosen) return;
-                confirm('select',`切换到${branchLabel(chosen)}？当前分支保留。聊天和总结不变；如正文来源已改变，仍需核对。`,
-                    ()=>service.selectBranch(chosen.branchId,state,{guard}));
-            });
-            target.addEventListener('change',()=>{editing=true;});actions.push(change);details.append(label('保留的世界分支',target),change);
+        if (memoryPlan && !conflicts.length) {
+            details.append(button('从断点重记',()=>confirm('rewind',`保留前 ${memoryPlan.fromFloor} 楼，从第 ${memoryPlan.fromFloor+1} 楼重记。`,async()=>{await restoreMemory(memoryPlan);return state;})));
         }
         details.append(confirmation,retry,status);root.append(details);
     }

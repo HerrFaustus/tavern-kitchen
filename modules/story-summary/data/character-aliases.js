@@ -193,6 +193,7 @@ export function mergeCharacterAliasEdges(existingAliases, updates, floor) {
 }
 
 export function canonicalizeIncrementalSummaryData(parsed, aliases) {
+    delete parsed.arcUpdates;
     if (!parsed || !normalizeCharacterAliases(aliases).length) return parsed;
 
     const resolver = buildAliasResolver(aliases);
@@ -209,11 +210,6 @@ export function canonicalizeIncrementalSummaryData(parsed, aliases) {
             parsed.newCharacters.map(item => (typeof item === 'string' ? item : item?.name)),
             resolver,
         );
-    }
-
-    for (const update of (parsed.arcUpdates || [])) {
-        if (!isPlainObject(update)) continue;
-        update.name = resolver.resolveName(update.name);
     }
 
     for (const update of (parsed.factUpdates || [])) {
@@ -383,56 +379,6 @@ function mergeCharacters(main, resolver) {
     return order.map(key => byKey.get(key));
 }
 
-function arcLatestAt(arc) {
-    let latest = normalizeAddedAt(arc?._addedAt, 0);
-    for (const moment of (arc?.moments || [])) {
-        if (isPlainObject(moment)) {
-            latest = Math.max(latest, normalizeAddedAt(moment._addedAt, latest));
-        }
-    }
-    return latest;
-}
-
-function mergeMoments(a = [], b = []) {
-    return dedupeByKey([...a, ...b], (moment) => {
-        if (typeof moment === 'string') return `s:${moment}`;
-        return `o:${String(moment?.text || '').trim()}@${moment?._addedAt ?? ''}`;
-    });
-}
-
-function mergeArcs(arcs, resolver) {
-    const byKey = new Map();
-    const order = [];
-
-    for (const arc of arcs || []) {
-        if (!isPlainObject(arc)) continue;
-        const name = resolver.resolveName(arc.name);
-        const key = normalizeAliasNameKey(name);
-        if (!key) continue;
-
-        const next = { ...arc, name, moments: Array.isArray(arc.moments) ? [...arc.moments] : [] };
-        const existing = byKey.get(key);
-        if (!existing) {
-            byKey.set(key, next);
-            order.push(key);
-            continue;
-        }
-
-        const existingLatest = arcLatestAt(existing);
-        const nextLatest = arcLatestAt(next);
-        const winner = nextLatest >= existingLatest ? next : existing;
-        byKey.set(key, {
-            ...existing,
-            ...winner,
-            name,
-            moments: mergeMoments(existing.moments, next.moments),
-            _addedAt: Math.min(normalizeAddedAt(existing._addedAt, next._addedAt ?? 0), normalizeAddedAt(next._addedAt, existing._addedAt ?? 0)),
-        });
-    }
-
-    return order.map(key => byKey.get(key));
-}
-
 function factLatestAt(fact) {
     return Math.max(normalizeAddedAt(fact?._addedAt, 0), normalizeAddedAt(fact?.since, 0));
 }
@@ -494,13 +440,6 @@ function applyCanonicalization(json, resolver) {
         changed = true;
     }
 
-    const oldArcs = json.arcs || [];
-    const newArcs = mergeArcs(json.arcs || [], resolver);
-    if (!sameJson(oldArcs, newArcs)) {
-        json.arcs = newArcs;
-        changed = true;
-    }
-
     const oldFacts = json.facts || [];
     const newFacts = mergeFactsByCanonicalKey(json.facts || [], resolver);
     if (!sameJson(oldFacts, newFacts)) {
@@ -519,6 +458,7 @@ function canonicalizeStoryRecord(record, resolver) {
 }
 
 export function applyCharacterAliasUpdates(json, updates, floor) {
+    delete json.arcs;
     const beforeAliases = normalizeCharacterAliases(json?.characterAliases, floor);
     const { aliases, accepted } = mergeCharacterAliasEdges(beforeAliases, updates, floor);
     if (!accepted.length) {

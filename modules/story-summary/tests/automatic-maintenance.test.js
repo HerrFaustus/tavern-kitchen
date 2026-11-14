@@ -6,7 +6,7 @@ import test from 'node:test';
 import { build } from 'esbuild';
 import { createVectorMaintenanceScheduler } from '../vector/pipeline/maintenance-scheduler.js';
 import { createMessageSourceTracker } from '../data/message-sources.js';
-import { getAutoSummaryPlan } from '../generate/summary-trigger.js';
+import { createTurnQueue } from '../../../core/turn-queue.js';
 import { entry } from './helpers/story-summary-entry.js';
 
 // Acceptance: automatic maintenance starts only after host readiness + paint + quiet delay;
@@ -126,33 +126,11 @@ test('switching away and back cancels the old delay immediately, before deferred
     assert.deepEqual(f.runs, []);
 });
 
-for (const reason of ['before_user', 'after_ai']) test(`a below-threshold ${reason} probe never recovers a pending save`, async () => {
-    const store = { lastSummarizedMesId: 3 };
-    const context = { chatId: 'fixture', chat: Array.from({ length: 6 }, () => ({ is_user: false })) };
-    const automatic = entry(['maybeAutoRunSummary'], {
-        getContext: () => context, getAutoSummaryPlan,
-        getPublishedSummaryStore: () => store, getSummaryStore: () => store,
-        isStorySummaryEnabledForCurrentChat: () => true, isStorySummaryConsumableForCurrentChat: () => true,
-        isSummaryGenerating: () => false, isChatStale: () => false,
-        getMemoryCommitState: () => 'unconfirmed', waitForMemoryCommit: () => assert.fail('idle probe started readback'),
-        getSummaryPanelConfig: () => ({ inlineSummary: { enabled: false }, trigger: { enabled: true, timing: reason, interval: 10, delayFloors: 0 } }),
-        autoRunSummaryWithRetry: () => assert.fail('idle probe started a summary'),
-    });
-    await automatic.maybeAutoRunSummary(reason);
-});
-
-test('a triggered probe recomputes its target after confirmation publishes a newer summary', async () => {
-    let boundary = 1, recoveries = 0;
-    const context = { chatId: 'fixture', chat: Array.from({ length: 8 }, () => ({ is_user: false })) };
-    const automatic = entry(['maybeAutoRunSummary'], {
-        getContext: () => context, getAutoSummaryPlan,
-        getPublishedSummaryStore: () => ({ lastSummarizedMesId: boundary }), getSummaryStore: () => ({ lastSummarizedMesId: boundary }),
-        isStorySummaryEnabledForCurrentChat: () => true, isStorySummaryConsumableForCurrentChat: () => true,
-        isSummaryGenerating: () => false, isChatStale: () => false,
-        getMemoryCommitState: () => 'unconfirmed', waitForMemoryCommit: async () => { recoveries++; boundary = 7; },
-        getSummaryPanelConfig: () => ({ inlineSummary: { enabled: false }, trigger: { enabled: true, timing: 'after_ai', interval: 4, delayFloors: 0 } }),
-        autoRunSummaryWithRetry: () => assert.fail('already covered floors were summarized again'),
-    });
-    await automatic.maybeAutoRunSummary('after_ai');
-    assert.equal(recoveries, 1);
+test('only an enabled floor task can consume an accepted reply; legacy timing never starts a second task', async () => {
+    let checks = 0, calls = 0;
+    const chat = [{is_user:true,mes:'等待'}, {mes:'收到',send_date:'a'}];
+    const queue = createTurnQueue({read:()=>({owner:'fixture',chat,end:1}), tasks:()=>[], complete:()=>{ checks++; }, execute:()=>{ calls++; }});
+    await queue.settle();
+    await queue.beforeGeneration(()=>assert.fail('disabled task stopped the host'));
+    assert.deepEqual([checks,calls],[0,0]);
 });

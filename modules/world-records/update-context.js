@@ -231,6 +231,19 @@ export function fitUpdateContext(context, serialize = () => JSON.stringify(conte
         if (Array.isArray(source?.records)) delete source.fingerprint; // Canonical duplicate of records.
     }
     encoded = serialize();
+    const summaries = context.background?.summaries;
+    if (encoded.length >= threshold && Array.isArray(summaries) && summaries.length) {
+        // Old selected history nodes are optional. Keep the newest whole nodes that fit.
+        const original = summaries.slice();
+        let low = 0, high = original.length;
+        while (low < high) {
+            const cut = Math.floor((low + high) / 2);
+            context.background.summaries = original.slice(cut);
+            if (serialize().length >= threshold) low = cut + 1; else high = cut;
+        }
+        context.background.summaries = original.slice(low);
+        encoded = serialize();
+    }
     if (encoded.length >= threshold && !context.manifest.omittedDetailEntityIds?.length) {
         const active = protectedEntityIds(context), omitted = new Set();
         const originalEntities = context.world.entities;
