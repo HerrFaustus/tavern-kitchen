@@ -4,6 +4,14 @@
 
 发布构建标识 `e9e795f48aa39ec36052`（`entries: 9`、`modules: 731`、`chunks: 61`）。完整 `node scripts/check.mjs` 已通过：质量检查与零告警 ESLint、TypeScript 项目边界校验、可重复构建、1662 项单元测试及记忆运行时检查（`[story-summary-runtime] result=PASS`），涵盖 P0 macOS 构建与测试修复、P2 柏宝书长程记忆（相对故事时间、可逆递归分层压缩树与新近优先预算、四层临场感状态裁剪与动态 `D1`/`D2` 双轴注入、世界状态压缩上下文与摘要分批）以及 P3 世界状态人工干预抽屉与文档精简。本次校验未连接真实 SillyTavern/TauriTavern 桌面宿主界面或付费外部模型接口（宿主与模型边界采用本地桩件与确定性测试验证）。
 
+### 0.2.30+ 剧情线总结、实体中心编剧与 UI 原版化验证
+
+- 运行 `node scripts/quality.mjs`（版本一致性、项目边界、乱码扫描、相对导入存在性及已移除变量体系检查）通过。
+- 重新执行 `node scripts/build.mjs` 与 `node scripts/build.mjs --check`（构建标识 `450c37adef223e4b8eb5`，743 个源码模块转换通过，构建产物与源码校验一致）。
+- 运行 `node scripts/test.mjs`：**1664 项全部通过、0 失败、0 跳过**；新增单元测试覆盖累计剧情线脉络总结、`plotLineStateDigest` 主动推进触发重算、实体中心编剧材料（`characters`/`plotLines`/`situations`）组装、结构化 `commentary/prediction/suggestion` 札记校验与私有字段防泄露，以及 `createPlannerSettings` 与 `createSuspenseBook` 原生 DOM 渲染。
+- 运行 `node scripts/check-runtime.mjs`：`[story-summary-runtime] result=PASS`。
+- 独立无头 Chromium（Brave Browser）浏览器回归全部通过：`scripts/check-planner-ui.mjs`（1440/820/390 三视口，覆盖纯文本与实体结构化札记渲染及折叠展开，并顺带修复 `#tk-workspace details.inline-drawer[open]` 在宿主 `.inline-drawer-content { display: none; }` 下的展开可见性）、`scripts/check-workspace-layout.mjs`、`scripts/check-planner-workspace.mjs`、`scripts/check-summary-footer.mjs`、`scripts/check-proposal-workspace.mjs`（使用临时 `playwright-core` 加载）；仍未启动真实 TauriTavern 桌面或调用在线大模型。
+
 ## 0.2.29 发布验证
 
 发布构建标识 `3ba509ec35bb4beff1e9`。完整 `node scripts/check.mjs` 通过：质量、类型、可重复构建、1648 项测试及记忆运行时检查。无头 Edge 使用独立虚构聊天和浏览器 IndexedDB，验证数据页与后厨卡、世界版本恢复、设置区展开和编剧札记的来源、分支、长文滚动与重试。未操作 TauriTavern 桌面或调用真实模型。

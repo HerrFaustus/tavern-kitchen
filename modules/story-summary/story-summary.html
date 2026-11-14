@@ -23,9 +23,9 @@
             z-index: 999999;
             display: grid;
             place-items: center;
-            background: #f7f8fb;
-            color: #1f2937;
-            font: 13px/1.4 "Segoe UI", "Microsoft YaHei UI", sans-serif;
+            background: var(--SmartThemeChatTintColor, var(--bg, #f7f8fb));
+            color: var(--SmartThemeBodyColor, var(--txt, #1f2937));
+            font: 13px/1.4 var(--tk-font, "Segoe UI", "Microsoft YaHei UI", sans-serif);
             opacity: 0;
             pointer-events: none;
             transition: opacity 180ms ease;
@@ -45,14 +45,14 @@
         .xb-frame-boot-ring {
             width: 28px;
             height: 28px;
-            border: 2px solid rgba(31, 41, 55, 0.18);
-            border-top-color: #1f2937;
+            border: 2px solid var(--SmartThemeBorderColor, rgba(31, 41, 55, 0.18));
+            border-top-color: var(--SmartThemeBodyColor, #1f2937);
             border-radius: 50%;
             animation: xb-frame-boot-spin 800ms linear infinite;
         }
 
         .xb-frame-boot-text {
-            color: rgba(31, 41, 55, 0.68);
+            color: var(--SmartThemeEmColor, rgba(31, 41, 55, 0.68));
         }
 
         @keyframes xb-frame-boot-spin {

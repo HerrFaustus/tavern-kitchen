@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
-import { createPlannerSettings } from '../modules/story-planner/settings-view.js';
+import { build } from 'esbuild';
 
 // Run the same settings renderer against the host CSS in three isolated viewports.
 const root = path.resolve(import.meta.dirname, '..');
@@ -13,7 +13,7 @@ const css = [path.join(host, 'style.css'), path.join(host, 'css/mobile-styles.cs
     .map(file => fs.readFileSync(file, 'utf8')).join('\n');
 const widths = [1440, 820, 390];
 
-async function inspect(doc, width) {
+async function inspect(doc, width, createPlannerSettings) {
     const reference = doc.querySelector('#right-nav-panel');
     const panel = doc.querySelector('#tk-workspace');
     const controls = doc.createElement('div');
@@ -35,6 +35,34 @@ async function inspect(doc, width) {
     const globalClosed = !global.open && !global.querySelector('.tk-planner-note-text').checkVisibility();
     global.querySelector('summary').click();
     const globalOpened = global.open && global.querySelector('.tk-planner-note-text').checkVisibility();
+    const chapterMatches = chapter.textContent === chapterText;
+    const fitsPlain = controls.scrollWidth <= controls.clientWidth;
+    view.note({
+        state: 'ready',
+        note: {
+            id: 'fiction-entities',
+            revision: 3,
+            chapter: {
+                text: '实体模式正文',
+                entities: {
+                    characters: [{ target: '林默', commentary: '握紧账本', prediction: '今晚会去码头核对船单', suggestion: '保持克制观察' }],
+                    plotLines: [{ target: '药车失踪案', commentary: '线索指向旧桥', prediction: '车夫可能已越过关卡', suggestion: '埋下雨水脚印伏笔' }],
+                    situations: [],
+                },
+            },
+            global: {
+                text: globalText,
+                entities: {
+                    characters: [],
+                    plotLines: [{ target: '走私暗线', commentary: '后台真凶未露面', prediction: '三日后收网', suggestion: '暂不揭示账房身份' }],
+                    situations: [],
+                },
+            },
+        },
+    });
+    const statCount = controls.querySelectorAll('.tk-planner-stat').length;
+    const entityCardCount = controls.querySelectorAll('.tk-planner-chapter .tk-planner-entity').length;
+    const globalResetClosed = !global.open;
     view.status('札记未能发布', true);
     retry.click();
     const box = element => {
@@ -42,10 +70,19 @@ async function inspect(doc, width) {
         return [x, y, width, height].map(Math.round);
     };
     return { width, native: box(reference), kitchen: box(panel), fields: controls.querySelectorAll('textarea, select').length, retries,
-        empty, chapterMatches:chapter.textContent === chapterText, globalClosed, globalOpened,
-        retryVisible: initiallyHidden && !retry.hidden, fits: controls.scrollWidth <= controls.clientWidth };
+        empty, chapterMatches, globalClosed, globalOpened, globalResetClosed, statCount, entityCardCount,
+        retryVisible: initiallyHidden && !retry.hidden, fits: fitsPlain && controls.scrollWidth <= controls.clientWidth };
 }
 
+const bundle = await build({
+    absWorkingDir: root,
+    entryPoints: ['modules/story-planner/settings-view.js'],
+    bundle: true,
+    write: false,
+    format: 'iife',
+    globalName: '__plannerSettingsView',
+    platform: 'browser',
+});
 const output = path.join(root, 'output');
 fs.mkdirSync(output, { recursive: true });
 const temp = fs.mkdtempSync(path.join(output, 'planner-ui-'));
@@ -54,8 +91,8 @@ const frame = '<!doctype html><meta charset="utf-8"><style>' + css +
     '<nav class="drawer-content fillRight openDrawer" id="right-nav-panel"></nav><section class="drawer-content fillRight openDrawer" id="tk-workspace"></section>';
 const html = '<!doctype html><meta charset="utf-8">' +
     widths.map(width => '<iframe src="/frame" width="'+width+'" height="720"></iframe>').join('') +
-    '<script>' + createPlannerSettings.toString() + '\n' + inspect.toString() +
-    '\nwindow.onload=async()=>{try{const rows=await Promise.all(Array.from(document.querySelectorAll("iframe"),f=>inspect(f.contentDocument,+f.width)));await fetch("/result",{method:"POST",body:JSON.stringify(rows)})}catch(e){await fetch("/result",{method:"POST",body:JSON.stringify(String(e))})}}</script>';
+    '<script>' + bundle.outputFiles[0].text + '\nconst { createPlannerSettings } = __plannerSettingsView;\n' + inspect.toString() +
+    '\nwindow.onload=async()=>{try{const rows=await Promise.all(Array.from(document.querySelectorAll("iframe"),f=>inspect(f.contentDocument,+f.width,createPlannerSettings)));await fetch("/result",{method:"POST",body:JSON.stringify(rows)})}catch(e){await fetch("/result",{method:"POST",body:JSON.stringify(String(e))})}}</script>';
 const { promise, resolve, reject } = Promise.withResolvers();
 const server = http.createServer((req, res) => {
     if (req.url === '/result' && req.method === 'POST') {
@@ -90,7 +127,9 @@ try {
         if (row.width > 1000) assert.ok(row.kitchen[0] >= (row.width + 800) / 2);
         assert.equal(row.fields, 0);
         assert.match(row.empty,/暂无札记/);
-        assert.ok(row.chapterMatches && row.globalClosed && row.globalOpened);
+        assert.ok(row.chapterMatches && row.globalClosed && row.globalOpened && row.globalResetClosed);
+        assert.equal(row.statCount, 2);
+        assert.equal(row.entityCardCount, 2);
         assert.ok(row.retryVisible && row.retries === 1 && row.fits);
     }
 } finally {
@@ -98,4 +137,5 @@ try {
     edge.kill();
     server.closeAllConnections();
     server.close();
+    fs.rmSync(temp, { recursive: true, force: true });
 }

@@ -291,3 +291,10 @@ API 和数据页均为整页滚动，直接操作连接与数据，不生成模�
 init 不创建 UI；open 需要已连接挂载点和有效页面 ID。关闭工作台仍保留输入，聊天切换与清理仍释放会话。地图等工具自身的编辑弹层继续保留。
 
 可在项目根目录运行 `node --import tsx --test core/kitchen-workspace.test.js modules/story-summary/tests/raw-memory-ui.test.js modules/world-records/update-llm.test.js`，在后台验证工作台导航、三层提示词入口与总结请求。
+
+## 0.2.30+ 原版化与剧情线／编剧可读性增强
+
+- **编剧札记实体视图**：`modules/story-planner/settings-view.js` 使用宿主 `.standoutHeader`、`.inline-drawer` 及主题边框/背景变量渲染结构化札记，顶部呈现各实体统计芯片，主体按**人物／剧情线／局势**分组展示**点评、走向预测、建议**条目；兼容旧版纯文本札记，`全局札记` 继续默认折叠并标注剧透提示，保持零表单控件与 319px 窄屏无横向溢出。
+- **剧情线总结面板**：`modules/story-state/view.js`（`createSuspenseBook({ clues: true })`）顶部汇总进行中／潜在线索／已收束数量及同步状态，每条剧情线采用 `.inline-drawer` 展示楼层跨度、推进轮数、涉及人物、`脉络总结`、`最新动态`、`当前焦点`与可展开的多轮 `推进轨迹`；同时保留原有折叠状态恢复与 `renderThreads` 数量统计。
+- **嵌入 iframe 主题一致化**：`modules/story-summary/story-summary.html` 启动遮罩（`#xb-frame-boot`）改用宿主背景/正文主题变量，避免深色主题切换瞬间的白屏闪烁；`modules/story-summary/archive.css` 在 `html.tk-embedded` 下继承宿主 `--tk-font` 与 `--SmartThemeQuoteColor` / `--SmartThemeBlurTintColor`，使剧情时间线与人物档案进一步贴合 SillyTavern 原版样式。
+

@@ -187,6 +187,25 @@
 .timeline-unit-text { display: block; color: var(--txt2); line-height: 1.8; margin-top: 4px; white-space: pre-wrap; }
 .timeline-unit blockquote { margin: 8px 0; padding-inline-start: 8px; color: var(--txt3); overflow-wrap: anywhere; }
 .timeline-children { margin-block: 8px; padding-inline-start: clamp(8px, 2vw, 20px); border-inline-start: 1px solid var(--bdr); }
+html.tk-embedded {
+    --archive-accent: var(--SmartThemeQuoteColor, var(--hl, #9bbedd));
+    --archive-accent-soft: var(--SmartThemeBlurTintColor, transparent);
+}
+html.tk-embedded .archive {
+    font-family: var(--tk-font, inherit);
+    padding: 0 5px 16px;
+}
+html.tk-embedded .archive-profile .prof-name,
+html.tk-embedded .archive-drawer-body .archive-detail-heading {
+    font-family: var(--tk-font, inherit);
+    font-size: 1.35em;
+    font-weight: 600;
+}
+html.tk-embedded .archive-event-title,
+html.tk-embedded .archive .fact-group-title {
+    font-size: 1.05em;
+    font-weight: 600;
+}
 @media (prefers-reduced-motion: reduce) {
     .archive *, .archive-drawer * { transition: none !important; animation: none !important; }
 }
