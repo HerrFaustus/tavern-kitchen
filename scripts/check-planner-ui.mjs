@@ -18,11 +18,14 @@ async function inspect(doc, width, createPlannerSettings) {
     const panel = doc.querySelector('#tk-workspace');
     const controls = doc.createElement('div');
     panel.append(controls);
-    let retries = 0;
+    let retries = 0, manual = 0;
     const view = createPlannerSettings(controls, {
+        autoPrepare: true,
+        prepare: () => { manual++; },
         retry: () => { retries++; },
     });
-    const retry = controls.querySelector('.tk-module-settings button');
+    const [prepare, retry] = controls.querySelectorAll('.tk-planner-controls button');
+    prepare.click();
     view.status('等待正文生成', false);
     const initiallyHidden = retry.hidden;
     view.note({state:'empty'});
@@ -88,7 +91,7 @@ async function inspect(doc, width, createPlannerSettings) {
     return { width, native: box(reference), kitchen: box(panel), fields: controls.querySelectorAll('textarea, select').length, retries,
         empty, chapterMatches, globalClosed, globalOpened, globalResetClosed, statCount, entityCardCount,
         staleTagCount, visibleAfterGroupFilter, visibleAfterSearch, copyAttempted,
-        retryVisible: initiallyHidden && !retry.hidden, fits: fitsPlain && controls.scrollWidth <= controls.clientWidth };
+        retryVisible: initiallyHidden && !retry.hidden, manual, fits: fitsPlain && controls.scrollWidth <= controls.clientWidth };
 }
 
 const bundle = await build({
@@ -151,6 +154,7 @@ try {
         assert.equal(row.visibleAfterGroupFilter, 1);
         assert.equal(row.visibleAfterSearch, 1);
         assert.ok(row.copyAttempted);
+        assert.equal(row.manual,1);
         assert.ok(row.retryVisible && row.retries === 1 && row.fits);
     }
 } finally {

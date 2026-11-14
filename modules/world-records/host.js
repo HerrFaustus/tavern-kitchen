@@ -20,6 +20,7 @@ import { createAuthorityRuntime } from './authority-runtime.js';
 import { captureStoryIdentity } from '../xiaobai-os/host/story-identity.js';
 import { registerWorldBridge, publishWorldBridgeState } from './bridge.js';
 import { registerTurnRuntime } from './turn-runtime.js';
+import { turnById } from './turn-ledger.js';
 import { getSummarySourceEnd } from '../story-summary/generate/source-boundary.js';
 import { captureRangeSource, isRangeSourceCurrent } from '../story-summary/data/turn-source.js';
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
@@ -170,7 +171,31 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
         }
         throw new Error('正文来源仍在变化，请稍后重试');
     }
-    const unregisterTurns = registerTurnRuntime({ async prepare(start, end, { unified = false } = {}) {
+    function recoveryScope() {
+        return JSON.stringify([identity(), epoch, service.scopeVersion(), latestState?.branchId ?? null]);
+    }
+    async function prepareRecovery(scope) {
+        const owner = identity(), token = epoch, generation = service.scopeVersion();
+        const changed = () => new Error('聊天或世界分支已变化，请重新核对恢复范围。');
+        if (!owner || disposed || scope !== recoveryScope()) throw changed();
+        const state = await service.read();
+        if (scope !== recoveryScope()) throw changed();
+        function assertCurrent() {
+            if (disposed || owner !== identity() || token !== epoch || generation !== service.scopeVersion()
+                || state && state.branchId !== latestState?.branchId) throw changed();
+            const chat = getContext().chat || [];
+            for (const receipt of latestState?.receipts || []) if (receipt.origin) {
+                const turn = turnById(latestState, receipt.origin.sourceId);
+                if (turn?.status !== 'current' || !isRangeSourceCurrent(turn.source, chat)
+                    || getSummarySourceEnd(chat, turn.source.end) < turn.source.end) {
+                    throw new Error('已确认的世界效果关联了变动的原文，请先到「数据 → 世界版本与恢复」核对。');
+                }
+            }
+        }
+        assertCurrent();
+        return assertCurrent;
+    }
+    const unregisterTurns = registerTurnRuntime({ recoveryScope, prepareRecovery, async prepare(start, end, { unified = false } = {}) {
         const owner = identity(), token = epoch, scope = service.scopeVersion();
         if (!owner || disposed) throw new Error('请先选择对话后整理记忆');
         const state = await sync();
@@ -184,13 +209,12 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
                 batch.floorEntry?.omitted, batch.floorEntry?.deleted, batch.legacyRoundChanges, batch.legacyRoundBase, batch.importedRounds,
                 batch.involvement, batch.ambient])]);
         const memoryBasis = unified ? memoryVersion(store) : '';
-        const updateContext = unified ? buildUpdateContext(state, store, getContext().chat, receipt, memorySnapshot.keepVisibleTurns) : null;
-        if (updateContext) {
-            updateContext.involvementContext = involvementFor(state);
-            updateContext.playerNames = [...protagonistIdentity(state.entities,getContext().name1).names];
-        }
         const prefs = getAmbientPreferences?.();
-        if (updateContext && prefs) updateContext.ambientControl = ambientControl(store, state, receipt, prefs);
+        const updateContext = unified ? buildUpdateContext(state, store, getContext().chat, receipt, memorySnapshot.keepVisibleTurns, {
+            involvementContext: involvementFor(state),
+            playerNames: [...protagonistIdentity(state.entities,getContext().name1).names],
+            ...(prefs && { ambientControl: ambientControl(store, state, receipt, prefs) }),
+        }) : null;
         const assertCurrent = () => {
             if (disposed || owner !== identity() || token !== epoch || scope !== service.scopeVersion()
                 || latestState?.worldId !== state.worldId || latestState?.branchId !== state.branchId

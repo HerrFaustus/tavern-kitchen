@@ -63,7 +63,8 @@ export function validateRangeSource(source) {
 }
 
 export function firstInvalidMemorySource(store, chat) {
-    const invalid = (store?.summaryHistory || []).map(batch => batch.sourceReceipt?.source || batch.roundSource)
+    const history = Array.isArray(store?.summaryHistory) ? store.summaryHistory : [];
+    const invalid = history.map(batch => batch?.sourceReceipt?.source || batch?.roundSource)
         .filter(source => source && !isRangeSourceCurrent(source, chat)).map(source => source.start);
     return invalid.length ? Math.min(...invalid) : null;
 }

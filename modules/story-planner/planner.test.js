@@ -67,6 +67,23 @@ test('a note read finishing after the world changes cannot display the earlier s
     assert.deepEqual(await reading,{state:'changed'});
 });
 
+test('manual controls stay available with automatic writing off and a failed setting save restores the switch', async () => {
+    const { document } = parseHTML('<main></main>');
+    const root = document.querySelector('main');
+    let manualCalls = 0;
+    const view = createPlannerSettings(root, { prepare: () => manualCalls++, setAutoPrepare: () => { throw Error('未保存'); } });
+    view.status('失败',true);
+    const [prepare, retry] = root.querySelectorAll('footer button');
+    const toggle = root.querySelector('footer input');
+    assert.ok(retry.hidden && !prepare.hidden);
+    await prepare.onclick();
+    assert.equal(manualCalls,1);
+    toggle.checked = true;
+    await toggle.onchange();
+    assert.equal(toggle.checked,false);
+    assert.match(root.querySelector('.tk-planner-live-state').textContent,/未保存/);
+});
+
 test('an in-flight writer cannot publish after its world snapshot changes in place', async () => {
     const world = {worldId:'w',branchId:'b',version:1,entities:[]};
     const chat = [{mes:'原文',is_user:true}];

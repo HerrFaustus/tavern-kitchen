@@ -25,7 +25,8 @@ export const WRITER = `你是后台唯一的编剧。你的创作札记必须完
 - 当输入包含 mode:"partial" 及 staleTargets（与 previousChapterEntities）时，仅需在 chapter.entities 中输出受影响的变更目标或新增目标及其对应 dependencies；未列出的实体和仍成立的前提由系统保留合并并重排章节稿。`;
 
 export function plannerSnapshot(world, memory, chat, identity) {
-    if (!world || !identity || !memory?.enabled || memory.invalidFrom != null || memory.store?.summaryInvalid || memory.store?.sourceInvalidFromFloor != null) return null;
+    if (!world || !identity || !memory?.enabled || memory.invalidFrom != null || memory.store?.summaryInvalid
+        || memory.store?.sourceInvalidFromFloor != null || memory.store?.sourceRollbackFromFloor != null) return null;
     const layers = summaryLayers(memory.store?.summaryHistory || []);
     const last = layers.parents.filter(unit => unit.level === 'chapter').at(-1);
     const records = worldStoryRecords(world, memory.store?.json?.storyRecords || []);

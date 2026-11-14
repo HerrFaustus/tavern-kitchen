@@ -12,7 +12,7 @@ import { subscribeWorldSources } from '../world-records/sources.js';
 import { createPlannerSettings } from './settings-view.js';
 
 const ID = 'kitchen-chapter-note';
-export function installPlanner({snapshot, loadSnapshot, isVisible = () => true, getContext}) {
+export function installPlanner({snapshot, loadSnapshot, isVisible = () => true, getContext, settings = {}, saveSettings}) {
     let message = '', canRetry = false, view, viewVersion = 0, queued = false, loading = 0, refreshPending = false, disposed = false;
     const status = (text, retryable = false) => {
         message = text;
@@ -54,21 +54,29 @@ export function installPlanner({snapshot, loadSnapshot, isVisible = () => true, 
             else observeBackgroundTask(refreshView(), {source:import.meta.url,operation:'planner-note-read'});
         });
     }
-    const unsubscribeBridge = subscribeWorldBridge(scheduleRefresh);
-    const unsubscribeSources = subscribeWorldSources(scheduleRefresh);
     const clear = () => { delete extension_prompts[ID]; };
     let generation = 0;
-    const reset = () => { generation++; writer.cancel(); clear(); };
+    const invalidate = () => { generation++; clear(); };
+    const changed = () => { invalidate(); scheduleRefresh(); };
+    const unsubscribeBridge = subscribeWorldBridge(changed);
+    const unsubscribeSources = subscribeWorldSources(changed);
+    const reset = () => { invalidate(); writer.cancel(); };
+    const resetForeground = () => { invalidate(); if (settings.autoPrepare === true) writer.cancel(); };
     const events = createModuleEvents(ID);
-    events.on(event_types.GENERATION_STARTED, (_type,_options,dryRun) => { if (!dryRun) reset(); });
+    events.on(event_types.GENERATION_STARTED, (_type,_options,dryRun) => { if (!dryRun) resetForeground(); });
     events.on(event_types.CHAT_CHANGED, () => { viewVersion++; view?.note({state:'loading'}); reset(); status(''); });
-    for (const event of [event_types.GENERATION_STOPPED,event_types.GENERATION_ENDED]) events.on(event,() => { reset(); scheduleRefresh(); });
+    for (const event of [event_types.GENERATION_STOPPED,event_types.GENERATION_ENDED]) events.on(event,() => { resetForeground(); scheduleRefresh(); });
     registerGenerateInterceptor(ID, async (_chat,contextSize,_abort,type,run) => {
         clear();
         if (!['','normal','continue','regenerate','swipe'].includes(type || '')) return;
         const epoch = ++generation;
         try {
-            const text = await writer.prepare(run?.signal);
+            let text;
+            if (settings.autoPrepare === true) text = await writer.prepare(run?.signal);
+            else {
+                const cached = await writer.inspect();
+                if (cached.state === 'ready') text = cached.note.chapter.text;
+            }
             if (!text || generation !== epoch || run?.signal?.aborted) return;
             const ctx = getContext();
             const block = '【本章札记】\n' + text;
@@ -83,8 +91,26 @@ export function installPlanner({snapshot, loadSnapshot, isVisible = () => true, 
     return {
         async open(root, controlsRoot) {
             viewVersion++;
+            view?.removeControls();
             view = createPlannerSettings(root, {
                 controlsRoot,
+                autoPrepare: settings.autoPrepare === true,
+                async setAutoPrepare(enabled) {
+                    const previous = settings.autoPrepare === true;
+                    settings.autoPrepare = enabled;
+                    if (!enabled) reset();
+                    try {
+                        if (await saveSettings?.() === false) throw new Error();
+                    } catch {
+                        settings.autoPrepare = previous;
+                        throw new Error('编剧设置保存失败，请重试。');
+                    }
+                },
+                async prepare() {
+                    writer.retry();
+                    await writer.prepare();
+                    await refreshView();
+                },
                 retry() {
                     writer.retry();
                     status('将在下次需要审稿时重试');
@@ -99,6 +125,6 @@ export function installPlanner({snapshot, loadSnapshot, isVisible = () => true, 
                 if (!loading && refreshPending) { refreshPending = false; scheduleRefresh(); }
             }
         },
-        dispose() { disposed = true; viewVersion++; view = null; unsubscribeBridge(); unsubscribeSources(); reset(); events.cleanup(); unregisterGenerateInterceptor(ID); },
+        dispose() { disposed = true; viewVersion++; view?.removeControls(); view = null; unsubscribeBridge(); unsubscribeSources(); reset(); events.cleanup(); unregisterGenerateInterceptor(ID); },
     };
 }

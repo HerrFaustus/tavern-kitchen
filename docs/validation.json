@@ -1,25 +1,25 @@
 {
-  "version": "0.2.31",
-  "verified_at_utc": "2026-11-14T13:08:20+00:00",
-  "build_id": "3412baa4ffa67a32addd",
+  "version": "0.2.32",
+  "verified_at_utc": "2026-11-14T15:10:37+00:00",
+  "build_id": "b7f6cd0fff6267c721f5",
   "build": "passed",
   "reproducible_build": "passed",
   "typecheck": "passed",
   "quality": "passed",
   "unit_tests": {
-    "total": 1666,
-    "passed": 1666,
+    "total": 1679,
+    "passed": 1679,
     "failed": 0,
     "cancelled": 0,
     "skipped": 0
   },
   "memory_runtime": "passed",
-  "scope": "Backendized prompts and native compact UI polish, plotLineSnapshots integration into prompt background and incremental collection, and entity-level partial planner incremental rewrite with full-chapter fallback.",
+  "scope": "Manual planner and cache-only injection, in-memory per-feature diagnostics, protagonist and NPC knowledge boundaries, bounded world input with indexed cold entities, and confirmed summary-tail recovery.",
   "runtime_changes": true,
   "removed_source_paths": 1763,
   "removed_modules_in_build": 0,
   "browser_entries": 9,
-  "chunks": 53,
+  "chunks": 54,
   "host_static_validation": {
     "version": "1.19.0",
     "commit": "06bde939fb1e9c4c8d8641d810f0a916b5bce127"
@@ -287,7 +287,7 @@
     },
     "errors": []
   },
-  "modules": 748,
+  "modules": 730,
   "phone_removal_fixture": {
     "version": "0.2.3",
     "desktop": [
@@ -735,5 +735,34 @@
     "model_calls": 0,
     "released_in": "0.2.29"
   },
-  "previous_published_build_id": "e9e795f48aa39ec36052"
+  "previous_published_build_id": "e9e795f48aa39ec36052",
+  "closeout_0_2_32": {
+    "kind": "local_release_candidate",
+    "previous_local_build_id": "3412baa4ffa67a32addd",
+    "vite_transformed_modules": 742,
+    "eslint_max_warnings": 0,
+    "browser": "Brave Browser (headless, playwright-core)",
+    "browser_scripts_passed": [
+      "scripts/check-planner-ui.mjs",
+      "scripts/check-planner-workspace.mjs",
+      "scripts/check-workspace-layout.mjs",
+      "scripts/check-api-layout.mjs",
+      "scripts/check-api-workspace.mjs",
+      "scripts/check-summary-workspace.mjs",
+      "scripts/check-summary-footer.mjs",
+      "scripts/check-place-map.mjs",
+      "scripts/check-proposal-workspace.mjs"
+    ],
+    "unit_tests_by_gap": [
+      1667,
+      1669,
+      1672,
+      1675,
+      1679
+    ],
+    "actual_sillytavern": false,
+    "actual_tauritavern": false,
+    "online_model_calls": 0,
+    "live_checklist": "docs/NEXT-DEVELOPMENT.md (section 3, gap 6)"
+  }
 }

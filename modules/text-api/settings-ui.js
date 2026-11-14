@@ -91,6 +91,31 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
         node.onclick = () => { Promise.resolve().then(run).catch(error => feedback(error.message, true)); };
         return node;
     }
+    const statsRow = element('div', null, 'text-api-call-stats');
+    const statsText = element('output', '正在读取调用统计…');
+    let statsRevision = 0;
+    async function refreshStats(action = 'call-stats') {
+        const ticket = ++statsRevision;
+        const snapshot = await request(action);
+        if (destroyed || ticket !== statsRevision) return snapshot;
+        const rows = Object.values(snapshot.features);
+        const sum = key => rows.reduce((total, row) => total + row[key], 0);
+        statsText.textContent = `本次调用 ${sum('calls')} 次 · 失败 ${sum('failures')} · 累计 ${(sum('totalMs') / 1000).toFixed(1)} 秒`;
+        return snapshot;
+    }
+    function readStats() {
+        if (!destroyed && !doc.hidden) refreshStats().catch(() => { statsText.textContent = '调用统计暂不可用'; });
+    }
+    if (library) {
+        const copyStats = button('复制统计', async () => {
+            const snapshot = await refreshStats();
+            await win.navigator.clipboard.writeText(JSON.stringify(snapshot, null, 2));
+            feedback('已复制调用统计');
+        });
+        statsRow.append(statsText, copyStats, button('清空统计', () => refreshStats('clear-call-stats')));
+        root.append(statsRow);
+        win.addEventListener('focus', readStats);
+    }
     function choose(id) {
         revision++; cancelRequests(); selected = id;
         draft = id === HOST_BINDING ? createPreset(id, COPY.host) : structuredClone(settings.presets.find(preset => preset.id === id));
@@ -321,6 +346,7 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
     let refreshId = 0;
     async function refresh() {
         if (busy) return;
+        if (library) readStats();
         fields.disabled = true; retry.hidden = true; feedback(COPY.load);
         const id = ++refreshId;
         try {
@@ -335,5 +361,5 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
         finally { fields.disabled = !settings; }
     }
     retry.onclick = () => refresh();
-    return { refresh() { refresh().catch(error => feedback(error.message, true)); }, destroy() { destroyed = true; revision++; cancelRequests(); saveFeedback.destroy(); win.removeEventListener('message', receive); for (const pending of requests.values()) { win.clearTimeout(pending.timer); pending.reject(new Error(COPY.cancelled)); } requests.clear(); } };
+    return { refresh() { refresh().catch(error => feedback(error.message, true)); }, destroy() { destroyed = true; revision++; cancelRequests(); saveFeedback.destroy(); win.removeEventListener('focus', readStats); win.removeEventListener('message', receive); for (const pending of requests.values()) { win.clearTimeout(pending.timer); pending.reject(new Error(COPY.cancelled)); } requests.clear(); } };
 }

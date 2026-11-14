@@ -59,6 +59,7 @@ export function prepareWorldUpdate(raw, context, {requireHolders = true} = {}) {
         let proposal;
         if (item.type === 'field') {
             const entity = entities.find(entity => entity.id === item.entityId); check(entity, '对象须使用已有稳定 ID');
+            check(!entity.summaryOnly && !context.manifest.omittedDetailEntityIds?.includes(entity.id), '索引对象未展示字段，不能提议改写或删除');
             const field = text(item.field, '字段名', 100), old = entity.fields[field];
             check(equal(item.before, old ? { present: true, value: old.value } : { present: false }), '旧值与世界快照不一致');
             validateValue(field, item.value, entities);
@@ -104,10 +105,14 @@ export function prepareWorldUpdate(raw, context, {requireHolders = true} = {}) {
 }
 
 export function validateStoredUpdate(update) {
+    const manifest = update?.manifest, omitted = manifest?.omittedDetailEntityIds;
+    const full = manifest?.mode === 'full' && manifest.worldComplete === true && (omitted === undefined || Array.isArray(omitted) && !omitted.length);
+    const compact = manifest?.mode === 'compact' && manifest.worldComplete === false && Array.isArray(omitted) && omitted.length > 0
+        && omitted.length <= manifest.entities && new Set(omitted).size === omitted.length && omitted.every(id => typeof id === 'string' && id.trim() && id.length <= 200);
     check(update?.version === 1 && typeof update.requestId === 'string' && update.requestId.length > 0
         && typeof update.basis?.worldId === 'string' && typeof update.basis.branchId === 'string'
         && Number.isSafeInteger(update.basis.version) && update.basis.version >= 0 && /^[a-f0-9]{64}$/.test(update.basis.digest)
-        && update.manifest?.mode === 'full' && update.manifest.worldComplete === true
+        && (full || compact)
         && Array.isArray(update.proposals) && update.proposals.length <= 200 && Array.isArray(update.acknowledgedReceipts)
         && Array.isArray(update.conflicts) && update.conflicts.length <= 100, '保存记录结构无效');
     validateRangeSource(update.source); json(update);
@@ -118,6 +123,7 @@ export function validateStoredUpdate(update) {
         decisionMetadata(item);
         let key;
         if (item.type === 'field') {
+            check(!omitted?.includes(item.entityId), '保存的提案指向仅有索引的对象');
             text(item.entityId, '保存的对象身份', 200); text(item.field, '保存的字段', 100);
             check(item.before && typeof item.before.present === 'boolean' && (item.before.present ? Object.hasOwn(item.before, 'value') : !Object.hasOwn(item.before, 'value'))
                 && Object.hasOwn(item, 'value'), '保存的旧值或新值无效');

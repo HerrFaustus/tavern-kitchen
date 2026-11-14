@@ -4,6 +4,7 @@ import { beforeRecentTurns } from '../story-summary/data/narrative-window.js';
 import { captureRangeSource } from '../story-summary/data/turn-source.js';
 import { currentTurns } from './turn-ledger.js';
 import { worldStoryRecords } from './world-story-state.js';
+import { nameKey, protagonistIdentity } from '../story-state/protagonist-identity.js';
 
 export const UPDATE_INPUT_LIMIT = 200_000;
 const RECENT_SETTLED_PROPOSALS_CAP = 12;
@@ -61,7 +62,7 @@ function proposalHistory(record) {
         proposals,conflicts:record.update.conflicts,...(reviews ? {reviews} : {})});
 }
 
-export function buildUpdateContext(state, store, chat, receipt, keepVisibleTurns = 5) {
+export function buildUpdateContext(state, store, chat, receipt, keepVisibleTurns = 5, options = {}) {
     const prior = [...(store?.summaryHistory || [])].reverse().find(batch => batch.sourceReceipt?.worldId === state.worldId
         && batch.sourceReceipt.branchId === state.branchId)?.sourceReceipt;
     const since = prior?.basisVersion ?? 0;
@@ -147,16 +148,131 @@ export function buildUpdateContext(state, store, chat, receipt, keepVisibleTurns
         recent: captureRangeSource(chat, Math.min(recentStart, receipt.source.start), receipt.source.end),
         background: { mode: 'existing_memory', hierarchyAvailable, summarizedThrough: store?.lastSummarizedMesId ?? -1,
             data: compactBackgroundData(store?.json), summaries: compressedSummaries },
-        executionReceipts };
-    assertUpdateBudget(JSON.stringify(context));
+        executionReceipts, ...options };
+    fitUpdateContext(context);
     return context;
 }
 
-export function assertUpdateBudget(value) {
-    if (value.length > UPDATE_INPUT_LIMIT) throw new Error(`完整世界与剧情材料超过 ${UPDATE_INPUT_LIMIT} 字符预算，未调用模型或截断；请减少单批范围或先拆分读取。`);
+function protectedEntityIds(context) {
+    const { world } = context;
+    const active = new Set(), localPlaces = new Set();
+    const names = new Set(context.playerNames || []);
+    const source = context.recent?.messages || context.increment?.messages || [];
+    const evidence = source.map(row => [row.name, row.text].join(' '));
+    for (const row of source) if (row.role === 'user' && row.name) names.add(nameKey(row.name));
+    const bound = protagonistIdentity(world.entities).hero;
+    if (bound) active.add(bound.id);
+    for (const row of context.involvementContext || []) {
+        if (!row.near && !row.important && !row.core && !(row.wakeFloor >= context.recent?.start)) continue;
+        if (row.key.startsWith('person/')) active.add(row.key.slice(7));
+        else names.add(nameKey(row.title));
+    }
+    for (const row of world.storyRecords || []) {
+        if (row.kind === 'person' && ['present','nearby'].includes(row.presence)) names.add(nameKey(row.name));
+        if (row.status === 'open') evidence.push([row.title,row.description,row.parties,row.scope,row.impact,row.conditions,row.releaseCondition,...(row.holders || [])].filter(Boolean).join(' '));
+    }
+    for (const batch of world.proposalHistory || []) {
+        if (batch.status !== 'ready') continue;
+        const reviewed = new Set(batch.reviews?.map(row => row.index));
+        for (const [i, p] of batch.proposals.entries()) if (!reviewed.has(p.index ?? i)) {
+            active.add(p.entityId);
+            active.add(p.value?.entityId);
+            evidence.push(JSON.stringify(p.record || p.name || ''));
+        }
+    }
+    for (const claim of world.claims || []) if (claim.status === 'pending') active.add(claim.entityId);
+    for (const sourceId of [context.ambientControl?.previous?.placeId,...(context.ambientControl?.active || []).map(row => row.placeId)]) {
+        if (sourceId?.startsWith('entity:')) active.add(sourceId.slice(7));
+    }
+    for (const receipt of context.executionReceipts) if (receipt.sourceScope === 'turn_bound') {
+        for (const effect of receipt.effects) if (effect.type === 'entity') active.add(effect.id);
+    }
+    const mentioned = nameKey(evidence.join('\n'));
+    for (const entity of world.entities) {
+        const labels = [entity.name,...(entity.aliases || [])].map(nameKey).filter(Boolean);
+        const hero = entity === bound || labels.some(name => names.has(name));
+        if (hero || active.has(entity.id)) {
+            const place = entity.fields?.location?.value?.entityId;
+            if (place) localPlaces.add(place);
+        }
+        if (hero || labels.some(name => mentioned.includes(name)) || entity.fields?.important?.value || entity.fields?.follow?.value
+            || Number.isSafeInteger(entity.revision) && entity.revision > world.version - 5) active.add(entity.id);
+    }
+    for (const place of localPlaces) active.add(place);
+    const participants = new Set(active);
+    for (const entity of world.entities) {
+        const fields = entity.fields || {};
+        if (localPlaces.has(fields.location?.value?.entityId)
+            || ['owner','保管人','使用人'].some(field => fields[field]?.value?.entityId && participants.has(fields[field].value.entityId))) active.add(entity.id);
+        if (participants.has(entity.id)) for (const field of Object.values(fields)) {
+            if (field.value?.entityId) active.add(field.value.entityId);
+        }
+    }
+    return active;
 }
 
-export const WORLD_UPDATE_PROTOCOL = `你同时负责叙事摘要与世界变化提案。以管理员视角读取提供的完整世界，不按主角相关性忽略其他对象。
+// Work only on the request projection. The second caller measures the actual serialized messages,
+// including prompt instructions and escaping, before any model dispatch.
+export function fitUpdateContext(context, serialize = () => JSON.stringify(context)) {
+    const threshold = UPDATE_INPUT_LIMIT * 0.9;
+    let encoded = serialize();
+    if (encoded.length < threshold) return;
+    const data = context.background?.data;
+    if (data) {
+        delete data.storyRecords; // Current records already live in world.storyRecords.
+        for (const key of ['events','importedRounds']) if (data[key]?.length) {
+            const countKey = key === 'events' ? 'archivedEventsCount' : 'archivedImportedRoundsCount';
+            data[countKey] = (data[countKey] || 0) + data[key].length;
+            delete data[key];
+        }
+    }
+    for (const key of ['map','memory']) {
+        const source = context.world.sources?.[key];
+        if (Array.isArray(source?.records)) delete source.fingerprint; // Canonical duplicate of records.
+    }
+    encoded = serialize();
+    if (encoded.length >= threshold && !context.manifest.omittedDetailEntityIds?.length) {
+        const active = protectedEntityIds(context), omitted = new Set();
+        const originalEntities = context.world.entities;
+        context.world.entities = originalEntities.map(entity => {
+            if (active.has(entity.id) || !entity.name || !entity.kind) return entity;
+            omitted.add(entity.id);
+            return { id:entity.id, name:entity.name, kind:entity.kind, aliases:entity.aliases || [], summaryOnly:true };
+        });
+        if (omitted.size) {
+            Object.assign(context.manifest,{ mode:'compact', worldComplete:false, omittedDetailEntityIds:[...omitted] });
+            // Source adapters can carry another copy of the same cold descriptions.
+            const bindings = new Set(), coldOpeningKeys = new Set(), activeOpeningKeys = new Set();
+            for (const entity of originalEntities) {
+                const cold = omitted.has(entity.id);
+                if (cold) for (const binding of entity.bindings || []) bindings.add(binding);
+                for (const source of [entity.source, ...Object.values(entity.fields || {}).map(field => field.source)]) {
+                    if (source?.module === 'world-opening') (cold ? coldOpeningKeys : activeOpeningKeys).add(source.key);
+                }
+            }
+            const opening = context.world.sources?.['world-opening'];
+            if (opening?.rows?.length) opening.rows = opening.rows.filter(row => !coldOpeningKeys.has(row.key) || activeOpeningKeys.has(row.key));
+            for (const [module, source] of Object.entries(context.world.sources || {})) {
+                if (Array.isArray(source.records)) source.records = source.records.filter(row => !bindings.has(JSON.stringify([module,row.key])));
+            }
+            context.world.claims = context.world.claims.map(claim => omitted.has(claim.entityId) && claim.status !== 'pending'
+                ? { id:claim.id, entityId:claim.entityId, status:claim.status, summaryOnly:true } : claim);
+            // Earlier unassigned receipts still name every command and affected ID.
+            for (const receipt of context.executionReceipts) if (receipt.sourceScope === 'unassigned_or_earlier') {
+                receipt.effects = receipt.effects.map(effect => effect.type === 'entity' && omitted.has(effect.id)
+                    ? { type:'entity', id:effect.id, summaryOnly:true } : effect);
+            }
+            encoded = serialize();
+        }
+    }
+    assertUpdateBudget(encoded);
+}
+
+export function assertUpdateBudget(value) {
+    if (value.length > UPDATE_INPUT_LIMIT) throw new Error(`世界与剧情材料超过 ${UPDATE_INPUT_LIMIT} 字符预算，未调用模型。请缩小本批范围或整理过长资料。`);
+}
+
+export const WORLD_UPDATE_PROTOCOL = `你同时负责叙事摘要与世界变化提案。读取本次提供的管理员世界资料。manifest.omittedDetailEntityIds 中的对象仅有 summaryOnly 身份索引。严禁对这些对象提议删除或覆写未展示字段，不得把省略当成字段为空或对象消失。
 人物称号、别名分别作为「称号」「别名」属性记录，有本轮依据才提出变化。明确同一人时自动输出 characterAliasUpdates，并复用已有人物稳定编号；同名、共用称号或身份尚未揭示时保留各自身份，等待明确证据。
 所有人物（包括玩家）共用属性。人物 field 使用「外貌」（面容、发肤、辨识特征）、「体型」（身高、骨架、体态）、「衣着」（当前穿戴）、「性格」（有依据的稳定倾向）。缺少依据留空，不凭单次情绪定性格。持有物用 item、房产可用 place，owner 引用持有人；在物上用 field「持有类别」，值为「物品」或「资产」。前者偏随身用品，后者包括住宅、田产、商铺和车辆船只等重型、固定或半固定财产；使用、租借不等于拥有。先注册对象后使用稳定编号，不猜测归属。
 人物分别维护「身份」（出身、社会身份）、「职务」（当前担任的职位）、「阵营」（归属或效忠）、「身体状况」（伤病、疲劳及行动限制）、「当前情绪」（眼下的感受及缘由）、「能力与专长」（能做什么、适用条件和限制）。使用这些确切字段名，value 为简明文本；同字段多项写全。免职只更新职务，情绪转变只更新当前情绪。状态恢复或限制解除时据实修订，缺证据不补全。仅管理员可见的事实使用专用字段「管理员私有/属性名」（例如「管理员私有/阵营」）。同一秘密只存一处，不复制进公开属性、人物简介、地图、总结或召回标签。原文已经向读者揭示的角色私知，用该人物的 knowledge 记录写明内容与依据；剧情公开后才另提公开事实。

@@ -18,10 +18,11 @@ import { buildTrustedCharacters } from "../vector/retrieval/entity-lexicon.js";
 import { filterConstraintsByRelevance } from "./constraint-filter.js";
 import { tryConsumeWholeItem } from './token-budget.js';
 import { getHiddenThrough } from '../hide-state.js';
-import { availableStoryRecords, storyContextLines } from '../../story-state/records.js';
+import { availableStoryRecords, storyContextGroups } from '../../story-state/records.js';
+import { nameKey, protagonistIdentity } from '../../story-state/protagonist-identity.js';
 import { formatRelativeStoryRange, latestStoryTime } from '../../story-state/time-rel.js';
 import { isPrivateStoryField } from '../../world-records/authority.js';
-import { authorityMemoryStoryStore } from '../../world-records/authority-context.js';
+import { authorityMemoryStoryStore, worldAuthorityForContext } from '../../world-records/authority-context.js';
 import { createRecallDiagnostics } from '../recall-diagnostics.js';
 
 const CONSTRAINT_MAX = 2000;
@@ -150,35 +151,25 @@ function tryConsumeConstraintLineBudget(line, budgetState) {
     return tryConsumeWholeItem(cost, budgetState);
 }
 
-function selectConstraintsByBudgetDesc(grouped, budgetState) {
-    const selectedPeople = new Map();
-    const selectedWorld = [];
-    const people = grouped?.people || new Map();
-    const world = grouped?.world || [];
-
-    for (const [name, facts] of people.entries()) {
-        const picked = [];
-        const sorted = [...facts].sort((a, b) => (b.since || 0) - (a.since || 0));
-        for (const f of sorted) {
-            const lines = [];
-            if (!selectedPeople.size) lines.push('people:');
-            if (!picked.length) lines.push(`  ${name}:`);
-            lines.push(`    ${formatConstraintLine(f, false)}`);
-            if (!tryConsumeConstraintLineBudget(lines.join('\n'), budgetState)) continue;
-            picked.push(f);
-            selectedPeople.set(name, picked);
-        }
+function selectConstraintsByBudgetDesc(facts, peopleDict, budget, playerNames) {
+    const people = new Map(), world = [];
+    const priority = fact => {
+        const heroSubject = playerNames.has(nameKey(fact.s));
+        if (heroSubject && /拥有|持有|保管|携带|约束|约定|欠|承诺|限制|物品|资产|身体状况/.test(fact.p)) return 0;
+        if (playerNames.has(nameKey(fact.o)) && /owner|持有|保管|所有人|使用人|归属/.test(fact.p)) return 0;
+        return heroSubject ? 1 : 2;
+    };
+    for (const fact of [...facts].sort((a, b) => priority(a) - priority(b) || (b.since || 0) - (a.since || 0))) {
+        const person = peopleDict.get(normalize(fact.s));
+        const label = person ? (people.size ? '' : 'people:\n') + (people.has(person) ? '' : `  ${person}:\n`) : (world.length ? '' : 'world:\n');
+        const line = (person ? '    ' : '  ') + formatConstraintLine(fact, !person);
+        if (!tryConsumeConstraintLineBudget(label + line, budget)) continue;
+        if (person) {
+            if (!people.has(person)) people.set(person, []);
+            people.get(person).push(fact);
+        } else world.push(fact);
     }
-
-    const sortedWorld = [...world].sort((a, b) => (b.since || 0) - (a.since || 0));
-    for (const f of sortedWorld) {
-        const line = `  ${formatConstraintLine(f, true)}`;
-        const text = selectedWorld.length ? line : `world:\n${line}`;
-        if (!tryConsumeConstraintLineBudget(text, budgetState)) continue;
-        selectedWorld.push(f);
-    }
-
-    return { people: selectedPeople, world: selectedWorld };
+    return { people, world };
 }
 
 function buildNonVectorPrompt(store, { includeState = true } = {}) {
@@ -323,7 +314,8 @@ function formatPlotLineSnapshotLines(snapshots = [], maxLines = 6) {
 export function buildRawPrompt(store, recallResult, hiddenThrough, { includeState = true } = {}) {
     const context = getContext();
     const { chat = [], name1 = '' } = context;
-    const focus = [...new Set([name1, ...(recallResult.focusCharacters || [])].filter(Boolean))];
+    const player = protagonistIdentity(worldAuthorityForContext(context)?.entities || [], name1);
+    const focus = [...new Set([name1, ...player.names, ...(recallResult.focusCharacters || [])].filter(Boolean))];
     const facts = filterConstraintsByRelevance(getFacts().filter(fact => !fact.retracted && !isPrivateStoryField(fact.p)), focus, getKnownCharacters(store), name1);
     const dict = buildConstraintPeopleDict(null, focus);
     const constraints = { used: 0, max: CONSTRAINT_MAX };
@@ -331,9 +323,15 @@ export function buildRawPrompt(store, recallResult, hiddenThrough, { includeStat
     const availableRecords = availableStoryRecords(authorityMemoryStoryStore(store, context));
     if (includeState) {
         const storyBudget = { used: 0, max: 800 };
-        for (const line of storyContextLines(availableRecords, focus)) pushWithBudget(stateLines, line, storyBudget);
+        const { priority, other } = storyContextGroups(availableRecords, focus, { protagonistNames: player.names });
+        for (const line of [...priority, ...other]) {
+            const cost = estimateTokens(line);
+            if (cost + storyBudget.used > storyBudget.max) continue;
+            storyBudget.used += cost;
+            stateLines.push(line);
+        }
         constraints.used = storyBudget.used;
-        stateLines.push(...formatConstraintsStructured(selectConstraintsByBudgetDesc(groupConstraintsForDisplay(facts, dict), constraints), 'asc'));
+        stateLines.push(...formatConstraintsStructured(selectConstraintsByBudgetDesc(facts, dict, constraints, player.names), 'asc'));
     }
     const background = [], raw = [];
     const plotBudget = { used: 0, max: 4000 }, rawBudget = { used: 0, max: 3000 };

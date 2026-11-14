@@ -16,5 +16,10 @@ export async function prepareMemorySources(start, end, options = {}) {
     return provider.prepare(start, end, options);
 }
 export function assertMemorySources(prepared) { prepared?.assertCurrent(); }
+export const summaryRecoveryScope = () => provider?.recoveryScope?.() ?? null;
+export async function prepareSummaryRecovery(scope) {
+    if (!provider?.prepareRecovery && required) throw new Error('世界内核尚未就绪，请重新打开总结后重试。');
+    return provider?.prepareRecovery(scope);
+}
 export async function validateMemorySources(prepared) { await prepared?.validate(); }
 export async function deliverMemorySources(prepared) { return prepared?.deliver?.(); }

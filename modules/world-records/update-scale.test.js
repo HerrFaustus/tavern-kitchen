@@ -5,6 +5,44 @@ import { buildUpdateContext, UPDATE_INPUT_LIMIT, UPDATE_PREFIX } from './update-
 import { captureRangeSource } from '../story-summary/data/turn-source.js';
 import { layerSignature, summaryLayers } from '../story-summary/data/summary-layers.js';
 
+test('over 200k reduces old background and distant details while preserving active records, receipts and the source world', () => {
+    const state = emptyWorld('w','b','港城');
+    state.version = 32;
+    const fact = value => ({nature:'established_fact',value});
+    const person = (id, name, fields = {}) => ({id,name,kind:'person',bindings:[],aliases:[],revision:1,fields:{description:fact(name+'旧档'),...fields}});
+    const loc = fact({entityId:'port'});
+    const hero = person('hero','船长',{location:loc}); hero.bindings = ['["map","actor:player"]'];
+    const named = person('named','陈九'); named.aliases = ['老陈'];
+    const hot = person('hot','邵某'); hot.revision = 31;
+    const cold = person('cold','偏远山主');
+    for (let i=0;i<8;i++) cold.fields['旧闻'+i] = fact('遥'.repeat(27000));
+    const prose = '旧档'.repeat(101000);
+    cold.bindings = ['["memory","cold"]'];
+    cold.fields.description.source = {module:'world-opening',key:'old-row'};
+    state.sources.memory = { records:[{key:'cold',claims:[{value:prose}]}] };
+    state.sources['world-opening'] = {rows:[{key:'old-row',value:prose},{key:'unrelated',value:'保留来源'}]};
+    state.claims = [{id:'decided',entityId:'cold',status:'accepted',value:prose}];
+    state.entities = [hero,person('near','同港水手',{location:loc}),named,hot,person('open','送信人'),person('far','远方盟友'),cold];
+    const store = { json:{storyRecords:[{id:'case',kind:'situation',title:'寻找送信人',status:'open'}],events:[{summary:'过往'.repeat(30000)}]},summaryHistory:[] };
+    const chat = [{mes:'老陈来信',is_user:true}];
+    const source = captureRangeSource(chat,0,0);
+    const ctx = buildUpdateContext(state,store,chat,{id:'req',turns:[],source},5,{involvementContext:[{near:true,key:'person/far'}]});
+    assert.ok(JSON.stringify(ctx).length < UPDATE_INPUT_LIMIT);
+    assert.deepEqual(ctx.manifest.omittedDetailEntityIds,['cold']);
+    assert.equal(ctx.manifest.worldComplete,false);
+    assert.deepEqual(ctx.world.entities.at(-1),{id:'cold',name:cold.name,kind:'person',aliases:[],summaryOnly:true});
+    assert.deepEqual(ctx.world.entities.slice(0,-1),state.entities.slice(0,-1));
+    assert.deepEqual(ctx.increment,source);
+    assert.equal(ctx.background.data.archivedEventsCount,1);
+    assert.equal(ctx.world.storyRecords[0].id,'case');
+    assert.deepEqual(ctx.world.sources.memory.records,[]);
+    assert.deepEqual(ctx.world.sources['world-opening'].rows,[{key:'unrelated',value:'保留来源'}]);
+    assert.equal(ctx.world.claims[0].summaryOnly,true);
+    assert.equal(state.sources.memory.records[0].claims[0].value,prose);
+    assert.equal(cold.fields['旧闻7'].value.length,27000);
+    assert.equal(store.json.events.length,1);
+});
+
 test('buildUpdateContext compresses recursive history and compacts old settled proposal batches on 200+ turn logs', () => {
     const turnCount = 216;
     const chat = Array.from({ length: turnCount * 2 + 2 }, (_, i) => ({

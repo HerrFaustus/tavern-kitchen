@@ -101,7 +101,7 @@ function renderNoteLayer(doc, container, layer, staleTargets) {
     return count;
 }
 
-export function createPlannerSettings(root, { retry, controlsRoot, clipboard } = {}) {
+export function createPlannerSettings(root, { retry, prepare, autoPrepare = false, setAutoPrepare, controlsRoot, clipboard } = {}) {
     const doc = root.ownerDocument;
     const panel = doc.createElement('section');
     panel.className = 'tk-planner-settings';
@@ -155,10 +155,33 @@ export function createPlannerSettings(root, { retry, controlsRoot, clipboard } =
     retryButton.className = 'menu_button';
     retryButton.textContent = '下次正文重试';
     retryButton.onclick = retry;
+    const autoLabel = doc.createElement('label');
+    autoLabel.className = 'checkbox_label';
+    const auto = doc.createElement('input');
+    auto.type = 'checkbox';
+    auto.checked = autoPrepare;
+    autoLabel.append(auto, doc.createTextNode('生成前自动更新章节札记'));
+    let retryable = false;
+    auto.onchange = async () => {
+        auto.disabled = true;
+        try { await setAutoPrepare?.(auto.checked); }
+        catch (error) { auto.checked = !auto.checked; state.textContent = error.message; }
+        finally { auto.disabled = false; retryButton.hidden = !retryable || !auto.checked; }
+    };
+    const prepareButton = doc.createElement('button');
+    prepareButton.type = 'button';
+    prepareButton.className = 'menu_button';
+    prepareButton.textContent = '立即生成／更新札记';
+    prepareButton.onclick = async () => {
+        prepareButton.disabled = true;
+        try { await prepare?.(); }
+        catch { state.textContent = '札记更新失败，请重试。'; }
+        finally { prepareButton.disabled = false; }
+    };
     const controls = doc.createElement('footer');
-    controls.className = 'tk-module-settings';
+    controls.className = 'tk-planner-controls';
     controls.setAttribute('aria-label', '编剧控制');
-    controls.append(retryButton);
+    controls.append(autoLabel, prepareButton, retryButton);
     panel.append(heading, state, noteStatus, overview, toolbar, note);
     (controlsRoot || panel).append(controls);
     root.replaceChildren(panel);
@@ -197,9 +220,11 @@ export function createPlannerSettings(root, { retry, controlsRoot, clipboard } =
         }
     });
     return {
+        removeControls() { controls.remove(); },
         status(message, canRetry) {
             state.textContent = message;
-            retryButton.hidden = controls.hidden = !canRetry;
+            retryable = canRetry;
+            retryButton.hidden = !canRetry || !auto.checked;
         },
         note(result) {
             const saved = result?.note;
@@ -257,7 +282,7 @@ export function createPlannerSettings(root, { retry, controlsRoot, clipboard } =
             noteStatus.textContent = result?.state === 'ready'
                 ? (saved?.revision ? `已保存 · 第 ${saved.revision} 版` : '已保存')
                 : result?.state === 'stale' ? `剧情或世界前提已变化，这份札记需要更新。${staleDetail}`
-                    : result?.state === 'empty' ? '暂无札记，编剧将在需要时自动整理。'
+                    : result?.state === 'empty' ? '暂无札记。'
                         : result?.state === 'unavailable' ? '请先打开聊天并准备剧情和世界资料。'
                             : result?.state === 'changed' ? '资料已变化，请重新打开编剧面板。'
                                 : result?.state === 'error' ? '札记读取失败，请重新打开编剧面板。'

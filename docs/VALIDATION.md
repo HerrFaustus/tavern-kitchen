@@ -1,5 +1,16 @@
 # 验证记录
 
+## 0.2.32 本地发行包验收
+
+2026-11-14 在 macOS 使用 Node.js 24 完成离线验收。构建标识为 `b7f6cd0fff6267c721f5`，含 9 个入口、730 个入包模块和 54 个 JS 块。Vite 转换了 742 个模块。
+
+- 五个缺口分别运行了 `node scripts/build.mjs && node scripts/check.mjs && node scripts/check-versions.mjs`。最终 1679 项单测全部通过，失败、取消、跳过均为 0。ESLint 零告警、项目边界、重复构建一致性通过。记忆运行时输出 `[story-summary-runtime]` 和 `result=PASS`。
+- 编剧用例验证默认手动、打开面板零模型请求、有效缓存的 25% 注入上限、失效或切分支后跳过，以及手动更新和显式启用自动更新。API 用例核对按功能汇总、取消及失败计时、错误脱敏、清空时的并发请求和最近 100 条明细。
+- 拥挤的正文上下文保留主角的计划、目标、持有物与约束。提及离场者不会带出其认知，在场或重要角色已有知识时仍提示未记录隐私。大世界用例覆盖冷门实体及历史来源的重复描述，主角、同场人物、未结事项和本轮原文均保留。核心请求本身超限时模型调用次数为 0。
+- 用真实存储与队列代码、虚构聊天和模型桩，分别验证保留前 24 楼后补记、跨不可分割基线后从首楼补记、无新检查点的旧导入档恢复、过期确认拒绝，以及世界回执冲突在清尾前停止。回归核对了确认保存、草稿、向量和另一分支的隔离。
+- Brave 无头浏览器通过编剧界面与工作台、通用工作台布局、API 布局与工作台、总结工作台与页脚、地点地图、世界提案与分支恢复共 9 项脚本。覆盖 319–1440 px 的代表视口、统计复制与清空、重记确认与取消。各脚本名称见[机器可读验证记录](validation.json)。
+- `python3 scripts/package.py` 生成本地 ZIP、SHA-256 和 `release-info.json`。本轮使用模拟宿主及模型，真实 SillyTavern／TauriTavern、在线模型与正式发布仍待验收。[真机清单](NEXT-DEVELOPMENT.md#缺口-6待真机-真实宿主与在线模型)
+
 ## 0.2.31 发布验证
 
 发布构建标识 `3412baa4ffa67a32addd`（`entries: 9`、`modules: 729`、`chunks: 53`，Vite 转换 `741` 个模块）。完整 `node scripts/check.mjs`、`node scripts/check-versions.mjs` 与 `python3 scripts/package.py` 已通过：质量检查与零告警 ESLint、版本一致性（`0.2.31` 及 `release/release-info.json` / ZIP SHA-256 核对）、TypeScript 项目边界校验、可重复构建、1666 项单元测试及记忆运行时检查（`[story-summary-runtime] result=PASS`），涵盖：

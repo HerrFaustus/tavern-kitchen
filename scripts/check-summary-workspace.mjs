@@ -46,6 +46,9 @@ try {
                     } else if (event.data.type === 'SAVE_PANEL_CONFIG') {
                         globalThis.savedSettings=event.data;
                         reply({type:'PANEL_CONFIG_SAVE_RESULT',requestId:event.data.requestId,success:true});
+                    } else if (event.data.type === 'REQUEST_GENERATE') {
+                        globalThis.summaryRequest = event.data;
+                        reply({type:'GENERATION_STATE',isGenerating:false});
                     }
                 };
                 frame.src='/scripts/extensions/third-party/tavern-kitchen/modules/story-summary/story-summary.html';
@@ -77,6 +80,18 @@ try {
     await functional.locator('#settings-save').click();
     await page.waitForFunction(() => globalThis.savedSettings?.config?.trigger?.interval === 3);
     assert.equal(await controls.locator('[data-settings-group="prompts"], #tab-summary-prompts, #tab-prompts').count(), 0);
+    await page.evaluate(() => globalThis.document.querySelector('iframe').contentWindow.postMessage({
+        source:'TavernKitchen', type:'CHAT_SUMMARY_STATE', state:{hasChat:true, chatEnabled:true, effectiveEnabled:true,
+            recovery:{fromFloor:24,token:'fixture',scope:'branch-a'}},
+    },globalThis.location.origin));
+    const recover = frame.getByRole('button',{name:'从断点重记',exact:true});
+    await recover.click();
+    assert.match(await frame.locator('#confirm-message').innerText(), /保留前 24 楼.*第 25 楼/);
+    await frame.locator('#confirm-cancel').click();
+    assert.equal(await page.evaluate(() => globalThis.summaryRequest), undefined);
+    await recover.click();
+    await frame.locator('#confirm-ok').click();
+    await page.waitForFunction(() => globalThis.summaryRequest?.recovery.token === 'fixture');
     for (const width of [319,1280]) {
         await page.setViewportSize({width,height:780});
         const height = () => frame.locator('#summary-controls').evaluate(el => el.getBoundingClientRect().height / globalThis.innerHeight);

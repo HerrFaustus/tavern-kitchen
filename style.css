@@ -24,7 +24,8 @@
 #tk-workspace .tk-planner-global { margin-block-start: 1em; }
 #tk-workspace .tk-planner-global > summary { cursor: pointer; font-weight: 600; }
 #tk-workspace .tk-planner-global > .tk-planner-note-text { margin-block-start: .5em; }
-#tk-workspace .tk-planner-settings label { display: grid; min-width: 0; gap: .2em; }
+#tk-workspace .tk-planner-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 10px; min-width: 0; }
+#tk-workspace .tk-planner-controls label { display: inline-flex; align-items: center; gap: .3em; }
 #tk-workspace .tk-planner-settings :is(select, textarea) { width: 100%; min-width: 0; margin: 0; }
 #tk-workspace .tk-planner-settings textarea { resize: vertical; }
 #tk-workspace[hidden], #tk-workspace [hidden] { display: none !important; }

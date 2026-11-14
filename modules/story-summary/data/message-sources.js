@@ -40,7 +40,7 @@ export function createMessageSourceTracker() {
         return { ...source, swipeCount: message.swipes.length,
             swipe_id: source.swipe_id === swipeId ? -1 : source.swipe_id - Number(source.swipe_id > swipeId) };
     }
-    function inspect(context, { kind = 'observed', floor: eventFloor = null } = {}) {
+    function inspect(context, { kind = 'observed', floor: eventFloor = null, summarizedThrough = -1 } = {}) {
         const { chat } = context;
         if (getChatIdentity(context) !== owner) return null;
         bindLoadedSources(chat);
@@ -65,6 +65,10 @@ export function createMessageSourceTracker() {
         // cache retirement. Never infer its undo from the old cache length.
         const rollbackSources = pending.get(owner)?.rollbackSources || sources;
         let rollbackFromFloor = obligation?.rollbackFromFloor ?? null;
+        if (kind === 'edit' && eventFloor <= summarizedThrough && rollbackSources[eventFloor] && chat[eventFloor]
+            && !sameInput(rollbackSources[eventFloor], chat[eventFloor])) {
+            rollbackFromFloor = firstFloor(rollbackFromFloor, eventFloor);
+        }
         if (chat.length < rollbackSources.length || kind === 'delete') {
             let firstRemoved = 0;
             while (firstRemoved < Math.min(chat.length, rollbackSources.length)

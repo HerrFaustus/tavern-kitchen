@@ -37,8 +37,10 @@ test('the actual summary model boundary receives all world data and both output 
 
 test('the combined prompt budget is checked before calling the configured model without truncation', async () => {
     captured.calls.length = 0; const oldSummary = '旧'.repeat(UPDATE_INPUT_LIMIT - 20);
-    await assert.rejects(mod.generateSummary({ existingSummary: oldSummary, existingFacts: [], newHistoryText: '本轮', historyRange: '1', updateContext: context() }), /未调用模型或截断/);
+    await assert.rejects(mod.generateSummary({ existingSummary: oldSummary, existingFacts: [], newHistoryText: '本轮', historyRange: '1', updateContext: context() }), /未调用模型/);
     assert.equal(captured.calls.length, 0); assert.equal(oldSummary.length, UPDATE_INPUT_LIMIT - 20);
+    await assert.rejects(mod.generateSummary({ existingSummary:'',existingFacts:[],newHistoryText:'新'.repeat(UPDATE_INPUT_LIMIT),historyRange:'1',updateContext:context() }),/未调用模型/);
+    assert.equal(captured.calls.length, 0);
 });
 
 test('source-only manual summaries retain their existing model contract', async () => {

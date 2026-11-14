@@ -249,12 +249,17 @@ function changesMatch(items, changes, getKey) {
     });
 }
 
-function restoreChanges(items, changes, getKey) {
+function restoreChanges(items, changes, getKey, discardChanged) {
     const restored = clone(items);
     const deletedByBatch = [];
 
     for (const change of changes) {
         const index = restored.findIndex(item => getKey(item) === change.key);
+        if (discardChanged) {
+            if (index >= 0) restored.splice(index, 1);
+            if (change.previous !== null) deletedByBatch.push(change);
+            continue;
+        }
         if (change.generated === null) {
             deletedByBatch.push(change);
         } else if (change.previous === null) {
@@ -283,7 +288,7 @@ function collections(json) {
     };
 }
 
-export function applySummaryUndo(json = {}, rawUndo) {
+export function applySummaryUndo(json = {}, rawUndo, { discardChanged = false } = {}) {
     const undo = normalizeSummaryUndo(rawUndo);
     if (!undo) return null;
     const current = collections(json);
@@ -297,7 +302,7 @@ export function applySummaryUndo(json = {}, rawUndo) {
         ['previousCharacterAliases', 'generatedCharacterAliases', 'characterAliases'],
     ];
     for (const [, generatedField, collection] of snapshots) {
-        if (Object.hasOwn(undo, generatedField) && !sameJson(current[collection], undo[generatedField])) {
+        if (!discardChanged && Object.hasOwn(undo, generatedField) && !sameJson(current[collection], undo[generatedField])) {
             return null;
         }
     }
@@ -311,7 +316,7 @@ export function applySummaryUndo(json = {}, rawUndo) {
         ['characterAliasChanges', 'characterAliases', item => normalizedName(item?.from)],
     ];
     for (const [field, collection, getKey] of changeSets) {
-        if (undo[field] && !changesMatch(current[collection], undo[field], getKey)) return null;
+        if (undo[field] && (discardChanged ? !hasUniqueKeys(current[collection], getKey) : !changesMatch(current[collection], undo[field], getKey))) return null;
     }
 
     const restored = clone(json);
@@ -323,7 +328,7 @@ export function applySummaryUndo(json = {}, rawUndo) {
     }
     for (const [field, collection, getKey] of changeSets) {
         if (!undo[field]) continue;
-        const next = restoreChanges(current[collection], undo[field], getKey);
+        const next = restoreChanges(current[collection], undo[field], getKey, discardChanged);
         if (collection === 'mainCharacters') restored.characters.main = next;
         else restored[collection] = next;
     }
@@ -338,7 +343,7 @@ function failedResult(json, currentEndMesId) {
     };
 }
 
-export function applyExactSummaryHistoryUndo(json, history, targetEndMesId, currentEndMesId, atoms = []) {
+export function applyExactSummaryHistoryUndo(json, history, targetEndMesId, currentEndMesId, atoms = [], options) {
     const entriesByEnd = new Map();
     for (const entry of Array.isArray(history) ? history : []) {
         const endMesId = Number(entry?.endMesId);
@@ -371,13 +376,13 @@ export function applyExactSummaryHistoryUndo(json, history, targetEndMesId, curr
     let restoredAtoms = clone(atoms);
     for (const entry of rollbackEntries) {
         try {
-            const memory = restoreMaintenance({ json: restored, atoms: restoredAtoms }, entry.maintenance);
+            const memory = restoreMaintenance({ json: restored, atoms: restoredAtoms }, entry.maintenance, options);
             restored = memory.json;
             restoredAtoms = memory.atoms;
         } catch {
             return failedResult(json, currentEndMesId);
         }
-        const next = entry.undo ? applySummaryUndo(restored, entry.undo) : restored;
+        const next = entry.undo ? applySummaryUndo(restored, entry.undo, options) : restored;
         if (!next) return failedResult(json, currentEndMesId);
         restored = next;
     }

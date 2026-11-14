@@ -155,8 +155,30 @@ test('a proposal delivery survives fork and restore but never arrives late in a 
 
 test('oversized world data fails explicitly without truncating the distant state', async t => {
     const f = await setup(t); f.store.json.largeBackground = '原'.repeat(UPDATE_INPUT_LIMIT);
-    assert.throws(() => buildUpdateContext(f.state, f.store, f.messages, f.receipt), /未调用模型或截断/);
+    assert.throws(() => buildUpdateContext(f.state, f.store, f.messages, f.receipt), /未调用模型/);
     assert.equal(f.store.json.largeBackground.length, UPDATE_INPUT_LIMIT);
+});
+
+test('compact proposals and replay reject even a before-absent write to an indexed entity', async t => {
+    const f = await setup(t), cold = f.context.world.entities.find(e => e.id === 'far-away');
+    Object.assign(f.context.manifest, {mode:'compact',worldComplete:false,omittedDetailEntityIds:[cold.id]});
+    delete cold.fields; cold.summaryOnly = true;
+    const blind = fieldProposal(f,{entityId:cold.id,field:'藏处',before:{present:false},value:'楼上'});
+    assert.throws(() => prepareWorldUpdate({...f.raw,proposals:[blind]},f.context),/索引对象/);
+    const valid = prepareWorldUpdate({...f.raw,proposals:[fieldProposal(f)]},f.context);
+    assert.equal(validateStoredUpdate(valid),valid);
+    assert.throws(() => validateStoredUpdate({...valid,proposals:[blind]}),/索引/);
+    const changed = await f.service.syncTurns(f.messages,{history:history(f,valid)});
+    assert.equal(worldUpdates(changed)[0].status,'ready');
+});
+
+test('an oversized incremental source is never truncated or passed on for generation', async t => {
+    const f = await setup(t);
+    f.messages[1].mes = '新'.repeat(UPDATE_INPUT_LIMIT);
+    const state = await f.service.syncTurns(f.messages);
+    const receipt = f.service.memorySourceReceipt(state,f.messages,0,1);
+    assert.throws(() => buildUpdateContext(state,f.store,f.messages,receipt), /200000.*未调用模型/);
+    assert.equal(receipt.source.messages[1].text,f.messages[1].mes);
 });
 
 test('tampered proposal evidence and delivery IDs are rejected during replay', async t => {

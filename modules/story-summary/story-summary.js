@@ -7,7 +7,7 @@ import { installFloorDisplayFilter } from './inline/host-regex.js';
 import { mergeNewData, executeRollback } from './data/store.js';
 import { getTextFilterRules } from './data/config.js';
 import { parseStoryUpdates } from '../story-state/records.js';
-import { getRuntimeInvalidSourceFloor } from './data/memory-commit.js';
+import { getRuntimeInvalidSourceFloor, getRuntimeSourceRollbackFloor } from './data/memory-commit.js';
 // ═══════════════════════════════════════════════════════════════════════════
 // Story Summary - 主入口
 //
@@ -74,6 +74,8 @@ import {
     getSummaryStore,
     invalidateSummaryAnchors,
     rollbackSummaryIfNeeded,
+    summaryRecoveryPreview,
+    recoverSummaryTail,
     isSummaryConsumable,
     isSummarySourceValid,
     getPublishedSummaryStore,
@@ -93,7 +95,7 @@ import { isRelationFact, parseRelationTarget } from "./data/fact-predicates.js";
 import { formatStorySummaryL2Events } from "./prompt-events.js";
 import { projectStoryCharacters } from "./prompt-characters.js";
 import { notifyWorldSourcesChanged } from '../world-records/sources.js';
-import { prepareMemorySources, validateMemorySources } from '../world-records/turn-runtime.js';
+import { prepareMemorySources, prepareSummaryRecovery, summaryRecoveryScope, validateMemorySources } from '../world-records/turn-runtime.js';
 import { captureRangeSource, firstInvalidMemorySource } from './data/turn-source.js';
 import { worldAuthorityForContext, authorityStoryStore } from '../world-records/authority-context.js';
 import { getAutoSummaryPlan } from './generate/summary-trigger.js';
@@ -257,6 +259,8 @@ function getStorySummaryEnablement() {
 
 export function getStorySummaryChatState() {
     const { context, hasChat, globalEnabled, chatEnabled, effectiveEnabled } = getStorySummaryEnablement();
+    const store = effectiveEnabled && getPublishedSummaryStore();
+    const recovery = store && summaryRecoveryPreview(store);
     return {
         hasChat,
         chatId: context?.chatId || null,
@@ -264,6 +268,7 @@ export function getStorySummaryChatState() {
         chatEnabled,
         effectiveEnabled,
         changing: false,
+        ...(recovery && { recovery: { ...recovery, scope: summaryRecoveryScope() } }),
     };
 }
 
@@ -620,6 +625,7 @@ function assertSummaryExecutionActive(execution) {
     if (!isSummaryExecutionActive(execution)) {
         throw createSummaryGenerationCancelledError();
     }
+    execution.recoveryGuard?.();
 }
 
 async function prepareSummaryExecution(execution) {
@@ -640,6 +646,7 @@ async function runSummaryAttempt(execution, mesId, config, callbacks) {
     for (;;) {
         const id = summaryDiagnostics.begin(execution.diagnosticRun);
         try {
+            execution.recoveryGuard?.();
             await prepareSummaryExecution(execution);
             const result = await runSummaryGeneration(mesId, config, {
                 ...callbacks,
@@ -1408,25 +1415,26 @@ function buildFramePayload(store) {
     if (!store?.json && (authority?.sources?.['world-opening'] || authority?.entities?.length)) store = {json:{},summaryHistory:[]};
     const json = authorityStoryStore(store, getContext(), true)?.json || {};
     const facts = json.facts || [];
+    const valid = !store?.summaryInvalid && store?.sourceInvalidFromFloor == null && store?.sourceRollbackFromFloor == null
+        && firstInvalidMemorySource(store, getContext().chat) == null;
     const entities = (worldAuthorityForContext(getContext())?.entities || []).map(({id,kind,name,aliases,fields}) => ({id,kind,name,aliases,fields}));
     return {
         entities,
         playerName: getContext().name1 || '',
         chatId: getContext().chatId || '',
-        rounds: !store?.summaryInvalid && store?.sourceInvalidFromFloor == null && firstInvalidMemorySource(store, getContext().chat) == null ? timelineRounds(store) : [],
+        rounds: valid ? timelineRounds(store) : [],
         characters: {
             main: json.characters?.main || [],
             relationships: extractRelationshipsFromFacts(facts),
         },
         legacyCharacterNames: (json.arcs || []).map(arc => arc.name),
         facts,
-        ...(store?.summaryHistory?.some(batch => batch.layers || batch.reviewLayers || batch.compressionNodes) && !store.summaryInvalid
-            && store.sourceInvalidFromFloor == null && firstInvalidMemorySource(store, getContext().chat) == null
+        ...(valid && store?.summaryHistory?.some(batch => batch.layers || batch.reviewLayers || batch.compressionNodes)
             ? { narrativeUnits: (() => {
                 const layers = summaryLayers(store.summaryHistory);
                 return layers.parents.map(node => layers.byId.get(node.id || `${node.level}:${node.start}-${node.end}`) || node);
             })() } : {}),
-        storyRecords: !store?.summaryInvalid && store?.sourceInvalidFromFloor == null ? (json.storyRecords || []).filter(record => record.kind !== 'scene') : [],
+        storyRecords: valid ? (json.storyRecords || []).filter(record => record.kind !== 'scene') : [],
         characterAliases: normalizeCharacterAliases(json.characterAliases)
             .map(({ from, to, evidence }) => ({ from, to, evidence })),
         lastSummarizedMesId: store?.lastSummarizedMesId ?? -1,
@@ -2084,7 +2092,7 @@ async function handleFrameMessage(event) {
             const ctx = getContext();
             currentMesId = (ctx.chat?.length ?? 1) - 1;
             await handleManualGenerate(currentMesId, { ...(data.config || {}),
-                trigger: { ...(data.config?.trigger || {}), delayFloors: 0, maxPerRun: SUMMARY_BATCH_FLOORS } });
+                trigger: { ...(data.config?.trigger || {}), delayFloors: 0, maxPerRun: SUMMARY_BATCH_FLOORS } }, data.recovery);
             break;
         }
 
@@ -2324,7 +2332,7 @@ async function handleFrameMessage(event) {
 // 手动总结
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function handleManualGenerate(mesId, config) {
+async function handleManualGenerate(mesId, config, recovery) {
     if (isSummaryGenerating()) {
         postToFrame({ type: "SUMMARY_STATUS", statusText: "上一轮总结仍在进行中..." });
         notifySummaryState();
@@ -2341,6 +2349,26 @@ async function handleManualGenerate(mesId, config) {
     notifySummaryState();
 
     try {
+        if (recovery) {
+            const source = messageSources.capture(getContext());
+            const validate = () => {
+                assertSummaryExecutionActive(execution);
+                if (!messageSources.isCurrent(source, getContext())) throw new Error('正文已变化，请重新核对恢复范围。');
+            };
+            execution.recoveryGuard = await prepareSummaryRecovery(recovery.scope);
+            validate();
+            if (!await waitForMemoryCommit(execution.controller.signal)) throw createAbortError();
+            cancelEmbeddingWriteTasks('Summary tail recovery');
+            await waitForVectorWrites();
+            validate();
+            const from = await runVectorWriteTask({ chatId: execution.chatId, kind: 'summary-recovery', scope: VECTOR_WRITE_SCOPES.CONSISTENCY },
+                () => recoverSummaryTail(execution.chatId, recovery.token, validate));
+            if (!Number.isSafeInteger(from)) throw createAbortError();
+            validate();
+            messageSources.resolveRollback(source, getContext());
+            removeDocumentsFromFloor(from, execution.chatId);
+            notifyStorySummaryChatState();
+        }
         const result = await runSummaryAttempt(execution, mesId, config, {
             onStatus: (text) => postSummaryExecution(execution, { type: 'SUMMARY_STATUS', statusText: text }),
             onError: (msg) => postSummaryExecution(execution, { type: 'SUMMARY_ERROR', message: msg }),
@@ -2543,6 +2571,7 @@ async function synchronizeCurrentSources(chatId, kind = 'observed', floor = null
     if (outcome.status === 'deferred') return outcome;
     if (outcome.status === 'failed') {
         await clearHideState();
+        if (!isChatStale(chatId)) notifyStorySummaryChatState();
         const error = { code: outcome.result?.reason, uncertain: getMemoryCommitState() === 'unconfirmed' };
         throw Object.assign(new Error(memorySaveError(error)), error);
     }
@@ -3474,9 +3503,11 @@ export function getWorldMemorySnapshot() {
 }
 export function getFloorSummarySnapshot() {
     const store = getPublishedSummaryStore();
-    const invalid = store?.summaryHistory?.find(batch => batch.floorEntry && !isFloorEntryCurrent(batch.floorEntry, getContext().chat));
+    const invalid = Array.isArray(store?.summaryHistory) && store.summaryHistory.find(batch => batch?.floorEntry && !isFloorEntryCurrent(batch.floorEntry, getContext().chat));
     const sourceInvalid = firstInvalidMemorySource(store, getContext().chat || []);
-    const invalidFrom = Math.min(sourceInvalid ?? Infinity, invalid?.floorEntry.source.start ?? Infinity, getRuntimeInvalidSourceFloor() ?? Infinity);
+    const invalidFrom = Math.min(sourceInvalid ?? Infinity, invalid?.floorEntry?.source?.start ?? Infinity,
+        store?.sourceInvalidFromFloor ?? Infinity, store?.sourceRollbackFromFloor ?? Infinity,
+        getRuntimeInvalidSourceFloor() ?? Infinity, getRuntimeSourceRollbackFloor() ?? Infinity);
     return { enabled: isXiaobaiMasterEnabled() && isStorySummaryEnabledForCurrentChat(),
         chat: getContext().chat, store, invalidFrom: Number.isFinite(invalidFrom) ? invalidFrom : undefined,
         keepVisibleTurns: getSummaryPanelConfig().ui?.keepVisibleCount ?? 5, inlineConfig: getSummaryPanelConfig().inlineSummary, getError: mainReplySummary.error };

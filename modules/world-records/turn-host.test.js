@@ -5,7 +5,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { parseHTML } from 'linkedom';
 import { createWorldArchive } from './host.js';
 import { getWorldBridge } from './bridge.js';
-import { prepareMemorySources, assertMemorySources, validateMemorySources } from './turn-runtime.js';
+import { prepareMemorySources, assertMemorySources, validateMemorySources, prepareSummaryRecovery, summaryRecoveryScope } from './turn-runtime.js';
 import { currentTurns, turnProgress } from './turn-ledger.js';
 import { storyIdentityKey, notifyWorldSourcesChanged } from './sources.js';
 import { captureStoryIdentity } from '../xiaobai-os/host/story-identity.js';
@@ -16,7 +16,7 @@ import { authorityStoryStore, authorityMemoryStoryStore } from './authority-cont
 
 function setup(t) {
     const previousDB = globalThis.indexedDB; globalThis.indexedDB = new IDBFactory();
-    const context = { chatId: 'story', characterId: 0, characters: [{ avatar: 'hero.png' }],
+    const context = { chatId: 'story', name1:'主角', characterId: 0, characters: [{ avatar: 'hero.png' }],
         chat: [{ is_user: true, mes: '买剑', send_date: 'user' }, { name: '铁匠', mes: '支付五金币。', send_date: 'reply' }] };
     let snapshot = { enabled: true, store: { summaryHistory: [], json: {} } }, account = 'account-a', showData = false;
     const errors = [];
@@ -88,6 +88,13 @@ test('real host confirmation updates subsequent narration and administrator inpu
     assert.equal(authorityMemoryStoryStore(store, f.context).json.storyRecords.length, 0);
     assert.equal(authorityStoryStore(store, f.context).json.storyRecords[0].content, '信使可能隐瞒消息');
     assert.equal(store.json.storyRecords[0].content, '旧认知');
+    const scope = summaryRecoveryScope(), guard = await prepareSummaryRecovery(scope);
+    f.context.chat[1].mes = '没有付款，也没有听到信使的消息。';
+    assert.throws(guard, /数据 → 世界版本与恢复/);
+    await assert.rejects(prepareSummaryRecovery(scope), /数据 → 世界版本与恢复/);
+    assert.equal((await service.read()).version, next.updateContext.basis.version);
+    f.archive.reset();
+    await assert.rejects(prepareSummaryRecovery(scope), /分支已变化/);
 });
 
 test('real host checks the whole incremental source when evidence belongs to an earlier turn', async t => {

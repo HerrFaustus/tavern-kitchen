@@ -329,7 +329,7 @@ const UNANNOTATED_LABEL = '未标注';
 
         const generateButton = $('btn-generate');
         if (generateButton) {
-            generateButton.textContent = localGenerating ? copy.stop : copy.generate;
+            generateButton.textContent = localGenerating ? copy.stop : currentChatSummaryState.recovery ? '从断点重记' : copy.generate;
             generateButton.disabled = !localGenerating && !controlsEnabled;
             generateButton.title = localGenerating ? '' : !hasChat ? copy.noChat
                 : changing ? copy.changing : !effectiveEnabled ? copy.disabled : '';
@@ -355,14 +355,22 @@ const UNANNOTATED_LABEL = '未标注';
     function bindSummaryActions() {
         $('btn-dismiss-summary').textContent = SUMMARY_FEEDBACK_COPY.summaryControls.dismiss;
         $('btn-dismiss-summary').onclick = () => postMsg('DISMISS_SUMMARY_STATUS', { statusId: summaryStatusId });
-        $('btn-generate').onclick = () => {
+        $('btn-generate').onclick = async () => {
             if (localGenerating) {
                 postMsg('REQUEST_CANCEL');
                 return;
             }
+            const recovery = currentChatSummaryState.recovery;
+            if (recovery) {
+                const start = recovery.fromFloor + 1;
+                const prefix = recovery.fromFloor ? `保留前 ${recovery.fromFloor} 楼的有效总结。` : '没有可以单独保留的完整摘要批次。';
+                if (!await showConfirm('按当前原文重新补记', `${prefix}从第 ${start} 楼起清除旧摘要、草稿和检索缓存，再分批补记到最近已完成的回复。`, '从断点重记')) return;
+                if (!canUseCurrentChatControls() || localGenerating || recovery.token !== currentChatSummaryState.recovery?.token
+                    || recovery.scope !== currentChatSummaryState.recovery?.scope) return;
+            }
             localGenerating = true;
             syncCurrentChatSummaryControls();
-            postMsg('REQUEST_GENERATE', { config: { trigger: config.trigger } });
+            postMsg('REQUEST_GENERATE', { config: { trigger: config.trigger }, ...(recovery && { recovery }) });
         };
     }
 

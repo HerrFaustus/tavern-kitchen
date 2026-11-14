@@ -239,7 +239,7 @@ for (const preceding of ['source-sync', 'panel-edit']) {
         if (preceding === 'source-sync') {
             host.context.chat[1].mes += ' edited prose';
             first = vectorWrites.runVectorWriteTask({ scope: vectorWrites.VECTOR_WRITE_SCOPES.CONSISTENCY },
-                () => mod.synchronizeSourceCaches(tracker, host.context, { kind: 'edit', floor: 1 }));
+                () => mod.synchronizeSourceCaches(tracker, host.context));
         } else {
             first = editSection(panel, 'facts', [{ s:'同行者', p:'衣着', o:'灰斗篷' }]);
         }
@@ -1038,18 +1038,12 @@ for (const kind of ['edit', 'swipe']) test(`queued ${kind} survives leaving and 
     tracker.switchChat(context);
     const result = await mod.synchronizeSourceCaches(tracker, context);
     assert.equal(await mod.chunksTable.where('[chatId+floor]').equals([context.chatId, 1]).count(), 0);
-    if (kind === 'edit') {
-        assert.equal(result.status, 'synced');
-        assert.equal(tracker.inspect(context), null);
-        assert.equal(mod.isSummaryConsumable(ext().storySummary, context.chat.length), true);
-        await context.saveMetadata();
-    } else {
-        // Historical swipe crossed the imported baseline: preserve, but block L2.
-        assert.equal(result.status, 'failed');
-        assert.equal(ext().storySummary.sourceRollbackFromFloor, 1);
-        assert.equal(ext().storySummary.sourceInvalidFromFloor, undefined);
-        assert.equal(mod.isSummaryConsumable(ext().storySummary, context.chat.length), false);
-    }
+    // The explicit edit or swipe crossed the imported baseline. Keep it available for recovery.
+    assert.equal(result.status, 'failed');
+    assert.ok(tracker.inspect(context));
+    assert.equal(ext().storySummary.sourceRollbackFromFloor, 1);
+    assert.equal(ext().storySummary.sourceInvalidFromFloor, undefined);
+    assert.equal(mod.isSummaryConsumable(ext().storySummary, context.chat.length), false);
     assert.deepEqual(disk(), ext());
 });
 
@@ -1081,7 +1075,7 @@ for (const order of ['event-first', 'background-first']) for (const sameText of 
     assert.deepEqual(disk(), ext());
 });
 
-for (const generated of [false, true]) test(`unselected swipe deletion then immediate edit preserves L2 (generated: ${generated})`, async t => {
+for (const generated of [false, true]) test(`unselected swipe deletion preserves the branch and the subsequent explicit edit invalidates its actual floor (generated: ${generated})`, async t => {
     await importFixture(); await seedAnchors();
     const context = host.context;
     if (generated) {
@@ -1102,12 +1096,15 @@ for (const generated of [false, true]) test(`unselected swipe deletion then imme
     assert.equal(cacheWrites(), 0);
     // No intervening inspect/sync: the edit must not disguise the renumbering as a branch replacement.
     message.mes += ' ordinary edit'; message.swipes[0] = message.mes;
-    assert.equal((await mod.synchronizeSourceCaches(tracker, context, { kind: 'edit', floor })).status, 'synced');
+    assert.equal((await mod.synchronizeSourceCaches(tracker, context, { kind: 'edit', floor })).status, generated ? 'synced' : 'failed');
     if (generated) assert.equal(ext().storySummary.lastSummarizedMesId, 23);
-    else assert.deepEqual(ext().storySummary, before);
-    assert.equal(mod.isSummaryConsumable(ext().storySummary, context.chat.length), true);
+    else {
+        assert.deepEqual(ext().storySummary.json, before.json);
+        assert.equal(ext().storySummary.sourceRollbackFromFloor, floor);
+    }
+    assert.equal(mod.isSummaryConsumable(ext().storySummary, context.chat.length), generated);
     assert.equal(await mod.chunksTable.where('[chatId+floor]').equals([context.chatId, floor]).count(), 0);
-    assert.equal(host.writes, metadataWrites + (generated ? 1 : 0));
+    assert.equal(host.writes, metadataWrites + 1);
     await context.saveMetadata();
     assert.deepEqual(disk(), ext());
 });
@@ -1904,6 +1901,87 @@ function reloadSourceRecovery() {
     const tracker = mod.createMessageSourceTracker(); tracker.reset(host.context);
     assert.equal(tracker.inspect(host.context), null); // No old page-local observation survives.
 }
+
+for (const crossedBaseline of [false, true]) test(`confirmed tail recovery keeps a verified prefix and catches up to the latest reply (crossed import: ${crossedBaseline})`, async () => {
+    const base = await generatedSourceRecoveryFixture(), { chat, chatId } = host.context;
+    const tracker = mod.createMessageSourceTracker(); tracker.reset(host.context);
+    const edit = mod.readSummaryMemory(), store = edit.storySummary;
+    store.dataBranch = 'branch-a';
+    store.floorDrafts = { 2: { text: '前段草稿' }, 25: { text: '失效草稿' } };
+    store.summaryHistory.at(-1).compressionNodes = [{ start: 24, end: 25, text: '旧尾段' }];
+    store.json.facts.find(fact => fact.p === '行程').o = '与旧撤销记录冲突';
+    await mod.commitSummaryMemory(chatId, edit);
+    const sibling = structuredClone(ext()); host.files.set('branch-b', structuredClone(sibling));
+    await seedCacheRange(chatId, [1, 25]);
+    await seedCacheRange('branch-b', [1, 25]);
+    const changed = crossedBaseline ? 20 : 24;
+    chat[changed].mes = '改道后走北门';
+    chat.push({ mes: '随后', is_user: true }, { mes: '新到达', is_user: false });
+    const blocked = await mod.synchronizeSourceCaches(tracker, host.context, { kind: 'edit', floor: changed });
+    assert.equal(blocked.result.reason, crossedBaseline ? 'source_boundary_invalid' : 'history_discontinuous');
+    assert.equal(mod.isSummaryConsumable(ext().storySummary, chat.length), false);
+    const recovery = mod.summaryRecoveryPreview(), from = crossedBaseline ? 0 : 24;
+    assert.equal(recovery.fromFloor, from);
+    const run = summaryExecutionHarness({ messageSources: tracker, prepareSummaryRecovery: async () => () => {},
+        removeDocumentsFromFloor() {}, synchronizeCurrentSources: () => mod.synchronizeSourceCaches(tracker, host.context) });
+    let calls = 0;
+    host.generate = async () => {
+        if (calls++ === 0) {
+            const saved = disk().storySummary;
+            assert.equal(saved.lastSummarizedMesId, from - 1);
+            assert.deepEqual(saved.json, crossedBaseline ? null : base);
+            assert.deepEqual(saved.floorDrafts, crossedBaseline ? undefined : { 2: { text: '前段草稿' } });
+            assert.equal(saved.summaryHistory.some(batch => batch.compressionNodes), false);
+            assert.equal(saved.sourceInvalidFromFloor, undefined);
+            assert.equal(saved.sourceRollbackFromFloor, undefined);
+            assert.equal(saved.summaryInvalid, undefined);
+            assert.deepEqual((await mod.getAllStateVectors(chatId)).map(row => row.floor), crossedBaseline ? [] : [1]);
+            assert.deepEqual((await mod.chunksTable.where('chatId').equals(chatId).toArray()).map(row => row.floor), crossedBaseline ? [] : [1]);
+        }
+        return JSON.stringify({ events: [], factUpdates: [{ s: '旅人', p: '行程', o: '北门', isState: false }] });
+    };
+    await run.handleManualGenerate(27, { trigger: { maxPerRun: 2, delayFloors: 0 } }, recovery);
+    assert.deepEqual(run.errors.map(error => error.message), []);
+    assert.equal(calls, (28 - from) / 2);
+    assert.equal(disk().storySummary.lastSummarizedMesId, 27);
+    assert.equal(disk().storySummary.dataBranch, 'branch-a');
+    assert.deepEqual(disk(), ext());
+    assert.deepEqual(host.files.get('branch-b'), sibling);
+    assert.equal(await mod.chunksTable.where('chatId').equals('branch-b').count(), 2);
+    assert.equal(mod.summaryRecoveryPreview(), null);
+    assert.equal(mod.isSummaryConsumable(ext().storySummary, chat.length), true);
+});
+
+test('stale recovery confirmation, world conflict and cache-only failure never discard summary history', async () => {
+    await importFixture();
+    const { chat, chatId } = host.context;
+    mod.noteInvalidMemorySource(1);
+    assert.equal(mod.summaryRecoveryPreview(), null);
+    await mod.rollbackSummaryIfNeeded({ changedFromFloor: 20 });
+    const tracker = mod.createMessageSourceTracker(); tracker.reset(host.context);
+    const before = structuredClone(disk()), preview = mod.summaryRecoveryPreview();
+    chat[2].mes += '另一处修改';
+    await assert.rejects(mod.recoverSummaryTail(chatId, preview.token), /恢复范围已变化/);
+    const run = summaryExecutionHarness({ messageSources: tracker, prepareSummaryRecovery: async () => { throw Error('请到世界版本与恢复核对'); } });
+    await run.handleManualGenerate(23, {}, mod.summaryRecoveryPreview());
+    assert.match(run.messages.find(message => message.type === 'SUMMARY_ERROR').message, /世界版本与恢复/);
+    assert.deepEqual(disk(), before);
+    assert.deepEqual(ext(), before);
+});
+
+test('older imports without a checkpoint recover their confirmed fields from complete before-values', async () => {
+    const base = await generatedSourceRecoveryFixture(), previous = mod.readSummaryMemory();
+    delete previous.storySummary.summaryHistory[0].baseJson;
+    previous.storySummary.json.facts.find(fact => fact.p === '行程').o = '在已失效的后续批次修改';
+    await mod.commitSummaryMemory(host.context.chatId, previous);
+    host.context.chat[24].mes = '取消本轮行程';
+    assert.equal((await mod.rollbackSummaryIfNeeded({ changedFromFloor: 24 })).reason, 'history_discontinuous');
+    const preview = mod.summaryRecoveryPreview();
+    assert.equal(preview.fromFloor, 24);
+    await mod.recoverSummaryTail(host.context.chatId, preview.token);
+    assert.deepEqual(disk().storySummary.json, base);
+    assert.equal(disk().storySummary.lastSummarizedMesId, 23);
+});
 
 for (const recovery of ['same-page', 'reload', 'runtime-only']) test(`ordinary edit cleanup failure retries without L2 undo: ${recovery}`, async t => {
     await generatedSourceRecoveryFixture();

@@ -4,12 +4,13 @@ import { deleteChunksAtFloor, deleteChunksFromFloor } from '../vector/storage/ch
 import { firstInvalidMemorySource } from './turn-source.js';
 
 // Source retirement belongs to the consistency writer, not completion/UI events.
-// New batches with exact source receipts also undo ordinary prose edits. Legacy
-// batches keep their established edit policy; no provenance is inferred for them.
+// A host edit names its exact floor, even for old imports without fingerprints.
+// Passive observation can only invalidate summaries when their receipts prove a text change.
 export function retainSourceChange(tracker, context, { kind = 'observed', floor = null } = {}) {
-    tracker.retain(context, { kind, floor });
+    const store = getPublishedSummaryMemory().storySummary;
+    tracker.retain(context, { kind, floor, summarizedThrough: store.lastSummarizedMesId ?? -1 });
     const change = tracker.inspect(context);
-    const receiptFloor = firstInvalidMemorySource(getPublishedSummaryMemory().storySummary, context.chat);
+    const receiptFloor = firstInvalidMemorySource(store, context.chat);
     if (change && receiptFloor !== null) change.rollbackFromFloor = Math.min(change.rollbackFromFloor ?? Infinity, receiptFloor);
     if (change) retireSummaryMemorySources(context.chatId, {
         fromFloor: change.rollbackFromFloor == null ? change.fromFloor : Math.min(change.fromFloor ?? Infinity, change.rollbackFromFloor),

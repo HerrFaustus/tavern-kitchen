@@ -1,5 +1,5 @@
 import { migrateRoundSummaries } from './migrations/round-summaries.js';
-import { restoreFloorRoundSources } from '../inline/ledger.js';
+import { isFloorEntryCurrent, replaySummaryPrefix, restoreFloorRoundSources } from '../inline/ledger.js';
 // Story Summary - Store
 // 大总结以一份 JSON 保存 events、characters、arcs、facts 等；L3 Facts 是召回时的投影名称，不是另一份总结存储。
 
@@ -31,7 +31,9 @@ import { readSummaryMemory, getPublishedSummaryMemory, commitSummaryMemory, getM
     publishSummaryMemory, retireSummaryMemorySources } from './memory-commit.js';
 import { invalidateMemoryAnchors, updateMaintainedAnchorIndex } from './anchor-invalidation.js';
 import { authorityMemoryFacts } from '../../world-records/authority-context.js';
-import { firstInvalidMemorySource } from './turn-source.js';
+import { captureRangeSource, firstInvalidMemorySource, isRangeSourceCurrent } from './turn-source.js';
+import { getChatIdentity } from './chat-identity.js';
+import { memoryDigest } from './memory-policy.js';
 
 const MODULE_ID = 'summaryStore';
 const loadedEventStores = new WeakSet();
@@ -322,6 +324,102 @@ export function isSummarySourceValid(store, currentLength) {
 
 export function isSummaryConsumable(store, currentLength) {
     return getMemoryCommitState() === 'ready' && isSummarySourceValid(store, currentLength);
+}
+
+function discardFloorDrafts(store, fromFloor) {
+    for (const floor of Object.keys(store.floorDrafts || {})) if (Number(floor) >= fromFloor) delete store.floorDrafts[floor];
+    if (!Object.keys(store.floorDrafts || {}).length) delete store.floorDrafts;
+}
+
+// A batch is the smallest confirmed unit. An opaque import cannot be split at an edited floor.
+function recoveryPrefix(store, chat, rollbackFloor, atoms) {
+    const history = Array.isArray(store.summaryHistory) ? store.summaryHistory : [];
+    const limit = Math.min(rollbackFloor, chat.length, (store.lastSummarizedMesId ?? -1) + 1);
+    const prefix = [];
+    for (const batch of history) {
+        const end = prefix.at(-1)?.endMesId ?? -1;
+        if (!batch || batch.endMesId >= limit) break;
+        try {
+            const entry = upgradeSummaryHistory([batch]).value.at(-1);
+            if (entry.kind === 'batch' ? entry.previousEndMesId !== end : end !== -1) break;
+            const source = entry.sourceReceipt?.source || entry.roundSource;
+            if (source && !isRangeSourceCurrent(source, chat) || entry.floorEntry && !isFloorEntryCurrent(entry.floorEntry, chat)) break;
+            prefix.push(entry);
+        } catch { break; }
+    }
+    const last = prefix.at(-1)?.endMesId ?? -1;
+    if (!prefix.length) return { history: [], json: null };
+    if (store.summaryInvalid && last === store.lastSummarizedMesId) return replaySummaryPrefix(prefix);
+    const restored = applyExactSummaryHistoryUndo(store.json, history, last, store.lastSummarizedMesId, atoms);
+    if (!restored.historyDiscontinuous) return { history: prefix, json: restored.json, atoms: restored.atoms };
+    // Old imports lack a checkpoint. Explicit discard can use the recorded before-values
+    // even when a later edit changed the after-value. Require a complete, valid inverse chain.
+    if (prefix[0].kind === 'baseline' && !prefix[0].baseJson) {
+        try {
+            const chain = upgradeSummaryHistory(history).value;
+            const before = applyExactSummaryHistoryUndo(store.json, chain, last, store.lastSummarizedMesId, atoms, { discardChanged: true });
+            if (!before.historyDiscontinuous) return { history: prefix, json: before.json, atoms: before.atoms };
+        } catch {
+            // Neither a checkpoint nor a complete inverse proves this old import.
+            return { history: [], json: null };
+        }
+    }
+    return replaySummaryPrefix(prefix);
+}
+
+function recoveryPlan(store, atoms) {
+    const rollbackFloor = Math.min(store?.sourceRollbackFromFloor ?? Infinity, getRuntimeSourceRollbackFloor() ?? Infinity);
+    if (!store || !store.summaryInvalid && !Number.isFinite(rollbackFloor)) return null;
+    const context = getContext(), chat = context.chat || [];
+    const prefix = recoveryPrefix(store, chat, rollbackFloor, atoms);
+    const fromFloor = (prefix.history.at(-1)?.endMesId ?? -1) + 1;
+    const token = memoryDigest([getChatIdentity(context), store.dataBranch, store.updatedAt, rollbackFloor, fromFloor,
+        chat.length ? captureRangeSource(chat, 0, chat.length - 1).digest : null, store.summaryHistory, store.json]);
+    return { fromFloor, token, prefix };
+}
+
+export function summaryRecoveryPreview(store = getPublishedSummaryStore()) {
+    if (!store || !store.summaryInvalid && store.sourceRollbackFromFloor == null && getRuntimeSourceRollbackFloor() == null) return null;
+    const plan = recoveryPlan(store, getPublishedSummaryMemory().stateAtoms);
+    return { fromFloor: plan.fromFloor, token: plan.token };
+}
+
+export async function recoverSummaryTail(chatId, token, validate) {
+    assertMemoryWritable(chatId);
+    const previous = readSummaryMemory(), store = previous.storySummary;
+    const plan = recoveryPlan(store, previous.stateAtoms);
+    if (!plan || plan.token !== token) throw new Error('聊天、来源或恢复范围已变化，请重新核对起始楼层。');
+    const { fromFloor, prefix } = plan;
+    const cacheFrom = Math.min(fromFloor, store.sourceInvalidFromFloor ?? Infinity, getRuntimeInvalidSourceFloor() ?? Infinity);
+    // Drop the untrusted suffix before visiting maintenance receipts in a damaged history.
+    const draft = { ...store, summaryHistory: prefix.history, lastSummarizedMesId: fromFloor - 1, json: prefix.json, updatedAt: Date.now() };
+    if (draft.floorDrafts) draft.floorDrafts = { ...draft.floorDrafts };
+    delete draft.summaryInvalid;
+    delete draft.sourceInvalidFromFloor;
+    delete draft.sourceRollbackFromFloor;
+    delete draft.pendingImportBoundary;
+    discardFloorDrafts(draft, fromFloor);
+    const { next } = invalidateMemoryAnchors({ ...previous, storySummary: draft, stateAtoms: prefix.atoms || previous.stateAtoms }, cacheFrom);
+    const oldAtoms = new Map(previous.stateAtoms.map(atom => [atom.atomId, atom]));
+    const newAtoms = new Map(next.stateAtoms.map(atom => [atom.atomId, atom]));
+    const affected = new Set();
+    for (const [id, atom] of [...oldAtoms, ...newAtoms]) {
+        if (atom.floor < cacheFrom && !sameMemory(oldAtoms.get(id), newAtoms.get(id))) affected.add(atom.floor);
+    }
+    if (affected.size) {
+        next.l0Index = structuredClone(next.l0Index);
+        updateMaintainedAnchorIndex(next, [...affected]);
+    }
+    const events = new Map((prefix.json?.events || []).map(event => [event.id, event]));
+    const removedEvents = (store.json?.events || []).filter(event => !sameMemory(event, events.get(event.id))).map(event => event.id);
+    await commitSummaryMemory(chatId, next, { previous, validate, resolvesSourceInvalidity: true, invalidate: async () => {
+        await deleteStateVectorsFromFloor(chatId, cacheFrom);
+        if (affected.size) await deleteStateVectorsAtFloors(chatId, [...affected]);
+        await deleteChunksFromFloor(chatId, cacheFrom);
+        if (!fromFloor) await clearEventVectors(chatId);
+        else if (removedEvents.length) await deleteEventVectorsByIds(chatId, removedEvents);
+    } });
+    return cacheFrom;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -702,6 +800,7 @@ export async function executeRollback(chatId, store, targetEndMesId, options = {
     }
     draft.lastSummarizedMesId = targetEndMesId;
     draft.summaryHistory = (draft.summaryHistory || []).filter(entry => entry.endMesId <= targetEndMesId);
+    if (!maintenanceOnly) discardFloorDrafts(draft, targetEndMesId + 1);
     if (maintenanceOnly) {
         const baseline = draft.summaryHistory.find(entry => entry.endMesId === targetEndMesId);
         baseline.maintenance = [];

@@ -115,9 +115,20 @@ test('archived scene roster is ignored, knowledge stays scoped to its owner, sta
     assert.equal(characterStoryState(after, '贝拉').presence, 'unknown');
     assert.equal(characterStoryState(after, '贝拉').knowledge.length, 0);
     assert.doesNotMatch(storyContextLines(after).join('\n'), /听到传言/);
-    assert.match(storyContextLines(after, ['阿林']).join('\n'), /阿林 · 相信／误解：信使已经叛逃.*听到传言.*黎明/);
+    assert.doesNotMatch(storyContextLines(after, ['阿林']).join('\n'), /听到传言/);
+    assert.match(storyContextLines(after, [], { protagonistNames:['阿林'] }).join('\n'), /阿林 · 相信／误解：信使已经叛逃.*听到传言.*黎明/);
     assert.deepEqual(availableStoryRecords({ json: { storyRecords: after }, lastSummarizedMesId: 5 }, 4), []);
     assert.deepEqual(availableStoryRecords({ json: { storyRecords: after }, lastSummarizedMesId: 5, sourceInvalidFromFloor: 4 }), []);
+});
+test('clock and protagonist agendas precede newer hooks, focus alone never admits an absent holder’s knowledge', () => {
+    const hooks = Array.from({length:80}, (_, i) => ({ id:'h'+i, kind:i%2?'suspense':'situation', status:'open', title:'城中消息'+i, _addedAt:30+i }));
+    const agenda = { ...plan, holders:['旅人'], conditions:'入夜前还船' };
+    const records = [...hooks, { kind:'clock',label:'午后' }, agenda, {...agenda,kind:'goal',title:'长期通航'},
+        person, belief, {...belief, person:'远客',content:'后山私印'}];
+    const lines = storyContextLines(records, ['远客'], {protagonistNames:['旅人']}).join('\n');
+    assert.match(lines.slice(0,140), /午后[\s\S]*交付信件[\s\S]*入夜前还船[\s\S]*长期通航/);
+    assert.match(lines,/信使已经叛逃/);
+    assert.doesNotMatch(lines,/后山私印/);
 });
 test('aliases apply to presence and beliefs, while record IDs remain stable', () => {
     const json = { characters: { main: [] }, storyRecords: start() };

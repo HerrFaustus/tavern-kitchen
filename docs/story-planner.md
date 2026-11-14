@@ -7,7 +7,7 @@
 1. **剧情线总结（`modules/story-state/plot-lines.js`）**
    - 单楼回复提取与增量总结会在每轮抽取出 `plotLines`（含 `title`、`status`、`reading`、`quote` 及可选 `summary`、`characters`、`nextFocus`），且仅当 `quote` 逐字出自该轮真实 `summary` 时采信。
    - `collectPlotLines` / `summarizePlotLines` 优先读取完整压缩层节点（`stage` / `chapter` / `L3+`）的 `plotLineSnapshots` 增量合并未覆盖新轮次的进展、人物与焦点（在分支切换或修订失效时自动退回 intact 下层轮次），汇总出时间线 `beats`、涉及人物 `characters`、关联局势 `situationIds`、当前焦点 `nextFocus` 与累计脉络 `summary`。
-   - `plotLineStateDigest` 汇总每条线的状态、累计总结、最新楼层、当前焦点与涉及人物；任一字段推进或回滚都会刷新 `lineState`，自动触发编剧重算（`chapter-change`）。
+   - `plotLineStateDigest` 汇总每条线的状态、累计总结、最新楼层、当前焦点与涉及人物；任一字段推进或回滚都会刷新 `lineState`，将相关章节稿标为待更新（`chapter-change`）。
 2. **三类规划实体组装（`buildPlanningTargets`）**
    - `plannerSnapshot` 与 `writerInput` 将规划材料明确收口为三类实体：
      - **人物（`characters`）**：实体的公开属性、标注清晰的管理员私有字段（`管理员私有/...`）、在场度与依据、认知清单（`knowledge`）、个人计划/目标（`agendas`）以及关联剧情线。
@@ -29,5 +29,10 @@
 ## 3. 原生界面展示
 
 `modules/story-planner/settings-view.js` 与 `modules/story-state/view.js` 均采用宿主 `.standoutHeader`、`.inline-drawer` 与主题变量呈现：
-- 规划面板展示实体统计筛选芯片（`全部` + 人物／剧情线／局势条目数）、关键词过滤框、只读“复制本章纯文本”按钮，以及按三类实体分组的卡片（`点评` / `走向预测` / `建议` 及局部 `[待更新]` 标签），继续保持零持久化表单写入（`fields === 0`）。
+- 规划面板展示实体统计筛选芯片（`全部` + 人物／剧情线／局势条目数）、关键词过滤框、只读“复制本章纯文本”按钮，以及按三类实体分组的卡片（`点评` / `走向预测` / `建议` 及局部 `[待更新]` 标签）。控制区常驻手动更新按钮和原生复选框，开关保存到 `settings.enaPlanner.autoPrepare`。
 - 剧情线面板在分组中直观展示线头统计、`脉络总结`、`最新动态`、`当前焦点`、`涉及人物` 与可展开的多轮 `推进轨迹`。
+
+## 4. 后续精简方向（2026-11-14 确认收敛）
+
+- **取消多作家室与多层扩张**：不再开发多作家提案竞争、主编裁决、四入口（开局／章末／篇末／重大冲击）与三层札记（全局／本篇／本章），也不引入独立的后台人物自主演化循环。
+- **当前触发方式**。0.2.32 默认手动。点击「立即生成／更新札记」后复用当前分支底稿，按前提判断是否调用编剧。启用「生成前自动更新章节札记」后，正文生成前也可按需重算。关闭时仅从缓存读取有效章节稿，并核对上下文 25% 的注入上限。[精简版设计路线](NEXT-DEVELOPMENT.md)

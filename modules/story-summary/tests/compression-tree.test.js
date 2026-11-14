@@ -25,7 +25,7 @@ async function loadPromptModule() {
         'extensions.js': 'export const getContext = () => globalThis.__compressionPromptCtx;',
         'modules/story-summary/data/store.js': `
             export const getPublishedSummaryStore = () => globalThis.__compressionPromptStore;
-            export const getFacts = () => [];
+            export const getFacts = () => globalThis.__compressionPromptStore?.json?.facts || [];
         `,
         'modules/story-summary/data/config.js': `
             export const getVectorConfig = () => ({ enabled: false });
@@ -258,6 +258,22 @@ test('buildRawPrompt allocates plotBudget newest-to-oldest, renders chronologica
     const firstKeptIdx = result.promptText.indexOf('条目15:');
     const newestIdx = result.promptText.indexOf('条目16:');
     assert.ok(firstKeptIdx >= 0 && newestIdx > firstKeptIdx);
+});
+
+test('raw prompt protects old protagonist goals, inventory and conditions under both state budgets', async () => {
+    const mod = await loadPromptModule();
+    const hero = { holders:['旅人'], status:'open', conditions:'须先赎回抵押物', _addedAt:1 };
+    const hooks = Array.from({length:100},(_,i)=>({ kind:i%2?'situation':'suspense', title:'新传闻'+i, description:'围观者众多'.repeat(12), status:'open', _addedAt:9+i }));
+    const facts = Array.from({length:100},(_,i)=>({ s:'船夫',p:'近况'+i,o:'潮汐变化'.repeat(12),since:10+i }));
+    facts.push({s:'银钥匙',p:'保管人',o:'旅人',since:1},{s:'旅人',p:'约束',o:'三日内须还债',since:1});
+    const store = { lastSummarizedMesId:120, summaryHistory:[],json:{ facts,storyRecords:[
+        ...hooks,{...hero,kind:'goal',title:'恢复航路'},{...hero,kind:'plan',title:'赎回渔船'},
+        {kind:'knowledge',person:'船夫',content:'密库口令',certainty:'known',evidence:'偷听'}]} };
+    globalThis.__compressionPromptCtx = { chat:[],name1:'旅人' };
+    globalThis.__compressionPromptStore = store;
+    const {promptText} = mod.buildRawPrompt(store,{chunks:[],focusCharacters:['船夫']},-1);
+    for (const expected of ['恢复航路','赎回渔船','须先赎回抵押物','银钥匙','三日内须还债','新传闻']) assert.ok(promptText.includes(expected),expected);
+    assert.doesNotMatch(promptText,/密库口令/);
 });
 
 test('planSummaryBatches and buildIncrementalSlice respect character caps without splitting mid-floor', async () => {

@@ -181,3 +181,32 @@ test('authority classifies 4-tier NPC presence, prunes distant fields, separates
     assert.match(text, /"name":"旧剑".*"field":"他处寄存"/);
     assert.doesNotMatch(text, /非常冗长的远方寄存武器历史/);
 });
+
+test('partial knowledge keeps the privacy boundary, distant names stay private, and old commitments and possessions survive a crowded scene', () => {
+    const state = update(world(), [bind('alan','map','actor:player'), make('guest','客人','person'), make('duke','公爵','person'),
+        set('guest','location',{entityId:'new'}), set('duke','important',true), set('duke','location',{entityId:'old'}),
+        make('key','银钥匙','item'), set('key','保管人',{entityId:'alan'}), set('alan','身体状况','左手不能用力')]);
+    const storyRecords = [
+        { kind:'knowledge', person:'阿伦', certainty:'known', content:'自己的旧姓', evidence:'家谱' },
+        { kind:'knowledge', person:'客人', certainty:'known', content:'渡口封船', evidence:'当面得知' },
+        { kind:'knowledge', person:'公爵', certainty:'known', content:'密库暗号', evidence:'亲自设定' },
+        { kind:'plan', holders:['阿伦'], title:'在渡口还钥匙', status:'open', conditions:'七日内' },
+        ...Array.from({length:80},(_,i)=>({kind:'suspense',title:'传闻'+i,status:'open',_addedAt:100+i})),
+    ];
+    const text = buildAuthorityContext(state,'客人问起公爵',4000,'阿伦',[],{storyRecords});
+    assert.match(text,/客人：未列出的过往隐私与秘密默认不知情/);
+    assert.match(text,/公爵：未列出的过往隐私与秘密默认不知情/);
+    assert.doesNotMatch(text,/密库暗号/);
+    const short = buildAuthorityContext(state,'公爵',800,'阿伦',[],{storyRecords});
+    assert.match(short,/在渡口还钥匙.*七日内/);
+    assert.match(short,/银钥匙.*保管人/);
+    assert.match(short,/左手不能用力/);
+    const quiet = buildAuthorityContext(state,'公爵',4000,'阿伦',[],{storyRecords:storyRecords.slice(0,4)});
+    assert.match(quiet,/自己的旧姓/);
+    assert.match(quiet,/渡口封船/);
+    assert.doesNotMatch(quiet,/密库暗号/);
+    const guest = state.entities.find(entity => entity.id === 'guest');
+    guest.aliases = ['舟客'];
+    storyRecords.push({ kind:'person', name:'舟客', presence:'away' });
+    assert.doesNotMatch(buildAuthorityContext(state,'客人在哪里',4000,'阿伦',[],{storyRecords}), /渡口封船/);
+});

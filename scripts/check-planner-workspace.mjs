@@ -41,10 +41,14 @@ try {
     await mount();
     const panel=page.locator('#tk-panel-planner'), state=panel.locator('.tk-planner-note-status'), chapter=panel.locator('.tk-planner-chapter');
     await state.filter({hasText:'暂无札记'}).waitFor();
-    assert.ok(await page.locator('#tk-module-native-controls [data-settings-group="function"]').isHidden());
+    const functionSettings=page.locator('#tk-module-native-controls [data-settings-group="function"]');
+    const auto = functionSettings.getByRole('checkbox',{name:'生成前自动更新章节札记'});
+    assert.equal(await auto.isChecked(),false);
+    assert.equal(await page.evaluate(()=>globalThis.__plannerFixture.generate()),undefined);
     assert.equal(await page.evaluate(()=>globalThis.__plannerFixture.calls),0);
-    const injected=await page.evaluate(()=>globalThis.__plannerFixture.generate());
+    await functionSettings.getByRole('button',{name:'立即生成／更新札记'}).click();
     await chapter.filter({hasText:'旅人站在码头'}).waitFor();
+    const injected=await page.evaluate(()=>globalThis.__plannerFixture.generate());
     assert.equal(injected,'【本章札记】\n'+await chapter.innerText());
     const global=panel.locator('.tk-planner-global');
     assert.equal(await global.evaluate(el=>el.open),false);
@@ -60,11 +64,11 @@ try {
     await page.evaluate(()=>globalThis.__plannerFixture.fork());
     await state.filter({hasText:'暂无札记'}).waitFor();
     assert.ok(await chapter.isHidden());
+    await auto.check();
     await page.evaluate(async()=>{globalThis.__plannerFixture.failNext();await globalThis.__plannerFixture.generate();});
-    const functionSettings=page.locator('#tk-module-native-controls [data-settings-group="function"]');
     await functionSettings.getByRole('button',{name:'下次正文重试'}).waitFor();
     await functionSettings.getByRole('button',{name:'下次正文重试'}).click();
-    assert.ok(await functionSettings.isHidden());
+    assert.ok(await functionSettings.getByRole('button',{name:'下次正文重试'}).isHidden());
     await page.evaluate(()=>globalThis.__plannerFixture.restore());
     await chapter.filter({hasText:'旅人站在码头'}).waitFor();
     assert.equal(await global.evaluate(el=>el.open),false);
@@ -78,6 +82,7 @@ try {
         await page.setViewportSize({width,height:780});
         const sizes=await panel.evaluate(el=>({width:el.clientWidth,scrollWidth:el.scrollWidth,scrollHeight:el.scrollHeight,height:el.clientHeight}));
         assert.ok(sizes.scrollWidth<=sizes.width,`planner note overflows at ${width}px`);
+        assert.ok(await functionSettings.evaluate(el=>el.scrollWidth<=el.clientWidth),`planner controls overflow at ${width}px`);
         assert.ok(sizes.height>0 && sizes.scrollHeight>sizes.height,`long notes must scroll at ${width}px`);
         assert.ok(await panel.evaluate(el=>{el.scrollTop=el.scrollHeight; return el.scrollTop>0;}));
         await panel.evaluate(el=>{el.scrollTop=0;});

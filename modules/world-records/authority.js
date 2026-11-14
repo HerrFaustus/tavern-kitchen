@@ -1,9 +1,10 @@
 import { indexGeography } from '../story-state/regional-proximity.js';
 import { nameKey, protagonistIdentity } from '../story-state/protagonist-identity.js';
 import { ageDisplay, latestStoryTime } from '../story-state/time-rel.js';
+import { POSSESSION_ROLES } from './person-fields.js';
 import { FIELD_LABELS } from './domain.js';
 import { worldStoryRecords } from './world-story-state.js';
-import { characterStoryState, storyContextLines, storyRecordText } from '../story-state/records.js';
+import { storyContextGroups, storyRecordText } from '../story-state/records.js';
 
 const normalize = value => String(value || '').trim().normalize('NFKC').toLocaleLowerCase();
 const cache = new WeakMap();
@@ -66,7 +67,7 @@ export function buildAuthorityContext(state, query = '', maxChars = 4000, player
     if (!state) return '';
     const { entities } = authorityIndex(state);
     const context = normalize(query);
-    const candidates = state.entities.filter(entity => Object.values(entity.fields).some(established));
+    const candidates = state.entities.filter(entity => entity.kind === 'person' || Object.values(entity.fields).some(established));
     const relevant = entity => [entity.name, ...entity.aliases].some(name => normalize(name) && context.includes(normalize(name)));
     const player = protagonistIdentity(state.entities, playerName);
     const geo = indexGeography(state.entities, state.modules?.map?.atlas || {});
@@ -95,15 +96,28 @@ export function buildAuthorityContext(state, query = '', maxChars = 4000, player
     const nowTime = options.nowTime || latestStoryTime(null, null, records);
     const hasSceneAnchor = Boolean(heroPlaceId) || records.some(r => r.kind === 'person');
 
+    const people = new Map(records.filter(r => r.kind === 'person').map(r => [nameKey(r.name),r]));
+    const nameOwners = new Map();
+    for (const entity of candidates) if (entity.kind === 'person') for (const name of [entity.name, ...entity.aliases].map(nameKey)) {
+        if (!nameOwners.has(name)) nameOwners.set(name, entity);
+        else if (nameOwners.get(name) !== entity) nameOwners.set(name, null);
+    }
+    const activeNames = new Set(), guardNames = new Set();
+    for (const [key, person] of people) if (person.presence === 'present' && !player.names.has(key)) guardNames.add(person.name);
     const classifyPerson = entity => {
         if (entity === player.hero) return { tier: 'hero', rank: 0 };
-        const storyPresence = characterStoryState(records, entity.name).presence;
+        const labels = [entity.name, ...entity.aliases].map(nameKey).filter(name => nameOwners.get(name) === entity);
+        const storyPresence = labels.map(name => people.get(name)?.presence).find(Boolean);
         const locId = established(entity.fields?.location) ? entity.fields.location.value?.entityId : '';
         const rel = sceneRelation(locId);
         const important = (established(entity.fields?.important) && Boolean(entity.fields.important.value))
             || importantSet.has('person/' + entity.id);
+        const present = storyPresence === 'present' || (!['away','nearby'].includes(storyPresence)
+            && (rel === 'same' || (established(entity.fields?.follow) && entity.fields.follow.value)));
+        if (present) for (const name of labels) activeNames.add(name);
+        if (present || important) guardNames.add(entity.name);
         if (important) return { tier: 'important', rank: 1 };
-        if (storyPresence === 'present' || rel === 'same' || (established(entity.fields?.follow) && entity.fields.follow.value)) {
+        if (present) {
             return { tier: 'present', rank: 2 };
         }
         if (storyPresence === 'nearby' || rel === 'near' || near.has('person/' + entity.id) || relevant(entity)) {
@@ -112,10 +126,12 @@ export function buildAuthorityContext(state, query = '', maxChars = 4000, player
         return { tier: 'absent', rank: 4 };
     };
 
+    const heldByHero = (field, record) => player.hero && Object.hasOwn(POSSESSION_ROLES, field)
+        && established(record) && record.value?.entityId === player.hero.id;
     const isItemReachable = entity => {
         if (entity.kind !== 'item') return true;
         const ownerId = established(entity.fields?.owner) ? entity.fields.owner.value?.entityId : '';
-        if (player.hero && ownerId === player.hero.id) return true;
+        if (Object.entries(entity.fields).some(([field, record]) => heldByHero(field, record))) return true;
         const locId = established(entity.fields?.location) ? entity.fields.location.value?.entityId : '';
         if (heroPlaceId && locId) {
             if (locId === heroPlaceId) return true;
@@ -152,7 +168,23 @@ export function buildAuthorityContext(state, query = '', maxChars = 4000, player
         return true;
     };
 
-    const activeKnowledgeNpcs = [];
+    const openingIds = new Set((state.modules?.story?.records || []).filter(item => item.source.module === 'world-opening').map(item => item.record.id));
+    const visible = records.filter(record => !openingIds.has(record.id) || near.has('situation/' + record.id) || context.includes(normalize(record.title)) || record.scope &&
+        (context.includes(normalize(record.scope)) || local(geo.resolve(record.scope))));
+    const focus = [...guardNames, ...records.flatMap(row => [row.name, row.person, ...(row.holders || [])])
+        .filter(name => name && context.includes(normalize(name)))];
+    const story = storyContextGroups(visible, focus, { protagonistNames: player.names, presentNames: activeNames });
+    const appendStory = text => appendLine(JSON.stringify({ story: text }));
+    const playerLabel = player.title || '主角';
+    const hasKnowledge = new Set(visible.filter(r => r.kind === 'knowledge').map(r => nameKey(r.person)));
+    const guards = [...guardNames].map(name => {
+        const prefix = hasKnowledge.has(nameKey(name)) ? '' : '暂无记录。';
+        return `[角色对${playerLabel}的了解] ${name}：${prefix}未列出的过往隐私与秘密默认不知情。`;
+    });
+    if (guards.join('').length > maxChars / 4) appendStory(`所有在场及重要角色对${playerLabel}未列出的过往隐私与秘密默认不知情。`);
+    else for (const guard of guards) appendStory(guard);
+    for (const line of story.priority) appendStory(line);
+    const details = [];
     for (const item of sorted) {
         const { entity, tier, hit, reachable } = item;
         if (entity.kind === 'item' && !reachable) {
@@ -162,17 +194,16 @@ export function buildAuthorityContext(state, query = '', maxChars = 4000, player
             const locId = established(entity.fields?.location) ? entity.fields.location.value?.entityId : '';
             const ownerId = established(entity.fields?.owner) ? entity.fields.owner.value?.entityId : '';
             const locName = locId ? (entities.get(locId)?.name || locId) : (ownerId ? (entities.get(ownerId)?.name || ownerId) : '他处');
-            appendLine(JSON.stringify({ id: entity.id, name: entity.name, field: '他处寄存', value: `${locName}(不在当前场景)` }));
+            details.push(JSON.stringify({ id: entity.id, name: entity.name, field: '他处寄存', value: `${locName}(不在当前场景)` }));
             continue;
         }
 
         const fieldEntries = Object.entries(entity.fields)
             .sort(([a], [b]) => fieldPriority(a) - fieldPriority(b));
 
-        let emittedForEntity = false;
         for (const [field, record] of fieldEntries) {
             if (!established(record) || isPrivateStoryField(field)) continue;
-            if (record.source?.module === 'world-opening' && !inFocus(entity)) continue;
+            if (record.source?.module === 'world-opening' && !inFocus(entity) && !heldByHero(field, record)) continue;
             if (entity.kind === 'person' && tier === 'nearby') {
                 const allowShortDesc = field === 'description' && hit && typeof record.value === 'string' && record.value.length <= 160;
                 if (!NEARBY_FIELDS.has(field) && !allowShortDesc) continue;
@@ -191,45 +222,15 @@ export function buildAuthorityContext(state, query = '', maxChars = 4000, player
             if (entity.kind === 'person' && tier !== 'hero' && hasSceneAnchor && !entry.scope) {
                 entry.scope = PERSON_TIER_LABELS[tier];
             }
-            if (appendLine(JSON.stringify(entry))) emittedForEntity = true;
-        }
-        if (emittedForEntity && entity.kind === 'person' && (tier === 'important' || tier === 'present')) {
-            activeKnowledgeNpcs.push(entity);
-        }
-    }
-
-    const activeNpcNames = activeKnowledgeNpcs.map(entity => entity.name);
-    for (const record of records) {
-        if (record.kind === 'person' && record.presence === 'present' && !activeNpcNames.some(name => nameKey(name) === nameKey(record.name))) {
-            activeNpcNames.push(record.name);
+            const line = JSON.stringify(entry);
+            if (heldByHero(field, record) || entity === player.hero && ['condition','status','身体状况','约束','行动限制'].includes(field)) appendLine(line);
+            else details.push(line);
         }
     }
-
-    const focus = [...new Set([
-        ...state.entities.map(entity => entity.name),
-        ...activeNpcNames,
-        ...records.flatMap(record => [record.name, record.person, ...(record.participants || []), ...(record.holders || [])]),
-    ].filter(name => (activeNpcNames.includes(name) || (normalize(name) && context.includes(normalize(name))))))];
-
-    const openingIds = new Set((state.modules?.story?.records || []).filter(item => item.source.module === 'world-opening').map(item => item.record.id));
-    const visible = records.filter(record => !openingIds.has(record.id) || near.has('situation/' + record.id) || context.includes(normalize(record.title)) || record.scope &&
-        (context.includes(normalize(record.scope)) || local(geo.resolve(record.scope))));
-    const scenery = visible.filter(record => openingIds.has(record.id) && record.flavor === 'scenery').map(storyRecordText);
-
-    const playerLabel = player.hero?.name || playerName || '主角';
-    for (const story of [...storyContextLines(visible, [...focus, ...player.names]), ...scenery]) {
-        appendLine(JSON.stringify({ story }));
-    }
-
-    // Explicit per-NPC "未记录=不知道" perspective guard for present/important NPCs.
-    if (activeNpcNames.length && lines.length) {
-        for (const npcName of activeNpcNames) {
-            const hasKnowledge = visible.some(record => record.kind === 'knowledge' && nameKey(record.person) === nameKey(npcName));
-            if (!hasKnowledge) {
-                appendLine(JSON.stringify({ story: `[角色对${playerLabel}的了解] ${npcName}：暂无记录（默认不知道主角未当面透露的姓名、身世与隐私）` }));
-            }
-        }
-    }
+    // Reserve whole ownership and constraint fields before general profiles and hooks.
+    for (const detail of details) appendLine(detail);
+    for (const line of story.other) appendStory(line);
+    for (const record of visible) if (openingIds.has(record.id) && record.flavor === 'scenery') appendStory(storyRecordText(record));
 
     return lines.length ? `${opening}\n${lines.join('\n')}` : '';
 }

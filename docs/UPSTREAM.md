@@ -4,9 +4,11 @@ Based on LittleWhiteBox by biex.
 
 - 上游：<https://github.com/RT15548/LittleWhiteBox>
 - 固定提交：`e30ebadf69cd53e9fafc5f81f74b9499911f78f5`
-- 上游版本：3.2.2；派生版：酒馆后厨 0.2.31。
+- 上游版本：3.2.2；派生版：酒馆后厨 0.2.32。
 - 修改日期：2026-11-14。
 - 原始快照保留在外层 `references`，不在原始快照上修改。
+
+0.2.32 接入手动编剧、会话内调用统计、主角优先状态与角色隐私边界、世界输入轻量裁剪，以及旧楼修订后的尾段重记与世界回执冲突核对。
 
 0.2.31 完成提示词完全后台化（下线前端提示词设置表单及 `story-summary` 提示词编辑页，相关协议收口为后端只读常量）、原版化工作台 UI 深化（淘汰 `.custom-select`／硬阴影／渐变条、弹窗与主题变量对齐并校准底部四分之一紧凑设置区）、压缩树 `plotLineSnapshots` 合流与 `ReviseRoundSummary` 引文核验、编剧实体中心化（`characters`/`plotLines`/`situations` 三段式分析与字段级依赖）以及剧情线增量汇总与按 `staleTargets` 局部增量重写（换章、切分支或超 `180000` 字符预算自动回退整章重算）。
 

@@ -2,7 +2,7 @@ import { reviewedRounds } from '../data/summary-layers.js';
 import { floorSource, prepareFloorPayload, validateFloorPayload } from './protocol.js';
 import { applyExactSummaryHistoryUndo, summaryBatchChanges, buildSummaryUndo } from '../data/summary-undo.js';
 import { createSummaryBatch } from '../data/summary-history.js';
-import { memoryItems, memoryKey, replaceMemoryRecords, sameMemory } from '../maintenance/domain.js';
+import { memoryItems, memoryKey, replaceMemoryRecords, sameMemory, setMemoryItems } from '../maintenance/domain.js';
 import { memoryPolicy, memoryDigest } from '../data/memory-policy.js';
 import { captureRangeSource } from '../data/turn-source.js';
 import { applyInlineAnchors, isInlineAnchorReceipt } from './anchors.js';
@@ -50,11 +50,31 @@ function replayLegacy(memory, batch) {
         if (Array.isArray(change.before) || Array.isArray(change.after)) {
             const current = memoryItems(memory, change.collection);
             if (!sameMemory(current, change.before)) conflict('后续旧版区间总结包含整表替换，无法安全重放；请先回退该区间。');
-            const rows = new Map(current.map(item => [memoryKey(change.collection, item), null]));
-            for (const item of change.after || []) rows.set(memoryKey(change.collection, item), item);
-            replaceMemoryRecords(memory, [...rows].map(([key, value]) => ({ collection: change.collection, key, value })));
-        } else forwardChanges(memory, [change]);
+            setMemoryItems(memory, change.collection, clone(change.after || []));
+        } else forwardChanges(memory, [{ ...change, key: memoryKey(change.collection, change.before ?? change.after) }]);
     }
+}
+
+/** Rebuild only the source-verified prefix when the discarded suffix has no usable inverse. */
+export function replaySummaryPrefix(history) {
+    const memory = { json: {}, atoms: [] }, kept = [];
+    for (const batch of history) {
+        const before = clone(memory.json);
+        try {
+            if (batch.kind === 'baseline') {
+                if (!object(batch.baseJson)) break;
+                memory.json = clone(batch.baseJson);
+            } else replayLegacy(memory, batch);
+            for (const receipt of batch.maintenance) for (const operation of receipt.operations) {
+                forwardChanges(memory, operation.changes.filter(change => change.collection !== 'anchors'));
+            }
+        } catch {
+            memory.json = before;
+            break;
+        }
+        kept.push(batch);
+    }
+    return { history: kept, json: kept.length ? memory.json : null };
 }
 
 export function findFloorBatch(store, floor) {
@@ -107,7 +127,7 @@ export function reviseFloorMemory(previous, chat, floor, edit, merge, filterRule
     if (!source) conflict('此楼不是有效的 AI 回复。');
     const next = clone(previous);
     const store = next.storySummary;
-    if (store.summaryInvalid || store.sourceInvalidFromFloor != null) conflict('原文变动尚未完成回退，请稍后重试。');
+    if (store.summaryInvalid || store.sourceInvalidFromFloor != null || store.sourceRollbackFromFloor != null) conflict('原文变动尚未完成回退，请稍后重试。');
     const history = store.summaryHistory ||= [];
     let index = history.findIndex(batch => batch.floorEntry?.floor === floor);
     const inserting = index < 0;

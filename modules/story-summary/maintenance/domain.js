@@ -39,7 +39,7 @@ export function memoryItems(memory, collection) {
     return memory.json[collection] || [];
 }
 
-function setItems(memory, collection, items) {
+export function setMemoryItems(memory, collection, items) {
     if (collection === 'anchors') memory.atoms = items;
     else if (collection === 'characters') {
         memory.json.characters = { ...memory.json.characters, main: items };
@@ -76,7 +76,7 @@ export function replaceMemoryRecords(memory, records) {
         if (value == null) { if (index >= 0) items.splice(index, 1); }
         else if (index >= 0) items[index] = structuredClone(value);
         else items.push(structuredClone(value));
-        setItems(memory, collection, items);
+        setMemoryItems(memory, collection, items);
     }
 }
 
@@ -184,7 +184,7 @@ function applyMemoryEdit(memory, command, cutoff) {
     requireMemory(['edit', 'delete', 'merge'].includes(kind), 'invalid_operation');
     if (kind === 'delete') {
         items.splice(index, 1);
-        setItems(draft, collection, items);
+        setMemoryItems(draft, collection, items);
     } else {
         requireMemory(patch && typeof patch === 'object' && !Array.isArray(patch)
             && Object.keys(patch).every(field => fields[collection].includes(field)), 'invalid_operation');
@@ -232,7 +232,7 @@ function applyMemoryEdit(memory, command, cutoff) {
         }
         validateRecord(collection, value, cutoff);
         items[index] = value;
-        setItems(draft, collection, items);
+        setMemoryItems(draft, collection, items);
         if (kind === 'merge') {
             draft.json.events = items.filter(item => !removedKeys.has(item.id)).map(event => {
                 const causedBy = [...new Set((event.causedBy || []).map(id => removedKeys.has(id) ? key : id))].filter(id => id !== event.id);
@@ -319,7 +319,7 @@ export function maintenanceImpact(operations) {
     };
 }
 
-export function restoreMaintenance(memory, receipts) {
+export function restoreMaintenance(memory, receipts, { discardChanged = false } = {}) {
     const draft = structuredClone(memory);
     for (const receipt of [...receipts].reverse()) {
         for (const operation of [...receipt.operations].reverse()) {
@@ -327,7 +327,7 @@ export function restoreMaintenance(memory, receipts) {
             for (const change of activeMaintenanceChanges([operation])) {
                 const items = memoryItems(draft, change.collection);
                 const found = items.find(item => memoryKey(change.collection, item) === change.key) ?? null;
-                requireMemory(sameMemory(found, change.after), 'conflict');
+                if (!discardChanged) requireMemory(sameMemory(found, change.after), 'conflict');
                 if (!groups.has(change.collection)) groups.set(change.collection, []);
                 groups.get(change.collection).push(change);
             }
@@ -337,7 +337,7 @@ export function restoreMaintenance(memory, receipts) {
                 for (const change of changes.filter(change => change.before !== null).sort((a, b) => a.index - b.index)) {
                     restored.splice(change.index, 0, structuredClone(change.before));
                 }
-                setItems(draft, collection, restored);
+                setMemoryItems(draft, collection, restored);
             }
         }
     }

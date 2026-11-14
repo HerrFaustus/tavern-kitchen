@@ -35,6 +35,8 @@
 .text-api .text-api-tools details { margin: 0; }
 .text-api .text-api-tools summary { padding: 4px 0; }
 .text-api .text-api-status:empty { display: none; }
+.text-api .text-api-call-stats { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 8px; margin-block: 6px; font-size: .85em; }
+.text-api .text-api-call-stats button { padding: 3px 6px; }
 .text-api .text-api-tools details[open] { flex-basis: 100%; }
 
 .text-api .text-api-configuration { padding-block: 10px; }

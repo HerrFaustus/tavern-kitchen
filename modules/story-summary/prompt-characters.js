@@ -13,7 +13,7 @@ const at = (item, through) => item?._addedAt === undefined
  * even a cutoff after lastSummarizedMesId may precede a manual character edit.
  */
 export function projectStoryCharacters(store, { throughMessageIndex, currentMessageIndex, name = '', maxCharacters = 8000, maxPeople = 200 } = {}) {
-    if (!store?.json || store.summaryInvalid || !Number.isSafeInteger(throughMessageIndex)
+    if (!store?.json || store.summaryInvalid || store.sourceRollbackFromFloor != null || store.sourceInvalidFromFloor != null || !Number.isSafeInteger(throughMessageIndex)
         || throughMessageIndex !== currentMessageIndex
         || throughMessageIndex < 0 || !Number.isSafeInteger(store.lastSummarizedMesId)
         || store.lastSummarizedMesId > throughMessageIndex) return [];

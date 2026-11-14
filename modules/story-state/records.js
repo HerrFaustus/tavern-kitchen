@@ -117,7 +117,7 @@ export function mergeStoryRecords(previous = [], updates = [], floor, start = fl
     return [...records.values()];
 }
 export function availableStoryRecords(store, invalidFrom) {
-    if (!store || store.summaryInvalid || invalidFrom != null || store.sourceInvalidFromFloor != null) return [];
+    if (!store || store.summaryInvalid || invalidFrom != null || store.sourceInvalidFromFloor != null || store.sourceRollbackFromFloor != null) return [];
     return (store.json?.storyRecords || []).filter(record => record.kind !== 'scene' && (record._addedAt == null || record._addedAt <= store.lastSummarizedMesId));
 }
 export function characterStoryState(records = [], name, resolveName = value => value) {
@@ -137,18 +137,32 @@ export function storyRecordText(record) {
     return [`${record.title} · ${THREAD_STATUS[record.status]}${record.description ? `：${record.description}` : ''}`,record.holders?.length && '持有人：' + record.holders.join('、'),
         record.conditions && '条件约束：' + record.conditions, record.statusNote && '当前进展：' + record.statusNote, record.due && '期限：' + record.due, record.reason && '原因：' + record.reason].filter(Boolean).join('；');
 }
-export function storyContextLines(records = [], focus = []) {
-    const names = new Set(focus);
-    for (const record of records) if (record.kind === 'person' && characterStoryState(records, record.name).presence === 'present') names.add(record.name);
-    const holderNames = new Set([...names].map(nameKey));
-    const selected = records.filter(record => record.kind === 'clock'
-        || (['suspense', 'situation'].includes(record.kind) && record.flavor !== 'scenery')
-        || isPersonalAgenda(record) && (!record.holders?.length || record.holders.some(holder => holderNames.has(nameKey(holder))))
-        || record.kind === 'person' && (names.has(record.name) || record.presence === 'nearby')
-        || record.kind === 'knowledge' && names.has(record.person));
-    // Recent closure remains visible to prevent a resolved hook being resurrected.
-    selected.sort((a, b) => (Number(b.kind === 'clock') - Number(a.kind === 'clock')) || (b._addedAt || 0) - (a._addedAt || 0));
-    return selected.map(record => `[${STORY_KINDS[record.kind]}] ${storyRecordText(record.kind === 'person' ? { ...record, presence: characterStoryState(records, record.name).presence } : record)}`);
+export function storyContextGroups(records = [], focus = [], { protagonistNames = [], presentNames = [] } = {}) {
+    const hero = new Set([...protagonistNames].map(nameKey).filter(Boolean));
+    const present = new Set([...presentNames].map(nameKey));
+    const people = new Map(records.filter(row => row.kind === 'person').map(row => [nameKey(row.name), row]));
+    for (const [name, person] of people) {
+        if (person.presence === 'present') present.add(name);
+        else if (person.presence === 'away' || person.presence === 'nearby') present.delete(name);
+    }
+    const names = new Set([...focus.map(nameKey), ...present, ...hero]);
+    const priority = [], other = [];
+    const newest = (a, b) => (b._addedAt || 0) - (a._addedAt || 0);
+    const knownNames = new Set([...focus, ...protagonistNames, ...Array.from(people.values(), p => p.name)]);
+    for (const record of projectPersonalAgendas(records, knownNames)) {
+        if (record.kind === 'clock' || isPersonalAgenda(record) && record.status === 'open' && record.holders?.some(h => hero.has(nameKey(h)))) priority.push(record);
+        else if (['suspense', 'situation'].includes(record.kind) && record.flavor !== 'scenery'
+            || isPersonalAgenda(record) && (!record.holders?.length || record.holders.some(h => names.has(nameKey(h))))
+            || record.kind === 'person' && people.get(nameKey(record.name)) === record && (names.has(nameKey(record.name)) || record.presence === 'nearby')
+            || record.kind === 'knowledge' && (hero.has(nameKey(record.person)) || present.has(nameKey(record.person)))) other.push(record);
+    }
+    const line = record => `[${STORY_KINDS[record.kind]}] ${storyRecordText(record)}`;
+    priority.sort((a, b) => Number(b.kind === 'clock') - Number(a.kind === 'clock') || newest(a, b));
+    return { priority: priority.map(line), other: other.sort(newest).map(line) };
+}
+export function storyContextLines(records, focus, options) {
+    const { priority, other } = storyContextGroups(records, focus, options);
+    return [...priority, ...other];
 }
 export const CHARACTER_RECORD_RULES = `人物按后续剧情需要建档。先问：下次认错此人、忘记他做过什么或忘记东西在他手上，会不会造成剧情错误？
 一次性叫卖、路过、围观或无后续的一句应答，有叙事价值时只写进本轮总结。同场、同区域、有名字或被召回本身都不是建档理由。勿为此单发 newCharacters、人物实体、人物状态、事实或牵涉提案。

@@ -82,6 +82,8 @@ export function applyImportedSummaryBoundary(store, boundary) {
         delete store.json.importedRounds;
     }
     migrateRoundSummaries(store);
+    // One checkpoint for the opaque import. Later batches already carry their own deltas.
+    store.summaryHistory[0].baseJson = structuredClone(store.json);
     store.updatedAt = Date.now();
     return true;
 }

@@ -5,7 +5,10 @@ import { getTextApiRepository } from './repository.js';
 import { listTextModels, testTextConnection } from './runtime.js';
 import { importCurrentTavernApi } from './tavern-import.js';
 import { createIdentifier } from '../../shared/common/identifier.js';
+import { featureCalls } from './call-stats.js';
 export async function handleProfileRequest(data, signal) {
+    if (data.action === 'clear-call-stats') featureCalls.clear();
+    if (data.action === 'call-stats' || data.action === 'clear-call-stats') return featureCalls.snapshot();
     const repository = await getTextApiRepository();
     if (data.action === 'load') return repository.load();
     if (data.action === 'mutate') return repository.mutate(data.feature || 'library', data.mutation);

@@ -36,9 +36,12 @@ try {
     await page.evaluate(async presets => {
         const { mountTextApiSettings } = await import('/settings.js');
         const config = { presets, bindings: { summary: 'text', embedding: 'embedding' } };
+        let stats = { features: { summary: { calls: 3, failures: 1, totalMs: 2400 } }, recent: [] };
         const editor = mountTextApiSettings(globalThis.document.querySelector('#api'), {
             feature: 'library', namespace: '', library: true,
             async transport(action, payload) {
+                if (action === 'clear-call-stats') stats = { features: {}, recent: [] };
+                if (action === 'call-stats' || action === 'clear-call-stats') return structuredClone(stats);
                 if (action === 'mutate') {
                     globalThis.saved = payload.mutation;
                     const index = config.presets.findIndex(p => p.id === payload.mutation.id);
@@ -52,6 +55,12 @@ try {
     const selector = page.getByLabel('选择连接');
     const settings = page.locator('.text-api-configuration');
     await selector.waitFor();
+    await page.locator('.text-api-call-stats output').filter({ hasText: '本次调用 3 次 · 失败 1 · 累计 2.4 秒' }).waitFor();
+    await page.evaluate(() => Object.defineProperty(globalThis.navigator, 'clipboard', { value: { writeText: async text => { globalThis.copiedStats = JSON.parse(text); } } }));
+    await page.getByRole('button', { name: '复制统计' }).click();
+    await page.waitForFunction(() => globalThis.copiedStats?.features.summary.calls === 3);
+    await page.getByRole('button', { name: '清空统计' }).click();
+    await page.locator('.text-api-call-stats output').filter({ hasText: '本次调用 0 次' }).waitFor();
     assert.ok((await selector.boundingBox()).height <= 50);
     assert.equal(await selector.evaluate(el => !!el.closest('.tk-module-settings')), false);
     assert.equal(await settings.evaluate(el => el.tagName), 'DIV');
