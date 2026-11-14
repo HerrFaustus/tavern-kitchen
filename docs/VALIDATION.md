@@ -1,5 +1,13 @@
 # 验证记录
 
+## 0.2.31 发布验证
+
+发布构建标识 `3412baa4ffa67a32addd`（`entries: 9`、`modules: 729`、`chunks: 53`，Vite 转换 `741` 个模块）。完整 `node scripts/check.mjs`、`node scripts/check-versions.mjs` 与 `python3 scripts/package.py` 已通过：质量检查与零告警 ESLint、版本一致性（`0.2.31` 及 `release/release-info.json` / ZIP SHA-256 核对）、TypeScript 项目边界校验、可重复构建、1666 项单元测试及记忆运行时检查（`[story-summary-runtime] result=PASS`），涵盖：
+- 提示词彻底后台化与原生 UI 深化（下线前端提示词设置表单及 `story-summary` 提示词编辑页，协议收口为后端只读常量，清除 `.custom-select`/硬阴影/渐变条并将工作台设置区校准为紧凑四分之一高度）；
+- 压缩节点 `plotLineSnapshots` 接入正文背景与增量汇总（`plotBackgroundItems`/`buildRawPrompt` 与 `collectPlotLines` 增量消费，分支滑页与修订自动降级）；
+- 编剧 `staleTargets` 局部增量重写（保留未改动实体与前提，校验宏与 `管理员私有/` 防泄露，换章、切分支或超 `180000` 字符预算自动回退整章重算）。
+离线阶段使用独立无头 Chromium（Brave Browser）跑通全部 9 项浏览器回归脚本（`check-planner-ui.mjs`、`check-planner-workspace.mjs`、`check-summary-workspace.mjs`、`check-summary-footer.mjs`、`check-workspace-layout.mjs`、`check-api-layout.mjs`、`check-api-workspace.mjs`、`check-place-map.mjs`、`check-proposal-workspace.mjs`）；本次校验未连接真实 SillyTavern/TauriTavern 桌面宿主界面或付费外部模型接口（宿主与模型边界采用本地桩件与确定性测试验证）。
+
 ## 0.2.30 发布验证
 
 发布构建标识 `e9e795f48aa39ec36052`（`entries: 9`、`modules: 731`、`chunks: 61`）。完整 `node scripts/check.mjs` 已通过：质量检查与零告警 ESLint、TypeScript 项目边界校验、可重复构建、1662 项单元测试及记忆运行时检查（`[story-summary-runtime] result=PASS`），涵盖 P0 macOS 构建与测试修复、P2 柏宝书长程记忆（相对故事时间、可逆递归分层压缩树与新近优先预算、四层临场感状态裁剪与动态 `D1`/`D2` 双轴注入、世界状态压缩上下文与摘要分批）以及 P3 世界状态人工干预抽屉与文档精简。本次校验未连接真实 SillyTavern/TauriTavern 桌面宿主界面或付费外部模型接口（宿主与模型边界采用本地桩件与确定性测试验证）。

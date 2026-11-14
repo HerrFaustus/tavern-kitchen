@@ -24,10 +24,10 @@
    - **工作台内嵌弹层收口**：对齐 `story-summary.html`、`story-summary-ui.js`、`archive.css` 与 `core/kitchen-embedded.css` 内部弹层（`role="dialog"`、`aria-modal="true"`、Escape 退格与焦点恢复、主题变量修正）及嵌入筛选条样式，并完成本地无头 Chromium 五项布局/工作台脚本回归。
 
 2. **已确认后续四阶段更新路线**：
-   - **阶段一（提示词彻底后台化 + 原版 UI 深化已完成离线/无头回归，待真机联调与 `0.2.31` 发版）**：
+   - **阶段一（提示词彻底后台化 + 原版 UI 深化与 `0.2.31` 本地预打包已完成，待真机联调验收）**：
      - **提示词配置取消、完全后台化（已完成）**：已下线 `core/panel-policy.js`（`definePanelPrompt`）、`core/panel-controls.js`、`core/kitchen-workspace.js` 中的“提示词设置”界面分组与覆盖存储，移除死文件 `core/panel-prompt-catalog.js` / `core/tool-descriptions.js`，各模块（`story-planner`、`story-summary`、`xiaobai-os`）内部提示词全部收口为后端只读常量；已移除 `story-summary.html` / `story-summary-ui.js` / `story-summary.js` 的 `#tab-summary-prompts` 与 `#tab-prompts` 编辑面板及 `core/kitchen-embedded.css` 中提示词展开高度特例，并已同步更新相关布局脚本与单元测试。
      - **UI 布局与控件风格进一步原版化（已完成）**：已淘汰 `story-summary.css` / `story-summary.js` 残留 `.custom-select`、硬阴影与渐变进度条；已统一 `maintenance/chat-ui.css` / `maintenance/ui.css` 弹层背景与边框为宿主主题变量；已重校准各工作台帧双区占比为紧凑底部四分之一，并同步修正抽屉与历史恢复输入框对齐。
-     - **真实宿主验收与 `0.2.31` 打包（待执行）**：待在真实 SillyTavern / TauriTavern 多主题与在线模型环境联调确认后，按 [RELEASING.md](RELEASING.md) 升级版本号与 `release/` 产物。
+     - **真实宿主验收与 `0.2.31` 打包（已生成本地 `0.2.31` 校验归档，待真机实测）**：已完成离线全量校验与本地 `release/tavern-kitchen-0.2.31.zip` 打包核对，待真实 SillyTavern / TauriTavern 多主题与在线模型实机联调后推送远端与打标。
    - **阶段二（中期功能闭环 — 已实现并完成离线/无头回归）**：已将压缩节点 `plotLineSnapshots` 接入 `plot-background.js` / `prompt.js` 正文背景与 `collectPlotLines` 增量汇总；已将 `staleTargets` 接入编剧 `runtime.prepare()` / `prepareWriterRequest()` / `publishNotes()`，实现单实体变化局部增量重写并在换章、切分支、全局失效或超 `180000` 字符预算时整章重算。
    - **阶段三（架构主线 P2 / P3 / P4）**：突破 `update-context.js` `200_000` 字符单包限制实现全视分区分页读取（`N13`）；完善 `prompt.js` 与 `notes.js` 对人物 `knowledge`（已证实/传闻/误信/未获知）的严格知情裁剪（`N01`、`N02`、`N06`）；实现历史修改/撤回/分支后的自动局部子树与向量索引修复（`N10–N12`）。
    - **阶段四（P5 长程基准与成本可观测性）**：固化 `N01–N15` 连续长故事自动化验收（赊剑分期还款修订、封桥与药车编剧偏离），建立独立整理/压缩/编剧/检索/推演分项成本与触发统计。
