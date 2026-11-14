@@ -127,7 +127,7 @@
 .tk-embedded .archive-content { padding-top: 6px; }
 .tk-embedded .archive-roster { margin: 6px 0 12px; }
 /* Match the host's menu_button, text_pole and inline-drawer header controls. */
-.tk-embedded.tk-follow-host :is(button, .sel-trigger):not([role="switch"]) {
+.tk-embedded.tk-follow-host button:not([role="switch"]) {
     background-color: var(--tk-button-background-color, var(--bg)) !important;
     background-image: var(--tk-button-background-image, none) !important;
     color: var(--tk-button-color, var(--txt)) !important;
@@ -143,7 +143,7 @@
     box-shadow: none !important;
     filter: var(--tk-button-filter, none) !important;
 }
-.tk-embedded.tk-follow-host :is(button, .sel-trigger):not([role="switch"]):not(:disabled):not([aria-disabled="true"]):is(:hover, .active, .is-active, [aria-pressed="true"], [aria-selected="true"], [aria-current="page"]) {
+.tk-embedded.tk-follow-host button:not([role="switch"]):not(:disabled):not([aria-disabled="true"]):is(:hover, .active, .is-active, [aria-pressed="true"], [aria-selected="true"], [aria-current="page"]) {
     background-color: var(--tk-selected-background-color, var(--bg3)) !important;
     background-image: var(--tk-selected-background-image, none) !important;
     color: var(--tk-selected-color, var(--txt)) !important;
@@ -236,7 +236,7 @@
 }
 .tk-embedded :is(.btn, .archive-icon, .xb-assistant-icon-button):hover { transform: none !important; }
 /* Instant visibility changes stay instant rather than animating only on entry. */
-.tk-embedded :is(.view.active, .tab-pane.active, .map-place-detail, .custom-select.open .sel-opts) { animation: none !important; }
+.tk-embedded :is(.view.active, .tab-pane.active, .map-place-detail) { animation: none !important; }
 .tk-embedded #xb-frame-boot { transition: none; }
 @media (prefers-reduced-motion: reduce) {
     :root.tk-embedded *, :root.tk-embedded *::before, :root.tk-embedded *::after { transition-duration: 0s !important; animation-duration: 0s !important; }
@@ -271,7 +271,7 @@
 /* A module only shows settings categories with controls. */
 #tk-module-native-controls > [data-settings-group]:not(:has(> :not(h5):not(summary):not([hidden]):not(.tk-feature-switches), > .tk-feature-switches:not([hidden]) > :not([hidden]))) { display: none; }
 
-/* The native controls can live in the story, proofreading or map frame. */
-.tk-embedded :is(body, #tab-agent, .place-index):has(> [data-kitchen-controls] > #tk-module-native-controls > [data-settings-group="prompts"][open]) {
-    grid-template-rows: minmax(0, 1fr) minmax(0, 4fr);
+/* Compact dual-pane split across embedded frames now that prompt configuration is backend-only. */
+.tk-embedded :is(body:has(> [data-kitchen-controls]:not([hidden])), #tab-agent.active, .place-index) {
+    grid-template-rows: minmax(0, 3fr) minmax(0, 1fr);
 }

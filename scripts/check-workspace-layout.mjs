@@ -43,25 +43,25 @@ try {
                 if (mount.querySelector('iframe')) return;
                 const frame = globalThis.document.createElement('iframe');
                 frame.onload = () => workspace.attachFrame(frame);
-                frame.srcdoc = '<html class="tk-embedded"><head><link rel="stylesheet" href="/embedded.css"><style>html,body{height:100%;margin:0}body{display:grid;grid-template-rows:minmax(0,2fr) minmax(0,1fr);color:#ddd;background:#202024}main,footer{overflow:auto;min-height:0}footer{border-top:1px solid #555;box-sizing:border-box}</style></head><body><main>' +
-                    '<p>地图记录</p>'.repeat(60) + '</main><footer data-kitchen-controls="map"><section data-setting-section="function"><label>随剧情更新<input type="checkbox" checked></label></section><section data-setting-section="prompts"><textarea id="local-prompt">本地提示词</textarea></section></footer></body></html>';
+                frame.srcdoc = '<html class="tk-embedded"><head><link rel="stylesheet" href="/embedded.css"><style>html,body{height:100%;margin:0}body{display:grid;grid-template-rows:minmax(0,3fr) minmax(0,1fr);color:#ddd;background:#202024}main,footer{overflow:auto;min-height:0}footer{border-top:1px solid #555;box-sizing:border-box}</style></head><body><main>' +
+                    '<p>地图记录</p>'.repeat(60) + '</main><footer data-kitchen-controls="map"><section data-setting-section="function"><label>随剧情更新<input type="checkbox" checked></label></section></footer></body></html>';
                 mount.append(frame);
             } },
             panelSwitch: () => ({ enabled, label: '启用地图', change(value) { enabled = value; configure(); } }),
             configurePanel(id, bar) {
                 const fields = globalThis.document.createElement('div');
                 fields.className = 'tk-panel-controls';
-                for (let i = 0; i < 20; i++) {
-                    const input = globalThis.document.createElement('textarea'); input.value = '测试设置';
-                    fields.append(input);
+                for (let i = 0; i < 6; i++) {
+                    const select = globalThis.document.createElement('select');
+                    fields.append(select);
                 }
                 bar.hidden = false; workspace.getSettingSections().model.append(fields);
                 if (id === 'suspense') {
                     const emptyFooter = globalThis.document.createElement('footer'); emptyFooter.hidden = true; bar.append(emptyFooter);
                 }
                 if (id === 'planner') {
-                    const prompt = globalThis.document.createElement('textarea'); prompt.id = 'native-prompt';
-                    workspace.getSettingSections().prompts.append(prompt);
+                    const toggle = globalThis.document.createElement('input'); toggle.type = 'checkbox'; toggle.id = 'native-planner-flag';
+                    workspace.getSettingSections().function.append(toggle);
                 }
             },
         });
@@ -71,24 +71,17 @@ try {
     const frame = page.frameLocator('iframe');
     await frame.locator('#tk-module-native-controls').waitFor();
     const groups = frame.locator('#tk-module-native-controls > [data-settings-group]');
-    assert.deepEqual(await groups.locator(':scope > :is(h5, summary)').allTextContents(), ['模块开关','模型设置','功能设置','提示词设置']);
-    assert.deepEqual(await groups.evaluateAll(nodes => nodes.map(node => node.tagName)), ['SECTION','SECTION','SECTION','DETAILS']);
+    assert.deepEqual(await groups.locator(':scope > :is(h5, summary)').allTextContents(), ['模块开关','模型设置','功能设置']);
+    assert.deepEqual(await groups.evaluateAll(nodes => nodes.map(node => node.tagName)), ['SECTION','SECTION','SECTION']);
     assert.equal(await frame.locator('#tk-module-native-controls > h4').innerText(), '地图设置');
     assert.equal(await frame.locator('#tk-module-native-controls').getAttribute('aria-label'), '地图设置');
-    assert.equal(await groups.last().evaluate(el => el.open), false);
+    assert.equal(await frame.locator('[data-settings-group="prompts"], [data-setting-section="prompts"], #tab-summary-prompts, #tab-prompts').count(), 0);
     assert.equal(await frame.locator('[data-settings-group="function"] [data-setting-section="function"]').count(), 1);
-    assert.equal(await frame.locator('[data-settings-group="prompts"] #local-prompt').count(), 1);
     for (const width of [319, 1280]) {
         await page.setViewportSize({ width, height: 780 });
         const ratio = await frame.locator('footer').evaluate(el => el.getBoundingClientRect().height / globalThis.innerHeight);
-        assert.ok(Math.abs(ratio - 1 / 3) < .015);
-        assert.ok(await frame.locator('footer').evaluate(el => el.getBoundingClientRect().top >= globalThis.innerHeight * .65));
-        await frame.locator('[data-settings-group="prompts"] > summary').click();
-        const expanded = await frame.locator('footer').evaluate(el => el.getBoundingClientRect().height / globalThis.innerHeight);
-        assert.ok(Math.abs(expanded - .8) < .015, `embedded prompt settings should expand upward: ${expanded}`);
-        await frame.locator('#local-prompt').fill('保留修改后的本地提示词');
-        await frame.locator('[data-settings-group="prompts"] > summary').click();
-        assert.ok(Math.abs(await frame.locator('footer').evaluate(el => el.getBoundingClientRect().height / globalThis.innerHeight) - 1 / 3) < .015);
+        assert.ok(Math.abs(ratio - 1 / 4) < .015, `expected 1/4 footer ratio, got ${ratio}`);
+        assert.ok(await frame.locator('footer').evaluate(el => el.getBoundingClientRect().top >= globalThis.innerHeight * .74));
         assert.equal(await frame.locator('[data-panel="map"]').count(), 1);
         assert.equal(await frame.locator('[data-settings-group="model"] details').count(), 0);
         assert.equal(await page.locator('.tk-workspace-controls').count(), 0);
@@ -101,8 +94,7 @@ try {
     await outside.click({ noWaitAfter: true });
     await frame.locator('#tk-module-native-controls').waitFor();
     assert.ok(await frame.getByRole('checkbox', { name: '启用地图' }).isChecked());
-    assert.equal(await frame.locator('#local-prompt').inputValue(), '保留修改后的本地提示词');
-    assert.equal(await frame.locator('[data-settings-group="prompts"]').evaluate(el => el.open), false);
+    assert.equal(await frame.locator('[data-settings-group="prompts"]').count(), 0);
 
     for (const width of [319,1280]) {
         await page.setViewportSize({width,height:780});
@@ -112,18 +104,18 @@ try {
         assert.ok(await native.locator('[data-settings-group=master]').isVisible());
         assert.ok(await native.locator('[data-settings-group=model]').isVisible());
         assert.ok(await native.locator('[data-settings-group=function]').isHidden());
-        assert.ok(await native.locator('[data-settings-group=prompts]').isHidden());
+        assert.equal(await native.locator('[data-settings-group=prompts]').count(), 0);
         assert.equal(await native.locator(':scope > h4').innerText(), '悬念设置');
         const box = await native.evaluate(el => ({top:el.getBoundingClientRect().top,body:el.previousElementSibling.getBoundingClientRect().bottom,height:el.getBoundingClientRect().height,page:el.parentElement.getBoundingClientRect().height,header:el.parentElement.firstElementChild.getBoundingClientRect().height}));
         assert.ok(box.top >= box.body - 1,'settings must follow content');
-        assert.ok(Math.abs(box.height / (box.page-box.header) - 1/3) < .02);
+        assert.ok(Math.abs(box.height / (box.page-box.header) - 1/4) < .02, `expected 1/4 native ratio, got ${box.height / (box.page - box.header)}`);
         await page.evaluate(() => globalThis.workspace.open('settings'));
         await page.waitForFunction(() => globalThis.document.querySelector('.tk-panel-page').classList.contains('tk-page-full'));
         assert.ok(await native.isHidden());
     }
     await page.evaluate(() => globalThis.workspace.open('planner'));
     const native = page.locator('#tk-module-native-controls');
-    await native.locator('#native-prompt').waitFor({state:'attached'});
+    await native.locator('#native-planner-flag').waitFor({state:'attached'});
     assert.equal(await native.locator(':scope > h4').innerText(), '编剧设置');
     for (const width of [319, 1280]) {
         await page.setViewportSize({width,height:780});
@@ -131,12 +123,8 @@ try {
             const page = el.parentElement.getBoundingClientRect();
             return el.getBoundingClientRect().height / (page.height - el.parentElement.firstElementChild.getBoundingClientRect().height);
         });
-        assert.ok(Math.abs(await ratio() - 1 / 3) < .02);
-        await native.locator('[data-settings-group="prompts"] > summary').click();
-        assert.ok(Math.abs(await ratio() - .8) < .02);
-        await native.locator('#native-prompt').fill('编剧提示词');
-        await native.locator('[data-settings-group="prompts"] > summary').click();
-        assert.equal(await native.locator('#native-prompt').inputValue(), '编剧提示词');
+        assert.ok(Math.abs(await ratio() - 1 / 4) < .02);
+        assert.equal(await native.locator('[data-settings-group="prompts"]').count(), 0);
     }
     for (const [route, label] of [['overview','主角'], ['people','人物'], ['situation','局势'], ['opening','世界生成'], ['clues','剧情线']]) {
         await page.evaluate(route => globalThis.workspace.open(route), route);

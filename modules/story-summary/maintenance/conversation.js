@@ -1,6 +1,6 @@
 import { estimateConversationTokens } from '../../agent-core/runtime/context-tokens.js';
 import { dropInvalidatedThinkingFromMessage } from '../../agent-core/runtime/protocol.js';
-import { getMemoryChatPrompt, readMEMORY_REGENERATION_PROMPT } from './prompt.js';
+import { getMemoryChatPrompt, MEMORY_REGENERATION_PROMPT } from './prompt.js';
 import { MEMORY_TOOLS, READ_MAINTENANCE_TOOL } from './tools.js';
 import { REVIEW_LIMITS } from './limits.js';
 
@@ -10,7 +10,7 @@ export function memoryChatMaterial(task, callsRemaining) {
 
 export function memoryRegenerationNote({ runId, receipts = [], saved = 0, status } = {}) {
     return { role: 'system', memoryRegeneration: true,
-        content: `${readMEMORY_REGENERATION_PROMPT()}\n${JSON.stringify({ previousAttempt: { runId, receipts, saved, status } })}` };
+        content: `${MEMORY_REGENERATION_PROMPT}\n${JSON.stringify({ previousAttempt: { runId, receipts, saved, status } })}` };
 }
 
 function memoryChatHistory(history) {
@@ -26,8 +26,8 @@ export function buildMemoryChatMessages(question, history = []) {
 }
 
 /** Local preview only. Send-time measurement remains the execution authority. */
-export function estimateMemoryChatContext({ question = '', history = [], task = null, config = {}, summaryStyle, proofreadingPrompt } = {}) {
-    const prompt = getMemoryChatPrompt(summaryStyle, proofreadingPrompt);
+export function estimateMemoryChatContext({ question = '', history = [], task = null, config = {}, summaryStyle } = {}) {
+    const prompt = getMemoryChatPrompt(summaryStyle);
     const messages = [...memoryChatHistory(history), { role: 'user', content: question }];
     const tools = [...(task ? MEMORY_TOOLS : []), READ_MAINTENANCE_TOOL];
     const material = memoryChatMaterial(task, REVIEW_LIMITS.turns);
@@ -45,13 +45,13 @@ export function estimateMemoryChatContext({ question = '', history = [], task = 
  * the complete provider request before sending it. No history payload is retained.
  */
 export function createMemoryChatContextEstimator() {
-    let previousHistory, previousTask, previousConfig, previousStyle, previousPrompt, base;
-    return ({ question = '', history = [], task = null, config = {}, summaryStyle, proofreadingPrompt } = {}) => {
+    let previousHistory, previousTask, previousConfig, previousStyle, base;
+    return ({ question = '', history = [], task = null, config = {}, summaryStyle } = {}) => {
         const taskKey = JSON.stringify(task), configKey = JSON.stringify(config);
-        if (!base || previousHistory !== history || previousTask !== taskKey || previousConfig !== configKey || previousStyle !== summaryStyle || previousPrompt !== proofreadingPrompt) {
-            base = estimateMemoryChatContext({ history, task, config, summaryStyle, proofreadingPrompt });
+        if (!base || previousHistory !== history || previousTask !== taskKey || previousConfig !== configKey || previousStyle !== summaryStyle) {
+            base = estimateMemoryChatContext({ history, task, config, summaryStyle });
             previousHistory = history; previousTask = taskKey; previousConfig = configKey;
-            previousStyle = summaryStyle; previousPrompt = proofreadingPrompt;
+            previousStyle = summaryStyle;
         }
         const questionTokens = question ? Math.max(0, estimateConversationTokens({ messages: [{ role: 'user', content: question }] })
             - estimateConversationTokens()) : 0;

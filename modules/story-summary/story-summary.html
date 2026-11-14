@@ -386,39 +386,7 @@
                     </div>
                 <section class="settings-section"><h3 class="settings-section-title">召回记录</h3><pre id="recall-log-content" class="debug-log-viewer"></pre></section></section>
 
-                <details class="summary-local-group" data-setting-section="prompts" id="tab-summary-prompts"><summary>分层总结提示词</summary><details class="settings-section workspace-disclosure"><summary>本轮总结提示词</summary>
-                    <p class="settings-hint">每次独立更新时使用，记录本次正文的变化。</p>
-                    <textarea class="editor-ta" aria-label="本轮总结提示词" id="prompt-round" rows="10" maxlength="12000"></textarea>
-                    <button type="button" class="btn btn-sm" data-save-layer="round">保存</button> <button type="button" class="btn btn-sm" id="reset-round">恢复默认并保存</button> <small role="status" id="status-round"></small>
-                </details>
-                <details class="settings-section workspace-disclosure"><summary>篇目总结提示词</summary>
-                    <p class="settings-hint">校对者确认局部目标已收束后，按实际起止范围调用此提示词。</p>
-                    <textarea class="editor-ta" aria-label="篇目总结提示词" id="prompt-stage" rows="10" maxlength="12000"></textarea>
-                    <button type="button" class="btn btn-sm" data-save-layer="stage">保存</button> <button type="button" class="btn btn-sm" id="reset-stage">恢复默认并保存</button> <small role="status" id="status-stage"></small>
-                </details>
-                <details class="settings-section workspace-disclosure"><summary>章节总结提示词</summary>
-                    <p class="settings-hint">校对者确认多个篇目的主线已收束后，按实际范围调用此提示词。</p>
-                    <textarea class="editor-ta" aria-label="章节总结提示词" id="prompt-chapter" rows="10" maxlength="12000"></textarea>
-                    <button type="button" class="btn btn-sm" data-save-layer="chapter">保存</button> <button type="button" class="btn btn-sm" id="reset-chapter">恢复默认并保存</button> <small role="status" id="status-chapter"></small>
-                </details></details>
                 <div class="tab-pane" id="tab-agent"></div>
-                <details class="summary-local-group" data-setting-section="prompts" id="tab-prompts"><summary>总结与校对的写作要求</summary>
-                    <div class="settings-section">
-                        <div class="settings-btn-row" style="margin: 0 0 12px 0; align-items: center;">
-                            <label class="settings-section-title" for="summary-style" style="margin: 0;">写作要求</label>
-                            <button class="btn btn-sm" id="btn-reset-summary-style" style="margin-left:auto;">恢复默认并保存</button>
-                        </div>
-                        <div class="settings-row">
-                            <div class="settings-field full">
-                                <textarea class="editor-ta" id="summary-style" rows="18" placeholder="留空使用内置写作要求"></textarea>
-                                <div class="settings-hint">留空使用内置要求，随插件更新；自定义后保留你的版本，不再随插件更新。修改不会要求重写旧记忆。</div>
-                            </div>
-                        </div>
-                    </div>
-
-
-
-                </details>
 
                 <!-- Tab 3: Debug -->
 

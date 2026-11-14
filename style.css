@@ -217,7 +217,6 @@
 #tk-workspace .tk-panel-controls label { font-weight: 600; }
 #tk-workspace .tk-panel-controls :is(select, textarea) { font-weight: normal; margin: 0; }
 #tk-workspace .tk-panel-controls .standoutHeader { margin-block: 5px; }
-#tk-workspace .tk-prompt-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
 #tk-workspace .tk-workspace-header { padding-block: 4px; }
 
 #tk-workspace .tk-api-fields { display: block; }
@@ -233,7 +232,7 @@
 .tk-module-settings { border-top: 1px solid var(--SmartThemeBorderColor, #8885); padding-block: 10px; margin-block-start: 12px; }
 .tk-module-settings > summary, .tk-module-settings > details > summary { cursor: pointer; }
 
-#tk-workspace .tk-panel-page { display: grid; grid-template-rows: auto minmax(0, 2fr) minmax(0, 1fr); }
+#tk-workspace .tk-panel-page { display: grid; grid-template-rows: auto minmax(0, 3fr) minmax(0, 1fr); }
 #tk-workspace .tk-panel-page.tk-controls-in-frame { grid-template-rows: auto minmax(0, 1fr); }
 #tk-workspace .tk-workspace-controls { height: 100%; max-height: none; min-height: 0; overflow-y: auto; box-sizing: border-box; }
 #tk-workspace .tk-workspace-body { overflow: hidden; }
@@ -250,11 +249,6 @@
 #tk-workspace .tk-panel-page > .tk-workspace-body { grid-row: 2; }
 #tk-workspace .tk-panel-page > .tk-workspace-controls { grid-row: 3; }
 #tk-workspace .tk-panel-page.tk-page-full { grid-template-rows: auto minmax(0, 1fr); }
-
-/* Expanding prompts raises the complete settings area while keeping the page visible. */
-#tk-workspace .tk-panel-page:not(.tk-controls-in-frame):has(> #tk-module-native-controls > [data-settings-group="prompts"][open]) {
-    grid-template-rows: auto minmax(0, 1fr) minmax(0, 4fr);
-}
 
 /* A module only shows settings categories with controls. */
 #tk-module-native-controls > [data-settings-group]:not(:has(> :not(h5):not(summary):not([hidden]):not(.tk-feature-switches), > .tk-feature-switches:not([hidden]) > :not([hidden]))) { display: none; }

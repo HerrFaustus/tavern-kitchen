@@ -1,6 +1,6 @@
 import { plannerOwner } from './identity.js';
 import { collectPlotLines, plotLineStateDigest } from '../story-state/plot-lines.js';
-import { definePanelPrompt, panelEnabled } from '../../core/panel-policy.js';
+import { panelEnabled } from '../../core/panel-policy.js';
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
 import { summaryLayers } from '../story-summary/data/summary-layers.js';
 import { captureRangeSource } from '../story-summary/data/turn-source.js';
@@ -21,14 +21,15 @@ export const WRITER = `你是后台唯一的编剧。你的创作札记必须完
 返回一个 JSON 对象，包含 global 和 chapter，每层含 entities、dependencies，并可附汇总 text（省略时系统自动按 entities 排版）：
 - entities 为 {"characters":[...],"plotLines":[...],"situations":[...]}，每项为 {"target":"实体名或标题","commentary":"点评","prediction":"走向预测","suggestion":"建议"}。无相关实体可留空数组，但每层至少需针对已出现的重点人物、剧情线或局势给出实质条目或 text。
 - 只在首次或全局前提失效时提交 global，其余仅提交 chapter。
-- dependencies 是少量决定本稿能否成立的前提，支持单实体字段级引用：人物/世界实体 {entityId,field}（field 可取实体字段名或 name/aliases/presence/knowledge/agendas）、局势/记录 {recordId,field?}（可指定 status/description/releaseCondition/due/presence/note 等字段或省略整条）、剧情线 {lineTitle,field?}（可指定 status/summary/nextFocus/characters 或省略整线版本摘要）。plotLines 是已汇总的剧情线总结；potential 仅代表未证实联系，不得在章节稿写成谜底或必经事件；closed 只能作背景依据。严禁虚构引用。`;
+- dependencies 是少量决定本稿能否成立的前提，支持单实体字段级引用：人物/世界实体 {entityId,field}（field 可取实体字段名或 name/aliases/presence/knowledge/agendas）、局势/记录 {recordId,field?}（可指定 status/description/releaseCondition/due/presence/note 等字段或省略整条）、剧情线 {lineTitle,field?}（可指定 status/summary/nextFocus/characters 或省略整线版本摘要）。plotLines 是已汇总的剧情线总结；potential 仅代表未证实联系，不得在章节稿写成谜底或必经事件；closed 只能作背景依据。严禁虚构引用。
+- 当输入包含 mode:"partial" 及 staleTargets（与 previousChapterEntities）时，仅需在 chapter.entities 中输出受影响的变更目标或新增目标及其对应 dependencies；未列出的实体和仍成立的前提由系统保留合并并重排章节稿。`;
 
 export function plannerSnapshot(world, memory, chat, identity) {
     if (!world || !identity || !memory?.enabled || memory.invalidFrom != null || memory.store?.summaryInvalid || memory.store?.sourceInvalidFromFloor != null) return null;
     const layers = summaryLayers(memory.store?.summaryHistory || []);
     const last = layers.parents.filter(unit => unit.level === 'chapter').at(-1);
     const records = worldStoryRecords(world, memory.store?.json?.storyRecords || []);
-    const plotLines = panelEnabled('clues') ? collectPlotLines(memory.store?.summaryHistory, records) : [];
+    const plotLines = panelEnabled('clues') ? collectPlotLines(memory.store?.summaryHistory, records, { layers }) : [];
     return {
         world,
         records,
@@ -65,7 +66,7 @@ function normalizeEntityItem(raw) {
     };
 }
 
-function readEntities(raw) {
+function readEntities(raw, { allowEmpty = false } = {}) {
     if (raw === undefined) return undefined;
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('札记实体分组格式无效');
     const normalized = {};
@@ -80,7 +81,7 @@ function readEntities(raw) {
         normalized[key] = list.map(normalizeEntityItem);
         total += normalized[key].length;
     }
-    if (!total) return undefined;
+    if (!total && !allowEmpty) return undefined;
     return normalized;
 }
 
@@ -272,14 +273,9 @@ function resolveDependency(ref, snapshot, requireExactField = false) {
     return null;
 }
 
-function readNote(raw, snap, limit) {
-    const entities = readEntities(raw?.entities);
-    const providedText = typeof raw?.text === 'string' ? raw.text.trim() : '';
-    const text = providedText || formatPlannerEntities(entities);
-    if (!text || text.length > limit || !Array.isArray(raw?.dependencies) || raw.dependencies.length > 40) {
-        throw new Error('札记格式无效');
-    }
-    const dependencies = raw.dependencies.map(item => {
+function readDependencies(rawDependencies, snap) {
+    if (!Array.isArray(rawDependencies) || rawDependencies.length > 40) throw new Error('札记格式无效');
+    return rawDependencies.map(item => {
         const field = typeof item?.field === 'string' && item.field.trim() ? item.field.trim() : undefined;
         const ref = typeof item?.lineTitle === 'string'
             ? { lineTitle: item.lineTitle, ...(field && { field }) }
@@ -295,6 +291,14 @@ function readNote(raw, snap, limit) {
             ...(resolved.target && { target: resolved.target }),
         };
     });
+}
+
+function readNote(raw, snap, limit) {
+    const entities = readEntities(raw?.entities);
+    const providedText = typeof raw?.text === 'string' ? raw.text.trim() : '';
+    const text = providedText || formatPlannerEntities(entities);
+    if (!text || text.length > limit) throw new Error('札记格式无效');
+    const dependencies = readDependencies(raw?.dependencies, snap);
     return { text, ...(entities && { entities }), dependencies };
 }
 const valid = (note, snap) => note.dependencies.every(ref => {
@@ -376,10 +380,110 @@ export function reviewReason(previous, snap) {
     if ((previous.lineState || '') !== (snap.lineState || '')) return 'chapter-change';
     return valid(previous.chapter, snap) ? '' : 'chapter-change';
 }
-export function publishNotes(raw, previous, snap, reason) {
+const WRITER_BUDGET_CHARS = 180000;
+
+function hasStructuredEntities(entities) {
+    return Boolean(entities && PLANNER_ENTITY_GROUPS.some(([key]) => (entities[key] || []).length > 0));
+}
+
+function depKey(ref) {
+    if (ref?.lineTitle) return `line:${ref.lineTitle}:${ref.field || ''}`;
+    if (ref?.recordId) return `rec:${ref.recordId}:${ref.field || ''}`;
+    return `ent:${ref?.entityId || ''}:${ref?.field || ''}`;
+}
+
+/** Returns true when chapter notes can be incrementally updated via staleTargets instead of full recompute. */
+export function canPartialRewrite(previous, snap, reason, staleTargets) {
+    if (!previous || !snap || reason !== 'chapter-change') return false;
+    if (previous.owner && snap.owner && previous.owner !== snap.owner) return false;
+    if (previous.boundary && snap.boundary && previous.boundary !== snap.boundary) return false;
+    if (!hasStructuredEntities(previous.chapter?.entities)) return false;
+    if (!staleTargets || staleTargets.all) return false;
+    return PLANNER_ENTITY_GROUPS.some(([key]) => (staleTargets[key] || []).length > 0);
+}
+
+function mergePartialChapter(rawChapter, previous, snap, staleTargets) {
+    if (!rawChapter || typeof rawChapter !== 'object' || Array.isArray(rawChapter)) {
+        throw new Error('札记格式无效');
+    }
+    const incomingEntities = readEntities(rawChapter.entities, { allowEmpty: true });
+    if (!incomingEntities) {
+        if (typeof rawChapter.text === 'string' && rawChapter.text.trim()) {
+            return readNote(rawChapter, snap, 24000);
+        }
+        throw new Error('札记格式无效');
+    }
+
+    const previousEntities = previous.chapter.entities;
+    const mergedEntities = {};
+    const keptTargetKeys = {};
+    for (const [group] of PLANNER_ENTITY_GROUPS) {
+        const prevList = previousEntities[group] || [];
+        const incList = incomingEntities[group] || [];
+        const staleKeys = new Set((staleTargets?.[group] || []).map(nameKey));
+        const removedKeys = new Set((rawChapter.removed?.[group] || []).map(nameKey));
+        const incByKey = new Map(incList.map(item => [nameKey(item.target), item]));
+        const used = new Set();
+        const nextList = [];
+        for (const item of prevList) {
+            const key = nameKey(item.target);
+            if (removedKeys.has(key)) continue;
+            if (incByKey.has(key)) {
+                nextList.push(incByKey.get(key));
+                used.add(key);
+                continue;
+            }
+            if (staleKeys.has(key)) continue;
+            nextList.push(item);
+        }
+        for (const item of incList) {
+            const key = nameKey(item.target);
+            if (used.has(key)) continue;
+            used.add(key);
+            nextList.push(item);
+        }
+        if (nextList.length > 32) throw new Error('札记实体数量超出限制');
+        mergedEntities[group] = nextList;
+        keptTargetKeys[group] = new Set(nextList.map(item => nameKey(item.target)));
+    }
+
+    const text = formatPlannerEntities(mergedEntities);
+    if (!text || text.length > 24000) throw new Error('札记格式无效');
+
+    const freshDeps = readDependencies(rawChapter.dependencies, snap);
+    const freshKeys = new Set(freshDeps.map(depKey));
+    const mergedDeps = [];
+    const seenDeps = new Set();
+    for (const prevRef of previous.chapter?.dependencies || []) {
+        const key = depKey(prevRef);
+        if (freshKeys.has(key) || seenDeps.has(key)) continue;
+        const group = prevRef.group || (prevRef.lineTitle ? 'plotLines' : prevRef.recordId ? 'situations' : 'characters');
+        const targetKey = nameKey(prevRef.target || prevRef.lineTitle || '');
+        if (targetKey && !keptTargetKeys[group]?.has(targetKey)) continue;
+        const resolved = resolveDependency(prevRef, snap, false);
+        if (resolved === null || resolved.value === undefined || prevRef.digest !== memoryDigest(resolved.value)) continue;
+        seenDeps.add(key);
+        mergedDeps.push(prevRef);
+    }
+    for (const dep of freshDeps) {
+        const key = depKey(dep);
+        if (seenDeps.has(key)) continue;
+        seenDeps.add(key);
+        mergedDeps.push(dep);
+    }
+    if (mergedDeps.length > 40) throw new Error('札记格式无效');
+
+    return { text, entities: mergedEntities, dependencies: mergedDeps };
+}
+
+export function publishNotes(raw, previous, snap, reason, options = {}) {
     const data = JSON.parse(raw.trim().replace(/^\x60\x60\x60(?:json)?\s*|\s*\x60\x60\x60$/gi, ''));
     const global = !previous || reason === 'global-change' ? readNote(data.global, snap, 16000) : previous.global;
-    const chapter = readNote(data.chapter, snap, 24000);
+    const staleTargets = options.staleTargets ?? (reason === 'chapter-change' ? staleTargetsForNote(previous, snap, reason) : null);
+    const isPartial = options.mode === 'partial' && canPartialRewrite(previous, snap, reason, staleTargets);
+    const chapter = isPartial
+        ? mergePartialChapter(data.chapter, previous, snap, staleTargets)
+        : readNote(data.chapter, snap, 24000);
     const chapterTexts = [chapter.text, ...collectEntityTexts(chapter.entities)];
     if (chapterTexts.some(item => item.includes('{{'))) throw new Error('章节稿含宿主宏');
     for (const entity of snap.world.entities) for (const [key, record] of Object.entries(entity.fields || {})) {
@@ -402,9 +506,71 @@ export function publishNotes(raw, previous, snap, reason) {
         id: memoryDigest([snap.owner, snap.boundary, source, snap.world.version, snap.plotLines, previous?.id || '', reason]),
     };
 }
-const writerPrompt = definePanelPrompt('planner', 'writerPrompt', '作家札记', WRITER);
 
-export function writerInput(snap, previous, reason) {
+function buildPartialPayload(snap, previous, reason, staleTargets) {
+    const allTargets = buildPlanningTargets(snap);
+    const staleKeys = Object.fromEntries(
+        PLANNER_ENTITY_GROUPS.map(([group]) => [group, new Set((staleTargets?.[group] || []).map(nameKey))]),
+    );
+    const staleEntityIds = new Set();
+    const staleRecordIds = new Set();
+    const staleLineTitles = new Set();
+    for (const detail of staleTargets?.details || []) {
+        if (detail.entityId) staleEntityIds.add(detail.entityId);
+        if (detail.recordId) staleRecordIds.add(detail.recordId);
+        if (detail.lineTitle) staleLineTitles.add(detail.lineTitle);
+    }
+
+    const scopedCharacters = allTargets.characters.filter(item =>
+        staleKeys.characters.has(nameKey(item.name))
+        || (item.aliases || []).some(alias => staleKeys.characters.has(nameKey(alias)))
+        || staleEntityIds.has(item.id));
+    const scopedPlotLines = allTargets.plotLines.filter(item =>
+        staleKeys.plotLines.has(nameKey(item.title)) || staleLineTitles.has(item.title));
+    const scopedSituations = allTargets.situations.filter(item =>
+        staleKeys.situations.has(nameKey(item.title)) || staleRecordIds.has(item.id));
+
+    const staleCharacterNames = new Set(staleKeys.characters);
+    for (const item of scopedCharacters) {
+        staleCharacterNames.add(nameKey(item.name));
+        for (const alias of item.aliases || []) staleCharacterNames.add(nameKey(alias));
+    }
+
+    const scopedWorld = (snap.world?.entities || []).filter(entity =>
+        staleEntityIds.has(entity.id)
+        || staleCharacterNames.has(nameKey(entity.name))
+        || (entity.aliases || []).some(alias => staleCharacterNames.has(nameKey(alias)))
+        || staleKeys.situations.has(nameKey(entity.name)));
+    const scopedRecords = (snap.records || []).filter(record =>
+        staleRecordIds.has(record.id)
+        || staleCharacterNames.has(nameKey(record.person || record.name || ''))
+        || staleKeys.situations.has(nameKey(record.title || record.name || ''))
+        || [...(record.holders || []), ...(record.parties || [])].some(name => staleCharacterNames.has(nameKey(name))));
+
+    return {
+        mode: 'partial',
+        reason,
+        staleTargets,
+        previousGlobal: previous.global.text,
+        previousChapter: previous.chapter.text,
+        previousChapterEntities: previous.chapter.entities,
+        planningTargets: {
+            characters: scopedCharacters,
+            plotLines: scopedPlotLines,
+            situations: scopedSituations,
+        },
+        characters: scopedCharacters,
+        plotLines: scopedPlotLines,
+        situations: scopedSituations,
+        world: scopedWorld,
+        records: scopedRecords,
+        chapterHistory: snap.layers.parents.filter(unit => unit.level === 'chapter').map(unit => unit.text),
+        recentSummaries: snap.layers.leaves.slice(-10).map(unit => unit.text),
+        recent: snap.chat.slice(-10).map(msg => ({ name: msg.name, role: msg.is_user ? 'player' : 'story', text: msg.mes })),
+    };
+}
+
+function serializeFullPayload(snap, previous, reason) {
     const planningTargets = buildPlanningTargets(snap);
     const payload = {
         reason,
@@ -421,7 +587,7 @@ export function writerInput(snap, previous, reason) {
         recent: snap.chat.slice(-10).map(msg => ({ name: msg.name, role: msg.is_user ? 'player' : 'story', text: msg.mes })),
     };
     let body = JSON.stringify(payload);
-    if (body.length > 180000) {
+    if (body.length > WRITER_BUDGET_CHARS) {
         // Prioritize entity-centric planning targets + summarized plotLines when prompt size tightens.
         payload.recent = payload.recent.slice(-4);
         payload.recentSummaries = payload.recentSummaries.slice(-5);
@@ -430,11 +596,36 @@ export function writerInput(snap, previous, reason) {
         delete payload.situations;
         body = JSON.stringify(payload);
     }
-    if (body.length > 180000) {
+    if (body.length > WRITER_BUDGET_CHARS) {
         delete payload.world;
         delete payload.records;
         body = JSON.stringify(payload);
     }
-    if (body.length > 180000) throw new Error('作家材料超出单次预算');
-    return [{ role: 'system', content: writerPrompt() }, { role: 'user', content: body }];
+    if (body.length > WRITER_BUDGET_CHARS) throw new Error('作家材料超出单次预算');
+    return body;
+}
+
+/** Builds writer LLM messages and mode, falling back to full chapter recomputation on chapter, branch, or 180k budget overflow. */
+export function prepareWriterRequest(snap, previous, reason, staleTargets = null) {
+    const resolvedStale = staleTargets ?? (previous && reason === 'chapter-change' ? staleTargetsForNote(previous, snap, reason) : null);
+    if (canPartialRewrite(previous, snap, reason, resolvedStale)) {
+        const partialBody = JSON.stringify(buildPartialPayload(snap, previous, reason, resolvedStale));
+        if (partialBody.length <= WRITER_BUDGET_CHARS) {
+            return {
+                mode: 'partial',
+                staleTargets: resolvedStale,
+                messages: [{ role: 'system', content: WRITER }, { role: 'user', content: partialBody }],
+            };
+        }
+    }
+    const fullBody = serializeFullPayload(snap, previous, reason);
+    return {
+        mode: 'full',
+        staleTargets: null,
+        messages: [{ role: 'system', content: WRITER }, { role: 'user', content: fullBody }],
+    };
+}
+
+export function writerInput(snap, previous, reason, staleTargets = null) {
+    return prepareWriterRequest(snap, previous, reason, staleTargets).messages;
 }

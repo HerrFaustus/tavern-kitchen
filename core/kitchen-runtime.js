@@ -7,7 +7,7 @@ import * as hostScript from '../../../../../script.js';
 import { getCurrentUserHandle } from '../../../../user.js';
 import { EXT_ID } from './constants.js';
 import { buildEntryUrl } from './build-assets.js';
-import { panelEnabled, usePanelSettings, savePanelPrompt } from './panel-policy.js';
+import { panelEnabled, usePanelSettings } from './panel-policy.js';
 import { mountPanelControls } from './panel-controls.js';
 import { createExtensionDrawer } from './extension-drawer.js';
 import { createDefaultXiaobaiOsSettings, prepareXiaobaiOsSettings, initXiaobaiOs, cleanupXiaobaiOs, setXiaobaiOsEnabled, mountWorldEvolution, openXiaobaiOs } from '../modules/xiaobai-os/index.js';
@@ -24,7 +24,7 @@ const settings = extension_settings[EXT_ID] ??= {
 (settings.storySummary ??= {}).enabled = true;
 settings.enabled ??= true;
 settings.enaPlanner ??= {enabled:false};
-usePanelSettings(settings, (key,value) => enqueue(() => saveValue(settings.panelPrompts ??= {},key,value)));
+usePanelSettings(settings);
 window.isTavernKitchenEnabled = settings.enabled;
 let clearWorldPrompt, stopWorld, floorPanels;
 let settingsQueue = Promise.resolve();
@@ -174,7 +174,7 @@ function configureWorkspace() {
                 change:value => enqueue(() => updatePanel(key,value)),
             };
         },
-        configurePanel:(id,bar) => mountPanelControls(id,bar,settings,savePanelPrompt,undefined,kitchen.getSettingSections()),
+        configurePanel:(id,bar) => mountPanelControls(id,bar,undefined,kitchen.getSettingSections()),
         initializeWorld:async () => { await requireFeatures(); return worldArchive.initialize({manual:true}); },
         toggleDrawer: hostScript.doNavbarIconClick,
     });
@@ -221,7 +221,6 @@ export async function startKitchen(workspace) {
         ['runtime/worldbook', 'tk-worldbook'],
         ['runtime/context', 'tk-context'],
     ]) await loadBridge(entry, id);
-    await import('./panel-prompt-catalog.js');
     if (settings.enabled) await startWorld();
     memory = await import('../modules/story-summary/story-summary.js');
     const panels = installFloorSummaries({ getSnapshot: memory.getFloorSummarySnapshot,

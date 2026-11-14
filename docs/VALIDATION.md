@@ -4,6 +4,15 @@
 
 发布构建标识 `e9e795f48aa39ec36052`（`entries: 9`、`modules: 731`、`chunks: 61`）。完整 `node scripts/check.mjs` 已通过：质量检查与零告警 ESLint、TypeScript 项目边界校验、可重复构建、1662 项单元测试及记忆运行时检查（`[story-summary-runtime] result=PASS`），涵盖 P0 macOS 构建与测试修复、P2 柏宝书长程记忆（相对故事时间、可逆递归分层压缩树与新近优先预算、四层临场感状态裁剪与动态 `D1`/`D2` 双轴注入、世界状态压缩上下文与摘要分批）以及 P3 世界状态人工干预抽屉与文档精简。本次校验未连接真实 SillyTavern/TauriTavern 桌面宿主界面或付费外部模型接口（宿主与模型边界采用本地桩件与确定性测试验证）。
 
+### 0.2.30+ 第三轮（P0 + 阶段二）：提示词后台化、UI 原版化收口、剧情线快照接入与编剧局部增量重写
+
+- 重新执行 `node scripts/build.mjs`、`node scripts/check.mjs` 与 `node scripts/check-versions.mjs`（构建标识 `d4bb7341df42b8fc4b9b`，741 个源码模块转换，质量、边界、乱码、零告警 ESLint、可重复构建、版本一致性与记忆运行时 `[story-summary-runtime] result=PASS` 均通过）。
+- 运行 `node scripts/test.mjs`：**1666 项全部通过、0 失败、0 跳过**；核心覆盖：
+  - **P0（提示词后台化与 UI 原版化）**：下线统一控制区提示词分组、`story-summary` 提示词页及 `core/panel-prompt-catalog.js` / `core/tool-descriptions.js`；旧存档自定义提示词自动忽略；消除 `.custom-select`、硬阴影与渐变条并校准紧凑四分之一设置区（`core/panel-controls.test.js` 等回归通过）。
+  - **阶段二（剧情线快照接入正文背景与增量汇总）**：`plotBackgroundItems` 与 `buildRawPrompt` 将压缩节点 `plotLineSnapshots` 接入 `[早期剧情摘要]`（遵循 `plotBudget` 预算退化并在分支滑页/修订失效时自动剔除，并修正 `plot-background.js` 传递 `isFloorEntryCurrent` 对普通批次误判的问题）；`collectPlotLines` 通过 `selectViewNodes` 优先增量消费完整压缩层 `plotLineSnapshots` 再合并未覆盖轮次，`plotLineStateDigest` 与全量扫描保持一致（`modules/story-summary/tests/compression-tree.test.js`、`modules/story-state/plot-lines.test.js`）。
+  - **阶段二（编剧局部增量重写与整章回退）**：`prepareWriterRequest` / `writerInput` / `publishNotes` / `runtime.prepare()` 支持按 `staleTargets` 执行 `mode: 'partial'` 单实体局部增量重写，保留未改动实体与前提并校验宿主宏/`管理员私有/` 防泄露，且在换章（`chapter`）、切分支（`opening`/`owner` 变更）或局部载荷超出 `180000` 字符预算时自动退回整章重算（`modules/story-planner/planner.test.js`）。
+- 独立无头 Chromium（Brave Browser）全部 9 项浏览器回归通过：`scripts/check-planner-ui.mjs`（1440/820/390 三视口）、`scripts/check-planner-workspace.mjs`、`scripts/check-summary-workspace.mjs`、`scripts/check-summary-footer.mjs`、`scripts/check-workspace-layout.mjs`、`scripts/check-api-layout.mjs`、`scripts/check-api-workspace.mjs`、`scripts/check-place-map.mjs`、`scripts/check-proposal-workspace.mjs`；仍未连接真实 SillyTavern/TauriTavern 桌面宿主或调用在线大模型。
+
 ### 0.2.30+ 第二轮：压缩树剧情线快照、ReviseRoundSummary 联动核验、编剧局部依赖与弹窗原生化
 
 - 重新执行 `node scripts/build.mjs` 与 `node scripts/check.mjs`（构建标识 `ca54cb6c6d4a76d16a08`，743 个源码模块转换，质量、边界、乱码、零告警 ESLint、可重复构建与运行时均通过）。

@@ -1,5 +1,4 @@
 import { fetchWithExtras } from '../../../../shared/common/request-extras.js';
-import { definePanelPrompt } from '../../../../core/panel-policy.js';
 // ═══════════════════════════════════════════════════════════════════════════
 // vector/llm/llm-service.js - L0 前端直连 Chat Completions
 // ═══════════════════════════════════════════════════════════════════════════
@@ -14,8 +13,8 @@ const DEFAULT_L0_API_URL = 'https://api.siliconflow.cn/v1';
 
 let l0KeyIndex = 0;
 
-const probeSystem = definePanelPrompt('memory','probeSystem','接口测试任务','你是一个测试助手。请只输出 OK。');
-const probeUser = definePanelPrompt('memory','probeUser','接口测试输入','只输出 OK');
+const PROBE_SYSTEM = '你是一个测试助手。请只输出 OK。';
+const PROBE_USER = '只输出 OK';
 function getL0ApiConfig() {
     const cfg = getVectorConfig() || {};
     return cfg.l0Api || {
@@ -211,8 +210,8 @@ export async function testL0Service(apiConfig = {}, { signal } = {}) {
         throw new Error('请配置 L0 API Key');
     }
     const result = await callLLM([
-        { role: 'system', content: probeSystem() },
-        { role: 'user', content: probeUser() },
+        { role: 'system', content: PROBE_SYSTEM },
+        { role: 'user', content: PROBE_USER },
     ], {
         apiConfig,
         temperature: 0,

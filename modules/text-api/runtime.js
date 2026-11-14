@@ -5,7 +5,7 @@ import { getDefaultApiPrefix, resolveApiBaseUrl } from '../../shared/common/open
 import { runWithAbortDeadline } from '../../shared/common/abort-utils.js';
 import { HOST_PROVIDER, assertPreset } from './model.js';
 import { TEXT_API_COPY as COPY } from './copy.js';
-import { connectionProbe } from './prompts.js';
+import { CONNECTION_TEST_PROMPT } from './prompts.js';
 
 export function resolveConnection(preset, { modelList = false } = {}) {
     const config = structuredClone(assertPreset(preset));
@@ -124,7 +124,7 @@ export async function testTextConnection(preset, options = {}, dependencies = {}
         finally { options.signal?.removeEventListener('abort', abort); }
     }
     const result = await generateText(preset, {
-        ...options, messages: [{ role: 'user', content: connectionProbe() }],
+        ...options, messages: [{ role: 'user', content: CONNECTION_TEST_PROMPT }],
     }, dependencies);
     if (!String(result.text || '').trim()) throw new Error(COPY.emptyResponse);
     return { ok: true };

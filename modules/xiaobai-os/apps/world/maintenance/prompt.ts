@@ -1,4 +1,3 @@
-import { definePanelPrompt } from '../../../../../core/panel-policy.js';
 import type { MaintenanceMode } from '../../../capabilities/maintenance/registry.js';
 
 function worldPrompt(mode: MaintenanceMode): string {
@@ -48,6 +47,8 @@ function worldPrompt(mode: MaintenanceMode): string {
     ].join('\n');
 }
 
-const worldUpdate = definePanelPrompt('situation|people','worldUpdate','世界整理',worldPrompt('automatic'));
-const worldRebuild = definePanelPrompt('situation|people','worldRebuild','世界重建',worldPrompt('rebuild'));
-export function buildWorldMaintenancePrompt(mode:MaintenanceMode) { return mode === 'rebuild' ? worldRebuild() : worldUpdate(); }
+const WORLD_PROMPTS: Record<'automatic' | 'rebuild', string> = {
+    automatic: worldPrompt('automatic'),
+    rebuild: worldPrompt('rebuild'),
+};
+export function buildWorldMaintenancePrompt(mode: MaintenanceMode) { return WORLD_PROMPTS[mode === 'rebuild' ? 'rebuild' : 'automatic']; }

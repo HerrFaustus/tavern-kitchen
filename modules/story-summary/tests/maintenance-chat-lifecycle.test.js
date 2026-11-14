@@ -167,15 +167,15 @@ function harness(t) {
 
 // Contract: a settings change reaches the next real host/runner turn without
 // rewriting stored memories or resetting completed work. Cost: silent data loss.
-test('changing writing preferences reaches later turns without modifying stored memory', async t => {
+test('chat requests use built-in backend instructions and ignore legacy saved prompt overrides without modifying memory', async t => {
     const h = harness(t);
     const before = structuredClone(h.memory());
     host.respond = async () => ({ text: 'No changes requested.' });
-    for (const summaryStyle of ['Use concrete actions.', 'Conservez les dates complètes.', '']) {
-        host.config.prompts.summaryStyle = summaryStyle;
-        host.config.proofreadingPrompt = summaryStyle ? '查证原文中的承诺' : '';
+    for (const legacyStyle of ['Use concrete actions.', '']) {
+        host.config.prompts.summaryStyle = legacyStyle;
+        host.config.proofreadingPrompt = legacyStyle ? '查证原文中的承诺' : '';
         await h.maintenance.chat.send({ identity: h.maintenance.chat.identity, text: '当前有什么任务？' });
-        const expected = getMemoryChatPrompt(summaryStyle, host.config.proofreadingPrompt);
+        const expected = getMemoryChatPrompt();
         assert.equal(host.requests.at(-1).systemPrompt.slice(0, expected.length), expected);
         assert.equal(host.writes, 0);
         assert.deepEqual(h.memory(), before);

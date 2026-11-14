@@ -27,11 +27,6 @@ export function createMemoryMaintenancePage(root, send) {
     const interval = element('input');
     interval.type = 'number'; interval.min = '1'; interval.max = '100'; interval.value = '5';
     frequency.append(interval);
-    const instructions = element('label', 'memory-proof-field', '校对提示词');
-    const prompt = element('textarea');
-    prompt.rows = 3; prompt.maxLength = 4000;
-    prompt.placeholder = '例如：核对人物身份；任务有明确结果才收束阶段，保留跨阶段悬念。';
-    instructions.append(prompt);
     const settingsState = element('p', 'memory-settings-state');
     settingsState.setAttribute('role', 'status');
     authorization.append(label, element('p', 'memory-hint', copy.behavior), frequency, settingsState);
@@ -59,9 +54,7 @@ export function createMemoryMaintenancePage(root, send) {
     const controls = element('footer', 'tk-module-settings memory-controls');
     controls.dataset.kitchenControls = 'proofreading';
     records.append(recordsHeading, ranges, state, index, list, empty, more);
-    const promptSettings = element('section', 'memory-prompt-settings');
-    promptSettings.dataset.settingSection = 'prompts'; promptSettings.append(instructions);
-    controls.append(authorization, promptSettings);
+    controls.append(authorization);
     root.append(records, controls);
     cancel.hidden = index.hidden = repair.hidden = more.hidden = true;
     const updateEmpty = () => { emptyHint.textContent = toggle.checked ? copy.emptyEnabled : copy.emptyDisabled; };
@@ -283,9 +276,9 @@ export function createMemoryMaintenancePage(root, send) {
         setChat,
         setEnabled(enabled, config = {}) {
             toggle.checked = enabled === true; interval.value = String(config.proofreadingInterval || 5);
-            prompt.value = config.proofreadingPrompt || ''; updateEmpty();
+            updateEmpty();
         },
-        getPreferences: () => ({ proofreadingInterval: Math.min(100, Math.max(1, Math.trunc(Number(interval.value)) || 5)), proofreadingPrompt: prompt.value.trim() }),
+        getPreferences: () => ({ proofreadingInterval: Math.min(100, Math.max(1, Math.trunc(Number(interval.value)) || 5)) }),
         getEnabled: () => toggle.checked,
         settingsSaved(success) { settingsState.textContent = success ? copy.settingsSaved : copy.settingsFailed; },
         open() { state.textContent = copy.loading; send('MEMORY_MAINTENANCE_QUERY'); },

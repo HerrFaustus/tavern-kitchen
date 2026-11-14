@@ -4,7 +4,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { parseHTML } from 'linkedom';
 import { createNoteStore } from './storage.js';
 import { createPlanner } from './runtime.js';
-import { plannerSnapshot, publishNotes, staleTargetsForNote, writerInput } from './notes.js';
+import { plannerSnapshot, prepareWriterRequest, publishNotes, staleTargetsForNote, writerInput } from './notes.js';
 import { createPlannerSettings } from './settings-view.js';
 
 test('one writer publishes once, full chapter only; change, rollback and chat isolation', async () => {
@@ -257,4 +257,134 @@ test('granular single-entity, record field and plot-line dependencies surface st
     const staleByLine = staleTargetsForNote(inspected.note, nextSnap, 'world');
     assert.deepEqual(staleByLine.plotLines, ['东仓暗号']);
     assert.deepEqual(staleByLine.characters, []);
+});
+
+test('partial incremental rewrite updates only staleTargets while preserving untouched entities and dependencies', async () => {
+    globalThis.indexedDB = new IDBFactory();
+    const noteStore = createNoteStore();
+    const store = {
+        json: {
+            storyRecords: [
+                { id: 'p1', kind: 'person', name: '林疏', presence: 'present', note: '东仓门外' },
+                { id: 'p2', kind: 'person', name: '沈砚', presence: 'absent', note: '仍在码头' },
+                { id: 's1', kind: 'situation', title: '城门戒严', status: 'open', description: '子时闭门', parties: ['巡夜司'] },
+            ],
+        },
+        summaryHistory: [
+            { endMesId: 1, summary: '林疏发现密信', plotLines: [{ title: '东仓暗号', status: 'active', reading: '发现暗门', quote: '发现密信' }] },
+        ],
+    };
+    const world = {
+        worldId: 'w-partial',
+        branchId: 'b-partial',
+        version: 1,
+        entities: [
+            { id: 'c1', name: '林疏', fields: { disposition: { value: '警惕' }, '管理员私有/暗卫编号': { value: '暗卫真实编号9527' } } },
+            { id: 'c2', name: '沈砚', fields: { disposition: { value: '谨慎' } } },
+        ],
+    };
+    const chat = [{ mes: '入夜', is_user: true }];
+    let boundary = 'opening';
+    let ownerScope = 's-partial';
+    const snapshot = () => ({ ...plannerSnapshot(world, { enabled: true, store }, chat, ownerScope), boundary });
+    const seenPayloads = [];
+    let nextPartialReply = null;
+    const runtime = createPlanner({
+        snapshot,
+        store: noteStore,
+        preference: () => '',
+        status: () => {},
+        write: async messages => {
+            const payload = JSON.parse(messages[1].content);
+            seenPayloads.push(payload);
+            if (payload.mode === 'partial' && nextPartialReply) return JSON.stringify(nextPartialReply);
+            return JSON.stringify({
+                global: {
+                    entities: { characters: [{ target: '林疏', commentary: '握有密信', prediction: '将查账本', suggestion: '维持悬念' }] },
+                    dependencies: [{ entityId: 'c1', field: 'disposition' }],
+                },
+                chapter: {
+                    entities: {
+                        characters: [
+                            { target: '林疏', commentary: '在门外蹲守', prediction: '试探守卫', suggestion: '描摹风声' },
+                            { target: '沈砚', commentary: '留在码头接头', prediction: '静观动静', suggestion: '保留暗线' },
+                        ],
+                        plotLines: [{ target: '东仓暗号', commentary: '暗门刚露端倪', prediction: '待查口令', suggestion: '暂留扣子' }],
+                        situations: [{ target: '城门戒严', commentary: '夜禁未解', prediction: '换防前紧张', suggestion: '强调时限' }],
+                    },
+                    dependencies: [
+                        { entityId: 'c1', field: 'presence' },
+                        { entityId: 'c2', field: 'presence' },
+                        { recordId: 's1', field: 'status' },
+                        { lineTitle: '东仓暗号' },
+                    ],
+                },
+            });
+        },
+    });
+
+    await runtime.prepare();
+    assert.equal(seenPayloads[0].mode, undefined);
+
+    // Mutate only 林疏's presence: triggers targeted partial incremental rewrite.
+    store.json.storyRecords[0].presence = 'hidden';
+    nextPartialReply = {
+        chapter: {
+            entities: {
+                characters: [
+                    { target: '林疏', commentary: '潜伏于檐角阴影', prediction: '绕过巡逻队', suggestion: '突出屏息压迫' },
+                ],
+            },
+            dependencies: [{ entityId: 'c1', field: 'presence' }],
+        },
+    };
+    const partialText = await runtime.prepare();
+    assert.equal(seenPayloads.length, 2);
+    assert.equal(seenPayloads[1].mode, 'partial');
+    assert.deepEqual(seenPayloads[1].staleTargets.characters, ['林疏']);
+    assert.deepEqual(seenPayloads[1].planningTargets.characters.map(c => c.name), ['林疏']);
+    assert.deepEqual(seenPayloads[1].planningTargets.plotLines, []);
+    assert.deepEqual(seenPayloads[1].planningTargets.situations, []);
+
+    const afterPartial = await runtime.inspect();
+    assert.equal(afterPartial.state, 'ready');
+    assert.match(partialText, /潜伏于檐角阴影/);
+    assert.match(partialText, /沈砚[\s\S]*留在码头接头/);
+    assert.match(partialText, /东仓暗号[\s\S]*暗门刚露端倪/);
+    assert.match(partialText, /城门戒严[\s\S]*夜禁未解/);
+    assert.deepEqual(afterPartial.note.chapter.entities.characters.map(c => c.target), ['林疏', '沈砚']);
+    assert.equal(afterPartial.note.chapter.dependencies.length, 4);
+
+    // Partial leak guard: private fields rejected cleanly even in partial update.
+    store.json.storyRecords[0].presence = 'present';
+    assert.throws(() => publishNotes(JSON.stringify({
+        chapter: {
+            entities: { characters: [{ target: '林疏', commentary: '暗卫真实编号9527', prediction: '潜入', suggestion: '谨慎' }] },
+            dependencies: [{ entityId: 'c1', field: 'presence' }],
+        },
+    }), afterPartial.note, snapshot(), 'chapter-change', { mode: 'partial' }), /私有/);
+
+    // Fallback 1: chapter boundary change forces full chapter recompute.
+    boundary = 'chapter-2';
+    const chapterSnap = snapshot();
+    const chapterReq = prepareWriterRequest(chapterSnap, afterPartial.note, 'chapter');
+    assert.equal(chapterReq.mode, 'full');
+
+    // Fallback 2: branch / owner switch forces full chapter recompute.
+    boundary = 'opening';
+    ownerScope = 'branch-other';
+    const branchSnap = snapshot();
+    const branchReq = prepareWriterRequest(branchSnap, afterPartial.note, 'chapter-change');
+    assert.equal(branchReq.mode, 'full');
+
+    // Fallback 3: partial payload exceeding 180000 chars falls back to full chapter recompute cleanly.
+    ownerScope = 's-partial';
+    const oversizedChat = Array.from({ length: 10 }, (_, i) => ({ is_user: i % 2 === 0, mes: '大段正文'.repeat(5500) }));
+    const bigSnap = plannerSnapshot(world, { enabled: true, store }, oversizedChat, ownerScope);
+    bigSnap.boundary = 'opening';
+    const previousReady = { ...afterPartial.note, end: oversizedChat.length - 1, owner: bigSnap.owner };
+    const stale = staleTargetsForNote(previousReady, bigSnap, 'chapter-change');
+    const budgetReq = prepareWriterRequest(bigSnap, previousReady, 'chapter-change', stale);
+    assert.equal(budgetReq.mode, 'full');
+    assert.equal(JSON.parse(budgetReq.messages[1].content).mode, undefined);
 });

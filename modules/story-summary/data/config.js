@@ -28,8 +28,8 @@ const DEFAULT_FILTER_RULES = [
 export const DEFAULT_SUMMARY_SYSTEM_PROMPT = '依据本次原文生成本轮总结和有依据的增量记录。自由文本跟随主要叙事语言。只输出 JSON。';
 
 
-export function getSummaryAssistantDocPrompt(config = getSummaryPanelConfig()) {
-    return buildSummaryAssistantDocPrompt(config.prompts?.summaryStyle);
+export function getSummaryAssistantDocPrompt() {
+    return buildSummaryAssistantDocPrompt();
 }
 
 export const DEFAULT_SUMMARY_ASSISTANT_ASK_SUMMARY_PROMPT = '请提供已有剧情与事实。';
@@ -43,9 +43,9 @@ export const DEFAULT_SUMMARY_ASSISTANT_CHECK_PROMPT = '已核对人物、来源�
 export const DEFAULT_SUMMARY_USER_CONFIRM_PROMPT = '请只输出完整 JSON。';
 
 export const DEFAULT_SUMMARY_USER_GENERATE_PROMPT = '生成本轮总结。';
-export const getSummaryPrompts = (config = getSummaryPanelConfig()) => ({
+export const getSummaryPrompts = () => ({
     summarySystemPrompt: DEFAULT_SUMMARY_SYSTEM_PROMPT,
-    summaryAssistantDocPrompt: getSummaryAssistantDocPrompt(config),
+    summaryAssistantDocPrompt: getSummaryAssistantDocPrompt(),
     summaryAssistantAskSummaryPrompt: DEFAULT_SUMMARY_ASSISTANT_ASK_SUMMARY_PROMPT,
     summaryAssistantAskContentPrompt: DEFAULT_SUMMARY_ASSISTANT_ASK_CONTENT_PROMPT,
     summaryMetaProtocolStartPrompt: DEFAULT_SUMMARY_META_PROTOCOL_START_PROMPT,
@@ -187,10 +187,6 @@ function createDefaultSummaryPanelConfig() {
             useVectorBoundary: false,
         },
         textFilterRules: [...DEFAULT_FILTER_RULES],
-        prompts: {
-            round: '', stage: '', chapter: '',
-            summaryStyle: '',
-        },
         vector: normalizeVectorConfig(),
     };
     return defaults;
@@ -207,15 +203,10 @@ function assertSummaryConfigPersisted(expected, actual) {
     if (!actual || typeof actual !== "object") {
         throw new Error("保存后读取配置失败");
     }
-    if (actual.memoryMaintenanceEnabled !== expected.memoryMaintenanceEnabled || actual.proofreadingPrompt !== expected.proofreadingPrompt
+    if (actual.memoryMaintenanceEnabled !== expected.memoryMaintenanceEnabled
         || actual.proofreadingInterval !== expected.proofreadingInterval) {
         throw new Error('memory_maintenance_setting_not_saved');
     }
-    if (['round', 'stage', 'chapter'].some(level => actual.prompts[level] !== expected.prompts[level])) throw new Error('分层总结提示词未保存');
-    if (actual.prompts.summaryStyle !== expected.prompts.summaryStyle) {
-        throw new Error('写作要求未保存，请重试');
-    }
-
 }
 
 function normalizeSummaryPanelConfig(rawConfig = null) {
@@ -236,10 +227,6 @@ function normalizeSummaryPanelConfig(rawConfig = null) {
             ? rawConfig.vector.textFilterRules
             : defaults.textFilterRules);
 
-    const rawPrompts = rawConfig.prompts && typeof rawConfig.prompts === "object"
-        ? rawConfig.prompts
-        : {};
-
     const workflow = normalizeSummaryWorkflow(rawConfig);
     const result = {
         summaryWorkflowVersion: workflow.summaryWorkflowVersion,
@@ -249,10 +236,6 @@ function normalizeSummaryPanelConfig(rawConfig = null) {
         inlineSummary: workflow.inlineSummary,
         ui: { ...defaults.ui, ...(rawConfig.ui || {}) },
         textFilterRules,
-        prompts: {
-            round: String(rawPrompts.round || '').trim(), stage: String(rawPrompts.stage || '').trim(), chapter: String(rawPrompts.chapter || '').trim(),
-            summaryStyle: String(rawPrompts.summaryStyle || '').trim(),
-        },
         vector: normalizeVectorConfig(rawConfig.vector || null),
     };
 

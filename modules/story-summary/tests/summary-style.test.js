@@ -44,42 +44,28 @@ const bundle = await build({
 const config = await import(await createTestModuleUrl(bundle.outputFiles[0].text));
 const input = { existingSummary: 'Existing episode', existingFacts: [], newHistoryText: '#2 New dialogue', historyRange: '2-2', existingEventCount: 1 };
 
-test('save, reload, new generation and reset use current style without changing the protocol', async () => {
+test('built-in summary instructions and protocol stay active while legacy saved prompts are ignored', async () => {
     config.applySummaryPanelConfigSnapshot({});
     await config.generateSummary(input);
     const baseline = state.requests.at(-1).messages;
     const baselinePrompts = config.getSummaryPrompts();
     assert.equal(baseline.length, 11);
-    for (const summaryStyle of ['Use two short sentences. Keep original names.', 'カードには具体的な行動を残す。', '   ', '']) {
-        const next = config.getSummaryPanelConfig();
-        next.prompts.summaryStyle = summaryStyle;
-        await config.saveSummaryPanelConfigVerified(next);
-        config.applySummaryPanelConfigSnapshot({});
-        await config.loadConfigFromServer();
-        assert.equal(config.getSummaryPanelConfig().prompts.summaryStyle, summaryStyle.trim());
-        await config.generateSummary(input);
-        const messages = state.requests.at(-1).messages;
-        assert.deepEqual(messages.map(({role}) => role), baseline.map(({role}) => role));
-        messages.forEach((message, i) => {
-            assert.deepEqual(message, i === 2
-                ? { ...baseline[i], content: buildSummaryAssistantDocPrompt(summaryStyle) } : baseline[i]);
-        });
-        assert.deepEqual(config.getSummaryPrompts(), {
-            ...baselinePrompts, summaryAssistantDocPrompt: buildSummaryAssistantDocPrompt(summaryStyle),
-        });
-    }
+    const legacy = { ...config.getSummaryPanelConfig(), prompts: { summaryStyle: '自定义文风', round: '动作', stage: '因果', chapter: '主线' } };
+    await config.saveSummaryPanelConfigVerified(legacy);
+    config.applySummaryPanelConfigSnapshot({});
+    const loaded = await config.loadConfigFromServer();
+    assert.equal(loaded.prompts, undefined);
+    await config.generateSummary(input);
+    const messages = state.requests.at(-1).messages;
+    assert.deepEqual(messages.map(({role}) => role), baseline.map(({role}) => role));
+    messages.forEach((message, i) => {
+        assert.deepEqual(message, i === 2
+            ? { ...baseline[i], content: buildSummaryAssistantDocPrompt() } : baseline[i]);
+    });
+    assert.deepEqual(config.getSummaryPrompts(), {
+        ...baselinePrompts, summaryAssistantDocPrompt: buildSummaryAssistantDocPrompt(),
+    });
     assert.equal(resolveSummaryStyle('  '), resolveSummaryStyle());
-});
-
-test('readback mismatch reports failure and keeps the last confirmed style active', async () => {
-    config.applySummaryPanelConfigSnapshot({ prompts: { summaryStyle: 'Confirmed style' } });
-    state.dropStyle = true;
-    const next = config.getSummaryPanelConfig();
-    next.prompts.summaryStyle = 'Unsaved style';
-    try {
-        await assert.rejects(config.saveSummaryPanelConfigVerified(next));
-        assert.equal(config.getSummaryPanelConfig().prompts.summaryStyle, 'Confirmed style');
-    } finally { state.dropStyle = false; }
 });
 
 test('maintenance and interactive requests receive the selected style for that run', async () => {
@@ -98,18 +84,4 @@ test('maintenance and interactive requests receive the selected style for that r
             assert.equal(requests[0].systemPrompt.slice(0, expected.length), expected);
         }
     }
-});
-
-test('layer instructions survive save and reload and can be individually reset', async () => {
-    const next = config.getSummaryPanelConfig();
-    Object.assign(next.prompts, { round: '动作', stage: '因果', chapter: '主线' });
-    await config.saveSummaryPanelConfigVerified(next);
-    config.applySummaryPanelConfigSnapshot({});
-    await config.loadConfigFromServer();
-    const saved = config.getSummaryPanelConfig();
-    assert.deepEqual([saved.prompts.round, saved.prompts.stage, saved.prompts.chapter], ['动作', '因果', '主线']);
-    saved.prompts.stage = '';
-    await config.saveSummaryPanelConfigVerified(saved);
-    const reset = await config.loadConfigFromServer();
-    assert.deepEqual([reset.prompts.round, reset.prompts.stage, reset.prompts.chapter], ['动作', '', '主线']);
 });

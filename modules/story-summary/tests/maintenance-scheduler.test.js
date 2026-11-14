@@ -173,9 +173,9 @@ async function appendSummary() {
 }
 
 const options = { timeout: 5000 };
-test('automatic proofreading counts completed replies and passes review instructions at the due boundary', options, async () => {
+test('automatic proofreading counts completed replies and uses built-in review instructions at the due boundary', options, async () => {
     host.config.proofreadingInterval = 2;
-    host.config.proofreadingPrompt = '核对信件归属';
+    host.config.proofreadingPrompt = '旧版自定义提示词';
     await appendSummary();
     await nextTurn();
     assert.equal(host.requests.length, 0);
@@ -183,7 +183,8 @@ test('automatic proofreading counts completed replies and passes review instruct
     await appendSummary();
     const result = await finished;
     assert.equal(host.requests.length, 1);
-    assert.match(host.requests[0].systemPrompt, /核对信件归属/);
+    assert.match(host.requests[0].systemPrompt, /You maintain the narrative memory/);
+    assert.doesNotMatch(host.requests[0].systemPrompt, /旧版自定义提示词/);
     assert.deepEqual(result.ranges.pending, [{ from: 1, to: store().lastSummarizedMesId + 1 }]);
 });
 test('one summary spanning a five-turn boundary triggers one review', options, async () => {

@@ -1,4 +1,3 @@
-import { definePanelPrompt } from '../../../../../core/panel-policy.js';
 import type { ManagementParticipant } from '../../../capabilities/management/index.js';
 import { textPage } from '../../../capabilities/management/read-page.js';
 import { editWorld } from '../../../domains/world/edit.js';
@@ -11,14 +10,10 @@ import { WORLD_MANAGEMENT_PROMPT } from './prompt.js';
 import { createWorldManagementTools } from './tool-contract.js';
 import { createManagementDocument } from '../../../capabilities/management/document.js';
 
-import { editableToolDescriptions } from '../../../../../core/tool-descriptions.js';
-const tools = createWorldManagementTools().map(tool => ({
-    ...tool, definition:editableToolDescriptions('people|situation','worldManagementTool',tool.definition),
-}));
+const tools = createWorldManagementTools();
 
-const managementPrompt = definePanelPrompt('people|situation','worldManagement','手动整理规则',WORLD_MANAGEMENT_PROMPT);
 export function createWorldManagement(world: WorldService): ManagementParticipant {
-    return { id: 'world', label: '世界', get prompt() { return managementPrompt(); }, tools, confirmPending: world.confirmPending,
+    return { id: 'world', label: '世界', prompt: WORLD_MANAGEMENT_PROMPT, tools, confirmPending: world.confirmPending,
         async open() {
             const inspection = await world.document.read();
             const initial = inspection.validation.valid ? worldContent(world.readCurrent().world) : null;
@@ -30,7 +25,7 @@ export function createWorldManagement(world: WorldService): ManagementParticipan
             return {
                 recover: saving.recover,
                 confirmSaved: saving.confirmSaved,
-                get prompt() { return managementPrompt(); },
+                prompt: WORLD_MANAGEMENT_PROMPT,
                 initial: initial ? projection(initial) : (await document.read({})).data,
                 tools,
                 async execute(name, args, guard) {

@@ -6,7 +6,7 @@
 
 1. **剧情线总结（`modules/story-state/plot-lines.js`）**
    - 单楼回复提取与增量总结会在每轮抽取出 `plotLines`（含 `title`、`status`、`reading`、`quote` 及可选 `summary`、`characters`、`nextFocus`），且仅当 `quote` 逐字出自该轮真实 `summary` 时采信。
-   - `collectPlotLines` / `summarizePlotLines` 将结构化记录（`plan`、`suspense`、`situation`）与所有有效历史轮次的剧情线进展合并，按楼层汇总出完整时间线 `beats`、涉及人物 `characters`、关联局势 `situationIds`、当前焦点 `nextFocus` 与累计脉络 `summary`。
+   - `collectPlotLines` / `summarizePlotLines` 优先读取完整压缩层节点（`stage` / `chapter` / `L3+`）的 `plotLineSnapshots` 增量合并未覆盖新轮次的进展、人物与焦点（在分支切换或修订失效时自动退回 intact 下层轮次），汇总出时间线 `beats`、涉及人物 `characters`、关联局势 `situationIds`、当前焦点 `nextFocus` 与累计脉络 `summary`。
    - `plotLineStateDigest` 汇总每条线的状态、累计总结、最新楼层、当前焦点与涉及人物；任一字段推进或回滚都会刷新 `lineState`，自动触发编剧重算（`chapter-change`）。
 2. **三类规划实体组装（`buildPlanningTargets`）**
    - `plannerSnapshot` 与 `writerInput` 将规划材料明确收口为三类实体：
@@ -23,6 +23,7 @@
 - **兼容性与文本渲染**：模型可提交 `entities` 分组并省略 `text`，由 `formatPlannerEntities` 自动排版成面向正文写手的 `【本章札记】` 纯文本；同时继续兼容纯 `{ text, dependencies }` JSON 返回。
 - **隐私与前提校验**：`chapter.text` 与 `chapter.entities` 内所有字段均受宿主宏检查（禁止 `{{`）及 `管理员私有/` 字段值过滤（禁止把后台秘密泄入章节稿）；`global` 仍收起于折叠面板（默认关闭，剧透防护）。
 - **细粒度局部依赖与失效标注**：`dependencies` 支持单实体/记录字段粒度（`{ entityId, field }` 可指向世界字段及角色 `name`/`aliases`/`presence`/`presenceNote`/`knowledge`/`agendas`；`{ recordId, field? }` 可指向局势/悬念记录或 `history`/`developments`；`{ lineTitle, field? }` 可指向单条剧情线字段或其完整摘要签名）。当 `runtime.inspect()` 检测到前提失效时，由 `staleTargetsForNote` / `invalidatedDependencies` 算出受影响的实体列表，面板为对应卡片标注 `[待更新]` 徽标，而不触发后台写手重算。
+- **局部增量重写与整章回退**：当 `runtime.prepare()` 需要审稿且 `reason === 'chapter-change'`、已有结构化 `chapter.entities`、`staleTargets` 仅命中局部实体且请求体不超过 `180000` 字符预算时，通过 `prepareWriterRequest` 发送 `mode: 'partial'` 仅针对受影响目标重算，由 `publishNotes` 把更新实体与新前提合并回未改动条目后重排 `chapter.text` 并执行全文宏/私有字段校验；若发生换章（`chapter`）、切分支（`opening` / `owner` 变更）、全局前提失效（`global-change`）、缺乏结构化实体底稿或局部载荷超 `180000` 字符预算，则自动回退整章重算。
 - **分支与撤销隔离**：札记按 `owner`（账号+聊天/世界分支）与聊天前缀摘要存储于 IndexedDB，切换聊天、改写/删除楼层、更新剧情线或世界版本失效时立即失活，不复用陈旧稿件，也不污染聊天原文。
 
 ## 3. 原生界面展示

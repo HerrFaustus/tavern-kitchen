@@ -1,4 +1,3 @@
-import { definePanelPrompt } from '../../../core/panel-policy.js';
 import {
     buildProviderAssistantToolCallMessage,
     hasVisibleText,
@@ -63,7 +62,7 @@ export function filterDelegateToolDefinitions(toolDefinitions = [], toolNames = 
         .filter((definition) => !isDelegateBlockedToolName(getToolName(definition), toolNames));
 }
 
-const doneReminder = definePanelPrompt('delegate','delegateDone','子任务收尾','你已经拿到了本轮全部工具结果。现在不要再调用任何工具，直接给出子任务结论。');
+const DONE_REMINDER = '你已经拿到了本轮全部工具结果。现在不要再调用任何工具，直接给出子任务结论。';
 function stripPromptSubsection(prompt = '', heading = '') {
     const escapedHeading = escapeRegExp(heading);
     const pattern = new RegExp(`(^|\\n)## ${escapedHeading}\\n[\\s\\S]*?(?=\\n## |\\n# |$)`, 'g');
@@ -81,20 +80,20 @@ function buildDelegateBasePrompt(basePrompt = '') {
     return prompt;
 }
 
-const delegateRules = definePanelPrompt('delegate','delegateRules','子任务执行规则',[
-            '# 子任务执行规则',
-            ' - 只处理 [Task] 里的子任务；[Context] 和 [Expected deliverable] 是主助手显式交给你的背景和边界。',
-            ' - 不默认知道主对话、[Current context]、[Current plans] 或主助手未写出的推理。',
-            ' - 需要查证或改动时使用可用工具；不要和用户闲聊。',
-            ' - 不创建或更新计划，也不再委派其他子任务。',
-            ' - 最终回复给主助手，写清结论、依据、改动、风险和未解决点。',
-            ' - 信息不足时说明缺口，不编造。',
-        ].join('\n'));
+const DELEGATE_RULES = [
+    '# 子任务执行规则',
+    ' - 只处理 [Task] 里的子任务；[Context] 和 [Expected deliverable] 是主助手显式交给你的背景和边界。',
+    ' - 不默认知道主对话、[Current context]、[Current plans] 或主助手未写出的推理。',
+    ' - 需要查证或改动时使用可用工具；不要和用户闲聊。',
+    ' - 不创建或更新计划，也不再委派其他子任务。',
+    ' - 最终回复给主助手，写清结论、依据、改动、风险和未解决点。',
+    ' - 信息不足时说明缺口，不编造。',
+].join('\n');
 
 function buildDelegateSystemPrompt(basePrompt = '') {
     return [
         buildDelegateBasePrompt(basePrompt),
-        delegateRules(),
+        DELEGATE_RULES,
     ].filter(Boolean).join('\n\n');
 }
 
@@ -364,7 +363,7 @@ export function createDelegateRunner(deps = {}) {
             pendingToolResponses = null;
             if (!hasVisibleText(result?.text) && sawToolExecution && !finalAnswerReminderSent) {
                 finalAnswerReminderSent = true;
-                const reminder = doneReminder();
+                const reminder = DONE_REMINDER;
                 if (adapter?.supportsSessionToolLoop) {
                     pendingFinalAnswerReminderText = reminder;
                 } else {

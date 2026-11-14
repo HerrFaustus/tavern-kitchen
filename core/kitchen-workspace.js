@@ -308,9 +308,9 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
         controls.setAttribute('aria-label', settingsLabel);
         controls.append(settingsHeading);
         groups = {};
-        for (const [key, label] of [['master','模块开关'], ['model','模型设置'], ['function','功能设置'], ['prompts','提示词设置']]) {
-            const group = doc.createElement(key === 'prompts' ? 'details' : 'section');
-            const heading = doc.createElement(key === 'prompts' ? 'summary' : 'h5');
+        for (const [key, label] of [['master','模块开关'], ['model','模型设置'], ['function','功能设置']]) {
+            const group = doc.createElement('section');
+            const heading = doc.createElement('h5');
             group.dataset.settingsGroup = key;
             heading.textContent = label; group.append(heading); controls.append(group);
             groups[key] = group;

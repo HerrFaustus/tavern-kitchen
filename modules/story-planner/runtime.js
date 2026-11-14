@@ -1,4 +1,4 @@
-import { prefix, publishNotes, reviewReason, selectVersion, staleTargetsForNote, writerInput } from './notes.js';
+import { prefix, prepareWriterRequest, publishNotes, reviewReason, selectVersion, staleTargetsForNote } from './notes.js';
 
 function captureSnapshot(snapshot, snap, signal) {
     const end = snap.chat.length - 1, source = prefix(snap.chat,end);
@@ -52,13 +52,18 @@ export function createPlanner({snapshot, store, write, status}) {
                 if (!fresh()) return '';
                 const reason = reviewReason(previous,snap);
                 if (!reason) { status('当前章节札记已就绪'); return previous.chapter.text; }
-                const ticket = JSON.stringify([snap.owner,snap.boundary,previous?.id,reason,snap.plotLines]);
+                const stale = staleTargetsForNote(previous, snap, reason);
+                const ticket = JSON.stringify([snap.owner,snap.boundary,previous?.id,reason,snap.plotLines,stale]);
                 if (failed === ticket) return '';
                 status('后台作家正在整理札记');
                 try {
-                    const raw = await write(writerInput(snap,previous,reason),controller.signal);
+                    const request = prepareWriterRequest(snap, previous, reason, stale);
+                    const raw = await write(request.messages, controller.signal);
                     if (!fresh()) return '';
-                    const saved = await store.put(publishNotes(raw,previous,snap,reason));
+                    const saved = await store.put(publishNotes(raw, previous, snap, reason, {
+                        mode: request.mode,
+                        staleTargets: request.staleTargets,
+                    }));
                     if (!fresh()) return '';
                     failed = null;
                     status('当前章节札记已就绪');

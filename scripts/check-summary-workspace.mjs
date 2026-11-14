@@ -76,25 +76,17 @@ try {
     await functional.locator('#trigger-interval').fill('3');
     await functional.locator('#settings-save').click();
     await page.waitForFunction(() => globalThis.savedSettings?.config?.trigger?.interval === 3);
-    const prompts=controls.locator('[data-settings-group="prompts"]');
+    assert.equal(await controls.locator('[data-settings-group="prompts"], #tab-summary-prompts, #tab-prompts').count(), 0);
     for (const width of [319,1280]) {
         await page.setViewportSize({width,height:780});
         const height = () => frame.locator('#summary-controls').evaluate(el => el.getBoundingClientRect().height / globalThis.innerHeight);
-        assert.ok(Math.abs(await height() - 1 / 3) < .02);
-        await prompts.locator(':scope > summary').click();
-        assert.ok(Math.abs(await height() - .8) < .02, 'summary prompt settings expand upward');
-        if (width === 319) await prompts.locator(':scope > summary').click();
+        assert.ok(Math.abs(await height() - 1 / 4) < .02, `expected 1/4 summary controls height, got ${await height()}`);
     }
-    await prompts.locator('#tab-summary-prompts > summary').click();
-    await prompts.locator('#tab-summary-prompts details > summary').first().click();
-    await prompts.locator('#prompt-round').fill('保留这一轮的重要互动');
-    await prompts.locator('[data-save-layer="round"]').click();
-    await page.waitForFunction(() => globalThis.savedSettings?.promptChange?.value === '保留这一轮的重要互动');
     if (process.env.TK_SETTINGS_SHOTS) {
         await fs.mkdir(process.env.TK_SETTINGS_SHOTS, {recursive:true});
         for (const width of [319,1280]) {
             await page.setViewportSize({width,height:780});
-            await prompts.locator('#prompt-round').scrollIntoViewIfNeeded();
+            await functional.locator('#trigger-interval').scrollIntoViewIfNeeded();
             await page.screenshot({path:path.join(process.env.TK_SETTINGS_SHOTS, `summary-${width}.png`)});
         }
     }
@@ -102,14 +94,11 @@ try {
     await frame.locator('#tab-agent.active').waitFor();
     await frame.locator('#tk-module-native-controls [data-settings-group="function"] #memory-maintenance-enabled').waitFor();
     assert.equal(await controls.locator(':scope > h4').innerText(), '校对设置');
-    const proofPrompts=controls.locator('[data-settings-group="prompts"]');
-    await proofPrompts.locator(':scope > summary').click();
-    const proofRatio=await frame.locator('.memory-controls').evaluate(el => el.getBoundingClientRect().height / globalThis.innerHeight);
-    assert.ok(Math.abs(proofRatio - .8) < .02, 'proofreading prompt settings expand upward');
-    assert.ok(await frame.locator('#prompt-round').isHidden());
+    assert.equal(await controls.locator('[data-settings-group="prompts"]').count(), 0);
+    const proofRatio = await frame.locator('.memory-controls').evaluate(el => el.getBoundingClientRect().height / globalThis.innerHeight);
+    assert.ok(Math.abs(proofRatio - 1 / 4) < .02, `expected 1/4 proofreading controls ratio, got ${proofRatio}`);
     await page.evaluate(() => globalThis.workspace.open('memory'));
     await frame.locator('#summary-options #settings-modal.active').waitFor();
-    assert.equal(await frame.locator('#prompt-round').inputValue(),'保留这一轮的重要互动');
     assert.deepEqual(errors,[]);
-    console.log('Verified live summary settings and prompt saving inside the unified workspace.');
+    console.log('Verified compact summary and proofreading settings without prompt forms inside the unified workspace.');
 } finally { await browser.close(); }

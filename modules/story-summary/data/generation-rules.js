@@ -1,4 +1,3 @@
-import { definePanelPrompt } from '../../../core/panel-policy.js';
 import { RELATION_TRENDS, FACTS_LIMIT_PER_SUBJECT } from './fact-predicates.js';
 
 // Generation embeds these passages verbatim. Maintenance selects the content
@@ -53,15 +52,16 @@ ${ALIAS_IDENTITY_RULE}
 - 例: {"to":"五条悟","from":["悟","Gojo Satoru"],"evidence":"当前中文称呼“悟”与既有日文名五条悟均指同一角色"}
 - 保存时，系统会把角色列表、事件参与者、事实的主体和关系对象统一改成主名；卡片正文和引语里的称呼保持原样。这里只给出映射。`;
 
-const summaryGuide = definePanelPrompt('memory','summaryGuide','总结写作指引',`
+export function buildSummaryAssistantDocPrompt(summaryStyle) {
+    return `
 Summary Specialist:
 Acknowledged. Now reviewing the incremental summarization specifications:
 
-{{style}}
+${summaryStyleBlock(summaryStyle)}
 
 
-Ready to process incremental summary requests with strict deduplication.`);
-export function buildSummaryAssistantDocPrompt(summaryStyle) { return summaryGuide({style:summaryStyleBlock(summaryStyle)}); }
+Ready to process incremental summary requests with strict deduplication.`;
+}
 
 // 三、逐楼场景提取：另一条提取流程，不属于上面的事件总结写作要求。
 const ANCHOR_LANGUAGE_RULE = '- scene、where 和 edges.r 使用当前 <round> 正文的主要语言；混合语言时跟随主要叙事语言，并保留原文人名、专名和引语；JSON 键保持协议规定，不翻译';

@@ -8,7 +8,6 @@ import { resolveReasoningCapability, getReasoningModeOptions, getReasoningEffort
 import { getModelListAuthOptions, normalizeModelListAuth, supportsModelListAuth } from '../agent-core/model-list-auth.js';
 import { createPreset, HOST_BINDING, HOST_PROVIDER } from './model.js';
 import { PROFILE_FEATURES, profileChoices } from './profiles.js';
-import { CONNECTION_TEST_PROMPT } from './prompts.js';
 import { TEXT_API_COPY as COPY, deletionMessage } from './copy.js';
 
 export function mountTextApiSettings(root, { feature, namespace, transport, library = false }) {
@@ -16,7 +15,6 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
     const win = doc.defaultView;
     const origin = new URL(doc.referrer || win.location.href).origin;
     let settings, draft, selected, busy = false, revision = 0, networkBusy = false, destroyed = false;
-    let testMessage = CONNECTION_TEST_PROMPT;
     const requests = new Map();
     const element = (tag, text, className) => {
         const node = doc.createElement(tag); if (text != null) node.textContent = text;
@@ -169,27 +167,6 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
             settings = result.settings; choose(result.id); feedback(result.message);
         } finally { busy = false; fields.disabled = false; render(); }
     }
-    function appendTestMessage() {
-        const details = element('details');
-        const input = element('textarea');
-        input.rows = 2;
-        input.value = testMessage;
-        const local = element('small'); local.setAttribute('role', 'status');
-        const controls = element('fieldset');
-        details.append(element('summary', '测试消息'), controls);
-        control('仅用于测试生成', input, controls);
-        async function persist(value) {
-            controls.disabled = true;
-            try {
-                testMessage = await request('save-test-message', { message: value });
-                input.value = testMessage;
-                local.textContent = '已保存';
-            } catch (error) { local.textContent = error.message; }
-            finally { controls.disabled = false; }
-        }
-        controls.append(button('保存', () => persist(input.value)), button('恢复默认并保存', () => persist(null)), local);
-        details.dataset.settingSection = 'prompts'; configuration.append(details);
-    }
     function render() {
         if (destroyed) return;
         if (!library) {
@@ -251,7 +228,6 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
                 finally { networkBusy = false; }
             });
             test.dataset.settingSection = 'function'; configuration.append(test);
-            appendTestMessage();
             if (feature === 'planner') configuration.append(element('p', COPY.plannerKey, 'text-api-status'));
             return;
         }
@@ -311,7 +287,6 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
         }
         if (draft.provider !== HOST_PROVIDER) networkActions.append(button('获取模型列表', () => connect('models')));
         networkActions.append(button(({embedding:'测试嵌入',rerank:'测试重排'})[draft.kind] || '测试生成', () => connect('test'))); networkActions.querySelectorAll('button').forEach(node => { node.dataset.network = ''; node.disabled = networkBusy; }); networkActions.dataset.settingSection = modelList.dataset.settingSection = 'function'; configuration.append(networkActions, modelList);
-        if ((draft.kind || 'text') === 'text') appendTestMessage();
         function renderParameters() {
             const existing = fields.querySelector('.text-api-parameters');
             const details = element('details', null, 'text-api-parameters'); details.open = existing?.open ?? parametersOpen;
@@ -352,7 +327,6 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
             const loaded = await request('load');
             if (destroyed || id !== refreshId) return;
             settings = loaded;
-            testMessage = loaded.testMessage ?? CONNECTION_TEST_PROMPT;
             const previous = selected === HOST_BINDING || loaded.presets.some(p => p.id === selected) ? selected : loaded.presets[0]?.id;
             choose(library ? previous || HOST_BINDING : loaded.bindings[feature]);
             feedback('');

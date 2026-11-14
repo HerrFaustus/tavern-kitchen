@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseHTML } from 'linkedom';
-import { collectPlotLines, plotLinePrompt, summarizePlotLines } from './plot-lines.js';
+import { collectPlotLines, plotLinePrompt, plotLineStateDigest, summarizePlotLines } from './plot-lines.js';
 import { createSuspenseBook } from './view.js';
 import { plannerSnapshot, writerInput, publishNotes, reviewReason } from '../story-planner/notes.js';
 import { extractGeneratedFloorPayload } from '../story-summary/inline/protocol.js';
+import { layerSignature, mergePlotLineSnapshots, summaryLayers } from '../story-summary/data/summary-layers.js';
+import { captureRangeSource } from '../story-summary/data/turn-source.js';
 import { usePanelSettings } from '../../core/panel-policy.js';
 
 test('the clue board and writer use the same sourced thread across confirmation, closure, correction and rollback', t => {
@@ -121,4 +123,58 @@ test('old structured records seed the board; disabled clues supply no new extrac
         const snap=plannerSnapshot({worldId:'w',branchId:'b',entities:[]},{enabled:true,store:{json:{storyRecords:[record]}}},[],'c');
         assert.deepEqual(snap.plotLines,[]);
     } finally { usePanelSettings({}); }
+});
+
+test('collectPlotLines incrementally aggregates compressed plotLineSnapshots with tail leaves and downgrades on swipe', () => {
+    const chat = Array.from({ length: 26 }, (_, i) => ({ is_user: i % 2 === 0, mes: `正文${i}` }));
+    const history = Array.from({ length: 13 }, (_, i) => ({
+        kind: 'batch',
+        endMesId: 2 * i + 1,
+        timeEnd: `第${i + 1}幕`,
+        summary: i === 0 ? '找到铜锁。' : i === 5 ? '锁芯指向北仓。' : i === 12 ? '北仓搜出银钥匙真身。' : `第${i + 1}轮摘要`,
+        ...(i === 0 && { plotLines: [{ title: '银钥匙', status: 'potential', reading: '找到铜锁', quote: '找到铜锁。', characters: ['林疏'], nextFocus: '核对锁芯' }] }),
+        ...(i === 5 && { plotLines: [{ title: '银钥匙', status: 'active', reading: '锁芯指向北仓', quote: '锁芯指向北仓。', characters: ['守卫'], nextFocus: '潜入北仓' }] }),
+        ...(i === 12 && { plotLines: [{ title: '银钥匙', status: 'closed', reading: '北仓搜出银钥匙真身', quote: '北仓搜出银钥匙真身。', characters: ['沈砚'] }] }),
+        sourceReceipt: { id: `inc:${i}`, source: captureRangeSource(chat, 2 * i, 2 * i + 1) },
+    }));
+
+    // Uncompressed baseline digest for equality comparison.
+    const fullBaseline = collectPlotLines(structuredClone(history), [], { chat });
+
+    const { leaves } = summaryLayers(history, [], { chat });
+    const stageChildren = leaves.slice(0, 12);
+    const stageSnapshots = mergePlotLineSnapshots(stageChildren);
+    const stageNode = {
+        id: 'stage-inc-1',
+        level: 'stage',
+        start: stageChildren[0].start,
+        end: stageChildren.at(-1).end,
+        text: '阶段一合并摘要',
+        sourceId: layerSignature(stageChildren),
+        childIds: stageChildren.map(c => c.id),
+        plotLineSnapshots: stageSnapshots,
+    };
+    history[11].reviewLayers = [stageNode];
+    // Corrupt raw covered leaf plotLines to prove collectPlotLines reads compressed plotLineSnapshots without re-parsing covered leaves.
+    history[0].plotLines = [{ title: '不应重读的旧线', status: 'potential', reading: '旧线', quote: '找到铜锁。' }];
+
+    const incremental = collectPlotLines(history, [], { chat });
+    assert.equal(incremental.length, 1);
+    assert.equal(incremental[0].title, '银钥匙');
+    assert.equal(incremental[0].status, 'closed');
+    assert.equal(incremental[0].firstFloor, 1);
+    assert.equal(incremental[0].floor, 25);
+    assert.equal(incremental[0].roundCount, 3);
+    assert.doesNotMatch(incremental[0].summary, /起初：起初：/);
+    assert.match(incremental[0].summary, /^起初：找到铜锁；推进：锁芯指向北仓；收束：北仓搜出银钥匙真身$/);
+    assert.deepEqual(incremental[0].characters, ['林疏', '守卫', '沈砚']);
+    assert.equal(incremental[0].nextFocus, undefined);
+    assert.deepEqual(plotLineStateDigest(incremental), plotLineStateDigest(fullBaseline));
+
+    // Restore leaf 0 and verify swipe invalidates stageNode and degrades to surviving leaves.
+    history[0].plotLines = [{ title: '银钥匙', status: 'potential', reading: '找到铜锁', quote: '找到铜锁。', characters: ['林疏'], nextFocus: '核对锁芯' }];
+    chat[0].mes = '第一轮已改写到另一支线。';
+    const degraded = collectPlotLines(history, [], { chat });
+    assert.equal(degraded[0].firstFloor, 11);
+    assert.equal(degraded[0].roundCount, 2);
 });

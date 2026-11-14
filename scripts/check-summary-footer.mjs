@@ -57,11 +57,7 @@ try {
     await options.waitFor({ state: 'visible' });
     assert.ok(await options.isVisible());
     assert.equal(await options.locator(':scope > summary').count(), 0);
-    await frame.locator('#tab-summary-prompts > summary').click();
-    await frame.locator('#tab-summary-prompts details > summary').first().click();
-    await frame.locator('#prompt-round').fill('只提交本轮测试');
-    await frame.locator('[data-save-layer="round"]').click();
-    await page.waitForFunction(() => globalThis.savedPrompt?.value === '只提交本轮测试');
+    assert.equal(await frame.locator('#tab-summary-prompts, #tab-prompts, #summary-style, #prompt-round, #prompt-stage, #prompt-chapter, [data-settings-group="prompts"], [data-setting-section="prompts"]').count(), 0);
     assert.ok(await frame.locator('.archive').evaluate(el => !el.inert && el.checkVisibility()));
     assert.ok(await frame.locator('#settings-modal').evaluate(el => el.closest('#summary-options') && globalThis.getComputedStyle(el).position === 'static'));
     const view = name => page.evaluate(view => globalThis.document.querySelector('iframe').contentWindow.postMessage({ source:'TavernKitchen', type:'KITCHEN_MEMORY_VIEW', view },globalThis.location.origin), name);
@@ -99,7 +95,7 @@ try {
         }
         return rows;
     });
-    assert.ok(Math.abs(proofRatio - 1 / 3) < .02, JSON.stringify(proofSizes));
+    assert.ok(Math.abs(proofRatio - 1 / 4) < .02, JSON.stringify(proofSizes));
     assert.ok(await frame.locator('.memory-settings').evaluate(el => el.open));
     assert.ok(await options.isHidden());
     assert.equal(await frame.locator('#settings-close, .memory-api, [data-workspace-page], #summary-text-api').count(), 0);
@@ -183,8 +179,8 @@ try {
         await page.setViewportSize({ width, height: 780 });
         assert.ok(await affairs.isVisible());
         const split = await frame.locator('#situation-controls').evaluate(el => ({ controls: el.getBoundingClientRect().height, total: globalThis.innerHeight }));
-        assert.ok(Math.abs(split.controls / split.total - 1 / 3) < .015);
-        assert.ok(await frame.locator('#situation-controls').evaluate(el => el.getBoundingClientRect().top >= globalThis.innerHeight * .65));
+        assert.ok(Math.abs(split.controls / split.total - 1 / 4) < .015);
+        assert.ok(await frame.locator('#situation-controls').evaluate(el => el.getBoundingClientRect().top >= globalThis.innerHeight * .74));
         assert.ok(await scenery.isVisible());
         assert.ok(await frame.locator('body').evaluate(body => body.scrollWidth <= body.clientWidth));
         await page.screenshot({ path: path.resolve('output', 'situations-' + width + '.png') });

@@ -34,43 +34,13 @@ test('summary and vector settings need no activation or range controls', () => {
     assert.equal(collected.embeddingApi.key, 'fixture-only');
 });
 
-test('plot settings offers three independently folded summary prompts', () => {
+test('story-summary page exposes zero prompt configuration forms while keeping save controls intact', () => {
     const { document } = parseHTML(readFileSync(new URL('../story-summary.html', import.meta.url), 'utf8'));
-    const $ = id => document.getElementById(id);
-    const page = $('tab-summary-prompts');
-    assert.equal(page.tagName, 'DETAILS');
     assert.equal(document.querySelector('.settings-tab, #tab-agent-api, #summary-text-api'), null);
-    for (const level of ['round', 'stage', 'chapter']) {
-        assert.equal(page.querySelector('textarea#prompt-' + level).closest('details').hasAttribute('open'), false);
-        assert.ok(page.querySelector('[data-save-layer="' + level + '"]'));
-        assert.equal(page.querySelector('#reset-' + level).textContent, '恢复默认并保存');
+    for (const selector of ['#tab-summary-prompts', '#tab-prompts', '#summary-style', '#btn-reset-summary-style', '#prompt-round', '#prompt-stage', '#prompt-chapter', '[data-save-layer]']) {
+        assert.equal(document.querySelector(selector), null);
     }
-    assert.equal($('settings-save').parentElement.hidden, false);
-    assert.equal($('update-messages'), null);
+    assert.equal($id(document, 'settings-save').parentElement.hidden, false);
+    assert.equal($id(document, 'update-messages'), null);
 });
-
-test('a layer save submits only its prompt and preserves a sibling draft through save and reset failures', async () => {
-    const { document } = parseHTML(readFileSync(new URL('../story-summary.html', import.meta.url), 'utf8'));
-    const $ = id => document.getElementById(id);
-    const round = $('prompt-round'), stage = $('prompt-stage');
-    round.value = '新本轮'; stage.value = '篇目草稿';
-    const config = { prompts: { round: '旧本轮', stage: '旧篇目' } };
-    const writes = [], dirtyFields = new Set([stage, round]);
-    let success = true;
-    const ui = uiEntry(['saveLayerPrompt'], { $, settingsSaving: false, settingsOpenedWithServerConfig: true,
-        config, settingsSnapshot: structuredClone(config), settingsDirty: true, dirtyFields,
-        LAYER_PROMPTS: { round: '默认本轮' }, WORKSPACE_COPY: { dirty: '待保存' },
-        saveConfig: async ({ promptChange }) => { writes.push(JSON.stringify(promptChange)); return success; } });
-    await ui.saveLayerPrompt('round');
-    assert.deepEqual(JSON.parse(writes[0]), { level: 'round', value: '新本轮' });
-    assert.equal(stage.value, '篇目草稿');
-    assert.equal(config.prompts.stage, '旧篇目');
-    assert.deepEqual([...dirtyFields], [stage]);
-    success = false;
-    await ui.saveLayerPrompt('round', true);
-    assert.equal(round.value, '新本轮');
-    success = true;
-    await ui.saveLayerPrompt('round', true);
-    assert.equal(config.prompts.round, '');
-    assert.equal(round.value, '默认本轮');
-});
+function $id(document, id) { return document.getElementById(id); }

@@ -30,6 +30,7 @@ async function inspect() {
         if (!element) throw new Error('缺少控件');
         element.dispatchEvent(new MouseEvent('click',{bubbles:true}));
         await nextTick();
+        await new Promise(resolve => setTimeout(resolve, 25));
     };
     const named = label => Array.from(document.querySelectorAll('button')).find(button=>button.textContent.trim()===label);
     const labelled = label => document.querySelector('[aria-label="'+label+'"]');
@@ -89,22 +90,11 @@ async function inspect() {
     const controlHeight = document.querySelector('.place-index > footer').getBoundingClientRect().height;
     const dataHeight = document.querySelector('.place-index > .tk-module-data').getBoundingClientRect().height;
     const settingsOpen = !document.querySelector('.place-index > footer [data-setting-section="function"]').hidden;
-    const footer = document.querySelector('.place-index > footer');
-    const controls = document.createElement('section'); controls.id = 'tk-module-native-controls';
-    const prompts = document.createElement('details'); prompts.dataset.settingsGroup = 'prompts';
-    const heading = document.createElement('summary'); heading.textContent = '提示词设置';
-    prompts.append(heading, document.createElement('textarea'));
-    controls.append(prompts); footer.prepend(controls);
-    prompts.open = true;
-    const expandedHeight = footer.getBoundingClientRect().height;
-    const remainingHeight = document.querySelector('.place-index > .tk-module-data').getBoundingClientRect().height;
-    prompts.open = false;
-    const restoredHeight = footer.getBoundingClientRect().height;
-    controls.remove();
-    return {controlRatio:controlHeight / (controlHeight + dataHeight),expandedRatio:expandedHeight / (expandedHeight + remainingHeight),restoredHeight,controlHeight,settingsOpen,nearby,beforeFestival,duringFestival,afterFestival,fromProse,fromFeatureLink,north,west,unknown,initial,collapsed,atmosphere,feature,edges,oneWay,mapNodes,destination,incoming,outbound,current:title(),player:state.map.atlas.actors[0].locationKey};
+    const hasPromptSection = document.querySelector('.place-index [data-setting-section="prompts"], .place-index [data-settings-group="prompts"]') !== null;
+    return {controlRatio:controlHeight / (controlHeight + dataHeight),hasPromptSection,controlHeight,settingsOpen,nearby,beforeFestival,duringFestival,afterFestival,fromProse,fromFeatureLink,north,west,unknown,initial,collapsed,atmosphere,feature,edges,oneWay,mapNodes,destination,incoming,outbound,current:title(),player:state.map.atlas.actors[0].locationKey};
 }
 inspect().then(result=>fetch('/result',{method:'POST',body:JSON.stringify(result)}))
-    .catch(error=>fetch('/result',{method:'POST',body:JSON.stringify(String(error))}));
+    .catch(error=>fetch('/result',{method:'POST',body:JSON.stringify(error?.stack || String(error))}));
 `);
 await build({configFile:false,root,define:{'process.env.NODE_ENV':'"production"'},plugins:[vue()],logLevel:'error',
     build:{outDir:path.join(temp,'build'),lib:{entry,name:'PlaceCheck',formats:['iife'],fileName:()=>'fixture.js'}}});
@@ -130,11 +120,11 @@ child.on('error',reject);
 const timeout=setTimeout(()=>reject(new Error('Browser timed out')),30000);
 try {
     const result=JSON.parse(await promise);
+    assert.equal(typeof result, 'object', String(result));
     assert.deepEqual(result.initial.slice(0,4).map(value=>value.replace(/\s+/g,'')),['▾世界群岛','▾地区北岸','▾地点旧渡口·当前位置','地点要素吊机']);
     assert.deepEqual([result.fromProse,result.fromFeatureLink,result.north,result.west,result.unknown],['集市','吊机','仓门','吊机','旧桶']);
-    assert.ok(Math.abs(result.controlRatio - 1 / 3) < .015, JSON.stringify(result));
-    assert.ok(Math.abs(result.expandedRatio - .8) < .015, JSON.stringify(result));
-    assert.ok(Math.abs(result.restoredHeight - result.controlHeight) < 1, JSON.stringify(result));
+    assert.ok(Math.abs(result.controlRatio - 1 / 4) < .015, JSON.stringify(result));
+    assert.equal(result.hasPromptSection, false);
     assert.equal(result.settingsOpen,true);
     assert.equal(result.nearby,true);
     assert.equal(result.beforeFestival,true);

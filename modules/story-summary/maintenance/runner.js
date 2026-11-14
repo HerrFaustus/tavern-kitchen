@@ -4,7 +4,7 @@ import { getTextApiRepository } from '../../text-api/repository.js';
 import { resolveAgentProfile } from '../../text-api/profile-runtime.js';
 import { isSillyTavernProvider } from '../../agent-core/provider-resolution.js';
 import { buildProviderAssistantToolCallMessage, buildProviderToolResultMessage, resolveResultToolCalls, dropInvalidatedThinkingFromMessage } from '../../agent-core/runtime/protocol.js';
-import { unitReviewRules, getMemoryMaintenancePrompt, getMemoryChatPrompt, readMEMORY_RESPONSE_REPAIR, readMEMORY_SAVE_RECOVERY } from './prompt.js';
+import { UNIT_REVIEW_RULES, getMemoryMaintenancePrompt, getMemoryChatPrompt, MEMORY_RESPONSE_REPAIR, MEMORY_SAVE_RECOVERY } from './prompt.js';
 import { NARRATIVE_UNIT_TOOLS, MEMORY_TOOLS, READ_MAINTENANCE_TOOL, RECOVER_MAINTENANCE_SAVE_TOOL } from './tools.js';
 import { normalizeToolArguments, validateToolArguments } from './arguments.js';
 import { MemoryMaintenanceError, requireMemory } from './errors.js';
@@ -29,12 +29,12 @@ export const memoryRunId = () => Array.from(crypto.getRandomValues(new Uint8Arra
 /** A turn owns its provider session and write baseline; chat history is only material. */
 export async function runMemoryAgent(session, { adapter, config, signal, onCall = () => {}, onProgress = () => {},
     onStream = () => {}, onContext = () => {}, mode = 'auto', question = '', history = [], readMaintenance,
-    onFinish, onRecover, readCurrent, summaryStyle, proofreadingPrompt, limits: requestedLimits = REVIEW_LIMITS, runId = memoryRunId(), createSummaryAdapter, countTokens } = {}) {
+    onFinish, onRecover, readCurrent, summaryStyle, limits: requestedLimits = REVIEW_LIMITS, runId = memoryRunId(), createSummaryAdapter, countTokens } = {}) {
     const limits = { ...REVIEW_LIMITS, ...requestedLimits };
     const calls = [], receipts = [];
     const tools = [...(session ? MEMORY_TOOLS : []), ...(session?.canReviewUnits ? NARRATIVE_UNIT_TOOLS : []), ...(mode === 'chat' || readMaintenance ? [READ_MAINTENANCE_TOOL] : [])];
-    const domainPrompt = mode === 'chat' ? getMemoryChatPrompt(summaryStyle, proofreadingPrompt) : getMemoryMaintenancePrompt(summaryStyle, proofreadingPrompt);
-    const basePrompt = session?.canReviewUnits ? domainPrompt + unitReviewRules() : domainPrompt;
+    const domainPrompt = mode === 'chat' ? getMemoryChatPrompt(summaryStyle) : getMemoryMaintenancePrompt(summaryStyle);
+    const basePrompt = session?.canReviewUnits ? domainPrompt + UNIT_REVIEW_RULES : domainPrompt;
     let systemPrompt = basePrompt, lastRequestPrompt;
     let messages = [], responses = null, outcome = { status: 'turn_limit', summary: '' }, failure = null;
     let finalRanges, summaryAdapter, rulesMeasurement;
@@ -42,7 +42,7 @@ export async function runMemoryAgent(session, { adapter, config, signal, onCall 
     const taskForModel = () => session?.task({ includeStaged: true }) || null;
     // Recovery belongs to this execution, not reusable or summarized conversation history.
     const requestPrompt = () => recovery
-        ? `${systemPrompt}\n\n${readMEMORY_SAVE_RECOVERY()}\n${JSON.stringify({ saveState: recovery })}` : systemPrompt;
+        ? `${systemPrompt}\n\n${MEMORY_SAVE_RECOVERY}\n${JSON.stringify({ saveState: recovery })}` : systemPrompt;
     const savedCount = () => session?.savedCount || 0;
     const stagedCount = () => session?.stagedCount || 0;
     const progress = action => onProgress({ runId, action, calls: calls.length, saved: savedCount(), staged: stagedCount() });
@@ -266,7 +266,7 @@ export async function runMemoryAgent(session, { adapter, config, signal, onCall 
                 correctionUsed = true;
                 // Never replay the invalid native payload or execute even a partial batch.
                 messages = [...messages.map(dropInvalidatedThinkingFromMessage),
-                    { role: 'system', content: readMEMORY_RESPONSE_REPAIR(), memoryResponseRepair: true }];
+                    { role: 'system', content: MEMORY_RESPONSE_REPAIR, memoryResponseRepair: true }];
                 responses = null;
                 continue;
             }

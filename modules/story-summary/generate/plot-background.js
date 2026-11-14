@@ -31,6 +31,9 @@ export function plotBackgroundItems(store, chat, hiddenThrough) {
             storyTime: String(batch.storyTime || timeEnd || timeStart).trim(),
         });
     }
-    const { parents } = summaryLayers(store?.summaryHistory, [], { chat, isLeafCurrent: isFloorEntryCurrent });
+    const isBatchLeafCurrent = (batch, currentChat) => !batch.floorEntry || isFloorEntryCurrent(batch.floorEntry, currentChat);
+    const { byId } = summaryLayers(store?.summaryHistory, [], { chat, isLeafCurrent: isBatchLeafCurrent });
+    // Use normalized compressed nodes from `byId` so persisted or derived plotLineSnapshots ride along into prompt assembly.
+    const parents = [...byId.values()].filter(node => node.kind === 'comp');
     return projectLayers(items.sort((a, b) => a.start - b.start || a.end - b.end), parents, hiddenThrough);
 }

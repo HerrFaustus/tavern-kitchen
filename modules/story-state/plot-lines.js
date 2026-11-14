@@ -1,20 +1,35 @@
-import { definePanelPrompt, panelEnabled } from '../../core/panel-policy.js';
-import { reviewedRounds } from '../story-summary/data/summary-layers.js';
+import { panelEnabled } from '../../core/panel-policy.js';
+import { reviewedRounds, roundSourceId, selectViewNodes, summaryLayers } from '../story-summary/data/summary-layers.js';
 
-const instructions = definePanelPrompt('clues', 'plotLines', '剧情线提取', `只从本轮新材料提取有进展、有新联系或已收束的剧情线，形成可供下游编剧直接规划的剧情线总结。另在返回 JSON 的顶层写 plotLines 数组，无则留空。每项含 title、status、reading、quote，并可附 summary、characters、nextFocus。title 用稳定短名，同一条线沿用旧名。status 取 active（已有行动或明确冲突）、potential（有迹象但联系还未证实）或 closed（已有收束依据）。reading 写清本轮各方正在做什么，或哪两件事可能有关；猜测必须明说尚未证实。quote 必须逐字摘自本轮 summary，以其中已发生的事实作为依据。summary 写该剧情线截至目前的累计总结（整合起因、关键推进与当前格局，供下游编剧分析）。characters 为当前直接涉及的人物短名数组。nextFocus 简写当前待解焦点或变化条件（closed 可留空）。不要预测结局、给玩家派任务或把可能性写进事实总结。最多八条。已有剧情线（沿用标题，参考上次总结）：{{titles}}`);
+const instructions = titles => `只从本轮新材料提取有进展、有新联系或已收束的剧情线，形成可供下游编剧直接规划的剧情线总结。另在返回 JSON 的顶层写 plotLines 数组，无则留空。每项含 title、status、reading、quote，并可附 summary、characters、nextFocus。title 用稳定短名，同一条线沿用旧名。status 取 active（已有行动或明确冲突）、potential（有迹象但联系还未证实）或 closed（已有收束依据）。reading 写清本轮各方正在做什么，或哪两件事可能有关；猜测必须明说尚未证实。quote 必须逐字摘自本轮 summary，以其中已发生的事实作为依据。summary 写该剧情线截至目前的累计总结（整合起因、关键推进与当前格局，供下游编剧分析）。characters 为当前直接涉及的人物短名数组。nextFocus 简写当前待解焦点或变化条件（closed 可留空）。不要预测结局、给玩家派任务或把可能性写进事实总结。最多八条。已有剧情线（沿用标题，参考上次总结）：${titles}`;
 
 const cleanList = (value, maxItems, maxChars) => Array.isArray(value)
     ? [...new Set(value.map(item => typeof item === 'string' ? item.trim() : '').filter(item => item && item.length <= maxChars))].slice(0, maxItems)
     : [];
 
+function unpackSnapshotSteps(text) {
+    const clean = String(text || '').trim();
+    if (!clean) return [];
+    const match = clean.match(/^起初：([\s\S]+?)；(?:推进：([\s\S]+?)；)?(?:当前|收束)：([\s\S]+)$/);
+    if (!match) return [clean];
+    return [match[1], ...(match[2] ? match[2].split('；') : []), match[3]].map(item => item.trim()).filter(Boolean);
+}
+
 /** Builds a concise cumulative summary across chronological beats without inventing unseen facts. */
 function buildLineSummary(beats, explicitSummary, status, reading) {
     if (explicitSummary && (beats.length <= 1 || explicitSummary !== reading)) return explicitSummary;
+    if (beats.length === 1 && beats[0]?.compressed) return String(beats[0].reading || reading || '').trim();
     const steps = [];
+    const pushStep = text => {
+        if (!text || steps.at(-1)?.text === text) return;
+        steps.push({ status, text });
+    };
     for (const beat of beats) {
-        const text = String(beat.reading || '').trim();
-        if (!text || steps.at(-1)?.text === text) continue;
-        steps.push({ status: beat.status, text });
+        if (beat.compressed) {
+            for (const step of unpackSnapshotSteps(beat.reading)) pushStep(step);
+        } else {
+            pushStep(String(beat.reading || '').trim());
+        }
     }
     if (steps.length <= 1) return steps[0]?.text || reading;
     const head = steps[0].text;
@@ -36,7 +51,7 @@ export function plotLinePrompt(history, records) {
         summary: (summary || reading).slice(0, 220),
         ...(characters?.length && { characters }),
     }));
-    return instructions({ titles: JSON.stringify(titles) });
+    return instructions(JSON.stringify(titles));
 }
 
 /** Validates extracted per-round plot-line entries against the verbatim round summary. */
@@ -63,8 +78,51 @@ export function readPlotLines(rows, summary) {
         });
 }
 
-/** Collects and consolidates plot lines across records and reviewed rounds into downstream-ready summaries. */
-export function collectPlotLines(history = [], records = []) {
+function collectCoveredLeafIds(selectedNodes, byId) {
+    const covered = new Set();
+    const visit = node => {
+        if (!node) return;
+        if (node.kind === 'leaf' || node.atomic) {
+            if (node.id) covered.add(node.id);
+            return;
+        }
+        for (const cid of node.childIds || []) visit(byId.get(cid));
+    };
+    for (const node of selectedNodes) {
+        if (node?.kind === 'comp') visit(node);
+    }
+    return covered;
+}
+
+function applyTimelineUpdate(entry, item, { floor, firstFloor, storyTime, situationByTitle, compressed = false, beatCount = 1 }) {
+    const readingText = compressed ? (item.summary || item.reading) : item.reading;
+    entry.beats.push({
+        floor: floor ?? null,
+        storyTime,
+        status: item.status,
+        reading: readingText,
+        quote: item.quote || '',
+        ...(item.summary && { summary: item.summary }),
+        ...(compressed && { compressed: true, beatCount }),
+        ...(compressed && Number.isInteger(firstFloor) && { firstFloor }),
+    });
+    for (const name of item.characters || []) entry.characters.add(name);
+    for (const id of item.situationIds || []) entry.situationIds.add(id);
+    const matchedSit = situationByTitle.get(item.title);
+    if (matchedSit) entry.situationIds.add(matchedSit);
+    // A later resolution in the structured records supersedes an older round.
+    if (entry.recordFloor > floor) return;
+    entry.status = item.status;
+    entry.reading = item.reading;
+    if (!compressed) entry.quote = item.quote;
+    entry.floor = floor;
+    if (!compressed && item.summary) entry.explicitSummary = item.summary;
+    if (item.status === 'closed') entry.nextFocus = '';
+    else if (item.nextFocus) entry.nextFocus = item.nextFocus;
+}
+
+/** Collects and consolidates plot lines across records, compressed snapshots, and uncovered rounds into downstream-ready summaries. */
+export function collectPlotLines(history = [], records = [], options = {}) {
     const lines = new Map();
     const knownNames = new Set();
     const situationByTitle = new Map();
@@ -114,39 +172,62 @@ export function collectPlotLines(history = [], records = []) {
         entry.beats.push({ floor: record._addedAt ?? null, storyTime: '', status, reading, quote: record.description, source: 'record' });
     }
 
-    for (const round of reviewedRounds(history)) {
-        const storyTime = String(round.timeEnd || round.timeStart || round.storyTime || '').trim();
+    const resolvedLayers = options.layers || summaryLayers(history, [], { chat: options.chat ?? null, isLeafCurrent: options.isLeafCurrent ?? null });
+    const selectedNodes = selectViewNodes(resolvedLayers);
+    const coveredLeafIds = collectCoveredLeafIds(selectedNodes, resolvedLayers.byId);
+    const timeline = [];
+    for (const node of selectedNodes) {
+        if (node?.kind === 'comp') timeline.push({ sortFloor: node.end ?? -1, sortStart: node.start ?? -1, kind: 'comp', node });
+    }
+
+    const rounds = options.rounds || reviewedRounds(history);
+    for (const round of rounds) {
         for (const name of round.memoryTags?.characters || []) if (name) knownNames.add(name);
+        const sid = roundSourceId(round);
+        if (sid && coveredLeafIds.has(sid)) continue;
+        if (sid && options.chat && !resolvedLayers.byId.has(sid)) continue;
+        timeline.push({ sortFloor: round.endMesId ?? -1, sortStart: round.endMesId ?? -1, kind: 'round', round });
+    }
+    timeline.sort((a, b) => a.sortFloor - b.sortFloor || a.sortStart - b.sortStart);
+
+    for (const item of timeline) {
+        if (item.kind === 'comp') {
+            const { node } = item;
+            const snaps = [...(node.plotLineSnapshots || [])].sort((a, b) => (a.floor ?? -1) - (b.floor ?? -1));
+            for (const snap of snaps) {
+                if (!snap?.title || !['active', 'potential', 'closed'].includes(snap.status)) continue;
+                const reading = String(snap.reading || snap.summary || '').trim();
+                if (!reading) continue;
+                const snapFloor = Number.isInteger(snap.floor) ? snap.floor : node.end;
+                const snapFirst = Number.isInteger(snap.firstFloor) ? snap.firstFloor : (Number.isInteger(snapFloor) ? snapFloor : node.start);
+                const beatCount = Number.isInteger(snap.beatCount) && snap.beatCount > 0 ? snap.beatCount : 1;
+                applyTimelineUpdate(ensure(snap.title), { ...snap, reading }, {
+                    floor: snapFloor,
+                    firstFloor: snapFirst,
+                    storyTime: node.storyTime || '',
+                    situationByTitle,
+                    compressed: true,
+                    beatCount,
+                });
+            }
+            continue;
+        }
+        const { round } = item;
+        const storyTime = String(round.timeEnd || round.timeStart || round.storyTime || '').trim();
         for (const row of readPlotLines(round.plotLines, round.summary)) {
-            const entry = ensure(row.title);
-            entry.beats.push({
-                floor: round.endMesId ?? null,
+            applyTimelineUpdate(ensure(row.title), row, {
+                floor: round.endMesId,
                 storyTime,
-                status: row.status,
-                reading: row.reading,
-                quote: row.quote,
-                ...(row.summary && { summary: row.summary }),
+                situationByTitle,
             });
-            for (const name of row.characters || []) entry.characters.add(name);
-            for (const id of row.situationIds || []) entry.situationIds.add(id);
-            const matchedSit = situationByTitle.get(row.title);
-            if (matchedSit) entry.situationIds.add(matchedSit);
-            // A later resolution in the structured records supersedes an older round.
-            if (entry.recordFloor > round.endMesId) continue;
-            entry.status = row.status;
-            entry.reading = row.reading;
-            entry.quote = row.quote;
-            entry.floor = round.endMesId;
-            if (row.summary) entry.explicitSummary = row.summary;
-            if (row.status === 'closed') entry.nextFocus = '';
-            else if (row.nextFocus) entry.nextFocus = row.nextFocus;
         }
     }
 
     return [...lines.values()].map(entry => {
         const beats = [...entry.beats].sort((a, b) => (a.floor ?? -1) - (b.floor ?? -1));
-        const floors = beats.map(beat => beat.floor).filter(Number.isInteger);
+        const floors = beats.flatMap(beat => [beat.firstFloor, beat.floor]).filter(Number.isInteger);
         const firstFloor = floors.length ? Math.min(...floors) : undefined;
+        const roundCount = beats.reduce((sum, beat) => sum + (Number.isInteger(beat.beatCount) && beat.beatCount > 0 ? beat.beatCount : 1), 0);
         const summary = buildLineSummary(beats, entry.explicitSummary, entry.status, entry.reading);
         const textBlob = `${entry.title}\n${summary}\n${entry.reading}`;
         for (const name of knownNames) if (name && textBlob.includes(name)) entry.characters.add(name);
@@ -157,7 +238,7 @@ export function collectPlotLines(history = [], records = []) {
             quote: entry.quote,
             summary,
             beats,
-            roundCount: beats.length,
+            roundCount,
             ...(firstFloor !== undefined && { firstFloor }),
             ...(entry.floor !== undefined && { floor: entry.floor }),
             ...(entry.recordId && { recordId: entry.recordId }),

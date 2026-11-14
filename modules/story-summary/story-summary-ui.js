@@ -17,8 +17,6 @@ import { MEMORY_CHAT_COPY } from './maintenance/chat-copy.js';
 import { DEFAULT_MEMORY_MAINTENANCE_ENABLED, normalizeProofreading } from './maintenance/settings.js';
 import { SUMMARY_FEEDBACK_COPY } from './feedback-copy.js';
 import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
-import { LAYER_PROMPTS } from './data/summary-layers.js';
-import { SUMMARY_EVENT_STYLE_RULES, resolveSummaryStyle } from './data/generation-rules.js';
 
 const UNANNOTATED_LABEL = '未标注';
 
@@ -158,9 +156,6 @@ const UNANNOTATED_LABEL = '未标注';
         ...normalizeProofreading(),
         trigger: { enabled: true, interval: 1, delayFloors: DEFAULT_SUMMARY_DELAY_FLOORS, timing: 'after_ai', role: 'system', maxPerRun: 100, forceInsertAtEnd: false },
         ui: { hideSummarized: true, keepVisibleCount: 5, windowUnit: "turn", recallEarlyOriginal: false, useVectorBoundary: false },
-        prompts: {
-            summaryStyle: '',
-        },
         textFilterRules: [...DEFAULT_FILTER_RULES],
         vector: {
             enabled: true,
@@ -426,8 +421,6 @@ const UNANNOTATED_LABEL = '未标注';
                 Object.assign(config.trigger, workflow.trigger);
                 Object.assign(config.ui, p.ui || {});
                 config.ui.useVectorBoundary = p.ui?.useVectorBoundary === true;
-                for (const level of Object.keys(LAYER_PROMPTS)) config.prompts[level] = String(p.prompts?.[level] || '');
-                config.prompts.summaryStyle = String(p.prompts?.summaryStyle || '').trim();
                 config.textFilterRules = Array.isArray(p.textFilterRules)
                     ? p.textFilterRules
                     : (Array.isArray(p.vector?.textFilterRules) ? p.vector.textFilterRules : [...DEFAULT_FILTER_RULES]);
@@ -449,8 +442,6 @@ const UNANNOTATED_LABEL = '未标注';
         Object.assign(config.ui, cfg.ui || {});
         config.ui.useVectorBoundary = cfg.ui?.useVectorBoundary === true;
         if (!settingsDirty) $('use-vector-boundary').checked = config.ui.useVectorBoundary;
-        for (const level of Object.keys(LAYER_PROMPTS)) config.prompts[level] = String(cfg.prompts?.[level] || '');
-        config.prompts.summaryStyle = String(cfg.prompts?.summaryStyle || '').trim();
         config.textFilterRules = Array.isArray(cfg.textFilterRules)
             ? cfg.textFilterRules
             : (Array.isArray(cfg.vector?.textFilterRules)
@@ -466,7 +457,7 @@ const UNANNOTATED_LABEL = '未标注';
         if (panelConfigLoad.status !== 'ready') return Promise.resolve(false);
         try {
             const settingsOpen = $('settings-modal')?.classList.contains('active');
-            if (settingsOpen && !options.promptChange) {
+            if (settingsOpen) {
                 config.vector = getVectorConfig();
                 config.textFilterRules = collectFilterRules();
             }
@@ -499,12 +490,12 @@ const UNANNOTATED_LABEL = '未标注';
                 }
                 pendingConfigSaveRequests.set(requestId, {
                     resolve,
-                    statusId, promptChange: options.promptChange,
+                    statusId,
                     successMessage: options.successMessage || '配置已保存',
                     errorPrefix: options.errorPrefix || '保存失败：',
                     timeoutId,
                 });
-                postMsg('SAVE_PANEL_CONFIG', options.promptChange ? { promptChange: options.promptChange, requestId } : { config, requestId });
+                postMsg('SAVE_PANEL_CONFIG', { config, requestId });
             });
         } catch (e) {
             console.error('saveConfig error:', e);
@@ -838,9 +829,6 @@ const UNANNOTATED_LABEL = '未标注';
         $('trigger-timing').value = config.trigger.timing;
         $('trigger-role').value = config.trigger.role || 'system';
         $('trigger-insert-at-end').checked = !!config.trigger.forceInsertAtEnd;
-        fillBuiltInSummaryPromptFields();
-        for (const [level, fallback] of Object.entries(LAYER_PROMPTS)) $('prompt-' + level).value = config.prompts[level] || fallback;
-        $('summary-style').value = resolveSummaryStyle(config.prompts.summaryStyle);
         $('api-connect-status').textContent = '';
         $('hide-summarized').checked = config.ui.hideSummarized;
         $('keep-visible-count').value = config.ui.keepVisibleCount;
@@ -890,37 +878,8 @@ const UNANNOTATED_LABEL = '未标注';
         config.trigger.delayFloors = 0;
         config.trigger.maxPerRun = SUMMARY_BATCH_FLOORS;
         config.trigger.forceInsertAtEnd = $('trigger-insert-at-end').checked;
-        for (const [level, fallback] of Object.entries(LAYER_PROMPTS)) {
-            const value = $('prompt-' + level).value.trim();
-            config.prompts[level] = value === fallback ? '' : value;
-        }
-        const summaryStyle = $('summary-style').value.trim();
-        config.prompts.summaryStyle = summaryStyle === SUMMARY_EVENT_STYLE_RULES ? '' : summaryStyle;
         config.textFilterRules = collectFilterRules();
         config.vector = getVectorConfig();
-    }
-
-    function fillBuiltInSummaryPromptFields() {
-    }
-
-    async function saveLayerPrompt(level, reset = false) {
-        if (settingsSaving) return;
-        if (!settingsOpenedWithServerConfig) { retryPanelConfigLoad(); return; }
-        const field = $('prompt-' + level);
-        const value = reset || field.value.trim() === LAYER_PROMPTS[level] ? '' : field.value.trim();
-        settingsSaving = true;
-        const layout = $('settings-modal').querySelector('.workspace-layout');
-        layout.inert = true;
-        try {
-            const saved = await saveConfig({ promptChange: { level, value }, timeoutMs: 5000,
-                statusId: 'status-' + level, loadingMessage: '保存中…', successMessage: '已保存' });
-            if (!saved) return;
-            config.prompts[level] = settingsSnapshot.prompts[level] = value;
-            field.value = value || LAYER_PROMPTS[level];
-            dirtyFields.delete(field);
-            settingsDirty = dirtyFields.size > 0;
-            $('api-connect-status').textContent = settingsDirty ? WORKSPACE_COPY.dirty : '';
-        } finally { settingsSaving = false; layout.inert = false; }
     }
 
     async function saveSettings() {
@@ -1666,7 +1625,7 @@ const UNANNOTATED_LABEL = '未标注';
                     if (pending.timeoutId) clearTimeout(pending.timeoutId);
                     const statusEl = $(pending.statusId);
                     if (d.success) {
-                        if (d.config && !pending.promptChange) applyConfig(d.config);
+                        if (d.config) applyConfig(d.config);
                         setStatusText(statusEl, pending.successMessage, 'success');
                         pending.resolve(true);
                     } else {
@@ -1754,19 +1713,7 @@ const UNANNOTATED_LABEL = '未标注';
         };
         $('settings-config-retry').onclick = retryPanelConfigLoad;
         $('settings-save').onclick = saveSettings;
-        for (const id of ['settings-modal', 'tab-summary-prompts', 'tab-prompts']) {
-            $(id).addEventListener('input', event => { markSettingsDirty(event.target); });
-        }
-
-        for (const level of Object.keys(LAYER_PROMPTS)) {
-            document.querySelector('[data-save-layer="' + level + '"]').onclick = () => saveLayerPrompt(level);
-            $('reset-' + level).onclick = () => saveLayerPrompt(level, true);
-        }
-        $('btn-reset-summary-style').onclick = async () => {
-            $('summary-style').value = SUMMARY_EVENT_STYLE_RULES;
-            markSettingsDirty();
-            await saveSettings();
-        };
+        $('settings-modal').addEventListener('input', event => { markSettingsDirty(event.target); });
 
         // Trigger timing
         $('trigger-timing').onchange = () => {

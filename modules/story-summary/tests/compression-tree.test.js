@@ -13,6 +13,7 @@ import {
     thresholdForLevel,
 } from '../data/summary-layers.js';
 import { runRecursiveCompressionCascade } from '../generate/layer-cascade.js';
+import { plotBackgroundItems } from '../generate/plot-background.js';
 import { captureRangeSource } from '../data/turn-source.js';
 import { buildTimelineTree, selectTimelineTree } from '../timeline-tree.js';
 import { createTestModuleUrl } from './helpers/bundle-module.js';
@@ -333,4 +334,62 @@ test('runRecursiveCompressionCascade propagates plotLineSnapshots through L1 and
     const hits = selectTimelineTree(tree, { query: '北仓' });
     assert.equal(hits.length, 1);
     assert.equal(hits[0].plotLineSnapshots[0].title, '银钥匙谜案');
+});
+
+test('plotBackgroundItems carries compressed plotLineSnapshots into buildRawPrompt and drops cleanly on branch swipe', async () => {
+    const mod = await loadPromptModule();
+    const chat = Array.from({ length: 28 }, (_, i) => ({ is_user: i % 2 === 0, mes: `正文${i}` }));
+    const summaryHistory = Array.from({ length: 13 }, (_, i) => ({
+        endMesId: 2 * i + 1,
+        summary: i === 0 ? '轮0初现失踪线索。' : i === 5 ? '轮5北仓换防暗流涌动。' : `第${i + 1}轮摘要`,
+        timeEnd: `2026/11/${String(i + 1).padStart(2, '0')} 10:00`,
+        ...(i === 0 && { plotLines: [{ title: '银钥匙谜案', status: 'potential', reading: '发现银钥匙', quote: '失踪线索', characters: ['林疏'], nextFocus: '核查锁孔' }] }),
+        ...(i === 5 && { plotLines: [{ title: '银钥匙谜案', status: 'active', reading: '北仓换防有变', quote: '换防暗流', characters: ['守卫'], nextFocus: '追查东仓货单' }] }),
+        sourceReceipt: { id: `bg:${i}`, source: captureRangeSource(chat, 2 * i, 2 * i + 1) },
+    }));
+    const { leaves } = summaryLayers(summaryHistory, [], { chat });
+    const stageChildren = leaves.slice(0, 12);
+    const stageNode = {
+        id: 'stage-bg-1',
+        level: 'stage',
+        start: stageChildren[0].start,
+        end: stageChildren.at(-1).end,
+        text: '阶段一：暗查北仓失踪案',
+        sourceId: layerSignature(stageChildren),
+        childIds: stageChildren.map(c => c.id),
+        plotLineSnapshots: mergePlotLineSnapshots(stageChildren),
+    };
+    summaryHistory[11].reviewLayers = [stageNode];
+
+    const bg = plotBackgroundItems({ summaryHistory }, chat, 25);
+    assert.equal(bg.length, 2);
+    assert.equal(bg[0].id, 'stage-bg-1');
+    assert.equal(bg[0].plotLineSnapshots[0].title, '银钥匙谜案');
+
+    const store = {
+        summaryHistory,
+        lastSummarizedMesId: 25,
+        json: { facts: [], storyRecords: [{ id: 'clock', kind: 'clock', label: '2026年11月14日', date: '2026-11-14' }] },
+    };
+    globalThis.__compressionPromptCtx = { chat, name1: '主角', chatId: 'c-snap' };
+    globalThis.__compressionPromptStore = store;
+
+    const prompt = mod.buildRawPrompt(store, { chunks: [], focusCharacters: [] }, 25);
+    assert.match(prompt.promptText, /阶段一：暗查北仓失踪案/);
+    assert.match(prompt.promptText, /剧情线「银钥匙谜案」\(进行中\).*林疏.*守卫/);
+    assert.match(prompt.promptText, /追查东仓货单/);
+
+    // Tight plotBudget: if snapshots push a single compressed item over budget, keep the summary line alone rather than failing early.
+    const hugeSnap = { title: '超长支线', status: 'active', summary: '超长摘要。'.repeat(700), reading: '推进' };
+    stageNode.plotLineSnapshots = [...stageNode.plotLineSnapshots, hugeSnap];
+    const squeezed = mod.buildRawPrompt(store, { chunks: [], focusCharacters: [] }, 25);
+    assert.match(squeezed.promptText, /阶段一：暗查北仓失踪案/);
+
+    // Swiping a floor inside stage-bg-1 invalidates the compressed parent and omits its snapshots from background.
+    const original = chat[3].mes;
+    chat[3].mes = '切分支后的全新对话。';
+    const afterSwipe = mod.buildRawPrompt(store, { chunks: [], focusCharacters: [] }, 25);
+    assert.doesNotMatch(afterSwipe.promptText, /阶段一：暗查北仓失踪案/);
+    assert.doesNotMatch(afterSwipe.promptText, /剧情线「银钥匙谜案」/);
+    chat[3].mes = original;
 });

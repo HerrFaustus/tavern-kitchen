@@ -1207,9 +1207,7 @@ function createOverlay() {
             ">
                 <iframe id="tavernKitchen-story-summary-iframe" class="tavernKitchen-iframe"
                     src="${iframePath}"
-                    style="width:100% !important; height:100% !important; border:none !important;
-                           border-radius:12px !important; box-shadow:0 0 30px rgba(0,0,0,.4) !important;
-                           background:#fafafa !important;">
+                    style="width:100% !important; height:100% !important; border:none !important; background:transparent !important;">
                 </iframe>
             </div>
         </div>
@@ -2268,7 +2266,7 @@ async function handleFrameMessage(event) {
         }
 
         case "SAVE_PANEL_CONFIG":
-            if (data.config || data.promptChange) {
+            if (data.config) {
                 try {
                     const vectorChanged = Boolean(
                         data.config?.vector
@@ -2276,15 +2274,7 @@ async function handleFrameMessage(event) {
                     );
                     const transition = await changePanelConfig(
                         'panel-save',
-                        () => {
-                            if (!data.promptChange) return saveSummaryPanelConfigVerified(data.config);
-                            const { level, value } = data.promptChange;
-                            if (!['round', 'stage', 'chapter'].includes(level) || typeof value !== 'string' || value.length > 12000) {
-                                throw new Error('无效的总结提示词。');
-                            }
-                            const current = getSummaryPanelConfig();
-                            return saveSummaryPanelConfigVerified({ ...current, prompts: { ...current.prompts, [level]: value } });
-                        },
+                        () => saveSummaryPanelConfigVerified(data.config),
                         vectorChanged,
                     );
                     const previousVectorConfig = transition.previousVectorConfig;

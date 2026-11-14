@@ -33,13 +33,14 @@ test('legacy module-off settings cannot disable story memory while the master ch
 });
 
 for (const enabled of [undefined, false, true]) test(`vector defaults and removed summary ranges normalize across save/reload: ${enabled}`, async () => {
-    const raw = { summaryWorkflowVersion: 1, proofreadingInterval: 4, proofreadingPrompt: '核对身份', trigger: { enabled: false, timing: 'before_user', interval: 8, delayFloors: 4, maxPerRun: 25 },
+    const raw = { summaryWorkflowVersion: 1, proofreadingInterval: 4, proofreadingPrompt: '核对身份', prompts: { round: '旧提示', summaryStyle: '旧文风' }, trigger: { enabled: false, timing: 'before_user', interval: 8, delayFloors: 4, maxPerRun: 25 },
         vector: { ...(enabled === undefined ? {} : { enabled }), embeddingApi: { provider: 'custom', url: 'https://fixture.invalid/v1', key: 'fixture-only', model: 'fixture-model' } } };
     const initial = mod.applySummaryPanelConfigSnapshot(raw);
     assert.equal(initial.vector.enabled, true); assert.equal(initial.trigger.delayFloors, 0); assert.equal(initial.trigger.maxPerRun, 100);
     assert.equal(initial.trigger.enabled, false); assert.equal(initial.trigger.interval, 8); assert.equal(initial.trigger.timing, 'before_user');
+    assert.equal(initial.proofreadingPrompt, undefined); assert.equal(initial.prompts, undefined);
     const saved = await mod.saveSummaryPanelConfigVerified(raw), loaded = await mod.loadConfigFromServer();
-    assert.equal(loaded.proofreadingInterval, 4); assert.equal(loaded.proofreadingPrompt, raw.proofreadingPrompt);
+    assert.equal(loaded.proofreadingInterval, 4); assert.equal(loaded.proofreadingPrompt, undefined); assert.equal(loaded.prompts, undefined);
     assert.equal(saved.vector.enabled, true); assert.equal(loaded.vector.enabled, true); assert.equal(mod.getVectorConfig().enabled, true);
     assert.equal(loaded.vector.embeddingApi.key, 'fixture-only'); assert.equal(loaded.vector.embeddingApi.model, 'fixture-model');
     assert.equal(raw.trigger.delayFloors, 4); assert.equal(raw.vector.enabled, enabled);
