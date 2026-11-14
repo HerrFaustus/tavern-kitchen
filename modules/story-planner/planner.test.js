@@ -4,7 +4,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { parseHTML } from 'linkedom';
 import { createNoteStore } from './storage.js';
 import { createPlanner } from './runtime.js';
-import { plannerSnapshot, publishNotes, writerInput } from './notes.js';
+import { plannerSnapshot, publishNotes, staleTargetsForNote, writerInput } from './notes.js';
 import { createPlannerSettings } from './settings-view.js';
 
 test('one writer publishes once, full chapter only; change, rollback and chat isolation', async () => {
@@ -99,7 +99,7 @@ test('invalid private text, stale completion and failed draft never reach a repl
     runtime.retry(); await runtime.prepare(); assert.equal(calls,3);
 });
 
-test('planner organizes input around characters, plotLines and situations and renders structured commentary/prediction/suggestion notes', () => {
+test('planner organizes input around characters, plotLines and situations and renders structured commentary/prediction/suggestion notes', async () => {
     const world = {
         worldId: 'w',
         branchId: 'b',
@@ -158,10 +158,103 @@ test('planner organizes input around characters, plotLines and situations and re
     assert.match(validNote.chapter.text, /【剧情线】/);
     assert.match(validNote.chapter.text, /【局势】/);
 
+    const copiedTexts = [];
     const { document } = parseHTML('<html><body><div id="root"></div><div id="ctrl"></div></body></html>');
-    const view = createPlannerSettings(document.getElementById('root'), { retry: () => {}, controlsRoot: document.getElementById('ctrl') });
+    const view = createPlannerSettings(document.getElementById('root'), {
+        retry: () => {},
+        controlsRoot: document.getElementById('ctrl'),
+        clipboard: { writeText: async text => { copiedTexts.push(text); } },
+    });
     view.note({ state: 'ready', note: { ...validNote, revision: 1 } });
     assert.equal(document.querySelectorAll('.tk-planner-entity').length, 4);
     assert.match(document.querySelector('.tk-planner-overview').textContent, /人物 1.*剧情线 1.*局势 1/);
     assert.equal(document.querySelector('.tk-planner-global').open, false);
+
+    // Filter by group and search keyword, then test stale badge and copy button.
+    document.querySelector('.tk-planner-filter[data-entity-filter="plotLines"]').click();
+    assert.equal(document.querySelectorAll('.tk-planner-chapter .tk-planner-entity:not([hidden])').length, 1);
+    document.querySelector('.tk-planner-filter[data-entity-filter="all"]').click();
+    const search = document.querySelector('.tk-planner-search');
+    search.value = '城门';
+    search.dispatchEvent(new document.defaultView.Event('input', { bubbles: true }));
+    assert.equal(document.querySelectorAll('.tk-planner-chapter .tk-planner-entity:not([hidden])').length, 1);
+
+    document.querySelector('.tk-planner-copy').click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(copiedTexts[0], validNote.chapter.text);
+    assert.equal(document.querySelector('.tk-planner-copy-status').textContent, '已复制');
+
+    view.note({
+        state: 'stale',
+        staleTargets: { all: false, characters: ['林疏'], plotLines: [], situations: [], details: [{ group: 'characters', target: '林疏', field: 'presence' }] },
+        note: { ...validNote, revision: 1 },
+    });
+    assert.equal(document.querySelectorAll('.tk-planner-entity.is-stale .tk-planner-tag.is-stale').length, 2);
+    assert.match(document.querySelector('.tk-planner-note-status').textContent, /林疏/);
+});
+
+test('granular single-entity, record field and plot-line dependencies surface stale targets in inspect()', async () => {
+    globalThis.indexedDB = new IDBFactory();
+    const noteStore = createNoteStore();
+    const store = {
+        json: {
+            storyRecords: [
+                { id: 'p1', kind: 'person', name: '林疏', presence: 'present', note: '东仓门外' },
+                { id: 's1', kind: 'situation', title: '城门戒严', status: 'open', description: '子时闭门', parties: ['巡夜司'] },
+            ],
+        },
+        summaryHistory: [
+            { endMesId: 1, summary: '林疏发现密信', plotLines: [{ title: '东仓暗号', status: 'active', reading: '发现暗门', quote: '发现密信' }] },
+        ],
+    };
+    const world = {
+        worldId: 'w2',
+        branchId: 'b2',
+        version: 1,
+        entities: [{ id: 'c1', name: '林疏', fields: { disposition: { value: '警惕' } } }],
+    };
+    const chat = [{ mes: '入夜', is_user: true }];
+    const snapshot = () => ({ ...plannerSnapshot(world, { enabled: true, store }, chat, 's-granular'), boundary: 'opening' });
+    const runtime = createPlanner({
+        snapshot,
+        store: noteStore,
+        preference: () => '',
+        status: () => {},
+        write: async () => JSON.stringify({
+            global: {
+                entities: { characters: [{ target: '林疏', commentary: '握有密信', prediction: '将查账本', suggestion: '维持悬念' }] },
+                dependencies: [{ entityId: 'c1', field: 'disposition' }],
+            },
+            chapter: {
+                entities: {
+                    characters: [{ target: '林疏', commentary: '在门外蹲守', prediction: '试探守卫', suggestion: '描摹风声' }],
+                    plotLines: [{ target: '东仓暗号', commentary: '暗门刚露端倪', prediction: '待查口令', suggestion: '暂留扣子' }],
+                    situations: [{ target: '城门戒严', commentary: '夜禁未解', prediction: '换防前紧张', suggestion: '强调时限' }],
+                },
+                dependencies: [
+                    { entityId: 'c1', field: 'presence' },
+                    { recordId: 's1', field: 'status' },
+                    { lineTitle: '东仓暗号' },
+                ],
+            },
+        }),
+    });
+    await runtime.prepare();
+    let inspected = await runtime.inspect();
+    assert.equal(inspected.state, 'ready');
+
+    // Changing only character presence marks only 林疏 as stale.
+    store.json.storyRecords[0].presence = 'absent';
+    inspected = await runtime.inspect();
+    assert.equal(inspected.state, 'stale');
+    assert.deepEqual(inspected.staleTargets.characters, ['林疏']);
+    assert.deepEqual(inspected.staleTargets.situations, []);
+
+    // Reverting presence and changing plotLine version digest marks 东仓暗号 as stale.
+    store.json.storyRecords[0].presence = 'present';
+    store.summaryHistory[0].plotLines[0].status = 'advanced';
+    const nextSnap = snapshot();
+    const staleByLine = staleTargetsForNote(inspected.note, nextSnap, 'world');
+    assert.deepEqual(staleByLine.plotLines, ['东仓暗号']);
+    assert.deepEqual(staleByLine.characters, []);
 });

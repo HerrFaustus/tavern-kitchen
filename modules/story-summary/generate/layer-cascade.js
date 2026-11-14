@@ -1,5 +1,5 @@
 import { createIdentifier } from '../../../shared/common/identifier.js';
-import { DEFAULT_LEAF_KEEP_RECENT, planNextCompression } from '../data/summary-layers.js';
+import { DEFAULT_LEAF_KEEP_RECENT, mergePlotLineSnapshots, planNextCompression } from '../data/summary-layers.js';
 
 /**
  * Recursively roll up uncompressed summary roots across L0 -> L1 -> L2 -> L3+
@@ -26,10 +26,12 @@ export async function runRecursiveCompressionCascade(store, {
         });
         if (!plan) break;
         const reason = `自动层叠压缩(${plan.sourceLevel === 0 ? '本轮摘要' : plan.nodes[0].level}→${plan.level})`;
+        const plotLineSnapshots = mergePlotLineSnapshots(plan.nodes);
         const text = String(await summarizeLayer({
             level: plan.level,
             depth: plan.depth,
             children: plan.nodes,
+            ...(plotLineSnapshots.length && { plotLineSnapshots }),
             reason,
             signal,
         }) || '').trim();
@@ -45,6 +47,7 @@ export async function runRecursiveCompressionCascade(store, {
             childIds: plan.childIds,
             timeStart: plan.timeStart,
             timeEnd: plan.timeEnd,
+            ...(plotLineSnapshots.length && { plotLineSnapshots }),
             reason,
             createdAt: Date.now(),
         });

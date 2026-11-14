@@ -4,6 +4,7 @@ import { createSummaryBatch } from '../data/summary-history.js';
 import { captureRangeSource } from '../data/turn-source.js';
 import { buildSummaryUndo } from '../data/summary-undo.js';
 import { reviewedRounds, summaryLayers, timelineRounds, layerSignature } from '../data/summary-layers.js';
+import { upgradeSummaryHistory } from '../data/summary-history.js';
 import { migrateRoundSummaries } from '../data/migrations/round-summaries.js';
 import { createMemorySession } from '../maintenance/session.js';
 import { commitMemorySession } from '../maintenance/commit.js';
@@ -65,4 +66,56 @@ test('migration preserves a later correction to an earlier scene, its tags, orig
     assert.match(previous.summary, /取到手令/);
     assert.doesNotMatch(previous.summary, /盖印/);
     assert.deepEqual(previous.memoryTags.characters, ['主角']);
+});
+
+test('ReviseRoundSummary checks plotLine quotes against revised text and validates updated plotLines', async () => {
+    const current = fixture();
+    current.store.summaryHistory[0].summary = '囚犯已经获释，拿到铜印。';
+    current.store.summaryHistory[0].plotLines = [
+        { title: '越狱线', status: 'active', reading: '拿到铜印', quote: '拿到铜印' },
+        { title: '获释线', status: 'potential', reading: '获释疑点', quote: '已经获释' },
+    ];
+    const session = createMemorySession({ ...current, generateReviewedLayer: async () => '阶段' });
+    const warnResult = await session.reviewUnit('ReviseRoundSummary', {
+        to: 1,
+        version: 0,
+        previous: current.store.summaryHistory[0].summary,
+        text: '手令到手，放人仍待确认。',
+        evidence: { floor: 1, quote: '拿到了手令' },
+    }, current);
+    assert.match(warnResult.warning || '', /不再/);
+    assert.equal(warnResult.invalidatedPlotLines.length, 2);
+
+    await assert.rejects(session.reviewUnit('ReviseRoundSummary', {
+        to: 1,
+        version: 1,
+        previous: '手令到手，放人仍待确认。',
+        text: '手令到手，暂未放人。',
+        plotLines: [{ title: '越狱线', status: 'active', reading: '新版', quote: '不存在的引文' }],
+        evidence: { floor: 1, quote: '拿到了手令' },
+    }, current), /plotLines|引文|逐字/i);
+
+    const updated = await session.reviewUnit('ReviseRoundSummary', {
+        to: 1,
+        version: 1,
+        previous: '手令到手，放人仍待确认。',
+        text: '手令到手，暂未放人。',
+        plotLines: [{ title: '手令风波', status: 'active', reading: '手令暂扣', quote: '手令到手' }],
+        evidence: { floor: 1, quote: '拿到了手令' },
+    }, current);
+    assert.deepEqual(updated.retainedPlotLines, ['手令风波']);
+    const saved = await commitMemorySession(session, { runId: 'r-plot' }, {
+        read: () => current,
+        commit: async next => next,
+    });
+    const rounds = reviewedRounds(saved.current.store.summaryHistory);
+    assert.equal(rounds[0].plotLines[0].title, '手令风波');
+    assert.equal(rounds[0].plotLines[0].quote, '手令到手');
+    const savedRevision = saved.current.store.summaryHistory.at(-1).roundRevisions;
+    assert.doesNotThrow(() => upgradeSummaryHistory([{ ...createSummaryBatch(-1, 0, { version: 1 }), summary: '初版', roundRevisions: savedRevision }]));
+    assert.throws(() => upgradeSummaryHistory([{
+        ...createSummaryBatch(-1, 0, { version: 1 }),
+        summary: '初版',
+        roundRevisions: [{ ...savedRevision[0], plotLines: [{ title: '越狱线', status: 'active', reading: 'x', quote: '不匹配' }] }],
+    }]));
 });

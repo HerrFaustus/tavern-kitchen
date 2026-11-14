@@ -22,7 +22,7 @@ async function inspect(doc, width, createPlannerSettings) {
     const view = createPlannerSettings(controls, {
         retry: () => { retries++; },
     });
-    const retry = controls.querySelector('button');
+    const retry = controls.querySelector('.tk-module-settings button');
     view.status('等待正文生成', false);
     const initiallyHidden = retry.hidden;
     view.note({state:'empty'});
@@ -38,7 +38,8 @@ async function inspect(doc, width, createPlannerSettings) {
     const chapterMatches = chapter.textContent === chapterText;
     const fitsPlain = controls.scrollWidth <= controls.clientWidth;
     view.note({
-        state: 'ready',
+        state: 'stale',
+        staleTargets: { all: false, characters: ['林默'], plotLines: [], situations: [], details: [{ group: 'characters', target: '林默', field: 'presence' }] },
         note: {
             id: 'fiction-entities',
             revision: 3,
@@ -62,6 +63,21 @@ async function inspect(doc, width, createPlannerSettings) {
     });
     const statCount = controls.querySelectorAll('.tk-planner-stat').length;
     const entityCardCount = controls.querySelectorAll('.tk-planner-chapter .tk-planner-entity').length;
+    const staleTagCount = controls.querySelectorAll('.tk-planner-entity.is-stale .tk-planner-tag.is-stale').length;
+    const charFilter = controls.querySelector('.tk-planner-filter[data-entity-filter="characters"]');
+    charFilter.click();
+    const visibleAfterGroupFilter = controls.querySelectorAll('.tk-planner-chapter .tk-planner-entity:not([hidden])').length;
+    controls.querySelector('.tk-planner-filter[data-entity-filter="all"]').click();
+    const search = controls.querySelector('.tk-planner-search');
+    search.value = '药车';
+    search.dispatchEvent(new controls.ownerDocument.defaultView.Event('input', { bubbles: true }));
+    const visibleAfterSearch = controls.querySelectorAll('.tk-planner-chapter .tk-planner-entity:not([hidden])').length;
+    search.value = '';
+    search.dispatchEvent(new controls.ownerDocument.defaultView.Event('input', { bubbles: true }));
+    const copyButton = controls.querySelector('.tk-planner-copy');
+    copyButton.click();
+    await new Promise(r => setTimeout(r, 10));
+    const copyAttempted = controls.querySelector('.tk-planner-copy-status').textContent.length > 0;
     const globalResetClosed = !global.open;
     view.status('札记未能发布', true);
     retry.click();
@@ -71,6 +87,7 @@ async function inspect(doc, width, createPlannerSettings) {
     };
     return { width, native: box(reference), kitchen: box(panel), fields: controls.querySelectorAll('textarea, select').length, retries,
         empty, chapterMatches, globalClosed, globalOpened, globalResetClosed, statCount, entityCardCount,
+        staleTagCount, visibleAfterGroupFilter, visibleAfterSearch, copyAttempted,
         retryVisible: initiallyHidden && !retry.hidden, fits: fitsPlain && controls.scrollWidth <= controls.clientWidth };
 }
 
@@ -130,6 +147,10 @@ try {
         assert.ok(row.chapterMatches && row.globalClosed && row.globalOpened && row.globalResetClosed);
         assert.equal(row.statCount, 2);
         assert.equal(row.entityCardCount, 2);
+        assert.equal(row.staleTagCount, 1);
+        assert.equal(row.visibleAfterGroupFilter, 1);
+        assert.equal(row.visibleAfterSearch, 1);
+        assert.ok(row.copyAttempted);
         assert.ok(row.retryVisible && row.retries === 1 && row.fits);
     }
 } finally {
@@ -137,5 +158,5 @@ try {
     edge.kill();
     server.closeAllConnections();
     server.close();
-    fs.rmSync(temp, { recursive: true, force: true });
+    fs.rmSync(temp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }

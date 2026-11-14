@@ -239,7 +239,7 @@ export async function generateFloorSummary({ store, floorText, timeout = 180000,
     }
 }
 
-export async function generateReviewedLayer({ level, children, reason, signal }) {
+export async function generateReviewedLayer({ level, children, plotLineSnapshots, reason, signal }) {
     const prompt = getSummaryPanelConfig().prompts[level] || LAYER_PROMPTS[level] || LAYER_PROMPTS.chapter;
     const messages = [
         { role: 'system', content: prompt + '\n' + layerSuffix() },
@@ -254,6 +254,7 @@ export async function generateReviewedLayer({ level, children, reason, signal })
                     ...(n.timeEnd ? { timeEnd: n.timeEnd } : {}),
                     summary: n.text,
                 })),
+                ...(plotLineSnapshots?.length && { plotLineSnapshots }),
             }),
         },
     ];

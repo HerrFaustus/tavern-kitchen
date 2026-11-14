@@ -186,6 +186,9 @@
 .timeline-unit > summary:focus-visible { outline: 2px solid var(--archive-accent); outline-offset: 2px; }
 .timeline-unit-text { display: block; color: var(--txt2); line-height: 1.8; margin-top: 4px; white-space: pre-wrap; }
 .timeline-unit blockquote { margin: 8px 0; padding-inline-start: 8px; color: var(--txt3); overflow-wrap: anywhere; }
+.timeline-plot-snapshots { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--bdr); border-radius: 5px; display: grid; gap: 4px; font-size: 12px; line-height: 1.55; }
+.timeline-plot-snapshots .archive-label { margin: 0 0 2px; }
+.timeline-plot-snapshot { color: var(--txt2); overflow-wrap: anywhere; }
 .timeline-children { margin-block: 8px; padding-inline-start: clamp(8px, 2vw, 20px); border-inline-start: 1px solid var(--bdr); }
 html.tk-embedded {
     --archive-accent: var(--SmartThemeQuoteColor, var(--hl, #9bbedd));
@@ -194,6 +197,27 @@ html.tk-embedded {
 html.tk-embedded .archive {
     font-family: var(--tk-font, inherit);
     padding: 0 5px 16px;
+}
+html.tk-embedded .archive-story,
+html.tk-embedded .archive-world-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+}
+html.tk-embedded #archive-story-index,
+html.tk-embedded .archive-world-index {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+html.tk-embedded .archive-index-button {
+    width: auto;
+    flex: 0 0 auto;
+    border-left: 1px solid var(--bdr);
+}
+html.tk-embedded .archive-section-head {
+    margin-bottom: 10px;
 }
 html.tk-embedded .archive-profile .prof-name,
 html.tk-embedded .archive-drawer-body .archive-detail-heading {

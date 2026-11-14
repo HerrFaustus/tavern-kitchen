@@ -21,7 +21,7 @@ export const WRITER = `你是后台唯一的编剧。你的创作札记必须完
 返回一个 JSON 对象，包含 global 和 chapter，每层含 entities、dependencies，并可附汇总 text（省略时系统自动按 entities 排版）：
 - entities 为 {"characters":[...],"plotLines":[...],"situations":[...]}，每项为 {"target":"实体名或标题","commentary":"点评","prediction":"走向预测","suggestion":"建议"}。无相关实体可留空数组，但每层至少需针对已出现的重点人物、剧情线或局势给出实质条目或 text。
 - 只在首次或全局前提失效时提交 global，其余仅提交 chapter。
-- dependencies 是少量决定本稿能否成立的前提，可引用输入中现有的 {entityId,field}、{recordId} 或 {lineTitle}。plotLines 是已汇总的剧情线总结；potential 仅代表未证实联系，不得在章节稿写成谜底或必经事件；closed 只能作背景依据。严禁虚构引用。`;
+- dependencies 是少量决定本稿能否成立的前提，支持单实体字段级引用：人物/世界实体 {entityId,field}（field 可取实体字段名或 name/aliases/presence/knowledge/agendas）、局势/记录 {recordId,field?}（可指定 status/description/releaseCondition/due/presence/note 等字段或省略整条）、剧情线 {lineTitle,field?}（可指定 status/summary/nextFocus/characters 或省略整线版本摘要）。plotLines 是已汇总的剧情线总结；potential 仅代表未证实联系，不得在章节稿写成谜底或必经事件；closed 只能作背景依据。严禁虚构引用。`;
 
 export function plannerSnapshot(world, memory, chat, identity) {
     if (!world || !identity || !memory?.enabled || memory.invalidFrom != null || memory.store?.summaryInvalid || memory.store?.sourceInvalidFromFloor != null) return null;
@@ -188,17 +188,90 @@ export function buildPlanningTargets(snap) {
     return { characters, plotLines, situations };
 }
 
-function valueOf(ref, snapshot) {
-    if (ref.lineTitle) return snapshot.plotLines?.find(line => line.title === ref.lineTitle);
+const LINE_DEP_FIELDS = new Set(['status', 'summary', 'reading', 'nextFocus', 'characters', 'situationIds', 'floor', 'roundCount']);
+
+function entityCharacterMeta(entity, field, records = []) {
+    const names = new Set([entity.name, ...(entity.aliases || [])].filter(Boolean).map(nameKey));
+    if (field === 'name') return entity.name || '';
+    if (field === 'aliases') return entity.aliases || [];
+    if (field === 'presence' || field === 'presenceNote') {
+        const state = records.find(r => r.kind === 'person' && names.has(nameKey(r.name)));
+        if (!state) return undefined;
+        return field === 'presence' ? state.presence : (state.note || '');
+    }
+    if (field === 'knowledge') {
+        const items = records.filter(r => r.kind === 'knowledge' && names.has(nameKey(r.person)))
+            .map(({ content, certainty, evidence, learnedAt }) => ({ content, certainty, evidence, ...(learnedAt && { learnedAt }) }));
+        return items.length ? items : undefined;
+    }
+    if (field === 'agendas') {
+        const items = records.filter(r => isPersonalAgenda(r) && (r.holders || []).some(holder => names.has(nameKey(holder))))
+            .map(({ id, kind, title, status, description, conditions, statusNote, due }) => ({ id, kind, title, status, description, ...(conditions && { conditions }), ...(statusNote && { statusNote }), ...(due && { due }) }));
+        return items.length ? items : undefined;
+    }
+    return undefined;
+}
+
+function resolveDependency(ref, snapshot, requireExactField = false) {
+    if (ref.lineTitle) {
+        const line = snapshot.plotLines?.find(item => item.title === ref.lineTitle);
+        if (!line) return null;
+        if (ref.field) {
+            if (!LINE_DEP_FIELDS.has(ref.field)) return null;
+            return { value: line[ref.field] ?? '', group: 'plotLines', target: line.title };
+        }
+        return {
+            value: {
+                title: line.title,
+                status: line.status,
+                summary: line.summary || line.reading || '',
+                nextFocus: line.nextFocus || '',
+                floor: line.floor ?? -1,
+                characters: line.characters || [],
+            },
+            group: 'plotLines',
+            target: line.title,
+        };
+    }
     if (ref.recordId) {
-        const record = snapshot.records.find(item => item.id === ref.recordId);
-        if (!record) return undefined;
+        const record = snapshot.records?.find(item => item.id === ref.recordId);
+        if (!record) return null;
+        const group = record.kind === 'person' ? 'characters' : 'situations';
+        const target = record.title || record.name || record.id;
+        if (ref.field) {
+            if (typeof ref.field !== 'string' || !ref.field.trim() || ref.field.startsWith('_')) return null;
+            if (ref.field === 'history') {
+                if (requireExactField && !Array.isArray(record._history)) return null;
+                return { value: (record._history || []).map(item => item.text), group, target };
+            }
+            if (ref.field === 'developments') {
+                if (requireExactField && !Array.isArray(record._developments)) return null;
+                return { value: record._developments || [], group, target };
+            }
+            if (requireExactField && !Object.hasOwn(record, ref.field)) return null;
+            return { value: record[ref.field] ?? null, group, target };
+        }
         const content = { ...record };
         for (const key of Object.keys(content)) if (key.startsWith('_')) delete content[key];
-        return content;
+        return { value: content, group, target };
     }
-    return snapshot.world.entities.find(e => e.id === ref.entityId)?.fields?.[ref.field]?.value;
+    if (!ref.entityId || typeof ref.field !== 'string' || !ref.field.trim()) return null;
+    const entity = snapshot.world?.entities?.find(e => e.id === ref.entityId);
+    if (!entity) return null;
+    const group = (!entity.kind || entity.kind === 'person' || entity.kind === 'subject') ? 'characters' : 'situations';
+    const target = entity.name || entity.id;
+    if (Object.hasOwn(entity.fields || {}, ref.field) && entity.fields[ref.field]?.value !== undefined) {
+        return { value: entity.fields[ref.field].value, group, target };
+    }
+    const metaValue = entityCharacterMeta(entity, ref.field, snapshot.records);
+    if (metaValue !== undefined) return { value: metaValue, group, target };
+    if (!requireExactField) {
+        const hasFieldKey = ['name', 'aliases', 'presence', 'presenceNote', 'knowledge', 'agendas'].includes(ref.field);
+        if (hasFieldKey) return { value: null, group, target };
+    }
+    return null;
 }
+
 function readNote(raw, snap, limit) {
     const entities = readEntities(raw?.entities);
     const providedText = typeof raw?.text === 'string' ? raw.text.trim() : '';
@@ -207,17 +280,86 @@ function readNote(raw, snap, limit) {
         throw new Error('札记格式无效');
     }
     const dependencies = raw.dependencies.map(item => {
-        const ref = typeof item?.lineTitle === 'string' ? { lineTitle: item.lineTitle } : typeof item?.recordId === 'string' ? { recordId: item.recordId } : { entityId: item?.entityId, field: item?.field };
-        const value = valueOf(ref, snap);
-        if (value === undefined) throw new Error('札记前提无法核对');
-        return { ...ref, digest: memoryDigest(value) };
+        const field = typeof item?.field === 'string' && item.field.trim() ? item.field.trim() : undefined;
+        const ref = typeof item?.lineTitle === 'string'
+            ? { lineTitle: item.lineTitle, ...(field && { field }) }
+            : typeof item?.recordId === 'string'
+                ? { recordId: item.recordId, ...(field && { field }) }
+                : { entityId: item?.entityId, field: item?.field };
+        const resolved = resolveDependency(ref, snap, true);
+        if (!resolved || resolved.value === undefined) throw new Error('札记前提无法核对');
+        return {
+            ...ref,
+            digest: memoryDigest(resolved.value),
+            ...(resolved.group && { group: resolved.group }),
+            ...(resolved.target && { target: resolved.target }),
+        };
     });
     return { text, ...(entities && { entities }), dependencies };
 }
 const valid = (note, snap) => note.dependencies.every(ref => {
-    const value = valueOf(ref, snap);
-    return value !== undefined && ref.digest === memoryDigest(value);
+    const resolved = resolveDependency(ref, snap, false);
+    return resolved !== null && resolved.value !== undefined && ref.digest === memoryDigest(resolved.value);
 });
+
+/** Lists invalidated dependency refs for a saved note layer against the current snapshot. */
+export function invalidatedDependencies(note, snap) {
+    if (!note?.dependencies?.length || !snap) return [];
+    const stale = [];
+    for (const ref of note.dependencies) {
+        const resolved = resolveDependency(ref, snap, false);
+        if (resolved !== null && resolved.value !== undefined && ref.digest === memoryDigest(resolved.value)) continue;
+        stale.push({
+            ...ref,
+            group: ref.group || resolved?.group || (ref.lineTitle ? 'plotLines' : ref.recordId ? 'situations' : 'characters'),
+            target: ref.target || resolved?.target || ref.lineTitle || ref.recordId || ref.entityId || '',
+        });
+    }
+    return stale;
+}
+
+/** Computes entity-level invalidation markers for UI highlighting without calling the writer. */
+export function staleTargetsForNote(previous, snap, reason = reviewReason(previous, snap)) {
+    if (!previous || !snap || !reason) return null;
+    if (reason === 'chapter') return { all: true, characters: [], plotLines: [], situations: [], details: [] };
+    const buckets = { characters: new Set(), plotLines: new Set(), situations: new Set() };
+    const details = [
+        ...invalidatedDependencies(previous.global, snap),
+        ...invalidatedDependencies(previous.chapter, snap),
+    ];
+    for (const item of details) {
+        if (item.group && buckets[item.group] && item.target) buckets[item.group].add(item.target);
+    }
+    if ((previous.lineState || '') !== (snap.lineState || '')) {
+        const prevDigests = previous.lineDigests || {};
+        const currentLines = snap.plotLines || [];
+        const seen = new Set();
+        for (const line of currentLines) {
+            seen.add(line.title);
+            const digest = memoryDigest(plotLineStateDigest([line]));
+            if (!Object.keys(prevDigests).length || prevDigests[line.title] !== digest) {
+                buckets.plotLines.add(line.title);
+            }
+        }
+        for (const title of Object.keys(prevDigests)) {
+            if (!seen.has(title)) buckets.plotLines.add(title);
+        }
+    }
+    return {
+        all: false,
+        characters: [...buckets.characters],
+        plotLines: [...buckets.plotLines],
+        situations: [...buckets.situations],
+        details: details.map(({ group, target, field, entityId, recordId, lineTitle }) => ({
+            group,
+            target,
+            ...(field && { field }),
+            ...(entityId && { entityId }),
+            ...(recordId && { recordId }),
+            ...(lineTitle && { lineTitle }),
+        })),
+    };
+}
 export function prefix(chat, end) {
     return end < 0 ? '' : end >= chat.length ? null : captureRangeSource(chat, 0, end).digest;
 }
@@ -245,11 +387,13 @@ export function publishNotes(raw, previous, snap, reason) {
         if (secret && chapterTexts.some(item => item.includes(secret))) throw new Error('章节稿含管理员私有资料');
     }
     const end = snap.chat.length - 1, source = prefix(snap.chat, end);
+    const lineDigests = Object.fromEntries((snap.plotLines || []).map(line => [line.title, memoryDigest(plotLineStateDigest([line]))]));
     return {
         owner: snap.owner,
         boundary: snap.boundary,
         basis: snap.world.version,
         lineState: snap.lineState,
+        ...(Object.keys(lineDigests).length && { lineDigests }),
         end,
         source,
         reason,

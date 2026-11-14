@@ -53,7 +53,15 @@ export function upgradeSummaryHistory(history) {
                 && typeof change.sourceId === 'string' && typeof change.previous === 'string'
                 && typeof change.text === 'string' && change.text.trim() && change.text.length <= 12000
                 && Number.isSafeInteger(change.evidence?.floor) && typeof change.evidence.quote === 'string' && change.evidence.quote.trim()));
-            for (const revision of entry.roundRevisions || []) if (revision.memoryTags) validateMemoryTags(revision.memoryTags);
+            for (const revision of entry.roundRevisions || []) {
+                if (revision.memoryTags) validateMemoryTags(revision.memoryTags);
+                if (revision.plotLines !== undefined) {
+                    valid(Array.isArray(revision.plotLines) && revision.plotLines.every(item =>
+                        item && ['active', 'potential', 'closed'].includes(item.status)
+                        && [item.title, item.reading, item.quote].every(v => typeof v === 'string' && v.trim())
+                        && revision.text.includes(item.quote)));
+                }
+            }
             if (entry.sourceReceipt) {
                 validateMemorySourceReceipt(entry.sourceReceipt);
                 valid(entry.kind === 'batch' && entry.sourceReceipt.source.end === entry.endMesId);

@@ -170,12 +170,12 @@
     </dialog>
 
     <!-- Editor Modal -->
-    <div class="modal" id="editor-modal">
+    <div class="modal" id="editor-modal" role="dialog" aria-modal="true" aria-labelledby="editor-title">
         <div class="modal-bg" id="editor-backdrop"></div>
         <div class="modal-box">
             <div class="modal-head">
                 <h2 id="editor-title">编辑</h2>
-                <button class="modal-close" id="editor-close">
+                <button type="button" aria-label="关闭编辑" class="modal-close" id="editor-close">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18" />
                         <line x1="6" y1="6" x2="18" y2="18" />
@@ -436,19 +436,19 @@ import { loadBuildEntry, reportBuildFailure } from '../../core/build-assets.js';
 loadBuildEntry('apps/story-summary').catch(reportBuildFailure);
 </script>
     <!-- Confirm Modal -->
-    <div class="modal" id="confirm-modal">
+    <div class="modal" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
         <div class="modal-bg" id="confirm-backdrop"></div>
         <div class="modal-box confirm-modal-box">
             <div class="modal-head">
                 <h2 id="confirm-title">确认操作</h2>
             <button aria-label="取消" type="button" class="modal-close" id="confirm-close">×</button></div>
             <div class="modal-body">
-                <div id="confirm-message" style="margin: 10px 0; line-height: 1.6; color: var(--fg);">内容</div>
+                <div id="confirm-message" style="margin: 10px 0; line-height: 1.6; color: var(--txt);">内容</div>
                 <div id="confirm-action-list" class="confirm-action-list hidden"></div>
             </div>
             <div class="modal-foot">
-                <button class="btn" id="confirm-cancel">退出</button>
-                <button class="btn btn-del" id="confirm-ok">执行</button>
+                <button type="button" class="btn" id="confirm-cancel">退出</button>
+                <button type="button" class="btn btn-del" id="confirm-ok">执行</button>
             </div>
         </div>
     </div>

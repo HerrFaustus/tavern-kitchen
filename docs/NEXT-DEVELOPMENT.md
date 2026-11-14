@@ -16,11 +16,11 @@
 3. **UI 原版化与直观化（`settings-view.js`、`view.js`、`archive.css`、`story-summary.html`）**
    - 编剧面板用宿主 `.standoutHeader`、`.inline-drawer` 与实体统计芯片分段呈现实体札记；剧情线面板展示各状态汇总、脉络总结、焦点、关联人物与可折叠多轮 `推进轨迹`；嵌入剧情框架对齐宿主字体及主题强调色，消除深色主题首帧闪白。
 
-## 下一版（0.2.31+）设计重点
+## 下一版（0.2.31+）推进进度
 
-1. **剧情线总结与递归压缩树合流**：在 `summary-layers.js` / `layer-cascade.js` 生成篇目/章节压缩节点时，同步产出阶段级剧情线阶段快照；在 `ReviseRoundSummary` 维护修订时提示并联动重验受影响的剧情线引文。
-2. **编剧局部依赖与只读检索增强**：细化 `dependencies` 至人物/局势实体字段与单线版本摘要，实现实体级精确失效标记；在编剧面板补充按实体筛选与整章纯文本复制按钮（继续保持零持久化表单写入边界）。
-3. **工作台全面原版化与真机回归收尾**：推动 `archive-view.js` 与 `story-summary-ui.js` 内部弹层和筛选条进一步对齐宿主原生样式，并补充本地无头 Chromium 与真实 SillyTavern/TauriTavern 多主题实测。
+1. **剧情线总结与递归压缩树合流（已实现）**：`summary-layers.js` 导出 `mergePlotLineSnapshots`，使 `layer-cascade.js` 与 `narrative-review.js`（`readNarrativeUnits` / `requestNarrativeClosure`）在生成 `stage`/`chapter`/`L3+` 压缩节点时同步产出自洽的阶段 `plotLineSnapshots` 并在时间线视图（`archive-view.js` / `timeline-tree.js`）展示与检索；`ReviseRoundSummary`（`session.js` / `tools.js` / `summary-history.js`）会复核受影响轮次的 `plotLines` 引文，返回 `invalidatedPlotLines` 与警告并支持附带新版 `plotLines`。
+2. **编剧局部依赖与只读检索增强（已实现）**：`modules/story-planner/notes.js` 将 `dependencies` 细化到人物字段（含在场状态/认知/个人计划）、局势记录字段与单条剧情线摘要，`runtime.inspect()` 暴露 `staleTargets` 供 `settings-view.js` 标出实体级 `[待更新]`，并新增实体分组筛选、关键词搜索与整章纯文本只读复制按钮（保持零持久化表单写入边界）。
+3. **工作台全面原版化与真机回归（无头回归已通过，真机待测）**：已对齐 `story-summary.html`、`story-summary-ui.js`、`archive.css` 与 `core/kitchen-embedded.css` 内部弹层（`role="dialog"`、`aria-modal="true"`、Escape 退格与焦点恢复、主题变量修正）及嵌入筛选条样式，并完成本地无头 Chromium 五项布局/工作台脚本回归；仍待实际 SillyTavern/TauriTavern 多主题真机与真实模型联调。
 
 ## 原 0.2.22 基线架构约定
 

@@ -76,6 +76,12 @@ function matchesQuery(node, query) {
     const round = node.round;
     const values = round
         ? [round.title, round.summary, round.timeLabel, ...(round.participants || []), ...Object.values(round.memoryTags || {}).flat()]
-        : [node.text, node.reason, node.evidence?.quote, '第 ' + (node.start + 1) + '–' + (node.end + 1) + ' 楼'];
+        : [
+            node.text,
+            node.reason,
+            node.evidence?.quote,
+            '第 ' + (node.start + 1) + '–' + (node.end + 1) + ' 楼',
+            ...(node.plotLineSnapshots || []).flatMap(item => [item.title, item.summary, item.reading, item.nextFocus, ...(item.characters || [])]),
+        ];
     return [timelineLabel(node.level), ...values].join(' ').toLocaleLowerCase().includes(query);
 }

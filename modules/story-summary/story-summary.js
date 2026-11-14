@@ -1422,9 +1422,12 @@ function buildFramePayload(store) {
         },
         legacyCharacterNames: (json.arcs || []).map(arc => arc.name),
         facts,
-        ...(store?.summaryHistory?.some(batch => batch.layers || batch.reviewLayers) && !store.summaryInvalid
+        ...(store?.summaryHistory?.some(batch => batch.layers || batch.reviewLayers || batch.compressionNodes) && !store.summaryInvalid
             && store.sourceInvalidFromFloor == null && firstInvalidMemorySource(store, getContext().chat) == null
-            ? { narrativeUnits: summaryLayers(store.summaryHistory).parents } : {}),
+            ? { narrativeUnits: (() => {
+                const layers = summaryLayers(store.summaryHistory);
+                return layers.parents.map(node => layers.byId.get(node.id || `${node.level}:${node.start}-${node.end}`) || node);
+            })() } : {}),
         storyRecords: !store?.summaryInvalid && store?.sourceInvalidFromFloor == null ? (json.storyRecords || []).filter(record => record.kind !== 'scene') : [],
         characterAliases: normalizeCharacterAliases(json.characterAliases)
             .map(({ from, to, evidence }) => ({ from, to, evidence })),

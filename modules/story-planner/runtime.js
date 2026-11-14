@@ -1,4 +1,4 @@
-import { prefix, publishNotes, reviewReason, selectVersion, writerInput } from './notes.js';
+import { prefix, publishNotes, reviewReason, selectVersion, staleTargetsForNote, writerInput } from './notes.js';
 
 function captureSnapshot(snapshot, snap, signal) {
     const end = snap.chat.length - 1, source = prefix(snap.chat,end);
@@ -28,7 +28,10 @@ export function createPlanner({snapshot, store, write, status}) {
                 const note = selectVersion(await store.list(snap.owner),snap);
                 if (!fresh()) return { state:'changed' };
                 if (!note) return { state:'empty' };
-                return { state:reviewReason(note,snap) ? 'stale' : 'ready', note };
+                const reason = reviewReason(note, snap);
+                return reason
+                    ? { state: 'stale', note, staleTargets: staleTargetsForNote(note, snap, reason) }
+                    : { state: 'ready', note };
             } catch (error) {
                 if (!fresh()) return { state:'changed' };
                 throw error;

@@ -1,4 +1,5 @@
 import { stripFloorProtocol } from '../inline/protocol.js';
+import { readPlotLines } from '../../story-state/plot-lines.js';
 import { prepareMemoryTags } from '../data/memory-tags.js';
 import { reviewedRounds, roundSourceId } from '../data/summary-layers.js';
 import { isRangeSourceCurrent } from '../data/turn-source.js';
@@ -368,7 +369,13 @@ export function createMemorySession({ chatId, chat, json, atoms, l0Index, cutoff
             const batch = latest.get(change.end);
             requireMemory(batch && roundSourceId(batch) === change.sourceId && (batch.roundVersion || 0) === change.baseVersion && batch.summary === change.previous
                 && isRangeSourceCurrent(batch.sourceReceipt?.source || batch.roundSource, current.chat), 'conflict');
-            latest.set(change.end, { ...batch, summary: change.text, roundVersion: change.baseVersion + 1, ...(change.memoryTags && { memoryTags: change.memoryTags }) });
+            latest.set(change.end, {
+                ...batch,
+                summary: change.text,
+                roundVersion: change.baseVersion + 1,
+                ...(change.memoryTags && { memoryTags: change.memoryTags }),
+                ...(change.plotLines && { plotLines: change.plotLines }),
+            });
         }
         // The copy already contains effective text. Avoid applying its overlays a second time.
         return { ...current, store: { ...current.store, summaryHistory: [...latest.values()].map(({ roundRevisions, legacyRoundBase, legacyRoundChanges, ...batch }) => batch) } };
@@ -387,12 +394,43 @@ export function createMemorySession({ chatId, chat, json, atoms, l0Index, cutoff
             requireMemory(floor >= source.start && floor <= source.end && quote.trim() && quote.length <= 1000
                 && !(current.chat[floor]?.is_system && current.chat[floor]?.extra?.type) && stripFloorProtocol(current.chat[floor]?.mes).includes(quote)
                 && args.text.trim() && args.text.length <= 12000, 'invalid_arguments');
+            const nextText = args.text.trim();
             const memoryTags = args.memoryTags && prepareMemoryTags({ memoryTags: args.memoryTags });
-            if (args.text.trim() === batch.summary && (!memoryTags || sameMemory(memoryTags, batch.memoryTags))) return { status: 'unchanged' };
+            let validatedPlotLines;
+            if (args.plotLines !== undefined) {
+                validatedPlotLines = readPlotLines(args.plotLines, nextText);
+                requireMemory(validatedPlotLines.length === args.plotLines.length, 'invalid_arguments', '修订后的剧情线引文须逐字出自新版总结', 'plotLines');
+            }
+            if (nextText === batch.summary
+                && (!memoryTags || sameMemory(memoryTags, batch.memoryTags))
+                && (!validatedPlotLines || sameMemory(validatedPlotLines, batch.plotLines || []))) {
+                return { status: 'unchanged' };
+            }
+            const validBefore = readPlotLines(batch.plotLines, batch.summary);
+            const validAfter = readPlotLines(validatedPlotLines ?? batch.plotLines, nextText);
+            const invalidatedPlotLines = validBefore
+                .filter(before => !validAfter.some(after => after.title === before.title && after.quote === before.quote))
+                .map(({ title, quote: oldQuote }) => ({ title, quote: oldQuote }));
             const draft = ensurePending();
-            (draft.revisions ??= []).push({ version: 1, end: batch.endMesId, sourceId: roundSourceId(batch),
-                ...(memoryTags && { memoryTags }), baseVersion: args.version, previous: batch.summary, text: args.text.trim(), evidence: { ...args.evidence } });
-            return { status: 'staged' };
+            (draft.revisions ??= []).push({
+                version: 1,
+                end: batch.endMesId,
+                sourceId: roundSourceId(batch),
+                ...(memoryTags && { memoryTags }),
+                ...(validatedPlotLines && { plotLines: validatedPlotLines }),
+                baseVersion: args.version,
+                previous: batch.summary,
+                text: nextText,
+                evidence: { ...args.evidence },
+            });
+            return {
+                status: 'staged',
+                ...(invalidatedPlotLines.length && {
+                    invalidatedPlotLines,
+                    warning: `已修订本轮总结；以下剧情线原有引文不再逐字匹配新版摘要，已自动失效：${invalidatedPlotLines.map(item => item.title).join('、')}`,
+                }),
+                ...(validAfter.length && { retainedPlotLines: validAfter.map(item => item.title) }),
+            };
         }
         const result = await requestNarrativeClosure(args, view, staged, cutoff, generateReviewedLayer, async () => reviewState(await reread()), signal);
         if (result.node) {

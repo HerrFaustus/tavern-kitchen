@@ -259,19 +259,33 @@
 /* A module only shows settings categories with controls. */
 #tk-module-native-controls > [data-settings-group]:not(:has(> :not(h5):not(summary):not([hidden]):not(.tk-feature-switches), > .tk-feature-switches:not([hidden]) > :not([hidden]))) { display: none; }
 #tk-workspace .tk-planner-note { display: grid; gap: .6em; min-width: 0; }
+#tk-workspace .tk-planner-note[hidden],
+#tk-workspace .tk-planner-overview[hidden],
+#tk-workspace .tk-planner-toolbar[hidden],
+#tk-workspace .tk-planner-group[hidden],
+#tk-workspace .tk-planner-entity[hidden] { display: none; }
 #tk-workspace .tk-planner-note > h5.standoutHeader { margin-top: .25em; }
 #tk-workspace .tk-planner-overview { display: flex; flex-wrap: wrap; gap: 6px; }
+#tk-workspace .tk-planner-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+#tk-workspace .tk-planner-search { flex: 1 1 160px; min-width: 0; margin: 0; }
+#tk-workspace .tk-planner-copy { flex: 0 0 auto; margin: 0; }
+#tk-workspace .tk-planner-copy-status { font-size: .82em; color: var(--SmartThemeEmColor); }
 #tk-workspace .tk-planner-stat,
+#tk-workspace .tk-planner-filter,
 #tk-workspace .tk-planner-tag { display: inline-flex; align-items: center; padding: 2px 7px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 4px; background: var(--SmartThemeBlurTintColor); font-size: .82em; color: var(--SmartThemeEmColor); white-space: nowrap; }
+#tk-workspace .tk-planner-filter { cursor: pointer; font-family: inherit; }
+#tk-workspace .tk-planner-filter[aria-pressed="true"] { border-color: var(--SmartThemeQuoteColor, var(--SmartThemeBodyColor)); color: var(--SmartThemeBodyColor); font-weight: 600; }
 #tk-workspace .tk-planner-note-text:has(.tk-planner-group) { white-space: normal; display: grid; gap: 10px; }
 #tk-workspace .tk-planner-group { display: grid; gap: 8px; min-width: 0; }
 #tk-workspace .tk-planner-group-title { margin: 4px 0 0; font-size: .92em; }
 #tk-workspace .tk-planner-entity { display: grid; gap: 6px; padding: 8px 10px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 6px; background: var(--SmartThemeBlurTintColor); min-width: 0; }
-#tk-workspace .tk-planner-entity-name { font-weight: 600; color: var(--SmartThemeBodyColor); }
+#tk-workspace .tk-planner-entity.is-stale { border-color: var(--SmartThemeQuoteColor, var(--SmartThemeBorderColor)); }
+#tk-workspace .tk-planner-entity-name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-weight: 600; color: var(--SmartThemeBodyColor); }
 #tk-workspace .tk-planner-entity-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 8px; min-width: 0; }
 #tk-workspace .tk-planner-entity-body { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
 #tk-workspace .tk-planner-tag.is-prediction { border-color: var(--SmartThemeQuoteColor, var(--SmartThemeBorderColor)); color: var(--SmartThemeQuoteColor, var(--SmartThemeBodyColor)); }
 #tk-workspace .tk-planner-tag.is-suggestion { color: var(--SmartThemeBodyColor); font-weight: 600; }
+#tk-workspace .tk-planner-tag.is-stale { border-color: var(--SmartThemeQuoteColor, var(--SmartThemeBorderColor)); color: var(--SmartThemeQuoteColor, var(--SmartThemeBodyColor)); font-weight: 600; }
 #tk-workspace .tk-world-records .tk-clues-overview { margin: 4px 0 10px; }
 #tk-workspace .tk-world-records .tk-plot-line-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; }
 #tk-workspace .tk-world-records .tk-plot-line-title { font-weight: 600; }

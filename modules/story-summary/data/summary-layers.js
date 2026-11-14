@@ -108,6 +108,7 @@ export function reviewedRounds(history = [], staged = []) {
         let summary = batch.summary || batch.floorEntry?.payload?.summary || '';
         const note = notes.get(batch.endMesId);
         let memoryTags = batch.memoryTags;
+        let plotLines = batch.plotLines;
         let roundVersion = batch.roundVersion || 0;
         if (note) {
             summary = [summary, ...note.lines.filter(line => !summary.includes(line))].filter(Boolean).join('\n');
@@ -118,11 +119,112 @@ export function reviewedRounds(history = [], staged = []) {
             if (change.end === batch.endMesId && change.baseVersion === roundVersion && change.previous === summary) {
                 summary = change.text;
                 if (change.memoryTags) memoryTags = change.memoryTags;
+                if (change.plotLines) plotLines = change.plotLines;
                 roundVersion++;
             }
         }
-        return summary === batch.summary && !note && roundVersion === (batch.roundVersion || 0) ? batch : { ...batch, summary, memoryTags, roundVersion };
+        return summary === batch.summary && !note && roundVersion === (batch.roundVersion || 0)
+            ? batch
+            : { ...batch, summary, memoryTags, ...(plotLines !== undefined && { plotLines }), roundVersion };
     });
+}
+
+function summarizeSnapshotSteps(steps, explicitSummary, status, reading) {
+    if (explicitSummary && (steps.length <= 1 || explicitSummary !== reading)) return explicitSummary;
+    if (steps.length <= 1) return steps[0] || reading;
+    const head = steps[0];
+    const tail = steps.at(-1);
+    const tailLabel = status === 'closed' ? '收束' : '当前';
+    const middle = steps.slice(1, -1);
+    const join = kept => [`起初：${head}`, ...(kept.length ? [`推进：${kept.join('；')}`] : []), `${tailLabel}：${tail}`].join('；');
+    while (middle.length && join(middle).length > 800) middle.shift();
+    const compact = join(middle);
+    return compact.length <= 800 ? compact : `起初：${head.slice(0, 260)}；${tailLabel}：${tail.slice(0, 500)}`;
+}
+
+/** Merges validated round plotLines or lower-level plotLineSnapshots across ordered child nodes. */
+export function mergePlotLineSnapshots(children = []) {
+    const lines = new Map();
+    const ensure = title => {
+        if (!lines.has(title)) {
+            lines.set(title, {
+                title,
+                status: 'potential',
+                reading: '',
+                explicitSummary: '',
+                nextFocus: '',
+                characters: new Set(),
+                situationIds: new Set(),
+                steps: [],
+                firstFloor: undefined,
+                floor: undefined,
+                beatCount: 0,
+            });
+        }
+        return lines.get(title);
+    };
+    const ordered = [...children].sort((a, b) => (a.start ?? 0) - (b.start ?? 0) || (a.end ?? 0) - (b.end ?? 0));
+    for (const child of ordered) {
+        if (!child) continue;
+        if (Array.isArray(child.plotLineSnapshots) && child.plotLineSnapshots.length) {
+            const items = [...child.plotLineSnapshots].sort((a, b) => (a.floor ?? -1) - (b.floor ?? -1));
+            for (const snap of items) {
+                if (!snap?.title || !['active', 'potential', 'closed'].includes(snap.status)) continue;
+                const reading = String(snap.reading || snap.summary || '').trim();
+                if (!reading) continue;
+                const entry = ensure(String(snap.title).trim());
+                const snapFirst = Number.isInteger(snap.firstFloor) ? snap.firstFloor : (Number.isInteger(snap.floor) ? snap.floor : child.start);
+                const snapFloor = Number.isInteger(snap.floor) ? snap.floor : child.end;
+                if (Number.isInteger(snapFirst)) entry.firstFloor = entry.firstFloor === undefined ? snapFirst : Math.min(entry.firstFloor, snapFirst);
+                if (Number.isInteger(snapFloor)) entry.floor = entry.floor === undefined ? snapFloor : Math.max(entry.floor, snapFloor);
+                entry.status = snap.status;
+                entry.reading = reading;
+                if (snap.summary) entry.explicitSummary = String(snap.summary).trim();
+                if (snap.status === 'closed') entry.nextFocus = '';
+                else if (snap.nextFocus) entry.nextFocus = String(snap.nextFocus).trim();
+                for (const name of snap.characters || []) if (typeof name === 'string' && name.trim()) entry.characters.add(name.trim());
+                for (const id of snap.situationIds || []) if (typeof id === 'string' && id.trim()) entry.situationIds.add(id.trim());
+                if (entry.steps.at(-1) !== reading) entry.steps.push(reading);
+                entry.beatCount += Number.isInteger(snap.beatCount) && snap.beatCount > 0 ? snap.beatCount : 1;
+            }
+            continue;
+        }
+        const leafText = typeof child.text === 'string' ? child.text : '';
+        for (const row of child.plotLines || []) {
+            if (!row || !['active', 'potential', 'closed'].includes(row.status)) continue;
+            const title = typeof row.title === 'string' ? row.title.trim() : '';
+            const reading = typeof row.reading === 'string' ? row.reading.trim() : '';
+            const quote = typeof row.quote === 'string' ? row.quote : '';
+            if (!title || !reading || !quote.trim() || (leafText && !leafText.includes(quote))) continue;
+            const entry = ensure(title);
+            const floor = Number.isInteger(child.end) ? child.end : undefined;
+            if (Number.isInteger(floor)) {
+                entry.firstFloor = entry.firstFloor === undefined ? floor : Math.min(entry.firstFloor, floor);
+                entry.floor = entry.floor === undefined ? floor : Math.max(entry.floor, floor);
+            }
+            entry.status = row.status;
+            entry.reading = reading;
+            if (typeof row.summary === 'string' && row.summary.trim()) entry.explicitSummary = row.summary.trim();
+            if (row.status === 'closed') entry.nextFocus = '';
+            else if (typeof row.nextFocus === 'string' && row.nextFocus.trim()) entry.nextFocus = row.nextFocus.trim();
+            for (const name of row.characters || []) if (typeof name === 'string' && name.trim()) entry.characters.add(name.trim());
+            for (const id of row.situationIds || []) if (typeof id === 'string' && id.trim()) entry.situationIds.add(id.trim());
+            if (entry.steps.at(-1) !== reading) entry.steps.push(reading);
+            entry.beatCount += 1;
+        }
+    }
+    return [...lines.values()].map(entry => ({
+        title: entry.title,
+        status: entry.status,
+        reading: entry.reading,
+        summary: summarizeSnapshotSteps(entry.steps, entry.explicitSummary, entry.status, entry.reading),
+        beatCount: entry.beatCount,
+        ...(entry.firstFloor !== undefined && { firstFloor: entry.firstFloor }),
+        ...(entry.floor !== undefined && { floor: entry.floor }),
+        ...(entry.characters.size && { characters: [...entry.characters].slice(0, 12) }),
+        ...(entry.situationIds.size && { situationIds: [...entry.situationIds].slice(0, 8) }),
+        ...(entry.nextFocus && { nextFocus: entry.nextFocus }),
+    })).sort((a, b) => (b.floor ?? -1) - (a.floor ?? -1));
 }
 
 function collectBatchLayerNodes(batch) {
@@ -171,6 +273,7 @@ export function summaryLayers(history = [], staged = [], { chat = null, isLeafCu
                 sourceId: id,
                 version: batch.roundVersion || 0,
                 memoryTags: batch.memoryTags,
+                ...(batch.plotLines?.length && { plotLines: batch.plotLines }),
                 childIds: [],
                 ...resolveBatchTimeBounds(batch, start, end),
             });
@@ -224,6 +327,9 @@ export function summaryLayers(history = [], staged = [], { chat = null, isLeafCu
             const childIds = group.map(child => child.id);
             const timeStart = node.timeStart || group[0]?.timeStart || '';
             const timeEnd = node.timeEnd || group.at(-1)?.timeEnd || '';
+            const plotLineSnapshots = Array.isArray(node.plotLineSnapshots) && node.plotLineSnapshots.length
+                ? node.plotLineSnapshots
+                : mergePlotLineSnapshots(group);
             const normalized = {
                 ...node,
                 id,
@@ -237,6 +343,7 @@ export function summaryLayers(history = [], staged = [], { chat = null, isLeafCu
                 timeStart,
                 timeEnd,
                 storyTime: node.storyTime || timeEnd || timeStart || '',
+                ...(plotLineSnapshots.length && { plotLineSnapshots }),
             };
             valid.push(normalized);
             // Preserve exact original object references in `parents` so validateStagedUnits (`parents.includes(unit)`) keeps matching.

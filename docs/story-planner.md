@@ -22,10 +22,11 @@
   - `suggestion`（**建议**）：面向全局铺垫或当章正文呈现的可执行动作/氛围/信息边界建议。
 - **兼容性与文本渲染**：模型可提交 `entities` 分组并省略 `text`，由 `formatPlannerEntities` 自动排版成面向正文写手的 `【本章札记】` 纯文本；同时继续兼容纯 `{ text, dependencies }` JSON 返回。
 - **隐私与前提校验**：`chapter.text` 与 `chapter.entities` 内所有字段均受宿主宏检查（禁止 `{{`）及 `管理员私有/` 字段值过滤（禁止把后台秘密泄入章节稿）；`global` 仍收起于折叠面板（默认关闭，剧透防护）。
+- **细粒度局部依赖与失效标注**：`dependencies` 支持单实体/记录字段粒度（`{ entityId, field }` 可指向世界字段及角色 `name`/`aliases`/`presence`/`presenceNote`/`knowledge`/`agendas`；`{ recordId, field? }` 可指向局势/悬念记录或 `history`/`developments`；`{ lineTitle, field? }` 可指向单条剧情线字段或其完整摘要签名）。当 `runtime.inspect()` 检测到前提失效时，由 `staleTargetsForNote` / `invalidatedDependencies` 算出受影响的实体列表，面板为对应卡片标注 `[待更新]` 徽标，而不触发后台写手重算。
 - **分支与撤销隔离**：札记按 `owner`（账号+聊天/世界分支）与聊天前缀摘要存储于 IndexedDB，切换聊天、改写/删除楼层、更新剧情线或世界版本失效时立即失活，不复用陈旧稿件，也不污染聊天原文。
 
 ## 3. 原生界面展示
 
 `modules/story-planner/settings-view.js` 与 `modules/story-state/view.js` 均采用宿主 `.standoutHeader`、`.inline-drawer` 与主题变量呈现：
-- 规划面板展示实体统计芯片（人物／剧情线／局势条目数）及按三类实体分组的卡片（`点评` / `走向预测` / `建议` 标签）。
+- 规划面板展示实体统计筛选芯片（`全部` + 人物／剧情线／局势条目数）、关键词过滤框、只读“复制本章纯文本”按钮，以及按三类实体分组的卡片（`点评` / `走向预测` / `建议` 及局部 `[待更新]` 标签），继续保持零持久化表单写入（`fields === 0`）。
 - 剧情线面板在分组中直观展示线头统计、`脉络总结`、`最新动态`、`当前焦点`、`涉及人物` 与可展开的多轮 `推进轨迹`。

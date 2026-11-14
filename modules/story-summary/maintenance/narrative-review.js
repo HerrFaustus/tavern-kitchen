@@ -1,14 +1,16 @@
 import { stripFloorProtocol } from '../inline/protocol.js';
-import { layerSignature, summaryLayers } from '../data/summary-layers.js';
+import { layerSignature, mergePlotLineSnapshots, summaryLayers } from '../data/summary-layers.js';
 import { firstInvalidMemorySource } from '../data/turn-source.js';
 import { requireMemory } from './errors.js';
 
 function material(current, staged, cutoff, level) {
     const { store, chat } = current;
     requireMemory(!store.summaryInvalid && store.sourceInvalidFromFloor == null && firstInvalidMemorySource(store, chat) == null, 'conflict');
-    const { leaves, parents } = summaryLayers(store.summaryHistory, staged);
+    const { leaves, parents, byId } = summaryLayers(store.summaryHistory, staged);
     const closed = parents.filter(node => node.level === level);
-    const children = level === 'stage' ? leaves : parents.filter(node => node.level === 'stage');
+    const children = level === 'stage'
+        ? leaves
+        : parents.filter(node => node.level === 'stage').map(node => byId.get(node.id || `stage:${node.start}-${node.end}`) || node);
     let index = 0;
     const units = children.filter(node => {
         while (closed[index]?.end < node.start) index++;
@@ -25,7 +27,13 @@ export function readNarrativeUnits(current, staged, cutoff, { level, offset = 0,
         : material(current, staged, cutoff, level);
     const page = units.slice(offset, offset + Math.max(1, Math.min(8, limit)));
     return { level, revision, total: units.length, next: offset + page.length < units.length ? offset + page.length : null,
-        units: page.map(({ start, end, text, version, memoryTags }) => ({ from: start + 1, to: end + 1, summary: text, ...(level === 'round' && { version, memoryTags }) })) };
+        units: page.map(({ start, end, text, version, memoryTags, plotLines, plotLineSnapshots }) => ({
+            from: start + 1,
+            to: end + 1,
+            summary: text,
+            ...(level === 'round' && { version, memoryTags, ...(plotLines?.length && { plotLines }) }),
+            ...(level !== 'round' && plotLineSnapshots?.length && { plotLineSnapshots }),
+        })) };
 }
 
 function selection(current, staged, cutoff, args) {
@@ -52,14 +60,25 @@ export async function requestNarrativeClosure(args, current, staged, cutoff, gen
     const selected = selection(current, staged, cutoff, args);
     if (selected.prior) return { status: 'unchanged' };
     const { children } = selected;
-    const text = await generate({ level: args.level, children, reason: args.reason, signal });
+    const plotLineSnapshots = mergePlotLineSnapshots(children);
+    const text = await generate({ level: args.level, children, ...(plotLineSnapshots.length && { plotLineSnapshots }), reason: args.reason, signal });
     requireMemory(!signal?.aborted, 'cancelled');
     requireMemory(typeof text === 'string' && text.trim() && text.length <= 12000, 'invalid_arguments', '总结返回空白或超出篇幅');
     const checked = selection(await reread(), staged, cutoff, args);
     requireMemory(!signal?.aborted, 'cancelled');
     if (checked.prior) return { status: 'unchanged' };
-    const node = { version: 1, level: args.level, start: args.from - 1, end: args.to - 1, text: text.trim(),
-        sourceId: layerSignature(children), reason: args.reason.trim(), evidence: { ...args.evidence } };
+    const finalSnapshots = mergePlotLineSnapshots(checked.children);
+    const node = {
+        version: 1,
+        level: args.level,
+        start: args.from - 1,
+        end: args.to - 1,
+        text: text.trim(),
+        sourceId: layerSignature(children),
+        ...(finalSnapshots.length && { plotLineSnapshots: finalSnapshots }),
+        reason: args.reason.trim(),
+        evidence: { ...args.evidence },
+    };
     return { status: 'staged', node };
 }
 

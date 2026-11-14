@@ -1189,13 +1189,23 @@ const UNANNOTATED_LABEL = '未标注';
             okBtn.textContent = okText;
             cancelBtn.textContent = cancelText;
 
+            const doc = typeof document === 'undefined' ? null : document;
+            const previousFocus = doc?.activeElement;
+            const onKeyDown = (event) => {
+                if (event.key !== 'Escape') return;
+                event.preventDefault();
+                close(false);
+            };
+
             const close = (result) => {
+                doc?.removeEventListener?.('keydown', onKeyDown);
                 modal.classList.remove('active');
                 postMsg('CONFIRM_CLOSED');
                 okBtn.onclick = null;
                 cancelBtn.onclick = null;
                 if (closeBtn) closeBtn.onclick = null;
                 backdrop.onclick = null;
+                if (previousFocus?.isConnected !== false) previousFocus?.focus?.();
                 resolve(result);
             };
 
@@ -1203,8 +1213,10 @@ const UNANNOTATED_LABEL = '未标注';
             cancelBtn.onclick = () => close(false);
             if (closeBtn) closeBtn.onclick = () => close(false);
             backdrop.onclick = () => close(false);
+            doc?.addEventListener?.('keydown', onKeyDown);
 
             modal.classList.add('active');
+            cancelBtn.focus?.();
             postMsg('CONFIRM_OPENED');
         });
     }
@@ -1318,8 +1330,12 @@ const UNANNOTATED_LABEL = '未标注';
         };
     }
 
+    let editorReturnFocus = null;
+    let editorEscHandler = null;
+
     function openEditor(section) {
         archiveView.closeDialogs();
+        editorReturnFocus = typeof document === 'undefined' ? null : document.activeElement;
         currentEditSection = section;
         currentEditBaseline = structuredClone(summaryData[section]);
         if (section === 'facts') currentEditBaseline = currentEditBaseline.filter(fact => !fact.retracted);
@@ -1353,14 +1369,31 @@ const UNANNOTATED_LABEL = '未标注';
         // Compare the same editable projection at open and save, not hidden
         // metadata or defaults introduced by the editor's serializer.
         currentEditBaseline = readEditorData();
-        $('editor-modal').classList.add('active');
+        const doc = typeof document === 'undefined' ? null : document;
+        const modal = $('editor-modal');
+        modal.classList.add('active');
+        doc?.removeEventListener?.('keydown', editorEscHandler);
+        editorEscHandler = (event) => {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            closeEditor();
+        };
+        doc?.addEventListener?.('keydown', editorEscHandler);
+        const focusTarget = (section === 'facts' ? ta : es.querySelector?.('input, textarea, button')) || $('editor-close');
+        focusTarget?.focus?.();
         postMsg('EDITOR_OPENED');
     }
 
     function closeEditor() {
+        const doc = typeof document === 'undefined' ? null : document;
+        doc?.removeEventListener?.('keydown', editorEscHandler);
+        editorEscHandler = null;
         $('editor-modal').classList.remove('active');
         currentEditSection = null;
         currentEditBaseline = null;
+        const previous = editorReturnFocus;
+        editorReturnFocus = null;
+        if (previous?.isConnected !== false) previous?.focus?.();
         postMsg('EDITOR_CLOSED');
     }
 

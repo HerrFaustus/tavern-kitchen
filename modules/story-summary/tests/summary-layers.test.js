@@ -44,3 +44,34 @@ test('legacy fixed-size summaries remain usable without creating new groups', ()
     h[4].layers = {stage:{level:'stage',start:0,end:9,text:'旧阶段',sourceId:layerSignature(kids)}};
     assert.deepEqual(summaryLayers(h).parents.map(n=>n.text), ['旧阶段']);
 });
+
+test('narrative closure carries merged plotLineSnapshots onto stage and chapter units', async () => {
+    const c = fixture(), history = c.store.summaryHistory, staged = [];
+    history[0].summary = '摘要1，立约';
+    history[0].plotLines = [{ title: '暗线一', status: 'potential', characters: ['阿墨'], reading: '立约', quote: '立约' }];
+    history[5].summary = '摘要6，赴约';
+    history[5].plotLines = [{ title: '暗线一', status: 'active', characters: ['白岚'], reading: '赴约', quote: '赴约', nextFocus: '对质' }];
+    const read = level => readNarrativeUnits(c, staged, 19, { level });
+    const roundUnits = read('round');
+    assert.equal(roundUnits.units[0].plotLines[0].title, '暗线一');
+    const stage1 = await requestNarrativeClosure({
+        level: 'stage', from: 1, to: 10, revision: read('stage').revision,
+        reason: '阶段收束', evidence: { floor: 10, quote: c.chat[9].mes },
+    }, c, staged, 19, async () => '阶段一', async () => c);
+    staged.push(stage1.node);
+    assert.equal(stage1.node.plotLineSnapshots[0].title, '暗线一');
+    const stage2 = await requestNarrativeClosure({
+        level: 'stage', from: 11, to: 18, revision: read('stage').revision,
+        reason: '第二阶段', evidence: { floor: 18, quote: c.chat[17].mes },
+    }, c, staged, 19, async () => '阶段二', async () => c);
+    staged.push(stage2.node);
+    const ch = await requestNarrativeClosure({
+        level: 'chapter', from: 1, to: 18, revision: read('chapter').revision,
+        reason: '章末合流', evidence: { floor: 18, quote: c.chat[17].mes },
+    }, c, staged, 19, async () => '章一', async () => c);
+    staged.push(ch.node);
+    assert.equal(ch.node.plotLineSnapshots[0].status, 'active');
+    assert.deepEqual(ch.node.plotLineSnapshots[0].characters, ['阿墨', '白岚']);
+    history.at(-1).reviewLayers = structuredClone(staged);
+    assert.equal(summaryLayers(history).parents.find(n => n.level === 'chapter').plotLineSnapshots[0].nextFocus, '对质');
+});

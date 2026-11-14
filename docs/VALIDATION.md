@@ -4,6 +4,16 @@
 
 发布构建标识 `e9e795f48aa39ec36052`（`entries: 9`、`modules: 731`、`chunks: 61`）。完整 `node scripts/check.mjs` 已通过：质量检查与零告警 ESLint、TypeScript 项目边界校验、可重复构建、1662 项单元测试及记忆运行时检查（`[story-summary-runtime] result=PASS`），涵盖 P0 macOS 构建与测试修复、P2 柏宝书长程记忆（相对故事时间、可逆递归分层压缩树与新近优先预算、四层临场感状态裁剪与动态 `D1`/`D2` 双轴注入、世界状态压缩上下文与摘要分批）以及 P3 世界状态人工干预抽屉与文档精简。本次校验未连接真实 SillyTavern/TauriTavern 桌面宿主界面或付费外部模型接口（宿主与模型边界采用本地桩件与确定性测试验证）。
 
+### 0.2.30+ 第二轮：压缩树剧情线快照、ReviseRoundSummary 联动核验、编剧局部依赖与弹窗原生化
+
+- 重新执行 `node scripts/build.mjs` 与 `node scripts/check.mjs`（构建标识 `ca54cb6c6d4a76d16a08`，743 个源码模块转换，质量、边界、乱码、零告警 ESLint、可重复构建与运行时均通过）。
+- 运行 `node scripts/test.mjs`：**1668 项全部通过、0 失败、0 跳过**；新增单元测试覆盖：
+  - `runRecursiveCompressionCascade` 与 `mergePlotLineSnapshots` 在 L0→L1→L2 间传播并合流 `plotLineSnapshots` 及 `selectTimelineTree` 检索命中（`modules/story-summary/tests/compression-tree.test.js`）。
+  - `requestNarrativeClosure` / `readNarrativeUnits` / `summaryLayers` 保留 `plotLines` 与阶段/章级 `plotLineSnapshots`（`modules/story-summary/tests/summary-layers.test.js`）。
+  - `ReviseRoundSummary` 在修订本轮摘要后检测 `plotLines` 引文失效（返回 `invalidatedPlotLines` 与 `warning`）、校对新版 `plotLines` 逐字约束及 `upgradeSummaryHistory` 校验（`modules/story-summary/tests/round-transition.test.js`）。
+  - 编剧 `{ entityId, field }`（含人物在场状态/认知/个人计划）、`{ recordId, field }`、`{ lineTitle }` 细粒度依赖、`staleTargetsForNote` / `runtime.inspect()` 精确失效标定，以及 `createPlannerSettings` 的分组筛选、关键词过滤、`[待更新]` 实体标牌与只读复制纯文本（`modules/story-planner/planner.test.js`）。
+- 独立无头 Chromium（Brave Browser）浏览器回归全部通过：`scripts/check-planner-ui.mjs`（1440/820/390 三视口，含实体筛选、搜索、`[待更新]` 徽标、复制按钮交互且无横向溢出）、`scripts/check-workspace-layout.mjs`、`scripts/check-planner-workspace.mjs`、`scripts/check-summary-footer.mjs`、`scripts/check-proposal-workspace.mjs`；仍未连接真实 SillyTavern/TauriTavern 桌面宿主或调用在线模型。
+
 ### 0.2.30+ 剧情线总结、实体中心编剧与 UI 原版化验证
 
 - 运行 `node scripts/quality.mjs`（版本一致性、项目边界、乱码扫描、相对导入存在性及已移除变量体系检查）通过。

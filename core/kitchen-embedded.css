@@ -203,6 +203,26 @@
 .tk-embedded.tk-follow-host .nav-item::after { display: none; }
 .tk-embedded.tk-follow-host .container { padding-bottom: 5px !important; }
 .tk-embedded.tk-follow-host :is(.modal-head, .modal-body, .modal-foot, .settings-collapse-content) { padding: 8px 5px; }
+.tk-embedded.tk-follow-host .modal-bg { background: rgba(0, 0, 0, .55); backdrop-filter: blur(2px); }
+.tk-embedded.tk-follow-host :is(.modal-box, .confirm-modal-box) {
+    background: var(--SmartThemeChatTintColor, var(--bg2));
+    border: 1px solid var(--bdr);
+    border-radius: 10px;
+    box-shadow: none;
+}
+.tk-embedded.tk-follow-host .modal-head h2 {
+    font-size: 1.05em;
+    font-weight: 600;
+    letter-spacing: normal;
+    text-transform: none;
+    margin: 0;
+}
+.tk-embedded.tk-follow-host .archive-drawer {
+    background: var(--SmartThemeChatTintColor, var(--bg2));
+    border-inline-start: 1px solid var(--bdr);
+    box-shadow: none;
+}
+.tk-embedded.tk-follow-host .archive-drawer::backdrop { background: rgba(0, 0, 0, .55); backdrop-filter: blur(2px); }
 .tk-embedded.tk-follow-host .agent-api-header { margin-bottom: 12px; }
 .tk-embedded.tk-follow-host .xb-assistant-preset-row { gap: 5px; padding-bottom: 8px; }
 .tk-embedded.tk-follow-host :is(.btn-icon, .archive-icon, .modal-close, .xb-assistant-icon-button) { width: auto; min-width: 28px; height: auto; min-height: 28px; }

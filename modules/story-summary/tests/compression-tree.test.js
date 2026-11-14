@@ -6,6 +6,7 @@ import { build } from 'esbuild';
 import {
     DEFAULT_LEAF_KEEP_RECENT,
     layerSignature,
+    mergePlotLineSnapshots,
     planNextCompression,
     selectInjectionNodes,
     summaryLayers,
@@ -13,7 +14,7 @@ import {
 } from '../data/summary-layers.js';
 import { runRecursiveCompressionCascade } from '../generate/layer-cascade.js';
 import { captureRangeSource } from '../data/turn-source.js';
-import { buildTimelineTree } from '../timeline-tree.js';
+import { buildTimelineTree, selectTimelineTree } from '../timeline-tree.js';
 import { createTestModuleUrl } from './helpers/bundle-module.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
@@ -283,4 +284,53 @@ test('planSummaryBatches and buildIncrementalSlice respect character caps withou
     assert.equal(nextSlice.endMesId, 4);
     assert.equal(nextSlice.count, 1);
     assert.equal(nextSlice.hasMoreBatches, false);
+});
+
+test('runRecursiveCompressionCascade propagates plotLineSnapshots through L1 and L2 and timeline search indexes them', async () => {
+    const roundCount = thresholdForLevel(0) * thresholdForLevel(1) + DEFAULT_LEAF_KEEP_RECENT;
+    const chat = Array.from({ length: roundCount * 2 }, (_, i) => ({ is_user: i % 2 === 0, mes: `正文${i}` }));
+    const summaryHistory = Array.from({ length: roundCount }, (_, i) => ({
+        endMesId: 2 * i + 1,
+        summary: i === 0 ? '轮0摘要，初现失踪线索' : i === thresholdForLevel(0) ? '追查到北仓换防记录' : `轮${i}摘要`,
+        plotLines: i === 0
+            ? [{ title: '银钥匙谜案', status: 'potential', characters: ['林疏'], reading: '初现失踪线索', quote: '初现失踪线索', nextFocus: '查验锁孔' }]
+            : i === thresholdForLevel(0)
+                ? [{ title: '银钥匙谜案', status: 'active', characters: ['守卫'], summary: '追查到北仓换防记录', reading: '北仓查证', quote: '北仓换防记录' }]
+                : [],
+        sourceReceipt: { id: `pl:${i}`, source: captureRangeSource(chat, 2 * i, 2 * i + 1) },
+    }));
+    const seenCalls = [];
+    const staged = await runRecursiveCompressionCascade({ summaryHistory }, {
+        chat,
+        summarizeLayer: async payload => {
+            seenCalls.push(payload);
+            return `${payload.level}:${payload.start}-${payload.end}`;
+        },
+    });
+    const stageWithLine = staged.find(node => node.level === 'stage' && node.start === 0);
+    assert.ok(stageWithLine?.plotLineSnapshots?.length === 1);
+    assert.equal(stageWithLine.plotLineSnapshots[0].title, '银钥匙谜案');
+    const chapterNode = staged.find(node => node.level === 'chapter');
+    assert.ok(chapterNode, 'cascade should roll up to chapter');
+    assert.equal(chapterNode.plotLineSnapshots[0].title, '银钥匙谜案');
+    assert.equal(chapterNode.plotLineSnapshots[0].status, 'active');
+    assert.deepEqual(chapterNode.plotLineSnapshots[0].characters, ['林疏', '守卫']);
+    assert.equal(chapterNode.plotLineSnapshots[0].beatCount, 2);
+    assert.match(chapterNode.plotLineSnapshots[0].summary, /北仓/);
+    assert.ok(seenCalls.some(call => call.level === 'chapter' && call.plotLineSnapshots?.length === 1));
+
+    const mergedManual = mergePlotLineSnapshots([
+        { start: 0, end: 0, text: '起', plotLines: [{ title: '支线A', status: 'potential', reading: '起', quote: '起' }] },
+        { start: 1, end: 1, plotLineSnapshots: [{ title: '支线A', status: 'closed', reading: '终' }] },
+    ]);
+    assert.equal(mergedManual[0].status, 'closed');
+    assert.equal(mergedManual[0].beatCount, 2);
+    assert.match(mergedManual[0].summary, /收束：终/);
+
+    const tree = buildTimelineTree([{ id: 'round-0', _addedAt: 0, origin: { start: 0, end: 1 }, summary: '摘要' }], [
+        { level: 'stage', start: 0, end: 1, text: '阶段正文', plotLineSnapshots: [{ title: '银钥匙谜案', status: 'active', summary: '追查北仓' }] },
+    ]);
+    const hits = selectTimelineTree(tree, { query: '北仓' });
+    assert.equal(hits.length, 1);
+    assert.equal(hits[0].plotLineSnapshots[0].title, '银钥匙谜案');
 });

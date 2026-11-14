@@ -60,9 +60,23 @@ export const NARRATIVE_UNIT_TOOLS = [
     tool('ReadNarrativeUnits', 'Read pending source summaries (stage) or closed stages (chapter), paginated. Floor numbers are one-based. Use the returned revision to propose a closure.', {
         level: { type: 'string', enum: ['round', 'stage', 'chapter'] }, offset: integer, limit: integer,
     }, ['level']),
-    tool('ReviseRoundSummary', 'Correct one round summary against its source. Read its latest text first. Supply the exact previous text, replacement and verbatim source evidence. This only revises narrative memory.', {
+    tool('ReviseRoundSummary', 'Correct one round summary against its source. Read its latest text first. Supply the exact previous text, replacement and verbatim source evidence. Revising summary text re-validates round plotLines quotes; supply updated plotLines when a quote changes. This only revises narrative memory.', {
         to: integer, version: integer, previous: string, text: string,
         memoryTags: object({ characters: strings, locations: strings, times: strings, keywords: strings }, ['characters', 'locations', 'times', 'keywords']),
+        plotLines: {
+            type: 'array',
+            maxItems: 8,
+            items: object({
+                title: string,
+                status: { type: 'string', enum: ['active', 'potential', 'closed'] },
+                reading: string,
+                quote: string,
+                summary: string,
+                characters: strings,
+                nextFocus: string,
+                situationIds: strings,
+            }, ['title', 'status', 'reading', 'quote']),
+        },
         evidence: object({ floor: integer, quote: string }, ['floor', 'quote']),
     }, ['to', 'version', 'previous', 'text', 'evidence']),
     tool('CloseNarrativeUnit', 'Validate a closed unit and call the configured summary model once. Stage its result for the same confirmed review transaction. Use a verbatim quote and source floor as evidence.', {
