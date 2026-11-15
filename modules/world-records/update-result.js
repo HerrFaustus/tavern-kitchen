@@ -3,6 +3,7 @@ import { validateRangeSource } from '../story-summary/data/turn-source.js';
 import { isPersonalAgenda, parseStoryUpdates } from '../story-state/records.js';
 import { nameKey } from '../story-state/protagonist-identity.js';
 import { PERSON_FIELDS, RELATION_PREFIX, validatePersonField } from './person-fields.js';
+import { resolveSourceQuote } from './json-response.js';
 
 const natures = ['established_fact', 'rumor', 'belief', 'intention', 'hypothesis', 'creative_proposal', 'unclassified'];
 const kinds = ['person', 'organization', 'place', 'item', 'subject'];
@@ -29,8 +30,9 @@ function json(value, depth = 0) {
 function evidence(value, source) {
     const quote = text(value?.quote, '来源引文', 800);
     const message = source.messages.find(item => item.floor === value.floor);
-    check(message && message.text.includes(quote), '依据必须是本次增量中的实际原文');
-    return { floor: value.floor, quote };
+    const resolved = resolveSourceQuote(message?.text, quote, { maxLength: 800 });
+    check(Boolean(resolved), '依据必须是本次增量中的实际原文');
+    return { floor: value.floor, quote: resolved };
 }
 function validateValue(field, value, entities) {
     json(value);

@@ -18,8 +18,7 @@ export async function mountPlannerFixture() {
     await service.ensure();
     const planner = installPlanner({snapshot:archive.plannerSnapshot,loadSnapshot:archive.loadPlannerSnapshot,
         isVisible:()=>workspace.isActive('planner'),getContext:()=>context});
-    workspace.configure({actions:{planner:()=>planner.open(workspace.getMount('planner'),workspace.getControls())},
-        panelSwitch:()=>({enabled:true,label:'启用编剧',change(){}})});
+    workspace.configure({actions:{planner:()=>planner.open(workspace.getMount('planner'))}});
     Object.assign(fixture, {
         generate:async()=>{ await fixture.interceptor(context.chat,8192,()=>{},'normal',{}); return fixture.prompts['kitchen-chapter-note']?.value; },
         failNext:()=>{ fixture.failNextRequest = true; },

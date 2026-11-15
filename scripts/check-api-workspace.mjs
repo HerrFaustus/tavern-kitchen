@@ -13,6 +13,7 @@ const fixture = await build({ stdin: { resolveDir: root, contents: `
     export {createTextApiRepository} from './modules/text-api/repository.js';
     export {createPreset} from './modules/text-api/model.js';
     export {mountTextApiSettings} from './modules/text-api/settings-ui.js';
+    export {mountWorldSettings} from './modules/xiaobai-os/apps/world/evolution-view.js';
     export {mountEvolutionView} from './modules/xiaobai-os/apps/world/evolution-view.ts';
 ` }, bundle:true, format:'esm', platform:'browser', write:false, loader:{'.css':'empty'}, external:['../../../../../script.js','../../../../utils.js'] });
 const [workspaceCss, embeddedCss, apiCss] = await Promise.all(['style.css','core/kitchen-embedded.css','modules/text-api/settings-ui.css'].map(file => fs.readFile(file,'utf8')));
@@ -65,11 +66,11 @@ try {
             }
             const repository = api.createTextApiRepository({common:storage,planner:storage});
             const workspace = api.createKitchenWorkspace({});
-            const world = {subscribed:false};
-            const prefs = {read:()=>({enabled:true,apps:{world}}),subscribe:()=>()=>{},async setWorldPreference(key,value){world[key]=value;}};
-            globalThis.uiFixture = {workspace,world,calls:0};
+            const world = {subscribed:true, encounterFrequency:'occasional', injectToStory:true};
+            const prefs = {read:()=>({enabled:true,apps:{world}}),subscribe:()=>()=>{},async setEncounterFrequency(v){world.encounterFrequency=v;},async setWorldPreference(key,value){world[key]=value;}};
+            globalThis.uiFixture = {workspace,world,calls:0,simRuns:0};
             const doc = globalThis.document;
-            workspace.configure({panelSwitch:(_,label)=>({enabled:true,label:'启用'+label,change(){}}),actions:{
+            workspace.configure({actions:{
                 situation() {
                     const mount = workspace.getMount('situation');
                     let frame = mount.querySelector('iframe');
@@ -85,6 +86,26 @@ try {
                     } else post({type:'KITCHEN_MEMORY_VIEW',view:'world'});
                     workspace.showEvolution(target => api.mountEvolutionView(target,'situation',prefs,frame,
                         () => api.requireAgent('simulation', async () => repository), selector => workspace.visitBinding('simulation',selector)));
+                    const bar = workspace.getControls();
+                    const triggerBtn = doc.createElement('button'); triggerBtn.id = 'sim-trigger'; triggerBtn.type = 'button'; triggerBtn.className = 'menu_button'; triggerBtn.textContent = '执行推演';
+                    const alertBox = doc.createElement('div'); alertBox.setAttribute('role', 'alert'); alertBox.hidden = true;
+                    const alertMsg = doc.createElement('span');
+                    const goSettings = doc.createElement('button'); goSettings.type = 'button'; goSettings.className = 'menu_button'; goSettings.textContent = '前往设置';
+                    goSettings.onclick = () => workspace.visitBinding('simulation', '#sim-trigger');
+                    alertBox.append(alertMsg, goSettings);
+                    triggerBtn.onclick = async () => {
+                        try {
+                            await api.requireAgent('simulation', async () => repository);
+                            globalThis.uiFixture.simRuns++;
+                            alertBox.hidden = true;
+                        } catch (error) {
+                            alertMsg.textContent = error.message;
+                            alertBox.hidden = false;
+                        }
+                    };
+                    bar.append(triggerBtn, alertBox);
+                }, 'settings-world'() {
+                    api.mountWorldSettings(workspace.getMount('settings-world'), prefs);
                 },
                 settings() {
                     const mount = workspace.getMount('settings');
@@ -110,31 +131,22 @@ try {
             await workspace.open('situation');
         });
         await mountFixture();
-        const trigger = page.getByRole('button',{name:'局势设置'});
-        const story = page.frameLocator('iframe[title="剧情资料"]');
-        const switcher = story.getByRole('checkbox',{name:'事态随剧情演化'});
+        const trigger = page.locator('#sim-trigger');
         const frame = page.frameLocator('iframe[title="API"]');
         const binding = frame.getByLabel('推演 Agent');
-        const waitForReturnFocus = () => page.waitForFunction(() => {
-            const storyDocument = globalThis.document.querySelector('iframe[title="剧情资料"]').contentDocument;
-            const control = storyDocument.querySelector('#affair-settings [data-evolution-key="subscribed"]');
-            return !!control && control === storyDocument.activeElement;
-        }, undefined, {timeout:5000});
+        const waitForReturnFocus = () => page.waitForFunction(() => globalThis.document.activeElement?.id === 'sim-trigger', undefined, { timeout: 5000 });
         await trigger.click();
-        await switcher.click();
-        await story.getByRole('alert').filter({hasText:'请先在API界面中配置推演agent'}).waitFor();
-        assert.equal(await switcher.isChecked(),false);
-        await story.getByRole('button',{name:'前往 API'}).click();
+        await page.getByRole('alert').filter({hasText:'请先在设置中配置推演agent'}).waitFor();
+        await page.getByRole('button',{name:'前往设置'}).click();
         await binding.waitFor();
         await page.waitForFunction(() => globalThis.document.querySelector('iframe[title="API"]').contentDocument.activeElement?.dataset.agentBinding === 'simulation');
         assert.equal(await frame.getByLabel('编剧 Agent').inputValue(),'p');
         assert.match(await frame.getByLabel('更新 Agent').locator('..').innerText(),/旧世界连接/);
         assert.ok(await frame.getByLabel('选择连接').isHidden());
         await page.getByRole('button',{name:'返回局势'}).click();
-        assert.equal(await switcher.isChecked(),false);
         await waitForReturnFocus();
-        await switcher.click();
-        await story.getByRole('button',{name:'前往 API'}).click();
+        await trigger.click();
+        await page.getByRole('button',{name:'前往设置'}).click();
         await page.evaluate(() => { globalThis.failSave = true; });
         await binding.selectOption('p');
         await frame.getByRole('status').filter({hasText:'样例存储写入失败'}).waitFor();
@@ -143,10 +155,15 @@ try {
         await frame.getByRole('status').filter({hasText:'已保存推演 Agent'}).waitFor();
         await page.getByRole('button',{name:'返回局势'}).click();
         await waitForReturnFocus();
-        assert.equal(await switcher.isChecked(),false);
-        await switcher.click();
-        await page.waitForFunction(() => globalThis.uiFixture.world.subscribed === true);
-        await page.getByRole('tab',{name:'API',exact:true}).click();
+        await trigger.click();
+        await page.waitForFunction(() => globalThis.uiFixture.simRuns === 1);
+        await page.getByRole('tab',{name:'设置',exact:true}).click();
+        await page.getByRole('button',{name:'世界与推演'}).click();
+        await page.locator('#tk-world-encounter-frequency').selectOption('lively');
+        assert.equal(await page.evaluate(() => globalThis.uiFixture.world.encounterFrequency), 'lively');
+        await page.locator('#tk-world-inject-to-story').uncheck();
+        assert.equal(await page.evaluate(() => globalThis.uiFixture.world.injectToStory), false);
+        await page.getByRole('button',{name:'API',exact:true}).click();
         assert.equal(await binding.inputValue(),'p');
         await frame.getByLabel('更新 Agent').selectOption('p');
         await frame.getByRole('status').filter({hasText:'已保存更新 Agent'}).waitFor();
@@ -177,7 +194,7 @@ try {
         assert.equal(await frame.getByLabel('选择连接').locator('option:checked').textContent(),'本地连接');
         assert.equal(await page.evaluate(() => globalThis.uiFixture.calls),0);
         await page.reload(); await mountFixture();
-        await page.getByRole('tab',{name:'API',exact:true}).click();
+        await page.getByRole('tab',{name:'设置',exact:true}).click();
         await binding.waitFor(); assert.equal(await binding.inputValue(),'p');
         assert.equal(await page.evaluate(() => JSON.parse(globalThis.localStorage.getItem('textApiPresets')).bindings.world),'p');
         assert.deepEqual(errors,[]);

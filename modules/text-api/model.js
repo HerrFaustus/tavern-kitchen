@@ -76,7 +76,7 @@ export function assertSettings(value) {
 
 export function resolveBoundPreset(settings, feature) {
     const agent = Object.keys(AGENT_BINDINGS).find(key => AGENT_BINDINGS[key].features.includes(feature));
-    if (agent && !readAgentBinding(settings, agent).id) throw new Error('请先在API界面中配置' + AGENT_BINDINGS[agent].name + 'agent');
+    if (agent && !readAgentBinding(settings, agent).id) throw new Error('请先在设置中配置' + AGENT_BINDINGS[agent].name + 'agent');
     return resolveFeaturePreset(settings, feature);
 }
 

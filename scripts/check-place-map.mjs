@@ -87,14 +87,11 @@ async function inspect() {
     const outbound = Array.from(document.querySelectorAll('article li button')).find(b=>b.textContent==='集市').parentElement.textContent;
     await click(labelled('查看旅舍'));
     await click(named('回到当前位置'));
-    const controlHeight = document.querySelector('.place-index > footer').getBoundingClientRect().height;
+    const controlHeight = document.querySelector('.place-index > .tk-module-actions').getBoundingClientRect().height;
     const dataHeight = document.querySelector('.place-index > .tk-module-data').getBoundingClientRect().height;
-    const settingsOpen = !document.querySelector('.place-index > footer [data-setting-section="function"]').hidden;
-    const hasPromptSection = document.querySelector('.place-index [data-setting-section="prompts"], .place-index [data-settings-group="prompts"]') !== null;
-    document.documentElement.dataset.tkSettingsOpen = 'false';
-    const collapsedHeight = document.querySelector('.place-index > .tk-module-data').clientHeight;
-    const regainedSpace = collapsedHeight > dataHeight && !document.querySelector('.place-index > footer').checkVisibility();
-    return {regainedSpace,controlRatio:controlHeight / (controlHeight + dataHeight),hasPromptSection,controlHeight,settingsOpen,nearby,beforeFestival,duringFestival,afterFestival,fromProse,fromFeatureLink,north,west,unknown,initial,collapsed,atmosphere,feature,edges,oneWay,mapNodes,destination,incoming,outbound,current:title(),player:state.map.atlas.actors[0].locationKey};
+    const hasFooter = document.querySelector('.place-index > footer') !== null;
+    const hasPromptSection = document.querySelector('.place-index [data-setting-section], .place-index [data-settings-group]') !== null;
+    return {controlRatio:controlHeight / (controlHeight + dataHeight),hasFooter,hasPromptSection,controlHeight,dataHeight,nearby,beforeFestival,duringFestival,afterFestival,fromProse,fromFeatureLink,north,west,unknown,initial,collapsed,atmosphere,feature,edges,oneWay,mapNodes,destination,incoming,outbound,current:title(),player:state.map.atlas.actors[0].locationKey};
 }
 inspect().then(result=>fetch('/result',{method:'POST',body:JSON.stringify(result)}))
     .catch(error=>fetch('/result',{method:'POST',body:JSON.stringify(error?.stack || String(error))}));
@@ -127,8 +124,8 @@ try {
     assert.deepEqual(result.initial.slice(0,4).map(value=>value.replace(/\s+/g,'')),['▾世界群岛','▾地区北岸','▾地点旧渡口·当前位置','地点要素吊机']);
     assert.deepEqual([result.fromProse,result.fromFeatureLink,result.north,result.west,result.unknown],['集市','吊机','仓门','吊机','旧桶']);
     assert.ok(result.controlRatio > 0 && result.controlRatio <= .46, JSON.stringify(result));
+    assert.equal(result.hasFooter, false);
     assert.equal(result.hasPromptSection, false);
-    assert.equal(result.settingsOpen,true); assert.equal(result.regainedSpace,true);
     assert.equal(result.nearby,true);
     assert.equal(result.beforeFestival,true);
     assert.match(result.duringFestival,/河灯节.*灯摊占着青石坡/s);

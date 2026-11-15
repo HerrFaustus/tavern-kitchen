@@ -41,6 +41,7 @@ try {
                 globalThis.evolution = { enabled: true, subscribed: false, sceneryEvolution: false, encounterFrequency: 'occasional', ...globalThis.evolution, [event.data.key]: event.data.value };
                 reply({ type: 'WORLD_EVOLUTION_STATE', settings: globalThis.evolution });
             } else if (event.data.type === 'FRAME_READY') {
+                globalThis.frameReady = true;
                 reply({ type: 'LOAD_PANEL_CONFIG', config: {} });
                 reply({ type: 'KITCHEN_MEMORY_VIEW', view: 'memory' });
             } else if (event.data.type === 'KITCHEN_CARD_INFO') {
@@ -56,21 +57,18 @@ try {
         };
         frame.src = '/scripts/extensions/third-party/tavern-kitchen/modules/story-summary/story-summary.html';
     });
-    const frame = page.frameLocator('iframe'), options = frame.locator('#summary-options');
-    assert.ok(await frame.locator('#btn-generate').evaluate(el => !!el.closest('#summary-controls')));
-    assert.equal(await frame.locator('.archive #btn-generate').count(), 0);
-    await options.waitFor({ state: 'visible' });
-    assert.ok(await options.isVisible());
-    assert.equal(await options.locator(':scope > summary').count(), 0);
-    assert.equal(await frame.locator('#tab-summary-prompts, #tab-prompts, #summary-style, #prompt-round, #prompt-stage, #prompt-chapter, [data-settings-group="prompts"], [data-setting-section="prompts"]').count(), 0);
+    const frame = page.frameLocator('iframe');
+    await page.waitForFunction(() => globalThis.frameReady === true);
+    assert.equal(await frame.locator('.archive #btn-generate').count(), 1);
+    assert.equal(await frame.locator('#summary-options, #summary-controls, #tab-summary-prompts, #tab-prompts, #summary-style, #prompt-round, #prompt-stage, #prompt-chapter, #tab-agent, [data-settings-group="prompts"], [data-setting-section="prompts"]').count(), 0);
     assert.ok(await frame.locator('.archive').evaluate(el => !el.inert && el.checkVisibility()));
-    assert.ok(await frame.locator('#settings-modal').evaluate(el => el.closest('#summary-options') && globalThis.getComputedStyle(el).position === 'static'));
+    assert.ok(await frame.locator('#settings-modal').isHidden());
     const view = name => page.evaluate(view => globalThis.document.querySelector('iframe').contentWindow.postMessage({ source:'TavernKitchen', type:'KITCHEN_MEMORY_VIEW', view },globalThis.location.origin), name);
     await view('data');
     await frame.locator('#data-overview').waitFor();
     await frame.locator('#kitchen-card-counts').filter({ hasText: '7 轮总结' }).waitFor();
     assert.ok(await frame.locator('.archive').isHidden());
-    assert.ok(await frame.locator('#summary-controls').isHidden());
+    assert.ok(await frame.locator('#settings-modal').isHidden());
     assert.equal(await frame.locator('#legacy-data-tools, #tab-transfer, #tab-cache, #tab-clear, #tab-backups, #workspace-clear, #workspace-rollback').count(), 0);
     await frame.getByRole('button', { name: '导出后厨卡', exact: true }).click();
     await page.waitForFunction(() => globalThis.exportedCard === true);
@@ -88,21 +86,37 @@ try {
         assert.equal(await frame.locator('#data-page [data-setting-section], #data-page [data-kitchen-controls], #data-page [data-settings-group]').count(),0);
         assert.equal(await frame.locator('#data-controls').evaluate(el => globalThis.getComputedStyle(el).overflowY),'visible');
     }
+    await view('recall');
+    await frame.locator('#recall-page').waitFor({ state: 'visible' });
+    await frame.locator('#recall-empty').filter({ hasText: '暂无本聊天每轮召回记录' }).waitFor();
+    await page.evaluate(() => globalThis.document.querySelector('iframe').contentWindow.postMessage({
+        source: 'TavernKitchen', type: 'RECALL_HISTORY',
+        entries: [{ id: 'r1', chatId: 'default', targetFloor: 4, type: 'normal', status: 'success', mode: 'vector', queryPreview: '旧港潮汐与灯塔密函', focusCharacters: ['林默', '灯塔'], candidateCount: 6, includedCount: 1, trimmedCount: 1, diagnosticsText: 'recall ok line 1', chunks: [
+            { floor: 1, speaker: '林默', score: 0.91, included: true, text: '潮水退去后，灯塔铁门露出铜锁。' },
+            { floor: 0, speaker: '港口守卫', score: 0.42, included: false, filterReason: 'budget', text: '雾气弥漫在码头的木桩间。' },
+        ] }],
+    }, globalThis.location.origin));
+    await frame.locator('#recall-detail').waitFor({ state: 'visible' });
+    assert.match(await frame.locator('#recall-detail').innerText(), /旧港潮汐与灯塔密函/);
+    assert.match(await frame.locator('#recall-detail').innerText(), /灯塔铁门露出铜锁/);
+    await frame.locator('#recall-diagnostics-wrap > summary').click();
+    assert.match(await frame.locator('#recall-diagnostics-log').innerText(), /recall ok line 1/);
     await view('proofreading');
-    await frame.locator('#memory-maintenance-enabled').waitFor({state:'attached'});
-    await frame.locator('#tab-agent.active').waitFor();
-    const proofRatio = await frame.locator('.memory-controls').evaluate(el => el.getBoundingClientRect().height / globalThis.innerHeight);
-    assert.ok(proofRatio > 0 && proofRatio <= .46);
-    assert.ok(await frame.locator('.memory-settings').evaluate(el => el.open));
-    assert.ok(await options.isHidden());
+    await frame.locator('#proofreading-page').waitFor({ state: 'visible' });
+    await frame.locator('.memory-record-view').waitFor({ state: 'visible' });
+    assert.equal(await frame.locator('#proofreading-page .memory-controls, #proofreading-page input[type="checkbox"]').count(), 0);
+    assert.ok(await frame.locator('#settings-modal').isHidden());
     assert.equal(await frame.locator('#settings-close, .memory-api, [data-workspace-page], #summary-text-api').count(), 0);
+    await view('settings-memory');
+    await frame.locator('#settings-modal.active').waitFor();
+    assert.ok(await frame.locator('#settings-retention-section').isVisible());
+    assert.ok(await frame.locator('#proofreading-settings-host #proofreading-interval').isVisible());
+    assert.ok(await frame.locator('#settings-recall-section').isVisible());
+    assert.equal(await frame.locator('#trigger-interval, #trigger-role, #use-vector-boundary, #filter-rules-content, #tab-summary, #tab-agent').count(), 0);
     await frame.locator('#settings-save').click();
-    await frame.locator('#tab-agent.active').waitFor();
-    assert.ok(await options.isHidden());
+    await frame.locator('#settings-modal.active').waitFor();
     await view('memory');
-    await options.waitFor();
-    assert.ok(await frame.locator('#tab-summary .settings-section-title').filter({hasText:'自动总结'}).isVisible());
-    assert.ok(await frame.locator('#tab-vector > h3').filter({hasText:'相关内容召回'}).isVisible());
+    await frame.locator('.archive').waitFor({ state: 'visible' });
     await view('people');
     await frame.locator('#archive-people').waitFor();
     assert.equal(await frame.locator('#archive-person-select').count(), 0);
@@ -237,24 +251,11 @@ try {
     assert.match(await frame.locator('[data-record-id=port]').innerText(),/来源：第 2 楼/);
     assert.equal(await frame.locator('.tk-story-situations details').count(), 0);
     assert.equal(await frame.locator('.tk-story-situations > button, .sec-btn').count(), 0);
-    assert.equal(await frame.locator('.tk-story-situations input, .tk-story-situations select').count(), 0);
-    assert.ok(await frame.locator('#situation-controls > [data-setting-section="function"]').isVisible());
-    const affairToggle = frame.getByRole('checkbox', { name: '事态随剧情演化' });
-    const sceneryToggle = frame.getByRole('checkbox', { name: '风物随剧情演化' });
-    await affairToggle.check();
-    await page.waitForFunction(() => globalThis.evolution?.subscribed === true);
-    await sceneryToggle.check();
-    await page.waitForFunction(() => globalThis.evolution?.sceneryEvolution === true);
-    assert.ok(await affairToggle.isChecked());
-    await frame.getByLabel('街头见闻频率').selectOption('lively');
-    await page.waitForFunction(() => globalThis.evolution?.encounterFrequency === 'lively');
+    assert.equal(await frame.locator('.tk-story-situations input, .tk-story-situations select, #situation-controls').count(), 0);
     await fs.mkdir(path.resolve('output'), { recursive: true });
     for (const width of [319, 1280]) {
         await page.setViewportSize({ width, height: 780 });
         assert.ok(await affairs.isVisible());
-        const split = await frame.locator('#situation-controls').evaluate(el => ({ controls: el.getBoundingClientRect().height, total: globalThis.innerHeight }));
-        assert.ok(split.controls > 0 && split.controls <= split.total * .46);
-        assert.ok(await frame.locator('#situation-controls').evaluate(el => el.getBoundingClientRect().top < 12));
         assert.ok(await scenery.isVisible());
         assert.ok(await frame.locator('body').evaluate(body => body.scrollWidth <= body.clientWidth));
         await page.screenshot({ path: path.resolve('output', 'situations-' + width + '.png') });

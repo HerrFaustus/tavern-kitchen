@@ -67,21 +67,21 @@ test('a note read finishing after the world changes cannot display the earlier s
     assert.deepEqual(await reading,{state:'changed'});
 });
 
-test('manual controls stay available with automatic writing off and a failed setting save restores the switch', async () => {
+test('manual controls remain available inline without a chapter toggle', async () => {
     const { document } = parseHTML('<main></main>');
     const root = document.querySelector('main');
     let manualCalls = 0;
-    const view = createPlannerSettings(root, { prepare: () => manualCalls++, setAutoPrepare: () => { throw Error('未保存'); } });
-    view.status('失败',true);
-    const prepare = root.querySelector('[data-prepare-note]'), retry = root.querySelector('footer button');
-    const toggle = root.querySelector('footer input');
+    const view = createPlannerSettings(root, { prepare: () => manualCalls++ });
+    view.status('失败', true);
+    const prepare = root.querySelector('[data-prepare-note]');
+    const retry = root.querySelector('.tk-planner-controls button:not([data-prepare-note])');
+    assert.equal(root.querySelector('input[type="checkbox"]'), null);
+    assert.ok(!retry.hidden && !prepare.hidden);
+    view.status('正常', false);
     assert.ok(retry.hidden && !prepare.hidden);
     await prepare.onclick();
-    assert.equal(manualCalls,1);
-    toggle.checked = true;
-    await toggle.onchange();
-    assert.equal(toggle.checked,false);
-    assert.match(root.querySelector('.tk-planner-live-state').textContent,/未保存/);
+    assert.equal(manualCalls, 1);
+    assert.equal(root.querySelector('.tk-planner-live-state').textContent, '正常');
 });
 
 test('an in-flight writer cannot publish after its world snapshot changes in place', async () => {

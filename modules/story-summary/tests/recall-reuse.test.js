@@ -90,8 +90,10 @@ test('empty adopted results are hits and no retrieval runtime is retained', () =
     const reused = recall('continue');
     assert.equal(reused.text, '');
     assert.deepEqual(Object.keys(reused).sort(), [
-        'chatId', 'sourceRef', 'sourceIndex', 'replyStart', 'text', 'boundary', 'role', 'report',
+        'chatId', 'sourceRef', 'sourceIndex', 'replyStart', 'text', 'boundary', 'role', 'report', 'recallTrace',
     ].sort());
+    assert.equal(reused.recallTrace, null);
+    assert.equal(JSON.stringify(reused).includes('must not retain'), false);
     assert.equal(cache.getStats().count, 1);
 });
 

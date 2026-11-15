@@ -230,7 +230,7 @@ function normalizeSummaryPanelConfig(rawConfig = null) {
     const workflow = normalizeSummaryWorkflow(rawConfig);
     const result = {
         summaryWorkflowVersion: workflow.summaryWorkflowVersion,
-        memoryMaintenanceEnabled: rawConfig.memoryMaintenanceEnabled !== false,
+        memoryMaintenanceEnabled: true,
         ...normalizeProofreading(rawConfig),
         trigger: { ...defaults.trigger, ...workflow.trigger },
         inlineSummary: workflow.inlineSummary,

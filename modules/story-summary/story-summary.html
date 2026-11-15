@@ -80,7 +80,7 @@
         </div>
         <div class="archive-hero">
             <div class="archive-meta"><span>已总结 <b id="stat-summarized">0</b> 楼</span><span>待总结 <b id="stat-pending">0</b> 楼</span><span id="archive-chat-state" hidden></span><div class="stat-warning hidden" id="pending-warning">再删1条将回滚</div></div>
-
+            <div class="summary-generate-bar archive-actions"><button class="btn btn-p" id="btn-generate"></button></div>
         </div>
         <div class="archive-nav">
             <nav class="archive-tabs" role="tablist" aria-label="剧情档案">
@@ -150,8 +150,6 @@
         </div>
     </div>
 
-    <footer id="people-controls" class="tk-module-settings" data-kitchen-controls="people relations" hidden></footer>
-
     <section id="data-page" hidden aria-label="后厨数据">
     <div id="data-overview">
         <h3>后厨数据</h3><p id="kitchen-card-counts">读取当前聊天的数据…</p>
@@ -167,6 +165,24 @@
         <section id="world-recovery" hidden aria-label="世界版本与恢复"></section>
     </div>
     </section>
+
+    <section id="recall-page" hidden aria-label="每轮召回记录">
+        <div class="recall-page-head">
+            <h3>每轮召回结果</h3>
+            <label class="recall-round-picker">
+                <span>查看轮次</span>
+                <select id="recall-round-select" aria-label="选择召回轮次"></select>
+            </label>
+        </div>
+        <div id="recall-empty" class="recall-empty"></div>
+        <div id="recall-detail" class="recall-detail" hidden></div>
+        <details class="recall-raw-diagnostics" id="recall-diagnostics-wrap" hidden>
+            <summary>原始诊断日志</summary>
+            <pre id="recall-diagnostics-log" class="debug-log-viewer"></pre>
+        </details>
+    </section>
+
+    <section id="proofreading-page" hidden aria-label="记忆校对"></section>
 
     <dialog class="archive-drawer" id="archive-detail" aria-labelledby="archive-detail-title">
         <div class="archive-drawer-head"><h2 id="archive-detail-title"></h2><button class="archive-icon" data-close-archive="" aria-label="返回档案">×</button></div>
@@ -199,207 +215,62 @@
         </div>
     </div>
 
-    <!-- Settings Modal -->
-<footer id="summary-controls" data-kitchen-controls="memory" class="tk-module-settings" hidden aria-label="总结控制与设置">
-            <div data-setting-section="function" class="archive-actions archive-generate">
-                <button class="btn btn-p" id="btn-generate"></button>
-            </div>
-<div id="summary-options" data-setting-section="function" hidden></div>
-</footer>
-<footer id="situation-controls" data-kitchen-controls="situation" class="tk-module-settings" hidden aria-label="局势控制与设置">
-    <section data-setting-section="function"><div id="affair-settings"></div><div id="scenery-settings"></div></section>
-</footer>
-<div class="summary-workspace" id="settings-modal">
-
+    <!-- Settings Workspace (设置 → 剧情与召回) -->
+    <div class="summary-workspace" id="settings-modal">
         <div class="workspace-shell">
-
             <div id="settings-config-status" class="settings-config-status" role="status" aria-live="polite" hidden>
                 <span id="settings-config-message"></span>
                 <button type="button" class="btn btn-sm" id="settings-config-retry" hidden></button>
             </div>
             <div class="workspace-layout"><div class="modal-body">
-                <!-- Tab 1: Summary Settings -->
-                <div class="summary-local-group" id="tab-summary"><section class="settings-section"><h3 class="settings-section-title">自动总结<small class="workspace-scope">全局</small></h3><div class="settings-checkbox-group">
-                            <label class="settings-checkbox">
-                                <input type="checkbox" id="trigger-enabled" checked>
-                                <span class="checkbox-mark"></span>
-                                <span class="checkbox-label">启用自动总结</span>
-                            </label>
-                            <div class="settings-sub-options" id="auto-summary-options">
-                                <div class="settings-row">
-                                    <div class="settings-field">
-                                        <label>自动总结间隔（楼）</label>
-                                        <input type="number" id="trigger-interval" min="1" max="30" step="1" value="1">
-                                    </div>
-                                    <div class="settings-field">
-                                        <label>触发时机</label>
-                                        <select id="trigger-timing">
-                                            <option value="after_ai" selected>AI 回复后</option>
-                                            <option value="before_user">用户发送前</option>
-                                        </select>
-                                    </div>
-                                </div>
+                <section class="settings-section summary-group" id="settings-retention-section">
+                    <h3 class="settings-section-title">总结原文保留<small class="workspace-scope">全局</small></h3>
+                    <label class="archive-setting"><span>隐藏已总结楼层 · <strong id="summarized-count">0</strong> 楼</span><input type="checkbox" id="hide-summarized"></label>
+                    <label class="archive-setting"><span>保留最近原文（轮）</span><input type="number" id="keep-visible-count" min="0" max="50" value="5"></label>
+                </section>
+                <section class="settings-section summary-group" id="settings-proofreading-section">
+                    <h3 class="settings-section-title">校对索引与频率<small class="workspace-scope">全局 / 此聊天</small></h3>
+                    <div id="proofreading-settings-host"></div>
+                </section>
+                <section class="settings-section summary-group" id="settings-recall-section">
+                    <h3 class="settings-section-title">原文召回与向量<small class="workspace-scope">全局 / 此聊天</small></h3>
+                    <p class="settings-hint">原文检索默认启用；配置向量模型后自动补齐向量，重排模型可选。未配置向量模型时仍可使用关键词检索。</p>
+                    <label class="archive-setting"><span>按需注入相关早期原文</span><input type="checkbox" id="recall-early-original"></label>
+                    <div id="vector-config-area">
+                        <div class="settings-row">
+                            <div class="settings-field">
+                                <label for="vector-recall-timeout">召回超时（秒）</label>
+                                <input type="number" id="vector-recall-timeout" min="1" step="1">
                             </div>
-                        </div><label class="settings-checkbox">
-                                <input type="checkbox" id="trigger-notify-on-complete">
-                                <span class="checkbox-mark"></span>
-                                <span class="checkbox-label">总结完成提醒</span>
-                            </label></section><section class="settings-section summary-group"><h3 class="settings-section-title">保留原文<small class="workspace-scope">全局</small></h3><label class="archive-setting"><span>隐藏已总结楼层 · <strong id="summarized-count">0</strong> 楼</span><input type="checkbox" id="hide-summarized"></label><label class="archive-setting"><span>保留最近原文（轮）</span><input type="number" id="keep-visible-count" min="0" max="50" value="5"></label></section><section class="settings-section summary-group"><h3 class="settings-section-title">高级设置<small class="workspace-scope">全局</small></h3><div id="container-vector-boundary" class="vector-boundary-container">
-                <label class="archive-setting" id="lbl-vector-boundary" title="开：按向量处理的最新进度隐藏；关：按总结的最新进度隐藏。"><span>按向量进度隐藏</span><input type="checkbox" id="use-vector-boundary"></label>
-                <span class="info-dot" id="vector-boundary-info" title="开：按向量处理的最新进度隐藏；关：按总结的最新进度隐藏。">i</span>
-            </div><div class="settings-field summary-role-field">
-                                <label for="trigger-role">注入角色</label>
-                                <select id="trigger-role">
-                                    <option value="system">System</option>
-                                    <option value="user">User</option>
-                                    <option value="assistant">Assistant</option>
-                                </select>
-                            </div><div class="settings-checkbox-group">
-                            <label class="settings-checkbox">
-                                <input type="checkbox" id="trigger-insert-at-end">
-                                <span class="checkbox-mark"></span>
-                                <span class="checkbox-label">强制插入到聊天最后（插件冲突用）</span>
-                            </label>
-
-                        </div></section>
-                    <section class="settings-section" id="filter-rules-collapse">
-                        <h3 class="settings-section-title"><span>文本过滤规则 · <strong id="filter-rules-count">0</strong> 条</span></h3>
-                        <div id="filter-rules-content">
-                            <div class="filter-rules-header">
-                                <p class="settings-hint" style="margin:0">过滤干扰内容（如思考标签）</p>
-                                <button class="btn btn-sm btn-add" id="btn-add-filter-rule">
-                                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg> 添加
-                                </button>
-                            </div>
-                            <div id="filter-rules-list" class="filter-rules-list"></div>
                         </div>
-                    </section>
-                </div>
-
-                <!-- Tab 2: Vector Settings -->
-                <section class="summary-local-group" id="tab-vector"><h3 class="settings-section-title">相关内容召回</h3>
-                    <div class="settings-section">
-                        <div class="settings-section-title">原文检索 · 全局</div>
-                        <p class="settings-hint">原文检索默认启用；配置向量模型后自动补齐向量，重排模型可选。未配置向量模型时仍可使用关键词检索。</p><label class="archive-setting"><span>按需注入相关早期原文</span><input type="checkbox" id="recall-early-original"></label>
-
-                        <div id="vector-config-area">
-                            <div class="settings-row">
-                                <div class="settings-field">
-                                    <label for="vector-recall-timeout">召回超时（秒）</label>
-                                    <input type="number" id="vector-recall-timeout" min="1" step="1">
-                                </div>
-                            </div>
-
-                            <!-- Step 0: API Config -->
-
-
-
-                        </div><section class="workspace-progress"><h3 class="settings-section-title">处理进度 · 此聊天</h3><div class="neo-card hidden" id="legacy-anchor-card">
-                                <div class="neo-card-title">
-                                    <span>记忆锚点</span>
-                                </div>
-                                <div class="settings-hint" style="margin-bottom: 12px; margin-top: -8px;">
-                                    从对话中提取锚点文本。首次提取较慢，成功楼层不会重复生成。
-                                </div>
-
-                                <!-- Stats -->
-                                <div class="settings-row">
-                                    <div class="settings-field full">
-                                        <div class="vector-stats" id="anchor-stats">
-                                            <div class="vector-stat-col">
-                                                <span class="vector-stat-label">已提取:</span>
-                                                <span class="vector-stat-value"><strong id="anchor-extracted">0</strong></span>
-                                            </div>
-                                            <span class="vector-stat-sep">/</span>
-                                            <div class="vector-stat-col">
-                                                <span class="vector-stat-label">总楼层:</span>
-                                                <span class="vector-stat-value"><strong id="anchor-total">0</strong></span>
-                                            </div>
-                                            <div class="vector-stat-col" id="anchor-pending-wrap" style="color: #f59e0b;">
-                                                (待提取 <strong id="anchor-pending">0</strong>)
-                                            </div>
-                                            <span class="vector-stat-sep hidden">·</span>
-                                            <div class="vector-stat-col">
-                                                <span class="vector-stat-label">锚点数:</span>
-                                                <span class="vector-stat-value"><strong id="anchor-atoms-count">0</strong></span>
-                                            </div>
-                                            <span class="vector-stat-sep" id="anchor-extra-sep" style="display:none">·</span>
-                                            <div class="vector-stat-col" id="anchor-extra-wrap" style="display:none">
-                                                <span id="anchor-extra"></span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Progress -->
-                                <div class="engine-progress hidden" id="anchor-progress">
-                                    <div class="progress-bar">
-                                        <div class="progress-inner"></div>
-                                    </div>
-                                    <span class="progress-text">0/0</span>
-                                </div>
-
-                                <!-- Buttons -->
-                                <div class="settings-btn-row" id="anchor-action-row">
-                                    <button class="btn btn-sm btn-p" id="btn-anchor-generate" style="flex:1">生成/补齐</button>
-                                    <button class="btn btn-sm btn-del" id="btn-anchor-clear" style="flex:1">清空</button>
-                                    <button class="btn btn-sm hidden" id="btn-anchor-cancel" style="flex:1">取消</button>
-                                </div>
-                            </div><div class="neo-card">
-                                <div class="neo-card-title">
-                                    <span>向量数据</span>
-                                </div>
-
-                                <div class="settings-row">
-                                    <div class="settings-field full">
-                                        <div class="vector-stats" id="vector-stats">
-                                            <div class="vector-stat-col hidden">
-                                                <span class="vector-stat-label">历史锚点向量:</span>
-                                                <span class="vector-stat-value"><strong id="vector-atom-count">0</strong></span>
-                                            </div>
-                                            <span class="vector-stat-sep hidden">·</span>
-                                            <div class="vector-stat-col">
-                                                <span class="vector-stat-label">正文片段向量:</span>
-                                                <span class="vector-stat-value"><strong id="vector-chunk-count">0</strong></span>
-                                            </div>
-                                            <span class="vector-stat-sep hidden">·</span>
-                                        </div>
-                                        <div class="settings-hint" id="vector-integrity-status" role="status"></div>
-                                        <div class="vector-empty-warning hidden" id="vector-empty-l0-warning" style="font-size: 0.75rem; color: #f59e0b; margin-top: 6px;">
-                                            场景信息随每轮独立整理更新。
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Progress -->
-                                <div class="engine-progress hidden" id="vector-gen-progress">
-                                    <div class="progress-bar">
-                                        <div class="progress-inner"></div>
-                                    </div>
-                                    <span class="progress-text">0%</span>
-                                </div>
-
-                                <!-- Buttons -->
-                                <div class="settings-btn-row" id="vector-action-row">
-                                    <button class="btn btn-sm btn-p" id="btn-repair-vectors" style="flex:1">补齐缺漏</button>
-                                    <button class="btn btn-sm" id="btn-gen-vectors" style="flex:1">完整重建</button>
-                                    <button class="btn btn-sm btn-del" id="btn-clear-vectors" style="flex:1">清空</button>
-                                    <button class="btn btn-sm hidden" id="btn-cancel-vectors" style="flex:1">取消</button>
-                                </div>
-                            </div></section>
                     </div>
-                <section class="settings-section"><h3 class="settings-section-title">召回记录</h3><pre id="recall-log-content" class="debug-log-viewer"></pre></section></section>
-
-                <div class="tab-pane" id="tab-agent"></div>
-
-                <!-- Tab 3: Debug -->
-
-
-            <input type="hidden" id="vector-l0-concurrency" value="10"></div></div>
-            <div class="modal-foot" data-setting-section="function"><div id="api-connect-status" role="status"></div><button class="btn" id="settings-cancel">还原修改</button>
-                <button class="btn memory-chat-entry" id="settings-chat" hidden></button>
-                <button class="btn btn-p" id="settings-save"></button>
-            </div>
+                    <div class="neo-card" id="vector-data-card">
+                        <div class="neo-card-title"><span>向量数据 · 此聊天</span></div>
+                        <div class="settings-row">
+                            <div class="settings-field full">
+                                <div class="vector-stats" id="vector-stats">
+                                    <div class="vector-stat-col">
+                                        <span class="vector-stat-label">正文片段向量:</span>
+                                        <span class="vector-stat-value"><strong id="vector-chunk-count">0</strong></span>
+                                    </div>
+                                </div>
+                                <div class="settings-hint" id="vector-integrity-status" role="status"></div>
+                            </div>
+                        </div>
+                        <div class="engine-progress hidden" id="vector-gen-progress">
+                            <div class="progress-bar"><div class="progress-inner"></div></div>
+                            <span class="progress-text">0%</span>
+                        </div>
+                        <div class="settings-btn-row" id="vector-action-row">
+                            <button class="btn btn-sm btn-p" id="btn-repair-vectors" style="flex:1">补齐缺漏</button>
+                            <button class="btn btn-sm" id="btn-gen-vectors" style="flex:1">完整重建</button>
+                            <button class="btn btn-sm btn-del" id="btn-clear-vectors" style="flex:1">清空</button>
+                            <button class="btn btn-sm hidden" id="btn-cancel-vectors" style="flex:1">取消</button>
+                        </div>
+                    </div>
+                </section>
+            </div></div>
+            <div class="modal-foot" data-setting-section="function"><div id="api-connect-status" role="status"></div><button class="btn" id="settings-cancel">还原修改</button><button class="btn btn-p" id="settings-save"></button></div>
         </div>
     </div>
 

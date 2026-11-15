@@ -121,32 +121,47 @@ html.tk-embedded[data-kitchen-view="memory"] body { overflow-y: auto; }
 .tk-embedded[data-kitchen-view="world"] .archive-world-layout { display: block; }
 .tk-embedded[data-kitchen-view="world"] #archive-world-index { display: none; }
 
-#summary-controls, #situation-controls { margin-inline: 5px; }
-#summary-controls .archive-generate { margin-bottom: 6px; }
-#summary-controls #summary-options { margin: 0; }
-#situation-controls .tk-situation-heading { margin-block: 8px; }
-#summary-controls[hidden], #situation-controls[hidden] { display: none; }
-
-html.tk-embedded:is([data-kitchen-view="memory"],[data-kitchen-view="people"],[data-kitchen-view="relations"],[data-kitchen-view="world"]) body {
-    display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100dvh; margin: 0; overflow: hidden !important;
+html.tk-embedded[data-kitchen-view="memory"] body,
+html.tk-embedded:is([data-kitchen-view="people"],[data-kitchen-view="relations"],[data-kitchen-view="world"]) body {
+    height: 100dvh; margin: 0; overflow: hidden !important;
 }
-html.tk-embedded .archive { grid-row: 2; height: 100%; min-height: 0; overflow-y: auto; box-sizing: border-box; }
-#summary-controls, #situation-controls, #people-controls { grid-row: 1; max-height: 45dvh; min-height: 0; margin: 0 5px; overflow-y: auto; box-sizing: border-box; }
-#people-controls[hidden] { display: none; }
+html.tk-embedded .archive { height: 100%; min-height: 0; overflow-y: auto; box-sizing: border-box; }
+html.tk-embedded:not([data-kitchen-view="memory"]) .summary-generate-bar { display: none; }
 html.tk-embedded[data-kitchen-view="settings"] body { height: 100dvh; margin: 0; overflow: hidden; }
-html.tk-embedded[data-kitchen-view="settings"] #settings-modal.active { position: static !important; height: 100%; overflow: hidden; }
-html.tk-embedded[data-kitchen-view="settings"] #settings-modal :is(.workspace-shell,.workspace-layout,.modal-body) { height: 100%; min-height: 0; padding-block: 0; box-sizing: border-box; }
-html.tk-embedded[data-kitchen-view="settings"] #tab-agent.active { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; }
-.memory-record-view, .memory-controls { min-height: 0; overflow-y: auto; box-sizing: border-box; }
-.memory-controls { margin: 0; }
-.memory-controls .memory-settings { border-bottom: 0; }
+html.tk-embedded[data-kitchen-view="settings"] :is(.archive, #data-page, #recall-page, #proofreading-page) { display: none !important; }
+html.tk-embedded[data-kitchen-view="settings"] #settings-modal.active { position: static !important; height: 100%; overflow-y: auto; }
+html.tk-embedded[data-kitchen-view="settings"] #settings-modal :is(.workspace-shell,.workspace-layout,.modal-body) { min-height: 0; padding-block: 0; box-sizing: border-box; }
+html.tk-embedded[data-kitchen-view="settings"] .workspace-shell > .modal-foot { margin-left: 0; }
+.memory-record-view { min-height: 0; overflow-y: auto; box-sizing: border-box; }
 
-#tab-agent > .memory-controls { margin: 0; }
-
-html.tk-embedded[data-kitchen-view="data"] body { height: 100dvh; margin: 0; overflow: hidden; }
-html.tk-embedded[data-kitchen-view="data"] :is(.archive, #settings-modal) { display: none !important; }
-#data-page { height: 100%; box-sizing: border-box; overflow-y: auto; overflow-wrap: anywhere; padding: 5px; }
-#data-page[hidden] { display: none; }
+html.tk-embedded[data-kitchen-view="data"] body,
+html.tk-embedded[data-kitchen-view="recall"] body,
+html.tk-embedded[data-kitchen-view="proofreading"] body { height: 100dvh; margin: 0; overflow: hidden; }
+html.tk-embedded:is([data-kitchen-view="data"],[data-kitchen-view="recall"],[data-kitchen-view="proofreading"]) :is(.archive, #settings-modal) { display: none !important; }
+#data-page, #recall-page, #proofreading-page { height: 100%; box-sizing: border-box; overflow-y: auto; overflow-wrap: anywhere; padding: 8px 10px 24px; }
+#data-page[hidden], #recall-page[hidden], #proofreading-page[hidden] { display: none; }
+.recall-page-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--bdr); }
+.recall-page-head h3 { margin: 0; font-size: 1rem; font-weight: 600; color: var(--txt); }
+.recall-round-picker { display: inline-flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--txt2); }
+.recall-round-picker select { min-width: 180px; max-width: 100%; font: inherit; }
+.recall-detail { display: grid; gap: 12px; }
+.recall-meta-grid { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.recall-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid var(--bdr); border-radius: 5px; font-size: .78rem; color: var(--txt2); background: var(--bg2); }
+.recall-pill.is-good { color: var(--txt); border-color: var(--archive-accent); }
+.recall-pill.is-warn { color: #f59e0b; border-color: #f59e0b66; }
+.recall-pill.is-muted { opacity: .82; }
+.recall-query-box { padding: 8px 10px; border: 1px solid var(--bdr); border-radius: 6px; background: var(--bg2); font-size: .84rem; line-height: 1.5; }
+.recall-query-label { font-weight: 600; color: var(--txt2); margin-bottom: 4px; }
+.recall-focus-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: .82rem; }
+.recall-chunks { display: grid; gap: 8px; }
+.recall-chunk { padding: 10px 12px; border: 1px solid var(--bdr); border-radius: 6px; background: var(--bg2); display: grid; gap: 6px; }
+.recall-chunk.is-trimmed { opacity: .78; }
+.recall-chunk-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: .82rem; color: var(--txt2); }
+.recall-chunk-title { font-weight: 600; color: var(--txt); }
+.recall-chunk-text { margin: 0; font-size: .86rem; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--txt); }
+.recall-raw-diagnostics { margin-top: 14px; border-top: 1px solid var(--bdr); padding-top: 10px; }
+.recall-raw-diagnostics summary { cursor: pointer; font-size: .84rem; color: var(--txt2); }
+.recall-raw-diagnostics pre { margin-top: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .78rem; max-height: 36vh; overflow-y: auto; padding: 10px; border: 1px solid var(--bdr); border-radius: 6px; background: var(--bg2); }
 #data-controls { margin-block: 12px; }
 #kitchen-card-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 16px; }
 #world-recovery { margin: 0 0 16px; }
@@ -155,8 +170,6 @@ html.tk-embedded[data-kitchen-view="data"] :is(.archive, #settings-modal) { disp
 .tk-world-history-field[hidden] { display: none; }
 .tk-world-history-field select, .tk-world-history-field input { width: 100%; min-width: 0; box-sizing: border-box; font: inherit; }
 .tk-world-history-confirm { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
-#tab-agent > .memory-record-view { grid-row: 2; }
-#tab-agent > .memory-controls { grid-row: 1; max-height: 45dvh; }
 
 .tk-world-proposals, .tk-world-editor { margin: 0 0 14px; overflow-wrap: anywhere; }
 .tk-world-proposals[hidden], .tk-world-editor[hidden] { display: none; }

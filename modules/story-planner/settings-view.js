@@ -101,7 +101,7 @@ function renderNoteLayer(doc, container, layer, staleTargets) {
     return count;
 }
 
-export function createPlannerSettings(root, { retry, prepare, autoPrepare = false, setAutoPrepare, controlsRoot, clipboard, enabled = true, visitBinding } = {}) {
+export function createPlannerSettings(root, { retry, prepare, clipboard, enabled = true, visitBinding } = {}) {
     const doc = root.ownerDocument;
     const panel = doc.createElement('section');
     panel.className = 'tk-planner-settings';
@@ -115,7 +115,7 @@ export function createPlannerSettings(root, { retry, prepare, autoPrepare = fals
     noteStatus.className = 'tk-planner-note-status';
     noteStatus.setAttribute('role', 'status');
     const missingLink = doc.createElement('button'); missingLink.type = 'button'; missingLink.className = 'menu_button';
-    missingLink.textContent = '前往 API'; missingLink.hidden = true;
+    missingLink.textContent = '前往设置'; missingLink.hidden = true;
     function showFailure(error, selector) {
         state.textContent = error?.message || '札记更新失败，请重试。';
         missingLink.hidden = !(error?.agent && visitBinding);
@@ -161,20 +161,8 @@ export function createPlannerSettings(root, { retry, prepare, autoPrepare = fals
     retryButton.type = 'button';
     retryButton.className = 'menu_button';
     retryButton.textContent = '重试更新札记';
+    retryButton.hidden = true;
     retryButton.onclick = retry;
-    const autoLabel = doc.createElement('label');
-    autoLabel.className = 'checkbox_label';
-    const auto = doc.createElement('input');
-    auto.type = 'checkbox';
-    auto.checked = autoPrepare; auto.dataset.plannerAuto = ''; auto.disabled = !enabled;
-    autoLabel.append(auto, doc.createTextNode('章节（L2）保存后自动更新札记'));
-    let retryable = false;
-    auto.onchange = async () => {
-        auto.disabled = true;
-        try { await setAutoPrepare?.(auto.checked); }
-        catch (error) { auto.checked = !auto.checked; showFailure(error,'[data-planner-auto]'); }
-        finally { auto.disabled = false; retryButton.hidden = !retryable || !auto.checked; }
-    };
     const prepareButton = doc.createElement('button');
     prepareButton.type = 'button'; prepareButton.dataset.prepareNote = '';
     prepareButton.className = 'menu_button';
@@ -186,12 +174,11 @@ export function createPlannerSettings(root, { retry, prepare, autoPrepare = fals
         catch (error) { showFailure(error,'[data-prepare-note]'); }
         finally { prepareButton.disabled = false; }
     };
-    const controls = doc.createElement('footer');
+    const controls = doc.createElement('div');
     controls.className = 'tk-planner-controls';
     controls.setAttribute('aria-label', '编剧控制');
-    controls.append(autoLabel, retryButton);
-    panel.append(heading, state, missingLink, noteStatus, prepareButton, overview, toolbar, note);
-    (controlsRoot || panel).append(controls);
+    controls.append(prepareButton, retryButton);
+    panel.append(heading, state, missingLink, noteStatus, controls, overview, toolbar, note);
     root.replaceChildren(panel);
     let shownId = null;
     let activeGroup = 'all';
@@ -231,8 +218,7 @@ export function createPlannerSettings(root, { retry, prepare, autoPrepare = fals
         removeControls() { controls.remove(); },
         status(message, canRetry) {
             state.textContent = message;
-            retryable = canRetry;
-            retryButton.hidden = !canRetry || !auto.checked;
+            retryButton.hidden = !canRetry;
         },
         note(result) {
             const saved = result?.note;

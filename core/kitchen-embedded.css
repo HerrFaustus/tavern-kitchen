@@ -132,16 +132,20 @@
 .tk-embedded .archive-roster { margin: 6px 0 12px; }
 /* Match the host's menu_button, text_pole and inline-drawer header controls. */
 .tk-embedded.tk-follow-host button:not([role="switch"]) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
     background-color: var(--tk-button-background-color, var(--bg)) !important;
     background-image: var(--tk-button-background-image, none) !important;
     color: var(--tk-button-color, var(--txt)) !important;
     border: var(--tk-button-border, 1px solid var(--bdr)) !important;
     border-radius: var(--tk-button-border-radius, 5px) !important;
-    padding: var(--tk-button-padding, 3px 5px) !important;
+    padding: var(--tk-button-padding, 4px 10px) !important;
     font-family: var(--tk-button-font-family, inherit) !important;
     font-size: var(--tk-button-font-size, inherit) !important;
     font-weight: var(--tk-button-font-weight, 400) !important;
-    line-height: var(--tk-button-line-height, normal) !important;
+    line-height: var(--tk-button-line-height, 1.35) !important;
     letter-spacing: normal !important;
     text-transform: none !important;
     box-shadow: none !important;
@@ -151,7 +155,8 @@
     background-color: var(--tk-selected-background-color, var(--bg3)) !important;
     background-image: var(--tk-selected-background-image, none) !important;
     color: var(--tk-selected-color, var(--txt)) !important;
-    border: var(--tk-selected-border, 1px solid var(--bdr)) !important;
+    border: var(--tk-selected-border, 1px solid color-mix(in srgb, var(--hl) 55%, var(--bdr))) !important;
+    filter: none !important;
 }
 .tk-embedded.tk-follow-host button:is(:disabled, [aria-disabled="true"]) {
     opacity: var(--tk-disabled-opacity, .5) !important;
@@ -205,7 +210,7 @@
 .tk-embedded.tk-follow-host :is(.card-title, .neo-card-title, .settings-section-title, .settings-collapse-header, .summary-group > summary, .xb-sampling > summary) {
     background-color: var(--tk-heading-background-color, transparent);
     background-image: var(--tk-heading-background-image, none);
-    color: var(--txt); border: var(--tk-heading-border, 1px solid var(--bdr));
+    color: var(--tk-heading-color, var(--txt)); border: var(--tk-heading-border, 1px solid var(--bdr));
     border-radius: var(--tk-heading-border-radius, 5px);
     padding: var(--tk-heading-padding, 5px); margin: 0 0 5px;
     font-size: 1em; font-weight: 600; letter-spacing: normal; text-transform: none;
@@ -268,31 +273,5 @@
     .tk-embedded .xb-agent-settings-surface :is(input, select, textarea) { font-size: 16px; }
 }
 
-.tk-module-settings { border-top: 1px solid var(--bdr, var(--SmartThemeBorderColor, #8885)); margin-block-start: 12px; padding-block: 10px; }
-.tk-module-settings > summary, .tk-module-settings > details > summary { cursor: pointer; }
-
-#tk-module-native-controls { height: auto; max-height: none; min-width: 0; margin: 0 0 8px; padding: 0; border: 0; overflow: visible; }
-#tk-module-native-controls .tk-panel-switch, #tk-module-native-controls .tk-feature-switch { display: flex; align-items: center; gap: 6px; }
-#tk-module-native-controls .tk-feature-switches { display: block; }
-#tk-module-native-controls .tk-panel-controls { width: 100%; min-width: 0; margin-block: 8px; }
-#tk-module-native-controls .tk-panel-controls label { display: grid; gap: 4px; margin-block: 6px; }
-#tk-module-native-controls .tk-panel-controls :is(select, textarea) { box-sizing: border-box; width: 100%; min-width: 0; font: inherit; }
-#tk-module-native-controls .tk-panel-controls textarea { resize: vertical; }
-#tk-module-native-controls .tk-panel-controls small:empty { display: none; }
-#tk-module-native-controls summary { cursor: pointer; }
-
-#tk-module-native-controls > h4 { margin: 0 0 8px; font-size: 1em; }
-#tk-module-native-controls > [data-settings-group] { margin-block: 6px; }
-#tk-module-native-controls > [data-settings-group] > :is(h5, summary), #tk-module-native-controls .tk-evolution-title {
-    margin: 0; padding-block: 4px; font-size: 1em; font-weight: 600;
-}
-#tk-module-native-controls > details > summary { cursor: pointer; }
-#tk-module-native-controls .tk-api-fields > section > h5 { margin: 8px 0 4px; font-size: 1em; font-weight: 600; }
-
-/* A module only shows settings categories with controls. */
-#tk-module-native-controls > [data-settings-group]:not(:has(> :not(h5):not(summary):not([hidden]):not(.tk-feature-switches), > .tk-feature-switches:not([hidden]) > :not([hidden]))) { display: none; }
-
-/* The host disclosure owns visibility; each embedded app keeps its own controls and event handlers. */
-.tk-embedded[data-tk-settings-open="false"] [data-kitchen-controls] { display: none !important; }
-.tk-embedded[data-tk-settings-open] [data-kitchen-controls] { max-height: 45dvh; overscroll-behavior: contain; }
+.tk-module-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-block: 6px; }
 .tk-embedded :is(button, select, input, summary):focus-visible { outline: 2px solid var(--SmartThemeQuoteColor, currentColor); outline-offset: 2px; }

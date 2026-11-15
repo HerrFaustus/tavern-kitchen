@@ -14,7 +14,6 @@ import { RELATION_TRENDS } from './data/fact-predicates.js';
 import { createMemoryMaintenancePage } from './maintenance/ui.js';
 import { MEMORY_COPY } from './maintenance/copy.js';
 import { MEMORY_CHAT_MESSAGES } from './maintenance/chat-contract.js';
-import { MEMORY_CHAT_COPY } from './maintenance/chat-copy.js';
 import { DEFAULT_MEMORY_MAINTENANCE_ENABLED, normalizeProofreading } from './maintenance/settings.js';
 import { SUMMARY_FEEDBACK_COPY } from './feedback-copy.js';
 import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
@@ -188,15 +187,15 @@ const UNANNOTATED_LABEL = '未标注';
         }
     };
 
-    let evolutionSettings;
     let summaryData = { rounds: [], characters: { main: [], relationships: [] }, facts: [], characterAliases: [] };
     let localGenerating = false;
     let vectorGenerating = false;
-    let anchorGenerating = false;
     let currentEditSection = null;
     let currentEditBaseline = null;
     let currentCharacterId = null;
     let lastRecallLogText = '';
+    let recallHistoryEntries = [];
+    let selectedRecallRoundId = '';
     let configSaveSeq = 0;
     let currentTimelineChatId = '';
     let tlUnfilteredPage = null;
@@ -335,8 +334,6 @@ const UNANNOTATED_LABEL = '未标注';
             generateButton.title = localGenerating ? '' : !hasChat ? copy.noChat
                 : changing ? copy.changing : !effectiveEnabled ? copy.disabled : '';
         }
-
-        syncVectorBoundaryControl(true, $('hide-summarized').checked);
     }
 
     function renderSummaryStatus(data) {
@@ -375,48 +372,6 @@ const UNANNOTATED_LABEL = '未标注';
         };
     }
 
-    function syncAutoSummaryControls() {
-        const en = $('trigger-enabled');
-        const timing = $('trigger-timing');
-        const autoSummaryOptions = $('auto-summary-options');
-        if (!en || !timing) return;
-
-        timing.value = normalizeTriggerTiming(timing.value || config.trigger.timing);
-        en.disabled = false;
-        en.parentElement.style.opacity = '1';
-        if (autoSummaryOptions) {
-            autoSummaryOptions.classList.toggle('hidden', !en.checked);
-        }
-    }
-
-    function syncVectorBoundaryControl(vectorEnabled = config.vector?.enabled, hideEnabled = config.ui.hideSummarized) {
-        const input = $('use-vector-boundary');
-        const label = $('lbl-vector-boundary');
-        const info = $('vector-boundary-info');
-        const container = $('container-vector-boundary');
-        if (!input || !label || !container) return;
-
-        const enabled = !!vectorEnabled && !!hideEnabled;
-        input.disabled = !enabled;
-        container.classList.toggle('is-disabled', !enabled);
-        label.classList.toggle('is-disabled', !enabled);
-
-        const title = !vectorEnabled
-            ? '原文检索尚未准备好，请刷新后重试'
-            : !hideEnabled
-                ? '需先开启“隐藏已总结”'
-                : '开：按最新向量楼层作为隐藏计算锚点\n关：按最新的大总结楼层作为隐藏计算锚点\n提示：若您的第三方模型 API 支持 Context Caching（上下文缓存），关闭此项可提高缓存命中率；开启此项则影响命中，但语义和上下文更自然';
-        label.title = title;
-        if (info) {
-            info.title = title;
-            info.onclick = e => {
-                e.preventDefault();
-                e.stopPropagation();
-                alert(title);
-            };
-        }
-    }
-
     function loadConfig() {
         try {
             const s = localStorage.getItem(SUMMARY_CONFIG_LOCAL_STORAGE_KEY);
@@ -426,7 +381,7 @@ const UNANNOTATED_LABEL = '未标注';
                 config.summaryWorkflowVersion = workflow.summaryWorkflowVersion;
                 config.inlineSummary = workflow.inlineSummary;
                 Object.assign(config, normalizeProofreading(p));
-                config.memoryMaintenanceEnabled = p.memoryMaintenanceEnabled !== false;
+                config.memoryMaintenanceEnabled = true;
                 Object.assign(config.trigger, workflow.trigger);
                 Object.assign(config.ui, p.ui || {});
                 config.ui.useVectorBoundary = p.ui?.useVectorBoundary === true;
@@ -445,12 +400,11 @@ const UNANNOTATED_LABEL = '未标注';
         config.summaryWorkflowVersion = workflow.summaryWorkflowVersion;
         config.inlineSummary = workflow.inlineSummary;
         Object.assign(config, normalizeProofreading(cfg));
-        config.memoryMaintenanceEnabled = cfg.memoryMaintenanceEnabled !== false;
-        if (!settingsDirty) memoryMaintenancePage?.setEnabled(config.memoryMaintenanceEnabled, config);
+        config.memoryMaintenanceEnabled = true;
+        if (!settingsDirty) memoryMaintenancePage?.setEnabled(true, config);
         Object.assign(config.trigger, workflow.trigger);
         Object.assign(config.ui, cfg.ui || {});
         config.ui.useVectorBoundary = cfg.ui?.useVectorBoundary === true;
-        if (!settingsDirty) $('use-vector-boundary').checked = config.ui.useVectorBoundary;
         config.textFilterRules = Array.isArray(cfg.textFilterRules)
             ? cfg.textFilterRules
             : (Array.isArray(cfg.vector?.textFilterRules)
@@ -458,7 +412,6 @@ const UNANNOTATED_LABEL = '未标注';
                 : (Array.isArray(config.textFilterRules) ? config.textFilterRules : [...DEFAULT_FILTER_RULES]));
         if (cfg.vector) config.vector = normalizeVectorConfigUI(cfg.vector);
         normalizeTriggerConfig();
-        syncVectorBoundaryControl(config.vector?.enabled, config.ui.hideSummarized);
     }
 
 
@@ -468,7 +421,6 @@ const UNANNOTATED_LABEL = '未标注';
             const settingsOpen = $('settings-modal')?.classList.contains('active');
             if (settingsOpen) {
                 config.vector = getVectorConfig();
-                config.textFilterRules = collectFilterRules();
             }
             if (!config.vector) {
                 config.vector = {
@@ -524,7 +476,7 @@ const UNANNOTATED_LABEL = '未标注';
         return {
             enabled: true,
             engine: 'online',
-            l0Concurrency: Math.max(1, Math.min(50, Number($('vector-l0-concurrency')?.value) || 10)),
+            l0Concurrency: Math.max(1, Math.min(50, Number(config.vector?.l0Concurrency) || 10)),
             recallTimeoutSec: normalizeRecallTimeoutSec($('vector-recall-timeout')?.value),
             l0Api: getVectorApiConfig('l0'),
             embeddingApi: getVectorApiConfig('embedding'),
@@ -534,176 +486,22 @@ const UNANNOTATED_LABEL = '未标注';
 
     function loadVectorConfig(cfg) {
         if (!cfg) return;
-        syncVectorBoundaryControl(true, config.ui.hideSummarized);
-        $('vector-l0-concurrency').value = String(Math.max(1, Math.min(50, Number(cfg.l0Concurrency) || 10)));
-        $('vector-recall-timeout').max = String(MAX_RECALL_TIMEOUT_SEC);
-        $('vector-recall-timeout').value = String(normalizeRecallTimeoutSec(cfg.recallTimeoutSec));
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Filter Rules UI
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    function renderFilterRules(rules) {
-        const list = $('filter-rules-list');
-        if (!list) return;
-
-        const items = rules?.length ? rules : [];
-
-        setHtml(list, items.map((r, i) => `
-            <div class="filter-rule-item" data-idx="${i}">
-                <div class="filter-rule-inputs">
-                    <input type="text" class="filter-rule-start" placeholder="起始（可空）" value="${h(r.start || '')}">
-                    <span class="rule-arrow">⬇</span>
-                    <input type="text" class="filter-rule-end" placeholder="结束（可空）" value="${h(r.end || '')}">
-                </div>
-                <button class="btn-del-rule">✕</button>
-            </div>
-        `).join(''));
-
-        // 绑定删除
-        list.querySelectorAll('.btn-del-rule').forEach(btn => {
-            btn.onclick = () => {
-                btn.closest('.filter-rule-item')?.remove();
-                updateFilterRulesCount();
-                markSettingsDirty();
-            };
-        });
-
-        updateFilterRulesCount();
-    }
-
-    function collectFilterRules() {
-        const list = $('filter-rules-list');
-        if (!list) return [];
-
-        const rules = [];
-        list.querySelectorAll('.filter-rule-item').forEach(item => {
-            const start = item.querySelector('.filter-rule-start')?.value?.trim() || '';
-            const end = item.querySelector('.filter-rule-end')?.value?.trim() || '';
-            if (start || end) {
-                rules.push({ start, end });
-            }
-        });
-        return rules;
-    }
-
-    function addFilterRule() {
-        const list = $('filter-rules-list');
-        if (!list) return;
-
-        const idx = list.querySelectorAll('.filter-rule-item').length;
-        const div = document.createElement('div');
-        div.className = 'filter-rule-item';
-        div.dataset.idx = idx;
-        setHtml(div, `
-            <div class="filter-rule-inputs">
-                <input type="text" class="filter-rule-start" placeholder="起始（可空）" value="">
-                <span class="rule-arrow">⬇</span>
-                <input type="text" class="filter-rule-end" placeholder="结束（可空）" value="">
-            </div>
-            <button class="btn-del-rule">✕</button>
-        `);
-        div.querySelector('.btn-del-rule').onclick = () => {
-            div.remove();
-            updateFilterRulesCount();
-            markSettingsDirty();
-        };
-        list.appendChild(div);
-        updateFilterRulesCount();
-        markSettingsDirty();
-    }
-
-    function updateFilterRulesCount() {
-        const el = $('filter-rules-count');
-        if (!el) return;
-        const count = $('filter-rules-list')?.querySelectorAll('.filter-rule-item')?.length || 0;
-        el.textContent = count;
+        const timeoutEl = $('vector-recall-timeout');
+        if (timeoutEl) {
+            timeoutEl.max = String(MAX_RECALL_TIMEOUT_SEC);
+            timeoutEl.value = String(normalizeRecallTimeoutSec(cfg.recallTimeoutSec));
+        }
     }
 
     function updateVectorStats(stats) {
-        $('vector-atom-count').textContent = stats.stateVectors || 0;
-        $('vector-chunk-count').textContent = stats.chunkCount || 0;
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // 记忆锚点（L0）UI
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    function updateAnchorStats(stats) {
-        const extracted = stats.extracted || 0;
-        const total = stats.total || 0;
-        const pending = stats.pending || 0;
-        const empty = stats.empty || 0;
-        const fail = stats.fail || 0;
-        const atomsCount = stats.atomsCount || 0;
-
-        $('anchor-extracted').textContent = extracted;
-        $('anchor-total').textContent = total;
-        $('anchor-pending').textContent = pending;
-        $('anchor-atoms-count').textContent = atomsCount;
-
-        const pendingWrap = $('anchor-pending-wrap');
-        if (pendingWrap) {
-            pendingWrap.classList.toggle('hidden', pending === 0);
-        }
-
-        // 显示 empty/fail 信息
-        const extraWrap = $('anchor-extra-wrap');
-        const extraSep = $('anchor-extra-sep');
-        const extra = $('anchor-extra');
-        if (extraWrap && extra) {
-            if (empty > 0 || fail > 0) {
-                const parts = [];
-                if (empty > 0) parts.push(`空 ${empty}`);
-                if (fail > 0) parts.push(`失败 ${fail}`);
-                extra.textContent = parts.join(' · ');
-                extraWrap.style.display = '';
-                if (extraSep) extraSep.style.display = '';
-            } else {
-                extraWrap.style.display = 'none';
-                if (extraSep) extraSep.style.display = 'none';
-            }
-        }
-
-        const emptyWarning = $('vector-empty-l0-warning');
-        if (emptyWarning) {
-            emptyWarning.classList.add('hidden');
-        }
-    }
-
-    function updateAnchorProgress(current, total, message) {
-        const progress = $('anchor-progress');
-        const btnGen = $('btn-anchor-generate');
-        const btnClear = $('btn-anchor-clear');
-        const btnCancel = $('btn-anchor-cancel');
-
-        if (current < 0) {
-            progress.classList.add('hidden');
-            btnGen.classList.remove('hidden');
-            btnClear.classList.remove('hidden');
-            btnCancel.classList.add('hidden');
-            anchorGenerating = false;
-            btnCancel.disabled = false;
-            btnCancel.textContent = '取消';
-        } else {
-            anchorGenerating = true;
-            progress.classList.remove('hidden');
-            btnGen.classList.add('hidden');
-            btnClear.classList.add('hidden');
-            btnCancel.classList.remove('hidden');
-
-            const percent = total > 0 ? Math.round(current / total * 100) : 0;
-            progress.querySelector('.progress-inner').style.width = percent + '%';
-            progress.querySelector('.progress-text').textContent = message || `${current}/${total}`;
-        }
-        syncMemoryActionButtons();
+        if ($('vector-atom-count')) $('vector-atom-count').textContent = stats.stateVectors || 0;
+        if ($('vector-chunk-count')) $('vector-chunk-count').textContent = stats.chunkCount || 0;
     }
 
     function syncMemoryActionButtons() {
-        const busy = anchorGenerating || vectorGenerating;
-        for (const id of ['btn-anchor-generate', 'btn-anchor-clear', 'btn-repair-vectors', 'btn-gen-vectors', 'btn-clear-vectors']) {
-            $(id).disabled = busy;
+        const busy = vectorGenerating;
+        for (const id of ['btn-repair-vectors', 'btn-gen-vectors', 'btn-clear-vectors']) {
+            if ($(id)) $(id).disabled = busy;
         }
     }
 
@@ -726,46 +524,21 @@ const UNANNOTATED_LABEL = '未标注';
         syncMemoryActionButtons();
     }
 
-    function initAnchorUI() {
-        $('btn-anchor-generate').onclick = () => {
-            if (anchorGenerating || vectorGenerating) return;
-            updateAnchorProgress(0, 0, '检查锚点缺漏...');
-            postMsg('ANCHOR_GENERATE');
-        };
-
-        $('btn-anchor-clear').onclick = async () => {
-            if (anchorGenerating || vectorGenerating) return;
-            if (await showConfirm('清空锚点', '清空所有记忆锚点？（L0 向量也会一并清除）')) {
-                postMsg('ANCHOR_CLEAR');
-            }
-        };
-
-        $('btn-anchor-cancel').onclick = () => {
-            $('btn-anchor-cancel').disabled = true;
-            $('btn-anchor-cancel').textContent = '停止中...';
-            postMsg('ANCHOR_CANCEL');
-        };
-    }
-
     function initVectorUI() {
-        syncVectorBoundaryControl(config.vector?.enabled, config.ui.hideSummarized);
-
-        $('btn-add-filter-rule').onclick = addFilterRule;
-
         $('btn-gen-vectors').onclick = () => {
-            if (vectorGenerating || anchorGenerating) return;
+            if (vectorGenerating) return;
             updateVectorProgress({ current: 0, total: 0, message: '准备重建向量...' });
             postMsg('VECTOR_GENERATE', { config: getVectorConfig() });
         };
 
         $('btn-repair-vectors').onclick = () => {
-            if (vectorGenerating || anchorGenerating) return;
+            if (vectorGenerating) return;
             updateVectorProgress({ current: 0, total: 0, message: '检查向量缺漏...' });
             postMsg('VECTOR_REPAIR', { config: getVectorConfig() });
         };
 
         $('btn-clear-vectors').onclick = async () => {
-            if (vectorGenerating || anchorGenerating) return;
+            if (vectorGenerating) return;
             if (await showConfirm('清空原文向量', '确定清空此聊天的原文向量？之后可重新生成。')) {
                 postMsg('VECTOR_CLEAR');
             }
@@ -776,9 +549,6 @@ const UNANNOTATED_LABEL = '未标注';
             $('btn-cancel-vectors').textContent = '停止中...';
             postMsg('VECTOR_CANCEL_GENERATE');
         };
-
-        initAnchorUI();
-        postMsg('REQUEST_ANCHOR_STATS');
     }
 
     function updateVectorOnlineStatus(target, status, message) {
@@ -793,27 +563,8 @@ const UNANNOTATED_LABEL = '未标注';
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // Settings Modal
+    // Settings Workspace (设置 → 剧情与召回)
     // ═══════════════════════════════════════════════════════════════════════════
-
-    function showSettingsOwner(proofreading) {
-        const modal = $('settings-modal');
-        modal.classList.toggle('assistant-page', proofreading);
-        for (const group of modal.querySelectorAll('.summary-local-group')) group.hidden = proofreading;
-        $('tab-agent').classList.toggle('active', proofreading);
-        $('settings-chat').hidden = !proofreading;
-        $('settings-cancel').hidden = proofreading;
-        const actions = modal.querySelector('.modal-foot');
-        if (proofreading) {
-            memoryMaintenancePage.controls.append(actions);
-            memoryMaintenancePage.open();
-        }
-        else {
-            modal.querySelector('.workspace-shell').append(actions);
-            memoryMaintenancePage.close();
-            postMsg('REQUEST_RECALL_LOG');
-        }
-    }
 
     function markSettingsDirty(field = null) {
         dirtyFields.add(field);
@@ -821,73 +572,48 @@ const UNANNOTATED_LABEL = '未标注';
         $('api-connect-status').textContent = WORKSPACE_COPY.dirty;
     }
 
-    function openSettings({ preserveTab = false, tab = 'tab-summary' } = {}) {
-        const inline = $('settings-modal').parentElement === $('summary-options');
-        if (!inline && document.documentElement.classList.contains('tk-embedded')) {
-            document.documentElement.dataset.kitchenView = 'settings';
-        }
+    function openSettings() {
+        document.documentElement.dataset.kitchenView = 'settings';
         settingsDirty = false;
         dirtyFields.clear();
         settingsSnapshot = structuredClone(config);
-        memoryMaintenancePage.setEnabled(config.memoryMaintenanceEnabled, config);
-        if ($('trigger-notify-on-complete')) {
-            $('trigger-notify-on-complete').checked = !!config.trigger.notifyOnComplete;
-        }
-        $('trigger-enabled').checked = config.trigger.enabled;
-        $('trigger-interval').value = config.trigger.interval;
-        $('trigger-timing').value = config.trigger.timing;
-        $('trigger-role').value = config.trigger.role || 'system';
-        $('trigger-insert-at-end').checked = !!config.trigger.forceInsertAtEnd;
+        memoryMaintenancePage.setEnabled(true, config);
         $('api-connect-status').textContent = '';
-        $('hide-summarized').checked = config.ui.hideSummarized;
+        $('hide-summarized').checked = !!config.ui.hideSummarized;
         $('keep-visible-count').value = config.ui.keepVisibleCount;
         $('recall-early-original').checked = !!config.ui.recallEarlyOriginal;
-        $('use-vector-boundary').checked = config.ui.useVectorBoundary;
-
-        syncAutoSummaryControls();
-
         if (config.vector) loadVectorConfig(config.vector);
-        renderFilterRules(Array.isArray(config.textFilterRules) ? config.textFilterRules : DEFAULT_FILTER_RULES);
         settingsOpenedWithServerConfig = panelConfigLoad.status === 'ready';
         showPanelConfigLoadState(panelConfigLoad.status, panelConfigLoad.error);
 
-        // Initialize sub-options visibility
-        const autoSummaryOptions = $('auto-summary-options');
-        if (autoSummaryOptions) {
-            autoSummaryOptions.classList.toggle('hidden', !config.trigger.enabled);
-        }
-
         $('settings-modal').classList.add('active');
-        document.querySelector('.archive').inert = !inline;
-
-        // Opening starts on Summary; recovery preserves the user's current tab.
-        if (!preserveTab) {
-            showSettingsOwner(tab === 'tab-agent');
-        }
-
+        document.querySelector('.archive').inert = true;
+        postMsg('MEMORY_MAINTENANCE_QUERY');
         postMsg('SETTINGS_OPENED');
     }
 
     function collectSettingsFormToConfig() {
         config.inlineSummary.enabled = false;
+        config.memoryMaintenanceEnabled = true;
         config.ui.hideSummarized = $('hide-summarized').checked;
-        config.ui.keepVisibleCount = Number($('keep-visible-count').value);
+        const parsedKeep = Number.parseInt($('keep-visible-count').value, 10);
+        config.ui.keepVisibleCount = Number.isFinite(parsedKeep) ? Math.max(0, Math.min(50, parsedKeep)) : 5;
         config.ui.recallEarlyOriginal = $('recall-early-original').checked;
-        config.ui.useVectorBoundary = $('use-vector-boundary').checked;
-        config.memoryMaintenanceEnabled = memoryMaintenancePage.getEnabled();
+        config.ui.useVectorBoundary = false;
         Object.assign(config, memoryMaintenancePage.getPreferences());
-        const timing = $('trigger-timing').value;
-        config.trigger.timing = normalizeTriggerTiming(timing);
-        config.trigger.role = $('trigger-role').value || 'system';
-        if ($('trigger-notify-on-complete')) {
-            config.trigger.notifyOnComplete = $('trigger-notify-on-complete').checked;
+        config.trigger = {
+            enabled: true,
+            notifyOnComplete: false,
+            interval: 1,
+            delayFloors: 0,
+            timing: 'after_ai',
+            role: 'system',
+            maxPerRun: SUMMARY_BATCH_FLOORS,
+            forceInsertAtEnd: false,
+        };
+        if (!Array.isArray(config.textFilterRules)) {
+            config.textFilterRules = [...DEFAULT_FILTER_RULES];
         }
-        config.trigger.enabled = $('trigger-enabled').checked;
-        config.trigger.interval = Math.max(1, Math.min(30, parseInt($('trigger-interval').value) || 1));
-        config.trigger.delayFloors = 0;
-        config.trigger.maxPerRun = SUMMARY_BATCH_FLOORS;
-        config.trigger.forceInsertAtEnd = $('trigger-insert-at-end').checked;
-        config.textFilterRules = collectFilterRules();
         config.vector = getVectorConfig();
     }
 
@@ -1191,30 +917,181 @@ const UNANNOTATED_LABEL = '未标注';
         });
     }
 
+    const RECALL_STATUS_LABELS = {
+        success: '命中成功',
+        degraded: '降级完成',
+        empty: '无注入',
+        reused: '复用本轮',
+        failed: '召回失败',
+    };
+    const RECALL_MODE_LABELS = {
+        hybrid: '向量 + 关键词',
+        keyword: '关键词检索',
+        'focus-only': '仅状态背景',
+        canonical: '常规摘要',
+        reused: '复用缓存',
+        none: '未检索',
+    };
+    const RECALL_TYPE_LABELS = {
+        normal: '正常生成',
+        continue: '续写',
+        regenerate: '重生成',
+        swipe: '重新生成回复',
+    };
+
     function setRecallLog(text) {
         lastRecallLogText = text || '';
-        updateRecallLogDisplay();
+        renderRecallHistory();
     }
 
-    function updateRecallLogDisplay() {
-        const content = $('recall-log-content');
-        if (!content) return;
-
-        if (lastRecallLogText) {
-            content.textContent = lastRecallLogText;
-            content.classList.remove('recall-empty');
-        } else {
-            setHtml(content, `<div class="recall-empty">
-            暂无召回日志<br><br>
-            当 AI 生成回复时，系统会自动进行记忆召回。<br><br>
-            召回日志将显示：<br>
-            • [状态约束] 当前相关角色与世界状态<br>
-            • [剧情背景] 分层摘要覆盖的早期剧情<br>
-            • [原文召回] 向量/关键词匹配与可选重排<br>
-            • [预算装配] 片段筛选、顺序与字符预算<br>
-            • [Quality] 耗时与潜在问题诊断
-        </div>`);
+    function setRecallHistory(entries = []) {
+        recallHistoryEntries = Array.isArray(entries) ? entries : [];
+        if (!recallHistoryEntries.some(item => item.id === selectedRecallRoundId)) {
+            selectedRecallRoundId = recallHistoryEntries[0]?.id || '';
         }
+        renderRecallHistory();
+    }
+
+    function makeRecallPill(text, tone = '') {
+        const span = document.createElement('span');
+        span.className = `recall-pill${tone ? ` is-${tone}` : ''}`;
+        span.textContent = text;
+        return span;
+    }
+
+    function renderRecallHistory() {
+        const emptyEl = $('recall-empty');
+        const detailEl = $('recall-detail');
+        const selectEl = $('recall-round-select');
+        const diagWrap = $('recall-diagnostics-wrap');
+        const diagLog = $('recall-diagnostics-log');
+        if (!emptyEl || !detailEl || !selectEl) return;
+
+        selectEl.replaceChildren();
+        recallHistoryEntries.forEach((entry, index) => {
+            const opt = document.createElement('option');
+            opt.value = entry.id;
+            const floorText = entry.targetFloor >= 0 ? `第 ${entry.targetFloor + 1} 楼` : '最新对话';
+            const modeText = RECALL_MODE_LABELS[entry.mode] || entry.mode || '未知';
+            const roundLabel = `最近第 ${index + 1} 次 · ${floorText} · ${modeText} (${entry.includedCount || 0}/${entry.chunks?.length || 0})`;
+            opt.textContent = roundLabel;
+            selectEl.append(opt);
+        });
+        selectEl.disabled = !recallHistoryEntries.length;
+        if (selectedRecallRoundId) selectEl.value = selectedRecallRoundId;
+
+        const selected = recallHistoryEntries.find(item => item.id === selectEl.value) || recallHistoryEntries[0] || null;
+        const diagText = selected?.diagnosticsText || lastRecallLogText || '';
+        if (diagWrap && diagLog) {
+            diagLog.textContent = diagText;
+            diagWrap.hidden = !diagText;
+        }
+
+        if (!selected) {
+            emptyEl.hidden = false;
+            emptyEl.textContent = '暂无本聊天每轮召回记录。AI 生成回复时，将在此按轮展示检索模式、关注角色、命中片段、得分与预算截断情况。';
+            detailEl.hidden = true;
+            detailEl.replaceChildren();
+            return;
+        }
+
+        emptyEl.hidden = true;
+        detailEl.hidden = false;
+        detailEl.replaceChildren();
+
+        const metaGrid = document.createElement('div');
+        metaGrid.className = 'recall-meta-grid';
+        const statusTone = selected.status === 'success' ? 'good'
+            : (selected.status === 'degraded' || selected.status === 'failed') ? 'warn'
+                : 'muted';
+        const floorText = selected.targetFloor >= 0 ? `第 ${selected.targetFloor + 1} 楼` : '最新对话';
+        const typeText = RECALL_TYPE_LABELS[selected.type] || selected.type || 'normal';
+        metaGrid.append(
+            makeRecallPill(`目标：${floorText} (${typeText})`),
+            makeRecallPill(RECALL_STATUS_LABELS[selected.status] || selected.status, statusTone),
+            makeRecallPill(`模式：${RECALL_MODE_LABELS[selected.mode] || selected.mode}`),
+            makeRecallPill(selected.reranked ? '重排：已开启' : '重排：未启用', selected.reranked ? 'good' : 'muted'),
+            makeRecallPill(`耗时：${selected.elapsedMs || 0} ms`),
+            makeRecallPill(`原文：入选 ${selected.includedCount || 0} · 截断 ${selected.trimmedCount || 0} · 预算 ${selected.rawBudgetUsed || 0}/${selected.rawBudgetMax || 3000} tok`),
+            makeRecallPill(selected.hiddenThrough >= 0 ? `隐藏边界 ≤ #${selected.hiddenThrough + 1}` : '尚无隐藏边界'),
+        );
+        detailEl.append(metaGrid);
+
+        if (selected.reason || selected.fallbacks?.length) {
+            const noteBox = document.createElement('div');
+            noteBox.className = 'recall-query-box';
+            const label = document.createElement('div');
+            label.className = 'recall-query-label';
+            label.textContent = '质量与降级说明';
+            noteBox.append(label);
+            if (selected.reason) {
+                const p = document.createElement('div');
+                p.textContent = `说明：${selected.reason}`;
+                noteBox.append(p);
+            }
+            for (const fb of selected.fallbacks || []) {
+                const p = document.createElement('div');
+                p.textContent = `降级 [${fb.stage}]：${fb.detail}`;
+                noteBox.append(p);
+            }
+            detailEl.append(noteBox);
+        }
+
+        if (selected.focusCharacters?.length) {
+            const focusRow = document.createElement('div');
+            focusRow.className = 'recall-focus-list';
+            const title = document.createElement('span');
+            title.textContent = '关注角色：';
+            focusRow.append(title);
+            for (const name of selected.focusCharacters) {
+                focusRow.append(makeRecallPill(name, 'good'));
+            }
+            detailEl.append(focusRow);
+        }
+
+        if (selected.queryPreview) {
+            const queryBox = document.createElement('div');
+            queryBox.className = 'recall-query-box';
+            const label = document.createElement('div');
+            label.className = 'recall-query-label';
+            label.textContent = '查询条件摘录';
+            const body = document.createElement('div');
+            body.textContent = selected.queryPreview;
+            queryBox.append(label, body);
+            detailEl.append(queryBox);
+        }
+
+        const chunksWrap = document.createElement('div');
+        chunksWrap.className = 'recall-chunks';
+        const chunks = selected.chunks || [];
+        if (!chunks.length) {
+            const emptyChunks = document.createElement('div');
+            emptyChunks.className = 'recall-empty';
+            emptyChunks.textContent = '本轮未命中使用早期原文片段（可能仅注入当前状态或常规摘要）。';
+            chunksWrap.append(emptyChunks);
+        } else {
+            for (const chunk of chunks) {
+                const card = document.createElement('article');
+                card.className = `recall-chunk${chunk.included ? '' : ' is-trimmed'}`;
+                const head = document.createElement('div');
+                head.className = 'recall-chunk-head';
+                const statusBadge = chunk.included
+                    ? makeRecallPill('已注入', 'good')
+                    : makeRecallPill(chunk.filterReason === 'above_boundary' ? '保留区未注入' : '超出预算截断', 'warn');
+                const title = document.createElement('span');
+                title.className = 'recall-chunk-title';
+                title.textContent = `#${chunk.floor >= 0 ? chunk.floor + 1 : '?'} · ${chunk.speaker || '未知角色'}`;
+                head.append(statusBadge, title);
+                if (chunk.score != null) head.append(makeRecallPill(`检索得分 ${chunk.score}`));
+                if (chunk.rerankScore != null) head.append(makeRecallPill(`重排 ${chunk.rerankScore}`, 'good'));
+                const body = document.createElement('p');
+                body.className = 'recall-chunk-text';
+                body.textContent = chunk.text || '';
+                card.append(head, body);
+                chunksWrap.append(card);
+            }
+        }
+        detailEl.append(chunksWrap);
     }
 
 
@@ -1488,38 +1365,28 @@ const UNANNOTATED_LABEL = '未标注';
                 }
                 break;
             }
-            case 'WORLD_EVOLUTION_STATE':
-                evolutionSettings = d.settings;
-                renderFacts(summaryData.facts);
-                break;
-
             case 'KITCHEN_MEMORY_VIEW': {
-                const options = $('summary-options'), modal = $('settings-modal');
-                const summary = d.view === 'memory';
-                $('data-page').hidden = d.view !== 'data';
-                if (d.view === 'data') postMsg('KITCHEN_CARD_INFO');
-                $('summary-controls').hidden = !summary;
-                $('people-controls').hidden = !['people','relations'].includes(d.view);
-                $('situation-controls').hidden = d.view !== 'world';
-                if (['world','people','relations'].includes(d.view)) postMsg('WORLD_EVOLUTION_REQUEST');
-                options.hidden = !summary;
-                document.documentElement.dataset.kitchenView = d.view === 'relations' ? 'people' : d.view;
-                if (summary && modal.parentElement !== options) {
-                    options.append(modal);
-                    if (modal.classList.contains('assistant-page')) showSettingsOwner(false);
-                } else if (!summary && modal.parentElement === options) $('summary-controls').after(modal);
-                const settingsView = ['settings', 'proofreading'].includes(d.view);
-                document.querySelector('.archive').inert = settingsView;
-                if (settingsView) {
-                    document.documentElement.dataset.kitchenView = 'settings';
-                    const proof = d.view === 'proofreading';
-                    const tab = proof ? 'tab-agent' : 'tab-summary';
-                    if (!$('settings-modal').classList.contains('active')) openSettings({ tab });
-                    else if (proof !== modal.classList.contains('assistant-page')) showSettingsOwner(proof);
+                const modal = $('settings-modal');
+                const viewName = d.view || 'memory';
+                const dataView = viewName === 'relations' ? 'people'
+                    : ['settings', 'settings-memory'].includes(viewName) ? 'settings'
+                        : viewName;
+                document.documentElement.dataset.kitchenView = dataView;
+                $('data-page').hidden = viewName !== 'data';
+                $('recall-page').hidden = viewName !== 'recall';
+                $('proofreading-page').hidden = viewName !== 'proofreading';
+                document.querySelector('.archive').inert = ['data', 'recall', 'proofreading', 'settings'].includes(dataView);
+                if (viewName !== 'proofreading') memoryMaintenancePage?.close();
+                if (viewName === 'data') postMsg('KITCHEN_CARD_INFO');
+                if (viewName === 'recall') postMsg('REQUEST_RECALL_HISTORY');
+                if (viewName === 'proofreading') memoryMaintenancePage?.open();
+                if (['world', 'people', 'relations'].includes(viewName)) postMsg('WORLD_EVOLUTION_REQUEST');
+                if (dataView === 'settings') {
+                    openSettings();
                 } else {
-                    const view = { memory: 'story', world: 'world', lore: 'world', people: 'people', relations: 'people' }[d.view];
-                    if (view) archiveView.switchView(view, { notify: false });
-                    if (summary && !modal.classList.contains('active')) openSettings();
+                    modal.classList.remove('active');
+                    const archiveTab = { memory: 'story', world: 'world', lore: 'world', people: 'people', relations: 'people' }[viewName];
+                    if (archiveTab) archiveView.switchView(archiveTab, { notify: false });
                 }
                 break;
             }
@@ -1633,7 +1500,7 @@ const UNANNOTATED_LABEL = '未标注';
                 break;
 
             case 'PANEL_CONFIG_SAVE_RESULT': {
-                if ($('tab-agent').classList.contains('active')) memoryMaintenancePage.settingsSaved(d.success);
+                if (document.documentElement.dataset.kitchenView === 'settings') memoryMaintenancePage.settingsSaved(d.success);
                 const pending = pendingConfigSaveRequests.get(d.requestId || '');
                 if (pending) {
                     pendingConfigSaveRequests.delete(d.requestId || '');
@@ -1669,20 +1536,16 @@ const UNANNOTATED_LABEL = '未标注';
                 $('vector-integrity-status').textContent = d.message || '';
                 break;
 
-            case 'ANCHOR_STATS':
-                updateAnchorStats(d.stats || {});
-                break;
-
-            case 'ANCHOR_GEN_PROGRESS':
-                updateAnchorProgress(d.current, d.total, d.message);
-                break;
-
             case 'VECTOR_GEN_PROGRESS':
                 updateVectorProgress(d);
                 break;
 
             case 'RECALL_LOG':
                 setRecallLog(d.text || '');
+                break;
+
+            case 'RECALL_HISTORY':
+                setRecallHistory(d.entries || []);
                 break;
         }
     }
@@ -1719,54 +1582,32 @@ const UNANNOTATED_LABEL = '未标注';
         $('editor-cancel').onclick = closeEditor;
         $('editor-save').onclick = saveEditor;
 
-        // Settings modal
-        $('settings-chat').textContent = MEMORY_CHAT_COPY.entry;
-        $('settings-chat').onclick = () => memoryMaintenancePage.openChat();
+        // Settings workspace (设置 → 剧情与召回)
         $('settings-cancel').onclick = () => {
             Object.assign(config, settingsSnapshot);
-            openSettings({ preserveTab: true });
+            openSettings();
         };
         $('settings-config-retry').onclick = retryPanelConfigLoad;
         $('settings-save').onclick = saveSettings;
         $('settings-modal').addEventListener('input', event => { markSettingsDirty(event.target); });
 
-        // Trigger timing
-        $('trigger-timing').onchange = () => {
-            syncAutoSummaryControls();
-        };
-
-        // 总结间隔范围校验
-        $('trigger-interval').onchange = e => {
-            let val = parseInt(e.target.value) || 1;
-            val = Math.max(1, Math.min(30, val));
-            e.target.value = val;
-        };
+        if ($('recall-round-select')) {
+            $('recall-round-select').onchange = e => {
+                selectedRecallRoundId = e.target.value;
+                renderRecallHistory();
+            };
+        }
 
         bindSummaryActions();
 
-        // Hide summarized
-        $('hide-summarized').onchange = e => {
-            syncVectorBoundaryControl(true, e.target.checked);
-        };
         $('keep-visible-count').onchange = e => {
             const parsedCount = Number.parseInt(e.target.value, 10);
             const c = Number.isFinite(parsedCount) ? Math.max(0, Math.min(50, parsedCount)) : 5;
             e.target.value = c;
         };
 
-
-
         // Vector UI
         initVectorUI();
-
-        // Auto summary sub-options toggle
-        const triggerEnabled = $('trigger-enabled');
-        const autoSummaryOptions = $('auto-summary-options');
-        if (triggerEnabled && autoSummaryOptions) {
-            triggerEnabled.onchange = () => {
-                syncAutoSummaryControls();
-            };
-        }
 
         // Timeline pager
         const tlPagingToggle = $('tl-paging-toggle');
@@ -1828,7 +1669,7 @@ const UNANNOTATED_LABEL = '未标注';
             onEdit: openEditor, postMsg, setHtml, h,
         });
         $('settings-save').textContent = MEMORY_COPY.settingsSave;
-        memoryMaintenancePage = createMemoryMaintenancePage($('tab-agent'), postMsg);
+        memoryMaintenancePage = createMemoryMaintenancePage($('proofreading-page'), postMsg, { settingsHost: $('proofreading-settings-host') });
         loadConfig();
         tlPagingEnabled = localStorage.getItem(TL_PAGING_KEY) === '1';
 
@@ -1841,6 +1682,7 @@ const UNANNOTATED_LABEL = '未标注';
         renderTimeline([]);
         updateCharacterSelector();
         renderFacts([]);
+        renderRecallHistory();
 
         bindEvents();
         syncCurrentChatSummaryControls();
@@ -1865,52 +1707,6 @@ const UNANNOTATED_LABEL = '未标注';
     }
 
 
-    function appendEvolutionControls(group, scenery) {
-        const heading = group;
-        heading.classList.add('tk-situation-heading');
-        const label = document.createElement('label');
-        const toggle = document.createElement('input');
-        toggle.type = 'checkbox';
-        const key = scenery ? 'sceneryEvolution' : 'subscribed';
-        toggle.dataset.evolutionKey = key;
-        toggle.checked = evolutionSettings?.[key] === true;
-        toggle.disabled = !evolutionSettings?.enabled || evolutionSettings.pending;
-        label.append(toggle, scenery ? '风物随剧情演化' : '事态随剧情演化');
-        toggle.setAttribute('aria-label', scenery ? '风物随剧情演化' : '事态随剧情演化');
-        heading.append(label);
-        const change = (key, value) => {
-            evolutionSettings = { ...evolutionSettings, pending: true };
-            postMsg('WORLD_EVOLUTION_CHANGE', { key, value });
-            renderFacts(summaryData.facts);
-        };
-        toggle.onchange = () => change(key, toggle.checked);
-        if (scenery) {
-            const frequency = document.createElement('select');
-            frequency.dataset.evolutionKey = 'encounterFrequency';
-            frequency.setAttribute('aria-label', '街头见闻频率');
-            for (const [value, text] of [['off','关闭'], ['occasional','偶尔'], ['lively','活跃']]) {
-                const option = document.createElement('option');
-                option.value = value; option.textContent = text;
-                option.selected = value === (evolutionSettings?.encounterFrequency || 'occasional');
-                frequency.append(option);
-            }
-            frequency.disabled = toggle.disabled;
-            frequency.onchange = () => change('encounterFrequency', frequency.value);
-            const field = document.createElement('label');
-            field.append('街头见闻频率', frequency);
-            heading.append(field);
-        }
-        if (evolutionSettings?.error && (!evolutionSettings.missingField || evolutionSettings.missingField === key || (scenery && evolutionSettings.missingField === 'encounterFrequency'))) {
-            const status = document.createElement('p');
-            status.setAttribute('role', 'alert'); status.textContent = evolutionSettings.error;
-            if (evolutionSettings.missingField) {
-                const go = document.createElement('button'); go.type = 'button'; go.textContent = '前往 API';
-                go.onclick = () => postMsg('WORLD_EVOLUTION_CONFIGURE'); status.append(' ', go);
-            }
-            heading.append(status);
-        }
-    }
-
     function renderFacts(facts) {
         summaryData.facts = facts || [];
 
@@ -1930,16 +1726,6 @@ const UNANNOTATED_LABEL = '未标注';
                 situations.append(group);
             }
             container.before(situations);
-            const focused = document.activeElement;
-            const focusedSettings = focused?.closest('#affair-settings, #scenery-settings');
-            for (const [id, scenery] of [['affair-settings', false], ['scenery-settings', true]]) {
-                const group = $(id); group.replaceChildren();
-                appendEvolutionControls(group, scenery);
-            }
-            if (focusedSettings && focused.dataset.evolutionKey) {
-                const control = focusedSettings.querySelector(`[data-evolution-key="${focused.dataset.evolutionKey}"]`);
-                control?.focus({ preventScroll: true });
-            }
         }
 
         archiveView.refreshIndexes();

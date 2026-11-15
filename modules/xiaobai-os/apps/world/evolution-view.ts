@@ -13,13 +13,8 @@ export function registerEvolutionReader(world: WorldService) {
     return () => { disconnect(); if (reader === world) { reader = undefined; } };
 }
 
-export function mountEvolutionView(parent: HTMLElement, section: 'people' | 'situation', preferences: XiaobaiOsSettingsRepository, frame?: HTMLIFrameElement, check?: () => Promise<void>, visit?: (selector: string) => void) {
+export function mountEvolutionView(parent: HTMLElement, section: 'people' | 'situation', _preferences?: XiaobaiOsSettingsRepository, frame?: HTMLIFrameElement, _check?: () => Promise<void>, _visit?: (selector: string) => void) {
     const people = section === 'people';
-    const key = people ? 'peopleEvolution' : 'subscribed';
-    const label = document.createElement('label');
-    const toggle = document.createElement('input');
-    toggle.type = 'checkbox'; toggle.dataset.evolutionKey = key;
-    label.append(toggle, people ? '随剧情推演人物动向' : '随剧情推演事态进展');
     const status = document.createElement('small');
     status.setAttribute('role', 'status');
     const log = document.createElement('details');
@@ -27,46 +22,9 @@ export function mountEvolutionView(parent: HTMLElement, section: 'people' | 'sit
     title.textContent = people ? '幕后人物动向' : '幕后局势进展';
     const entries = document.createElement('div');
     log.append(title, entries);
-    parent.replaceChildren(label, status, log);
-    const scenery = document.createElement('input'); scenery.type = 'checkbox';
-    const frequency = document.createElement('select');
-    if (!people) {
-        const weatherLabel = document.createElement('label'), encounterLabel = document.createElement('label');
-        weatherLabel.append(scenery, '随剧情推演风物变化');
-        for (const [value, text] of [['off', '关闭'], ['occasional', '偶尔'], ['lively', '活跃']]) {
-            const option = document.createElement('option'); option.value = value; option.textContent = text; frequency.append(option);
-        }
-        encounterLabel.append('街头见闻频率', frequency);
-        parent.insertBefore(weatherLabel, status); parent.insertBefore(encounterLabel, status);
-    }
+    parent.replaceChildren(status, log);
     const embedded = !!frame;
-    const inline = !people && embedded;
-    if (inline) { label.hidden = true; scenery.parentElement!.hidden = true; frequency.parentElement!.hidden = true; }
-    let active = true, saving = false, missingField = '';
-    const go = document.createElement('button'); go.type = 'button'; go.className = 'menu_button'; go.textContent = '前往 API'; go.hidden = true;
-    const visitMissing = () => {
-        const section = inline ? (missingField === 'subscribed' ? '#affair-settings ' : '#scenery-settings ') : '';
-        visit?.(section + '[data-evolution-key="' + missingField + '"]');
-    };
-    go.onclick = visitMissing; status.after(go);
-    const renderPreferences = () => {
-        const settings = preferences.read();
-        if (inline) { frame!.contentWindow?.postMessage({
-            source: 'TavernKitchen', type: 'WORLD_EVOLUTION_STATE',
-            settings: { enabled: !!settings?.enabled, pending: saving,
-                subscribed: !!settings?.apps.world.subscribed,
-                sceneryEvolution: settings?.apps.world.sceneryEvolution === true,
-                encounterFrequency: settings?.apps.world.encounterFrequency || 'occasional',
-                error: status.textContent || '', missingField },
-        }, window.location.origin); }
-
-        toggle.checked = !!settings?.apps.world[key];
-        scenery.checked = settings?.apps.world.sceneryEvolution === true;
-        for (const option of frequency.options) { option.selected = option.value === (settings?.apps.world.encounterFrequency || 'occasional'); }
-        scenery.disabled = frequency.disabled = saving || !settings?.enabled;
-        toggle.disabled = saving || !settings?.enabled;
-        if (!settings?.enabled) { status.textContent = '请先打开「API」或地图以启动工作台。'; }
-    };
+    let active = true;
     const world = reader;
     const renderEntries = () => {
         if (!active) { return; }
@@ -109,50 +67,122 @@ export function mountEvolutionView(parent: HTMLElement, section: 'people' | 'sit
         }
     };
     const report = (error: unknown) => { if (active) { status.textContent = error instanceof Error ? error.message : String(error); } };
-    const save = async (field: string, enabling: boolean, operation: () => Promise<unknown>) => {
-        missingField = ''; go.hidden = true;
-        saving = true; renderPreferences(); toggle.disabled = scenery.disabled = frequency.disabled = true; status.textContent = '';
-        try {
-            if (enabling) { await check?.(); }
-            if (active) { await operation(); }
-        } catch (error) {
-            if (error instanceof Error && 'agent' in error && error.agent === 'simulation') { missingField = field; go.hidden = inline; }
-            report(error);
-        }
-        finally { saving = false; if (active) { renderPreferences(); } }
-    };
-    toggle.onchange = () => {
-        const value = toggle.checked;
-        return save(key, value, () => preferences.setWorldPreference(key, value));
-    };
-    scenery.onchange = () => {
-        const value = scenery.checked;
-        return save('sceneryEvolution', value, () => preferences.setWorldPreference('sceneryEvolution', value));
-    };
-    frequency.onchange = () => {
-        const value = frequency.value as 'off' | 'occasional' | 'lively';
-        return save('encounterFrequency', value !== 'off', () => preferences.setEncounterFrequency(value));
-    };
     const receive = (event: MessageEvent) => {
         if (!embedded || !active || !isTrustedMessage(event, frame, 'TavernKitchen-StoryFrame')) { return; }
-        if (event.data.type === 'WORLD_EVOLUTION_REQUEST') { renderPreferences(); renderEntries(); return; }
-        if (inline && missingField && event.data.type === 'WORLD_EVOLUTION_CONFIGURE') { visitMissing(); return; }
-        if (!inline || event.data.type !== 'WORLD_EVOLUTION_CHANGE' || saving || !preferences.read()?.enabled) { return; }
-        const { key: field, value } = event.data;
-        if (field === 'encounterFrequency' && ['off','occasional','lively'].includes(value)) {
-            save(field, value !== 'off', () => preferences.setEncounterFrequency(value)).catch(report); return;
-        }
-        if (['subscribed','sceneryEvolution'].includes(field) && typeof value === 'boolean') {
-            save(field, value, () => preferences.setWorldPreference(field, value)).catch(report);
-        }
+        if (event.data.type === 'WORLD_EVOLUTION_REQUEST') { renderEntries(); }
     };
     if (embedded) {
         // eslint-disable-next-line no-restricted-syntax -- receive checks the live iframe, origin and source with isTrustedMessage before processing.
         window.addEventListener('message', receive);
     }
-    renderPreferences(); renderEntries();
-    const unsubscribe = preferences.subscribe(renderPreferences);
+    renderEntries();
     const stop = world?.subscribe(renderEntries);
     world?.refreshCurrent().then(renderEntries).catch(report);
-    return () => { active = false; if (embedded) { window.removeEventListener('message', receive); } stop?.(); unsubscribe(); };
+    return () => { active = false; if (embedded) { window.removeEventListener('message', receive); } stop?.(); };
+}
+
+export function mountWorldSettings(parent: HTMLElement, preferences: XiaobaiOsSettingsRepository) {
+    const panel = document.createElement('section');
+    panel.className = 'tk-world-settings';
+    panel.setAttribute('aria-label', '世界与推演设置');
+
+    const heading = document.createElement('h4');
+    heading.className = 'standoutHeader';
+    heading.textContent = '世界与推演';
+
+    const frequencyRow = document.createElement('div');
+    frequencyRow.className = 'tk-world-settings-row';
+    const frequencyLabel = document.createElement('label');
+    frequencyLabel.htmlFor = 'tk-world-encounter-frequency';
+    frequencyLabel.textContent = '街头见闻频率';
+    const frequencySelect = document.createElement('select');
+    frequencySelect.id = 'tk-world-encounter-frequency';
+    frequencySelect.className = 'text_pole';
+    frequencySelect.dataset.worldSetting = 'encounterFrequency';
+    for (const [value, text] of [['off', '关闭'], ['occasional', '偶尔'], ['lively', '活跃']]) {
+        const option = document.createElement('option');
+        option.value = value;
+        option.setAttribute('value', value);
+        option.textContent = text;
+        frequencySelect.append(option);
+    }
+    frequencyRow.append(frequencyLabel, frequencySelect);
+
+    const injectRow = document.createElement('div');
+    injectRow.className = 'tk-world-settings-row';
+    const injectLabel = document.createElement('label');
+    injectLabel.htmlFor = 'tk-world-inject-to-story';
+    injectLabel.textContent = '将世界状态注入剧情';
+    const injectCheckbox = document.createElement('input');
+    injectCheckbox.id = 'tk-world-inject-to-story';
+    injectCheckbox.type = 'checkbox';
+    injectCheckbox.dataset.worldSetting = 'injectToStory';
+    injectRow.append(injectLabel, injectCheckbox);
+
+    const note = document.createElement('p');
+    note.className = 'tk-world-settings-note';
+    note.textContent = '人物动向、事态发展、风物变化、地图维护与编剧章节推演现已默认随剧情自动运转。';
+
+    const status = document.createElement('small');
+    status.setAttribute('role', 'status');
+
+    panel.append(heading, frequencyRow, injectRow, note, status);
+    parent.replaceChildren(panel);
+
+    let active = true;
+    let saving = false;
+
+    const render = () => {
+        if (!active) { return; }
+        const world = preferences.read()?.apps.world;
+        const frequency = world?.encounterFrequency || 'occasional';
+        for (const option of frequencySelect.querySelectorAll('option')) {
+            const match = (option.getAttribute('value') || option.value) === frequency;
+            if (match) {
+                option.setAttribute('selected', '');
+                option.selected = true;
+            } else {
+                option.removeAttribute('selected');
+            }
+        }
+        injectCheckbox.checked = world?.injectToStory !== false;
+        frequencySelect.disabled = saving;
+        injectCheckbox.disabled = saving;
+    };
+
+    const runSave = async (operation: () => Promise<unknown>) => {
+        saving = true;
+        render();
+        status.textContent = '正在保存…';
+        try {
+            await operation();
+            if (active) { status.textContent = '已保存。'; }
+        } catch (error) {
+            if (active) { status.textContent = error instanceof Error ? error.message : String(error); }
+        } finally {
+            saving = false;
+            if (active) { render(); }
+        }
+    };
+
+    const handleSave = (operation: () => Promise<unknown>) => {
+        runSave(operation).catch(error => {
+            console.debug({ source: import.meta.url, operation: 'world-settings-change' }, error);
+        });
+    };
+
+    frequencySelect.onchange = () => {
+        const selected = [...frequencySelect.querySelectorAll('option')].find(option => option.selected || option.hasAttribute('selected'));
+        const next = (frequencySelect.value || selected?.getAttribute('value') || selected?.value || 'occasional') as 'off' | 'occasional' | 'lively';
+        handleSave(() => preferences.setEncounterFrequency(next));
+    };
+
+    injectCheckbox.onchange = () => {
+        const next = injectCheckbox.checked;
+        handleSave(() => preferences.setWorldPreference('injectToStory', next));
+    };
+
+    render();
+    const unsubscribe = preferences.subscribe(render);
+    return () => { active = false; unsubscribe(); };
 }

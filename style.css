@@ -29,17 +29,22 @@
 #tk-workspace .tk-planner-settings :is(select, textarea) { width: 100%; min-width: 0; margin: 0; }
 #tk-workspace .tk-planner-settings textarea { resize: vertical; }
 #tk-workspace[hidden], #tk-workspace [hidden] { display: none !important; }
-#tk-workspace .tk-workspace-header { display: flex; align-items: center; justify-content: space-between; gap: 5px; padding: 0 2px; }
+#tk-workspace .tk-workspace-titlebar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; padding: 2px 2px 6px; border-bottom: 1px solid var(--SmartThemeBorderColor); }
+#tk-workspace .tk-workspace-app-title { margin: 0; font-size: 1.05em; font-weight: 700; line-height: 1.3; color: var(--SmartThemeBodyColor); }
+#tk-workspace .tk-titlebar-actions { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; }
 #tk-workspace .tk-panel-page { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
-#tk-workspace .tk-workspace-header h3 { margin: 0; }
-#tk-workspace .menu_button { width: max-content; max-width: 100%; white-space: nowrap; }
-#tk-workspace .tk-close { margin: 0; min-height: 28px; min-width: 28px; }
-#tk-workspace .tk-tabs, #tk-workspace .tk-subnav { display: flex; flex-shrink: 0; gap: 5px; padding: 0; }
-#tk-workspace .tk-tabs button { flex: 0 1 auto; font: inherit; min-width: 0; min-height: 30px; padding-inline: 5px; white-space: nowrap; }
-#tk-workspace .tk-subnav { flex-wrap: wrap; gap: 0 5px; }
-#tk-workspace .tk-subnav button { flex: 0 1 auto; font: inherit; font-size: .9em; white-space: nowrap; min-height: 28px; margin: 0 0 5px; }
-#tk-workspace .tk-subnav-more { position: relative; flex: 1 0 auto; margin: 0 0 5px; }
-#tk-workspace .tk-subnav-more > summary { display: inline-flex; align-items: center; gap: 4px; font: inherit; font-size: .9em; white-space: nowrap; min-height: 28px; margin: 0; cursor: pointer; list-style: none; }
+#tk-workspace .menu_button { width: max-content; max-width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 4px 10px; min-height: 0; margin: 0; border-radius: 5px; line-height: 1.35; white-space: nowrap; }
+#tk-workspace .tk-close { margin: 0; padding: 4px 8px; min-height: 0; min-width: 28px; }
+#tk-workspace .tk-tabs, #tk-workspace .tk-subnav { display: flex; flex-wrap: wrap; flex-shrink: 0; gap: 5px; }
+#tk-workspace .tk-tabs { padding: 6px 0 4px; }
+#tk-workspace .tk-subnav { padding: 0 0 6px; }
+#tk-workspace :is(.tk-tabs, .tk-subnav) button { flex: 0 1 auto; font: inherit; min-width: 0; min-height: 0; margin: 0; padding: 4px 10px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 5px; background-color: var(--SmartThemeBlurTintColor); color: var(--SmartThemeBodyColor); line-height: 1.35; white-space: nowrap; filter: grayscale(0.5); }
+#tk-workspace .tk-subnav button { font-size: .92em; padding: 3px 9px; }
+#tk-workspace :is(.tk-tabs, .tk-subnav) button:hover { filter: none; background-color: var(--white30a, color-mix(in srgb, var(--SmartThemeQuoteColor) 14%, var(--SmartThemeBlurTintColor))); }
+#tk-workspace .tk-tabs button:is([aria-selected="true"], .is-active),
+#tk-workspace .tk-subnav button:is([aria-pressed="true"], .is-active) { font-weight: 600; filter: none; background-color: var(--white30a, color-mix(in srgb, var(--SmartThemeQuoteColor) 22%, var(--SmartThemeBlurTintColor))); border-color: color-mix(in srgb, var(--SmartThemeQuoteColor) 55%, var(--SmartThemeBorderColor)); color: var(--SmartThemeBodyColor); }
+#tk-workspace .tk-subnav-more { position: relative; flex: 1 0 auto; margin: 0; }
+#tk-workspace .tk-subnav-more > summary { display: inline-flex; align-items: center; gap: 4px; font: inherit; font-size: .9em; white-space: nowrap; min-height: 0; margin: 0; cursor: pointer; list-style: none; }
 #tk-workspace .tk-subnav-more > summary::-webkit-details-marker { display: none; }
 #tk-workspace .tk-subnav-more > summary::after { content: '▾'; font-size: .8em; opacity: .75; }
 #tk-workspace .tk-subnav-more[open] > summary::after { transform: rotate(180deg); }
@@ -49,7 +54,6 @@
 #tk-workspace .tk-feature-switches { display: flex; flex-wrap: wrap; gap: 2px 14px; padding: 4px 2px; border-top: 1px solid var(--SmartThemeBorderColor); }
 #tk-workspace .tk-feature-switch { display: flex; align-items: center; gap: 5px; margin: 0; font-size: .85em; cursor: pointer; }
 #tk-workspace .tk-feature-switch input { margin: 0; accent-color: var(--SmartThemeQuoteColor); }
-#tk-workspace .tk-tabs button[aria-selected="true"], #tk-workspace .tk-subnav button[aria-pressed="true"] { font-weight: 600; border-color: currentColor; }
 #tk-workspace :focus-visible { outline: 2px solid var(--SmartThemeQuoteColor); outline-offset: -2px; }
 #tk-workspace .tk-workspace-body { flex: 1; position: relative; min-height: 0; }
 #tk-memory-mount { height: 100%; min-height: 0; }
@@ -185,7 +189,6 @@
 #tk-workspace .tk-overview-scene-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 #tk-workspace .tk-overview-scene-meta span { padding: 2px 8px; border-radius: 999px; background: var(--SmartThemeBlurTintColor); font-size: .85em; }
 #tk-workspace .tk-overview-situation { font-size: 1.02em; line-height: 1.7; }
-#tk-workspace .tk-overview-pending { border-inline-start: 3px solid var(--SmartThemeQuoteColor); padding-inline-start: 8px; }
 
 #tk-workspace .tk-evolution { flex: 0 0 auto; padding: 6px 4px; max-height: 32%; overflow: auto; border-top: 1px solid var(--SmartThemeBorderColor); }
 #tk-workspace .tk-evolution label { display: inline-flex; align-items: center; gap: 6px; }
@@ -193,7 +196,6 @@
 
 #tk-topbar[hidden], #tk-workspace .tk-tabs > [hidden] { display: none; }
 #tk-workspace .tk-feature-switches:has(.tk-panel-controls) { max-height: 46vh; overflow-y: auto; flex-shrink: 0; }
-#tk-workspace .tk-panel-switch { min-width: 0; cursor: pointer; }
 #tk-workspace .tk-panel-controls { width: 100%; min-width: 0; }
 .tk-panel-controls label { display: grid; gap: .2em; margin-block: .35em; }
 .tk-panel-controls :is(select, textarea) { width: 100%; min-width: 0; }
@@ -218,44 +220,26 @@
 #tk-workspace .tk-panel-controls label { font-weight: 600; }
 #tk-workspace .tk-panel-controls :is(select, textarea) { font-weight: normal; margin: 0; }
 #tk-workspace .tk-panel-controls .standoutHeader { margin-block: 5px; }
-#tk-workspace .tk-workspace-header { padding-block: 4px; }
 
 #tk-workspace .tk-api-fields { display: block; }
 #tk-workspace .tk-api-fields label { display: flex; align-items: center; gap: 5px; margin: 2px 0; font-weight: normal; }
 #tk-workspace .tk-api-fields select { flex: 1; width: 0; }
-#tk-workspace .tk-subnav button:not(.active) { border-color: transparent; background: transparent; box-shadow: none; }
 
-#tk-workspace .tk-workspace-controls { flex: 0 0 auto; max-height: 50vh; overflow-y: auto; border-top: 1px solid var(--SmartThemeBorderColor); padding: 6px 2px; }
+#tk-workspace .tk-workspace-controls { flex: 0 0 auto; max-height: 45%; min-height: 0; overflow-y: auto; box-sizing: border-box; border-top: 1px solid var(--SmartThemeBorderColor); padding: 6px 2px; }
 #tk-workspace .tk-workspace-controls .tk-feature-switches { border-top: 0; max-height: none; overflow: visible; padding: 0; }
 #tk-workspace .tk-workspace-controls .tk-evolution { border-top: 0; max-height: none; overflow: visible; padding-inline: 0; }
-#tk-workspace .tk-module-actions { width: 100%; margin-block: 6px; }
+#tk-workspace .tk-module-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: 100%; margin-block: 6px; }
 #tk-workspace .tk-workspace-controls .tk-panel-controls { margin-block-start: 6px; }
-.tk-module-settings { border-top: 1px solid var(--SmartThemeBorderColor, #8885); padding-block: 10px; margin-block-start: 12px; }
-.tk-module-settings > summary, .tk-module-settings > details > summary { cursor: pointer; }
 
 #tk-workspace .tk-panel-page { display: flex; flex-direction: column; }
-
-#tk-workspace .tk-workspace-controls { height: auto; max-height: 45%; min-height: 0; overflow-y: auto; box-sizing: border-box; }
-#tk-workspace .tk-workspace-body { overflow: hidden; }
-
-#tk-module-native-controls > h4 { margin: 0 0 8px; font-size: 1em; }
-#tk-module-native-controls > [data-settings-group] { margin-block: 6px; }
-#tk-module-native-controls > [data-settings-group] > :is(h5, summary), #tk-module-native-controls .tk-evolution-title {
-    margin: 0; padding-block: 4px; font-size: 1em; font-weight: 600;
-}
-#tk-module-native-controls > details > summary { cursor: pointer; }
-#tk-module-native-controls .tk-api-fields > section > h5 { margin: 8px 0 4px; font-size: 1em; font-weight: 600; }
-
-#tk-workspace .tk-panel-page > .tk-workspace-header { flex: none; gap: .4em; }
-#tk-workspace .tk-settings-toggle { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: .6em; min-width: 0; color: inherit; font: inherit; cursor: pointer; text-align: start; }
-#tk-workspace .tk-settings-toggle .up { transform: rotate(180deg); }
-#tk-workspace .tk-workspace-header .tk-close { margin-inline-start: auto; }
-#tk-workspace .tk-panel-page > .tk-workspace-body { flex: 1 1 0; min-height: 0; }
-#tk-workspace .tk-panel-page[data-settings-open="false"] > .tk-workspace-controls,
-#tk-workspace .tk-workspace-header > [hidden] { display: none; }
-
-/* A module only shows settings categories with controls. */
-#tk-module-native-controls > [data-settings-group]:not(:has(> :not(h5):not(summary):not([hidden]):not(.tk-feature-switches), > .tk-feature-switches:not([hidden]) > :not([hidden]))) { display: none; }
+#tk-workspace .tk-panel-page > .tk-workspace-body { flex: 1 1 0; min-height: 0; overflow: hidden; }
+#tk-workspace .tk-world-settings { display: grid; gap: 10px; padding: 8px 6px; max-width: 680px; }
+#tk-workspace .tk-world-settings h4 { margin: 0 0 4px; color: var(--SmartThemeBodyColor); }
+#tk-workspace .tk-world-settings-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--SmartThemeBorderColor); }
+#tk-workspace .tk-world-settings-row label { font-weight: 600; color: var(--SmartThemeBodyColor); }
+#tk-workspace .tk-world-settings-row select { min-width: 140px; }
+#tk-workspace .tk-world-settings-note { margin: 0; font-size: .9em; color: var(--SmartThemeEmColor); line-height: 1.5; }
+#tk-workspace #tk-panel-opening { padding: 8px 6px; }
 #tk-workspace .tk-planner-note { display: grid; gap: .6em; min-width: 0; }
 #tk-workspace .tk-planner-note[hidden],
 #tk-workspace .tk-planner-overview[hidden],

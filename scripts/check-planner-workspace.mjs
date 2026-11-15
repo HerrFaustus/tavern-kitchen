@@ -41,10 +41,8 @@ try {
     await mount();
     const panel=page.locator('#tk-panel-planner'), state=panel.locator('.tk-planner-note-status'), chapter=panel.locator('.tk-planner-chapter');
     await state.filter({hasText:'暂无札记'}).waitFor();
-    const functionSettings=page.locator('#tk-module-native-controls [data-settings-group="function"]');
-    await page.getByRole('button',{name:'编剧设置'}).click();
-    const auto = functionSettings.getByRole('checkbox',{name:'章节（L2）保存后自动更新札记'});
-    assert.equal(await auto.isChecked(),false);
+    const controls = panel.locator('.tk-planner-controls');
+    assert.equal(await panel.locator('input[type="checkbox"]').count(), 0);
     assert.equal(await page.evaluate(()=>globalThis.__plannerFixture.generate()),undefined);
     assert.equal(await page.evaluate(()=>globalThis.__plannerFixture.calls),0);
     await page.getByRole('button',{name:'立即生成／更新札记'}).click();
@@ -65,11 +63,10 @@ try {
     await page.evaluate(()=>globalThis.__plannerFixture.switchChat());
     await state.filter({hasText:'暂无札记'}).waitFor();
     assert.ok(await chapter.isHidden());
-    await auto.check();
     await page.evaluate(async()=>{globalThis.__plannerFixture.failNext();try{await globalThis.__plannerFixture.savedChapter();}catch(error){if(!error.message.includes('尚未保存'))throw error;}});
-    await functionSettings.getByRole('button',{name:'重试更新札记'}).waitFor();
-    await functionSettings.getByRole('button',{name:'重试更新札记'}).click();
-    await functionSettings.getByRole('button',{name:'重试更新札记'}).waitFor({state:'hidden'});
+    await controls.getByRole('button',{name:'重试更新札记'}).waitFor();
+    await controls.getByRole('button',{name:'重试更新札记'}).click();
+    await controls.getByRole('button',{name:'重试更新札记'}).waitFor({state:'hidden'});
     await page.evaluate(()=>globalThis.__plannerFixture.restore());
     await chapter.filter({hasText:'旅人站在码头'}).waitFor();
     assert.equal(await global.evaluate(el=>el.open),false);
@@ -83,7 +80,7 @@ try {
         await page.setViewportSize({width,height:780});
         const sizes=await panel.evaluate(el=>({width:el.clientWidth,scrollWidth:el.scrollWidth,scrollHeight:el.scrollHeight,height:el.clientHeight}));
         assert.ok(sizes.scrollWidth<=sizes.width,`planner note overflows at ${width}px`);
-        assert.ok(await functionSettings.evaluate(el=>el.scrollWidth<=el.clientWidth),`planner controls overflow at ${width}px`);
+        assert.ok(await controls.evaluate(el=>el.scrollWidth<=el.clientWidth),`planner controls overflow at ${width}px`);
         assert.ok(sizes.height>0 && sizes.scrollHeight>sizes.height,`long notes must scroll at ${width}px`);
         assert.ok(await panel.evaluate(el=>{el.scrollTop=el.scrollHeight; return el.scrollTop>0;}));
         await panel.evaluate(el=>{el.scrollTop=0;});

@@ -1,4 +1,5 @@
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
+import { parseJsonResponse, resolveSourceQuote } from './json-response.js';
 
 const LIMIT = 10000;
 export const OPENING = 'world-opening';
@@ -24,17 +25,18 @@ function pieces(input, prompt) {
 }
 
 export function parseOpening(text, batch) {
-    const raw = JSON.parse(text.trim().replace(/^\x60\x60\x60(?:json)?\s*/i,'').replace(/\s*\x60\x60\x60$/,''));
+    const raw = parseJsonResponse(text);
     if (!Array.isArray(raw)) throw new Error('初始化模型未返回条目数组');
     return raw.map(row => {
         const part = batch.find(p => p.id === row?.part);
-        if (!part || typeof row.quote !== 'string' || !row.quote.trim() || !part.text.includes(row.quote)
+        const quote = part ? resolveSourceQuote(part.text, row?.quote) : null;
+        if (!part || !quote
             || !kinds.has(row.kind) || !validName(row.name) || (row.parent || row.kind === 'feature') && !validName(row.parent) || row.kind === 'position' && !validName(row.value)
             || typeof row.value !== 'string' || !row.value.trim() || row.value.length > 1200) throw new Error('开局条目缺少可核对的原文或字段无效');
         const clean = value => typeof value === 'string' ? value.trim() : '';
-        return { part:part.id, scope:clean(row.scope), kind: row.kind, name: row.name.trim(), value: row.value.trim(), quote: row.quote, key: part.key,
-            label: part.label, owner:validName(row.owner) && row.quote.includes(row.owner) ? row.owner : '',
-            importance:typeof row.importance === 'string' && row.importance.trim() && row.quote.includes(row.importance) ? row.importance.trim() : '', field: clean(row.field), parent: clean(row.parent), scale: clean(row.scale),
+        return { part:part.id, scope:clean(row.scope), kind: row.kind, name: row.name.trim(), value: row.value.trim(), quote, key: part.key,
+            label: part.label, owner:validName(row.owner) && resolveSourceQuote(quote, row.owner) ? row.owner : '',
+            importance: resolveSourceQuote(quote, row.importance) || '', field: clean(row.field), parent: clean(row.parent), scale: clean(row.scale),
             aliases: Array.isArray(row.aliases) ? row.aliases.filter(validName).map(clean) : [] };
     });
 }

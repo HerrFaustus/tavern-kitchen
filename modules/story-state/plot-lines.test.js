@@ -116,14 +116,14 @@ test('plot-line summarization aggregates beats, characters, focus, and triggers 
     assert.match(document.body.textContent, /追查东仓货单/);
 });
 
-test('old structured records seed the board; disabled clues supply no new extraction or writer material', () => {
+test('old structured records seed the board and legacy clues-off flags cannot suppress extraction or writer material', () => {
     const record = {id:'r',kind:'plan',title:'送信',description:'明晨送信。',status:'open'};
     assert.equal(collectPlotLines([], [record])[0].recordId,'r');
     usePanelSettings({panels:{clues:false}});
     try {
-        assert.equal(plotLinePrompt([]),'');
+        assert.match(plotLinePrompt([], [record]), /送信/);
         const snap=plannerSnapshot({worldId:'w',branchId:'b',entities:[]},{enabled:true,store:{json:{storyRecords:[record]}}},[],'c');
-        assert.deepEqual(snap.plotLines,[]);
+        assert.equal(snap.plotLines.length, 1);
     } finally { usePanelSettings({}); }
 });
 

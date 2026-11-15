@@ -28,20 +28,28 @@ function syncNativeControls(target) {
         for (const property of properties) target.style.setProperty(`--tk-${control.dataset.control}-${property}`, style.getPropertyValue(property));
     }
 }
-export const KITCHEN_TABS = [['overview', '主角'], ['world', '世界'], ['memory', '剧情'], ['planner', '编剧'], ['settings', 'API'], ['data', '数据']];
+export const KITCHEN_TABS = [['overview', '主角'], ['world', '世界'], ['memory', '剧情'], ['planner', '编剧'], ['settings', '设置'], ['data', '数据']];
 export const KITCHEN_ROUTES = {
     overview: [['overview', '主角']],
-    memory: [['memory', '总结'], ['suspense', '悬念'], ['clues', '剧情线'], ['proofreading', '校对']],
-    world: [['people', '人物'], ['map', '地图'], ['situation', '局势'], ['opening','世界生成']],
+    memory: [['memory', '总结'], ['recall', '召回'], ['suspense', '悬念'], ['clues', '剧情线'], ['proofreading', '校对']],
+    world: [['people', '人物'], ['map', '地图'], ['situation', '局势'], ['opening', '世界生成']],
     planner: [['planner', '编剧']],
-    settings: [['settings', 'API']],
-    data: [['data','数据']],
+    settings: [['settings', 'API'], ['settings-memory', '剧情与召回'], ['settings-world', '世界与推演']],
+    data: [['data', '数据']],
 };
-const routeAliases = new Map([['world', 'people'], ['world-engine', 'situation'], ['world-records', 'situation'], ['summaries', 'memory'], ['memory-settings', 'memory'], ['relations', 'people'], ['agent-api', 'settings']]);
+const routeAliases = new Map([
+    ['world', 'people'],
+    ['world-engine', 'situation'],
+    ['world-records', 'situation'],
+    ['summaries', 'memory'],
+    ['memory-settings', 'settings-memory'],
+    ['relations', 'people'],
+    ['agent-api', 'settings'],
+]);
 const canonicalRoute = id => routeAliases.get(id) || id;
 const parentOf = id => KITCHEN_TABS.find(([key]) => KITCHEN_ROUTES[key].some(([route]) => route === id))?.[0];
 const worldTabs = new Set(['map', 'agent-api', 'settings']);
-const memoryTabs = new Set(['data', 'memory', 'proofreading', 'situation', 'people', 'relations']);
+const memoryTabs = new Set(['data', 'memory', 'recall', 'proofreading', 'situation', 'people', 'relations', 'settings-memory']);
 export const getKitchenMount = id => workspace?.getMount(id) ?? null;
 export const openKitchenTab = id => workspace?.open(id);
 export const closeKitchenWorkspace = () => workspace?.close();
@@ -111,21 +119,21 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
     panel.id = 'tk-workspace';
     panel.className = 'drawer-content closedDrawer fillRight';
     panel.setAttribute('aria-label', '酒馆后厨');
-    const header = doc.createElement('header');
-    header.className = 'tk-workspace-header';
-    const settingsToggle = doc.createElement('button');
-    settingsToggle.type = 'button'; settingsToggle.className = 'tk-settings-toggle standoutHeader inline-drawer-header';
-    const title = doc.createElement('b'), arrow = doc.createElement('i');
-    arrow.className = 'inline-drawer-icon fa-solid fa-circle-chevron-down down';
-    arrow.setAttribute('aria-hidden', 'true');
-    settingsToggle.append(title, arrow);
+    const titlebar = doc.createElement('header');
+    titlebar.className = 'tk-workspace-titlebar';
+    const appTitle = doc.createElement('h3');
+    appTitle.className = 'tk-workspace-app-title margin0';
+    appTitle.textContent = '酒馆后厨';
+    const titleActions = doc.createElement('div');
+    titleActions.className = 'tk-titlebar-actions';
     const back = doc.createElement('button');
-    back.type = 'button'; back.className = 'menu_button'; back.hidden = true;
+    back.type = 'button'; back.className = 'menu_button tk-back'; back.hidden = true;
     const close = doc.createElement('button');
     close.type = 'button'; close.className = 'menu_button tk-close';
     close.setAttribute('aria-label', '收起酒馆后厨'); close.title = '收起';
     const closeIcon = doc.createElement('i'); closeIcon.className = 'fa-solid fa-chevron-up'; closeIcon.setAttribute('aria-hidden', 'true'); close.append(closeIcon);
-    header.append(back, settingsToggle, close);
+    titleActions.append(back, close);
+    titlebar.append(appTitle, titleActions);
 
     const tabs = doc.createElement('nav');
     tabs.className = 'tk-tabs'; tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', '后厨板块');
@@ -161,33 +169,69 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
     let stopEvolution;
     const controls = doc.createElement('section');
     controls.className = 'tk-workspace-controls';
-    controls.setAttribute('aria-label', '设置');
+    controls.setAttribute('aria-label', '操作');
+    controls.hidden = true;
     controls.append(evolution, featureBar);
-    page.append(header, controls, body);
-    panel.append(tabs, subnav, page);
+    page.append(controls, body);
+    panel.append(titlebar, tabs, subnav, page);
     controls.id = 'tk-module-native-controls';
     const frames = new Map();
-    let groups = {}, settingsOpen = false, returnTo = null, focusRequest = null;
-    settingsToggle.setAttribute('aria-controls', page.id);
-    const syncDisclosure = () => {
-        settingsToggle.setAttribute('aria-expanded', String(settingsOpen));
-        arrow.classList.toggle('up', settingsOpen);
-        arrow.classList.toggle('down', !settingsOpen);
-        page.dataset.settingsOpen = String(settingsOpen);
-        for (const { document } of frames.values()) document.documentElement.dataset.tkSettingsOpen = String(settingsOpen);
+    let returnTo = null, focusRequest = null, stopFocusWatch;
+    const stopWatchingFocus = () => { stopFocusWatch?.(); stopFocusWatch = undefined; };
+    const syncControls = () => {
+        const hasEvolution = !evolution.hidden && evolution.childElementCount > 0;
+        const hasActions = featureBar.childElementCount > 0;
+        featureBar.hidden = !hasActions;
+        controls.hidden = !(hasEvolution || hasActions) || body.hidden;
+        page.classList.toggle('tk-page-full', controls.hidden && !body.hidden);
     };
-    settingsToggle.addEventListener('click', () => { settingsOpen = !settingsOpen; syncDisclosure(); placeControls(); });
+    const isFrameVisible = frame => frame.isConnected && frame.style.visibility !== 'hidden' && (!frame.checkVisibility || frame.checkVisibility());
+    const isNodeFocusable = item => item.isConnected && !item.disabled && !item.closest?.('fieldset[disabled]') && (!item.checkVisibility || item.checkVisibility());
     const restoreRequestedFocus = () => {
-        if (!focusRequest || focusRequest.route !== active) return;
+        if (!focusRequest || focusRequest.route !== active || !isOpen()) return false;
+        if (!focusRequest.selector) { focusRequest = null; stopWatchingFocus(); return false; }
         const mount = api.getMount(active);
-        for (const surface of [controls, mount, ...[...frames].filter(([frame]) => mount?.contains(frame)).map(([,s]) => s.document)]) {
-            const node = [...(surface?.querySelectorAll(focusRequest.selector) || [])].find(item => item.isConnected && !item.disabled && (!item.checkVisibility || item.checkVisibility()));
+        const frameDocs = [...frames].filter(([frame]) => mount?.contains(frame) && isFrameVisible(frame)).map(([, s]) => s.document);
+        for (const surface of [controls, mount, ...frameDocs]) {
+            const node = [...(surface?.querySelectorAll(focusRequest.selector) || [])].find(isNodeFocusable);
             if (!node) continue;
-            node.focus(); focusRequest = null; return;
+            node.focus(); focusRequest = null; stopWatchingFocus(); return true;
         }
+        return false;
+    };
+    let refreshFocusWatch = () => {};
+    const ensureFocusWatch = () => {
+        if (restoreRequestedFocus() || !focusRequest || !isOpen()) {
+            if (!focusRequest) stopWatchingFocus();
+            return;
+        }
+        if (stopFocusWatch || typeof MutationObserver === 'undefined') { refreshFocusWatch(); return; }
+        const observed = new Set();
+        const observer = new MutationObserver(() => {
+            if (!focusRequest || !isOpen()) { stopWatchingFocus(); return; }
+            attachTargets();
+            restoreRequestedFocus();
+        });
+        const watch = (target, options) => {
+            if (!target || observed.has(target)) return;
+            observed.add(target);
+            observer.observe(target, options);
+        };
+        const attachTargets = () => {
+            const mount = focusRequest ? api.getMount(focusRequest.route) : null;
+            watch(mount, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'hidden', 'style'] });
+            for (const [frame, state] of frames) {
+                if (!mount?.contains(frame)) continue;
+                watch(frame, { attributes: true, attributeFilter: ['style', 'hidden'] });
+                watch(state.document?.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'hidden', 'style'] });
+            }
+        };
+        stopFocusWatch = () => { observer.disconnect(); observed.clear(); refreshFocusWatch = () => {}; };
+        refreshFocusWatch = attachTargets;
+        attachTargets();
     };
     const visitBinding = (agent, selector) => {
-        returnTo = { route: active, selector };
+        returnTo = active && parentOf(active) !== 'settings' ? { route: active, selector } : null;
         focusRequest = { route: 'settings', selector: '[data-agent-binding="' + agent + '"]' };
         navigate('settings');
     };
@@ -196,52 +240,9 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
         focusRequest = returnTo; returnTo = null;
         navigate(focusRequest.route);
     });
-    let localSettings = [];
-    const restoreLocalSettings = () => {
-        for (const { node, placeholder } of localSettings.reverse()) {
-            if (controls.contains(node) && placeholder.parentNode) placeholder.replaceWith(node);
-            else placeholder.remove();
-        }
-        localSettings = [];
-    };
-    const restoreControls = () => {
-        if (controls.parentElement !== page) page.insertBefore(controls, body);
-        settingsToggle.setAttribute('aria-controls', controls.id);
-        page.classList.remove('tk-controls-in-frame');
-        controls.hidden = ['settings','data'].includes(active) && !body.hidden;
-    };
     const placeControls = () => {
-        page.classList.toggle('tk-page-full', ['settings','data'].includes(active) && !body.hidden);
-        if (!isOpen() || body.hidden || ['settings','data'].includes(active)) { restoreControls(); if (isOpen()) restoreRequestedFocus(); return; }
-        const mount = api.getMount(active);
-        for (const [frame, state] of frames) {
-            if (!frame.isConnected || frame.contentDocument !== state.document || !mount?.contains(frame)) continue;
-            const target = [...state.document.querySelectorAll('[data-kitchen-controls]')]
-                .find(node => node.dataset.kitchenControls.split(' ').includes(active) && !node.closest('[hidden]'));
-            if (!target || !target.parentElement.checkVisibility()) continue;
-            if (controls.hidden) controls.hidden = false;
-            if (controls.parentElement !== target) {
-                restoreLocalSettings();
-                const summary = target.querySelector(':scope > summary');
-                target.insertBefore(controls, summary ? summary.nextSibling : target.firstChild);
-                page.classList.add('tk-controls-in-frame');
-                if (!frame.id) frame.id = 'tk-frame-' + active;
-                settingsToggle.setAttribute('aria-controls', frame.id);
-                if (summary && !summary.hidden) summary.hidden = true;
-            }
-            for (const node of target.querySelectorAll('[data-setting-section]')) {
-                const key = node.dataset.settingSection, group = groups[key];
-                const parentSection = node.parentElement.closest('[data-setting-section]');
-                if (node.closest('[hidden]') || !node.checkVisibility()) continue;
-                if (!group || group.contains(node) || parentSection?.dataset.settingSection === key) continue;
-                const placeholder = state.document.createComment('settings position');
-                node.before(placeholder);
-                localSettings.push({ node, placeholder });
-                group.append(node);
-            }
-            restoreRequestedFocus(); return;
-        }
-        restoreControls(); restoreRequestedFocus();
+        syncControls();
+        if (isOpen()) ensureFocusWatch();
     };
 
     const entry = doc.createElement('div'); entry.id = 'tk-topbar'; entry.className = 'drawer';
@@ -312,6 +313,8 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
     const navigateRefresh = id => observeBackgroundTask(api.open(id, true), { source: import.meta.url, operation: 'refresh-workspace' });
     let visiblePanel = () => true;
     let configurePanel;
+    let initializeWorld;
+    let configured = Boolean(Object.keys(actions).length);
     const routesFor = parent => KITCHEN_ROUTES[parent].filter(([id]) => visiblePanel(id));
     const navigateSection = parent => navigate(routesFor(parent).some(([route]) => route === lastRoute.get(parent)) ? lastRoute.get(parent) : parent);
     const firstRoute = () => KITCHEN_TABS.flatMap(([parent]) => routesFor(parent))[0]?.[0];
@@ -328,87 +331,34 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
             subnav.append(button);
         }
     };
-    let initializeWorld, panelSwitch;
     const renderFeatureBar = id => {
-        restoreLocalSettings();
-        restoreControls();
-        const items = featureSwitches[id] || [];
-        controls.replaceChildren();
-        settingsToggle.hidden = ['data', 'settings'].includes(id);
-        back.hidden = !(id === 'settings' && returnTo);
+        controls.replaceChildren(evolution, featureBar);
+        back.hidden = !(parentOf(id) === 'settings' && returnTo);
         if (!back.hidden) back.textContent = '返回' + KITCHEN_ROUTES[parentOf(returnTo.route)].find(([key]) => key === returnTo.route)[1];
-        syncDisclosure();
-        if (['data','settings'].includes(id)) {
-            groups = {};
-            body.hidden = false; controls.hidden = true;
-            return;
-        }
-        const routeLabel = KITCHEN_ROUTES[parentOf(id)].find(([route]) => route === id)[1];
-        const settingsLabel = routeLabel + '设置';
-        title.textContent = settingsLabel;
-        controls.setAttribute('aria-label', settingsLabel);
-        groups = {};
-        for (const [key, label] of [['master','模块开关'], ['function','功能设置']]) {
-            const group = doc.createElement('section');
-            const heading = doc.createElement('h5');
-            group.dataset.settingsGroup = key;
-            heading.textContent = label; group.append(heading); controls.append(group);
-            groups[key] = group;
-        }
-        groups.function.append(evolution, featureBar);
-        featureBar.replaceChildren(); featureBar.hidden = !items.length;
-
-        if (panelSwitch) {
-            const { enabled, label, change, paused } = panelSwitch(id, routeLabel);
-            const row = doc.createElement('label'); row.className = 'checkbox_label tk-panel-switch';
-            const input = doc.createElement('input'); input.type = 'checkbox';
-            input.dataset.panel = id; input.checked = enabled;
-            const changePanel = async () => {
-                input.disabled = true;
-                try { await change(input.checked); }
-                catch (error) {
-                    input.checked = panelSwitch(id, routeLabel).enabled;
-                    const message = doc.createElement('span'); message.setAttribute('role', 'alert');
-                    message.textContent = error.message || '开关保存失败，请重试。';
-                    row.parentElement.querySelector('[role="alert"]')?.remove(); row.after(message);
-                    if (error.agent) {
-                        const link = doc.createElement('button'); link.type = 'button'; link.className = 'menu_button'; link.textContent = '前往 API';
-                        link.onclick = () => visitBinding(error.agent, '[data-panel="' + id + '"]');
-                        message.append(' ', link);
-                    }
-                } finally { input.disabled = false; }
-            };
-            input.addEventListener('change', () => observeBackgroundTask(changePanel(), { source: import.meta.url, operation: 'toggle-panel' }));
-            input.setAttribute('aria-label', label);
-            row.append(input, doc.createTextNode(label));
-            featureBar.hidden = false;
-            groups.master.append(row);
-            body.hidden = !!paused;
-            groups.function.hidden = !enabled && !['people','situation','map'].includes(id);
-            if (paused) return;
-        }
+        featureBar.replaceChildren();
+        body.hidden = false;
+        const items = featureSwitches[id] || [];
         if (id === 'opening' && initializeWorld) {
             const button = doc.createElement('button');
             button.type = 'button'; button.className = 'menu_button'; button.textContent = '生成世界'; button.dataset.initializeWorld = '';
-            const status = doc.createElement('span'); status.setAttribute('role','status');
+            const status = doc.createElement('span'); status.setAttribute('role', 'status');
             const initialize = async () => {
                 button.disabled = true; status.textContent = '正在读取开局资料…';
                 try { status.textContent = await initializeWorld(); }
                 catch (error) {
                     status.textContent = error.message || '生成失败，请重试';
                     if (error.agent) {
-                        const link = doc.createElement('button'); link.type = 'button'; link.className = 'menu_button'; link.textContent = '前往 API';
-                        link.onclick = () => visitBinding(error.agent,'[data-initialize-world]'); status.append(' ',link);
+                        const link = doc.createElement('button'); link.type = 'button'; link.className = 'menu_button'; link.textContent = '前往设置';
+                        link.onclick = () => visitBinding(error.agent, '[data-initialize-world]'); status.append(' ', link);
                     }
-                }
-                finally { button.disabled = false; }
+                } finally { button.disabled = false; }
             };
-            button.addEventListener('click',() => observeBackgroundTask(initialize(),{source:import.meta.url,operation:'initialize-world'}));
+            button.addEventListener('click', () => observeBackgroundTask(initialize(), { source: import.meta.url, operation: 'initialize-world' }));
             const description = doc.createElement('p');
             description.textContent = '读取本次开局的世界书和首轮输入，生成初始世界记录。';
-            mounts.get('opening').replaceChildren(description, status);
-            const actions = doc.createElement('div'); actions.className = 'tk-module-actions';
-            actions.append(button); featureBar.append(actions);
+            const actionRow = doc.createElement('div'); actionRow.className = 'tk-module-actions';
+            actionRow.append(button);
+            mounts.get('opening').replaceChildren(description, actionRow, status);
         }
         if (configurePanel) configurePanel(id, featureBar);
         for (const item of items) {
@@ -418,36 +368,31 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
             const text = doc.createElement('span'); text.textContent = item.label;
             label.append(input, text); featureBar.append(label);
         }
+        syncControls();
     };
+    const isWorldMountRoute = route => worldTabs.has(route) && !(route === 'settings' && mounts.get('settings').childElementCount > 0 && !worldMount.childElementCount);
     const api = {
         visitBinding,
         getControls() { return featureBar; },
-        getSettingSections() { return groups; },
+        getSettingSections() { return { function: controls }; },
         attachFrame(frame) {
-            frames.get(frame)?.observer.disconnect();
             const document = frame.contentDocument;
             if (!document?.body) return () => {};
-            const observer = new MutationObserver(placeControls);
-            frames.set(frame, { document, observer });
-            document.documentElement.dataset.tkSettingsOpen = String(settingsOpen);
-            document.addEventListener('keydown', frameEscape);
-            observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden','class','open','disabled'] });
-            placeControls();
+            frames.set(frame, { document });
+            if (focusRequest && isOpen()) ensureFocusWatch();
             return () => {
-                observer.disconnect(); document.removeEventListener('keydown', frameEscape);
                 if (frames.get(frame)?.document === document) frames.delete(frame);
-                if (controls.ownerDocument === document) { restoreLocalSettings(); restoreControls(); }
             };
         },
 
         configure(options) {
+            configured = true;
             initializeWorld = options.initializeWorld;
             actions = options.actions;
             configurePanel = options.configurePanel;
             if (options.visiblePanel) visiblePanel = options.visiblePanel;
-            for (const [parent,button] of buttons) button.hidden = !routesFor(parent).length;
+            for (const [parent, button] of buttons) button.hidden = !routesFor(parent).length;
             const available = firstRoute();
-            panelSwitch = options.panelSwitch;
             entry.hidden = !available;
             tabs.hidden = page.hidden = !available;
             delete subnav.dataset.section;
@@ -459,7 +404,7 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
             if (!available) {
                 generation++;
                 active = null;
-                subnav.hidden = featureBar.hidden = evolution.hidden = true;
+                subnav.hidden = featureBar.hidden = evolution.hidden = controls.hidden = true;
                 stopEvolution?.(); stopEvolution = undefined;
                 api.close();
                 return;
@@ -469,6 +414,7 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
             else if (active) { renderFeatureBar(active); placeControls(); }
         },
         failStartup(error) {
+            configured = true;
             for (const [id] of Object.values(KITCHEN_ROUTES).flat()) {
                 const mount = api.getMount(id);
                 mount.querySelector('.tk-panel-message')?.remove();
@@ -482,20 +428,25 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
             }
         },
         showEvolution(mount, withHeading = false) {
-            stopEvolution?.(); evolution.hidden = false;
+            stopEvolution?.();
             let target = evolution;
             if (withHeading) {
                 const settings = doc.createElement('section'), heading = doc.createElement('h5');
                 heading.className = 'tk-evolution-title';
-                heading.textContent = '演化设置';
+                heading.textContent = '演化';
                 target = doc.createElement('div');
                 settings.append(heading, target); evolution.replaceChildren(settings);
+            } else {
+                evolution.replaceChildren();
             }
             stopEvolution = mount(target);
+            evolution.hidden = target.childElementCount === 0;
+            if (evolution.hidden) evolution.replaceChildren();
+            syncControls();
         },
         getMount(id) {
             const route = canonicalRoute(id);
-            return worldTabs.has(route) ? worldMount : memoryTabs.has(route) ? memoryMount : mounts.get(route);
+            return isWorldMountRoute(route) ? worldMount : memoryTabs.has(route) ? memoryMount : mounts.get(route);
         },
         isActive: id => isOpen() && active === canonicalRoute(id) && !body.hidden,
         async open(id = active || 'overview', refresh = false) {
@@ -506,31 +457,28 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
             if (!parent) return;
             const wasClosed = !isOpen();
             if (active === id && !wasClosed && !refresh) return;
-            restoreLocalSettings();
-            restoreControls();
             const token = ++generation;
             await ensureOpen();
             if (token !== generation || !isOpen()) return;
             if (active && active !== id) scrollByRoute.set(active, api.getMount(active).scrollTop);
-            if (active !== id) settingsOpen = !!(focusRequest?.route === id && id !== 'settings');
-            if (id !== 'settings' && returnTo) returnTo = null;
-            if (focusRequest && focusRequest.route !== id) focusRequest = null;
+            if (parent !== 'settings' && returnTo) returnTo = null;
+            if (focusRequest && focusRequest.route !== id) { focusRequest = null; stopWatchingFocus(); }
             active = id;
             lastRoute.set(parent, id);
             for (const [key, button] of buttons) {
                 button.setAttribute('aria-selected', String(key === parent)); button.tabIndex = key === parent ? 0 : -1;
-                button.classList.toggle('active', key === parent);
+                button.classList.toggle('is-active', key === parent);
             }
             page.setAttribute('aria-labelledby', `tk-tab-${parent}`);
-            for (const [key, mount] of mounts) mount.hidden = key !== id || worldTabs.has(key) || memoryTabs.has(key);
-            worldMount.hidden = !worldTabs.has(id);
+            for (const [key, mount] of mounts) mount.hidden = key !== id || isWorldMountRoute(key) || memoryTabs.has(key);
+            worldMount.hidden = !isWorldMountRoute(id);
             memoryMount.hidden = !memoryTabs.has(id);
             worldMount.setAttribute('aria-label', Object.values(KITCHEN_ROUTES).flat().find(([key]) => key === id)?.[1] || '世界工具');
             // Retain focused controls when switching routes inside one section.
             if (subnav.dataset.section !== parent) buildSubnav(parent);
             for (const button of subnav.querySelectorAll('button[data-route]')) {
                 button.setAttribute('aria-pressed', String(button.dataset.route === id));
-                button.classList.toggle('active', button.dataset.route === id);
+                button.classList.toggle('is-active', button.dataset.route === id);
             }
             subnav.hidden = routesFor(parent).length < 2;
             stopEvolution?.(); stopEvolution = undefined; evolution.replaceChildren(); evolution.hidden = true;
@@ -543,20 +491,20 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
             mount.setAttribute('aria-busy', 'true');
             const loading = !mount.childElementCount ? doc.createElement('p') : null;
             if (loading) { loading.className = 'tk-panel-message'; loading.setAttribute('role', 'status'); loading.textContent = '正在加载后厨…'; mount.append(loading); }
-            if (!actions[id] && id !== 'settings') return;
+            if (configured && !actions[id]) { loading?.remove(); mount.removeAttribute('aria-busy'); placeControls(); return; }
+            if (!configured) { return; }
             Promise.resolve().then(() => actions[id]?.()).catch(error => {
                 if (token === generation) report(mount, error, id);
             }).finally(() => { loading?.remove(); mount.removeAttribute('aria-busy'); placeControls(); });
         },
         close() {
-            restoreLocalSettings();
-            restoreControls();
             generation += 1;
+            focusRequest = null; stopWatchingFocus();
             if (pendingOpen) void pendingOpen.then(() => { setOpen(panel, false); syncVisibility(); });
             setOpen(panel, false); syncVisibility();
             (previousFocus?.isConnected ? previousFocus : trigger).focus({ preventScroll: true });
         },
-        reset() { returnTo = focusRequest = null; settingsOpen = false; lastRoute.clear(); scrollByRoute.clear(); active = null; api.close(); generation += 1; },
+        reset() { returnTo = focusRequest = null; stopWatchingFocus(); lastRoute.clear(); scrollByRoute.clear(); active = null; api.close(); generation += 1; },
     };
     close.addEventListener('click', api.close);
     trigger.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); isOpen() || pendingOpen ? api.close() : navigate(); });
@@ -570,12 +518,7 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
     const closeOnEscape = event => {
         if (event.key !== 'Escape' || event.defaultPrevented) return;
         event.preventDefault();
-        if (settingsOpen) { settingsOpen = false; syncDisclosure(); settingsToggle.focus(); }
-        else api.close();
-    };
-    const frameEscape = event => {
-        if (event.target.closest?.('dialog[open]') || event.target.ownerDocument.querySelector('dialog[open]')) return;
-        if (settingsOpen) closeOnEscape(event);
+        api.close();
     };
     panel.addEventListener('keydown', closeOnEscape);
     controls.addEventListener('keydown', closeOnEscape);

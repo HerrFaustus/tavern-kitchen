@@ -10,7 +10,7 @@ import { locationTrail, visitedMapLocationKeys } from '../../../domains/map/hier
 import { useMapState } from './use-map-state.js';
 
 const props = defineProps<XiaobaiOsAppProps>();
-const { state, busy, disabledReason, status, notice, refresh, adopt, setAuto, update, rebuild } = useMapState(props);
+const { state, busy, disabledReason, status, notice, refresh, adopt, update, rebuild } = useMapState(props);
 const selection = ref('');
 const featureName = ref('');
 function select(key: string, feature = '') {
@@ -91,30 +91,25 @@ watch(() => state.value.chatIdentity, () => select(''));
             </article>
             <p v-else>{{ state.status === 'loading' ? '正在读取地点…' : '还没有地点词条。' }}</p>
         </div>
-        <footer data-kitchen-controls="map" class="tk-module-settings" aria-label="地图控制与设置">
-            <section data-setting-section="function">
-                <button class="menu_button" :disabled="!!disabledReason || busy" @click="places.length ? update() : rebuild()">{{ places.length ? '更新地点' : '整理地点' }}</button>
-                <small v-if="disabledReason">{{ disabledReason }}</small>
-                <p v-if="status || notice" role="status">{{ status || notice }}</p>
-                <button v-if="state.status === 'conflict'" class="menu_button" @click="adopt">放弃未保存的更改并恢复</button>
-                <button v-if="state.status === 'error' || state.status === 'blocked'" class="menu_button" @click="refresh">重新加载</button>
-
-                <label><input type="checkbox" :checked="state.autoMaintenance" :disabled="busy || !state.chatIdentity" @change="setAuto(($event.target as HTMLInputElement).checked)">随剧情更新</label>
-            </section>
-        </footer>
+        <div class="tk-module-actions" aria-label="地图操作">
+            <button class="menu_button" :disabled="!!disabledReason || busy" @click="places.length ? update() : rebuild()">{{ places.length ? '更新地点' : '整理地点' }}</button>
+            <small v-if="disabledReason">{{ disabledReason }}</small>
+            <p v-if="status || notice" role="status">{{ status || notice }}</p>
+            <button v-if="state.status === 'conflict'" class="menu_button" @click="adopt">放弃未保存的更改并恢复</button>
+            <button v-if="state.status === 'error' || state.status === 'blocked'" class="menu_button" @click="refresh">重新加载</button>
+        </div>
     </section>
 </template>
 <style scoped>
 .place-index { display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; height: 100%; box-sizing: border-box; padding: .6em; color: var(--SmartThemeBodyColor); }
-.place-index > .tk-module-data { grid-row: 2; }
-.place-index > .tk-module-settings { grid-row: 1; max-height: 45dvh; }
-.place-index > .tk-module-data, .place-index > .tk-module-settings { min-height: 0; overflow-y: auto; box-sizing: border-box; margin-block: 0; }
+.place-index > .tk-module-data { grid-row: 2; min-height: 0; overflow-y: auto; box-sizing: border-box; margin-block: 0; }
+.place-index > .tk-module-actions { grid-row: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-bottom: .6em; border-bottom: 1px solid var(--SmartThemeBorderColor); }
+.place-index > .tk-module-actions p { margin: 0; }
 .local-conditions {border-inline-start:2px solid var(--SmartThemeBorderColor); padding-inline-start:.75em}
 .local-conditions p {margin-block:.2em .65em}
 .place-index dt { font-weight: bold; }
 .place-index dd { margin: .2em 0 .65em; white-space: pre-line; }
 .place-index article { margin-block: .8em; border-top: 1px solid var(--SmartThemeBorderColor); }
-.place-index > .tk-module-settings { border-top: 1px solid var(--SmartThemeBorderColor); margin-block: 0; }
 .place-index ul { padding-inline-start: 1.4em; }
 .place-index button { cursor:pointer; }
 </style>

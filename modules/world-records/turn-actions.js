@@ -3,6 +3,7 @@ import { protagonistIdentity } from '../story-state/protagonist-identity.js';
 import { applyWorldStoryProposal } from './world-story-state.js';
 import { parseStoryUpdates } from '../story-state/records.js';
 import { invariant } from './domain.js';
+import { resolveSourceQuote } from './json-response.js';
 
 export const taskDefinitions = {
     memory: ['逐楼摘要', '只交付 summary（本轮经过，非空文本）及 memoryTags（characters、locations、times、keywords 短文本数组）。'],
@@ -52,8 +53,9 @@ function involvesHero(source, hero, playerName) {
 }
 function evidence(change, source) {
     const text = source.messages.find(row => row.floor === change.floor)?.text;
-    invariant(typeof change.quote === 'string' && change.quote.trim() && change.quote.length <= 1200 && text?.includes(change.quote), '引文无法在本轮核对');
-    return change.quote;
+    const quote = resolveSourceQuote(text, change?.quote, { maxLength: 1200 });
+    invariant(Boolean(quote), '引文无法在本轮核对');
+    return quote;
 }
 export function turnActionGroups(changes, keys) {
     invariant(Array.isArray(changes) && changes.length <= 200, '本轮变化清单无效');
@@ -86,8 +88,9 @@ export function turnOperations(state, rows, { source, playerName, effectId, comm
         const allowed = fieldTasks[row.task] || [];
         if (row.type === 'create') {
             invariant(allowed.includes(row.kind) && row.ref && !refs.has(row.ref) && typeof row.name === 'string' && row.name.trim(), '新对象的类型或临时引用无效');
-            invariant(sim || quote.includes(row.name), '原文未确认新对象称呼');
-            if (row.kind === 'item' && row.task !== 'overview') invariant(typeof row.importance === 'string' && row.importance.trim() && source.messages.some(m => m.text.includes(row.importance)), '请核对物品的剧情意义');
+            invariant(sim || Boolean(resolveSourceQuote(quote, row.name)), '原文未确认新对象称呼');
+            const importance = typeof row.importance === 'string' ? source.messages.map(m => resolveSourceQuote(m.text, row.importance)).find(Boolean) : null;
+            if (row.kind === 'item' && row.task !== 'overview') invariant(Boolean(importance), '请核对物品的剧情意义');
             const matching = entities.filter(e => e.kind === row.kind && [e.name, ...(e.aliases || [])].includes(row.name));
             invariant(matching.length <= 1, '有多个同称对象，请核对');
             const id = matching[0]?.id || 'object:' + memoryDigest([state.worldId, effectId, row.ref]);
@@ -95,15 +98,16 @@ export function turnOperations(state, rows, { source, playerName, effectId, comm
             if (!matching.length) {
                 entities.push({ id, kind: row.kind, name: row.name, aliases: [], fields: {} });
                 operations.push({ type: 'create', id, kind: row.kind, name: row.name, source: provenance });
-                if (row.kind === 'item' && row.importance) operations.push({type:'set',entityId:id,field:'剧情意义',value:row.importance,source:provenance});
+                if (row.kind === 'item' && importance) operations.push({type:'set',entityId:id,field:'剧情意义',value:importance,source:provenance});
             }
         } else if (row.type === 'trade') {
-            const amount = paidPrice(row.paymentQuote);
+            const paymentQuote = typeof row.paymentQuote === 'string' ? source.messages.map(m => resolveSourceQuote(m.text, row.paymentQuote)).find(Boolean) : null;
+            const amount = paymentQuote ? paidPrice(paymentQuote) : null;
             const price = reviewed && amount !== null ? amount : row.price;
             const item = resolve(row.item), peer = resolve(row.counterparty);
             invariant(row.task === 'overview' && hero && ['buy', 'sell'].includes(row.direction) && peer.id !== hero.id, '请核对主角和交易方向');
             invariant(involvesHero(source,hero,playerName),'引文未确认主角参加本次买卖，请核对交易双方');
-            invariant(typeof row.paymentQuote === 'string' && source.messages.some(m => m.text.includes(row.paymentQuote)) && amount !== null && amount === price, '成交价与实付或实收依据不一致');
+            invariant(Boolean(paymentQuote) && amount !== null && amount === price, '成交价与实付或实收依据不一致');
             invariant(reviewed || !/才卖|开价|考虑|报价|想要|愿意|打算|尚未|如果|要价/.test(quote) || /收下|交给|交付|成交|买下|卖出|交铃|实付|实收/.test(quote), '仅有报价，请核对成交');
             invariant(source.messages.some(m => m.role === 'assistant' && /交给|交付|递给|收[下到]|成交|买下|卖出|交[出铃货]|售出|实付|实收/.test(m.text)), '角色回复未确认成交');
             if (!reviewed && row.quantity > 1) {

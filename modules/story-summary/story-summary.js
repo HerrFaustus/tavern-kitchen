@@ -38,6 +38,7 @@ import { isXiaobaiMasterEnabled } from './runtime-gate.js';
 import { initChatDeletionLifecycle } from './chat-deletion-lifecycle.js';
 import { createMemoryMaintenanceHost } from './maintenance/host.js';
 import { createSummaryDiagnostics } from './summary-diagnostics.js';
+import { buildRecallHistoryEntry, clearRecallHistory, getRecallHistory, recordRecallHistoryEntry } from './recall-history.js';
 import { MEMORY_CHAT_MESSAGES } from './maintenance/chat-contract.js';
 import { SUMMARY_FEEDBACK_COPY } from './feedback-copy.js';
 import { summaryFailureReason } from './summary-failure.js';
@@ -2034,6 +2035,13 @@ async function handleFrameMessage(event) {
             postToFrame({ type: "RECALL_LOG", text: lastRecallLogText });
             break;
 
+        case "REQUEST_RECALL_HISTORY": {
+            const ctx = getContext();
+            const branchId = worldAuthorityForContext(ctx)?.branchId || '';
+            postToFrame({ type: "RECALL_HISTORY", chatId: ctx?.chatId || '', branchId, entries: getRecallHistory(ctx?.chatId || '', branchId) });
+            break;
+        }
+
         case "REQUEST_VECTOR_STATS":
             observeBackgroundTask(sendVectorStatsToFrame(), { source: import.meta.url, operation: 'handleFrameMessage' });
             maybePreloadTokenizer();
@@ -2283,6 +2291,11 @@ async function handleChatChanged(scheduledChatId = getContext()?.chatId || '', {
     clearDeferredBackgroundTasks();
     lastRecallLogText = "";
     postToFrame({ type: 'RECALL_LOG', text: '' });
+    {
+        const ctx = getContext();
+        const branchId = worldAuthorityForContext(ctx)?.branchId || '';
+        postToFrame({ type: 'RECALL_HISTORY', chatId: scheduledChatId || ctx?.chatId || '', branchId, entries: getRecallHistory(scheduledChatId || ctx?.chatId || '', branchId) });
+    }
     postToFrame({ type: 'SUMMARY_STATUS', statusText: '' });
     notifySummaryState();
     await waitForVectorWrites();
@@ -2689,11 +2702,14 @@ async function prepareMemoryPrompt(type, signal, diagnostics = createRecallDiagn
     const chatLen = Array.isArray(chat) ? chat.length : 0;
     const reuse = recallReuse.prepare(context, type);
     reuseTicket = reuse.ticket;
+    const targetFloor = Math.max(-1, type === 'swipe' && !chat?.at(-1)?.is_user ? chatLen - 2 : chatLen - 1);
     if (reuse.memory) {
         diagnostics.stage = 'reuse';
-        const { text, boundary, role } = reuse.memory;
+        const { text, boundary, role, recallTrace = null } = reuse.memory;
         return finish('reused', {
             text, boundary, role,
+            targetFloor,
+            recallTrace,
             depth: Math.max(MIN_INJECTION_DEPTH, chatLen - boundary - 1),
             reuseMemory: reuse.memory,
         });
@@ -2756,6 +2772,7 @@ async function prepareMemoryPrompt(type, signal, diagnostics = createRecallDiagn
     // 构建注入文本
     let text = "";
     let notice = null;
+    let recallTrace = null;
     const includeState = !extension_prompts.tavernKitchenWorldAuthority?.value;
     const T_BuildPrompt = performance.now();
     if (vectorCfg?.enabled && !usePendingCanonicalSummary) {
@@ -2770,9 +2787,22 @@ async function prepareMemoryPrompt(type, signal, diagnostics = createRecallDiagn
         }
         text = r?.text || "";
         notice = r?.notice || null;
+        recallTrace = r?.recallTrace || null;
     } else {
         diagnostics.stage = 'canonical-summary';
         text = buildNonVectorPromptText({ includeState }) || "";
+        recallTrace = {
+            mode: 'canonical',
+            reranked: false,
+            queryPreview: '',
+            focusCharacters: [],
+            hiddenThrough: boundary,
+            backgroundItems: 0,
+            includedBackgroundItems: 0,
+            rawBudgetUsed: 0,
+            rawBudgetMax: 3000,
+            chunks: [],
+        };
     }
     timing.buildPrompt = Math.round(performance.now() - T_BuildPrompt);
 
@@ -2787,6 +2817,8 @@ async function prepareMemoryPrompt(type, signal, diagnostics = createRecallDiagn
         depth,
         role,
         boundary,
+        targetFloor,
+        recallTrace,
     });
 }
 
@@ -2842,10 +2874,31 @@ async function commitMemoryPrompt(prepared, signal) {
         // candidates, notices or the prefetch run; reused reports keep one origin.
         if (!prepared.reuseMemory) {
             recallReuse.adopt(prepared.reuseTicket, getContext(), {
-                text: prepared.text, boundary: prepared.boundary, role: prepared.role, report,
+                text: prepared.text, boundary: prepared.boundary, role: prepared.role, report, recallTrace: prepared.recallTrace || null,
             });
         }
         postToFrame({ type: 'RECALL_LOG', text: report });
+        const ctx = getContext();
+        const branchId = worldAuthorityForContext(ctx)?.branchId || '';
+        const historyStatus = prepared.reuseMemory
+            ? 'reused'
+            : prepared.diagnostics?.fallbacks?.length
+                ? 'degraded'
+                : hasText
+                    ? 'success'
+                    : 'empty';
+        const entries = recordRecallHistoryEntry(buildRecallHistoryEntry({
+            chatId: ctx?.chatId || prepared.chatId || '',
+            branchId,
+            type: prepared.diagnostics?.type || 'normal',
+            targetFloor: prepared.targetFloor ?? -1,
+            diagnostics: prepared.diagnostics,
+            prepared,
+            status: historyStatus,
+            reason: prepared.skipReason === 'prepared' ? '' : prepared.skipReason || '',
+            recallLogText: report,
+        }));
+        postToFrame({ type: 'RECALL_HISTORY', chatId: ctx?.chatId || '', branchId, entries });
     });
     if (!committedPrompt) return;
 
@@ -2901,6 +2954,20 @@ async function runStorySummaryRecallInterceptor(_interceptorChat, _contextSize, 
                 run.diagnostics.finishedAt ??= performance.now();
                 const failureLog = formatRecallDiagnostics(run.diagnostics, { status: 'failed', reason: failure.issueCode, error });
                 postToFrame({ type: 'RECALL_LOG', text: failureLog });
+                const ctx = getContext();
+                const branchId = worldAuthorityForContext(ctx)?.branchId || '';
+                const entries = recordRecallHistoryEntry(buildRecallHistoryEntry({
+                    chatId: run.chatId || ctx?.chatId || '',
+                    branchId,
+                    type: normalizedType,
+                    targetFloor: Math.max(-1, (ctx?.chat?.length || 0) - 1),
+                    diagnostics: run.diagnostics,
+                    status: 'failed',
+                    reason: failure.issueCode || '',
+                    error,
+                    recallLogText: failureLog,
+                }));
+                postToFrame({ type: 'RECALL_HISTORY', chatId: ctx?.chatId || '', branchId, entries });
                 xbLog.warn(MODULE_ID, failure.notice, error);
                 notifyRecallFailure(failure);
             },
@@ -3285,6 +3352,7 @@ async function handleChatDeleted(chatId) {
     // generation is disabled and the write coordinator has been shut down.
     await waitForVectorWrites();
     await clearChatData(chatId);
+    clearRecallHistory(chatId);
     messageSources.forget(chatId);
 }
 
@@ -3361,7 +3429,7 @@ export function openStoryMemory(floor = Math.max(0, getContext().chat.length - 1
     postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view: 'memory' });
 }
 export function openStoryMemorySettings(view = 'settings') {
-    memoryWorkspaceView = ['proofreading','data'].includes(view) ? view : 'memory';
+    memoryWorkspaceView = ['proofreading', 'data', 'recall', 'settings-memory'].includes(view) ? view : 'memory';
     openPanelForMessage(Math.max(0, getContext().chat.length - 1));
     postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view });
 }

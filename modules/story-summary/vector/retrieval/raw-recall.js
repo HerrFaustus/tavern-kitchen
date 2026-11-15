@@ -28,7 +28,8 @@ export async function recallRawMemory(vectorConfig, { hiddenThrough, focusOnly =
     injectEntities(vocabulary.lexicon, vocabulary.displayMap, vocabulary.blockedTerms);
     const tokenizer = getTokenizerSnapshot();
     const focusCharacters = [...new Set(tokenizer.extractEntities(query))];
-    if (focusOnly) return { ...empty, focusCharacters };
+    const queryPreview = query.slice(0, 180);
+    if (focusOnly) return { ...empty, mode: 'focus-only', reranked: false, queryPreview, focusCharacters };
     const source = captureRangeSource(chat, 0, chat.length - 1);
     const assertCurrent = () => {
         throwIfSignalAborted(signal);
@@ -67,7 +68,9 @@ export async function recallRawMemory(vectorConfig, { hiddenThrough, focusOnly =
         onProgress: event => recordRecallRuntimeProgress(diagnostics, event),
     });
     assertCurrent();
-    recordRecallObservation(diagnostics, 'raw', { phase: 'candidates', mode: queryVector ? 'hybrid' : 'keyword', documentCount: result.stats.documents });
+    const mode = queryVector ? 'hybrid' : 'keyword';
+    let reranked = false;
+    recordRecallObservation(diagnostics, 'raw', { phase: 'candidates', mode, documentCount: result.stats.documents });
     // One bounded pool; no event/floor rerank or graph expansion.
     if (vectorConfig.rerankApi?.key && result.chunks.length > 1) {
         if (diagnostics) diagnostics.stage = 'raw-rerank';
@@ -78,10 +81,11 @@ export async function recallRawMemory(vectorConfig, { hiddenThrough, focusOnly =
             const scores = new Map(ranked.results.filter(item => Number.isFinite(item.relevance_score)).map(item => [item.index, item.relevance_score]));
             result.chunks = result.chunks.map((chunk, index) => ({ ...chunk, _rerankScore: scores.get(index) ?? 0 }))
                 .sort((a, b) => b._rerankScore - a._rerankScore || b._score - a._score);
+            reranked = true;
         } catch (error) {
             assertCurrent();
             recordRecallFallback(diagnostics, 'raw-rerank', error);
         }
     }
-    return { ...result, focusCharacters, source };
+    return { ...result, mode, reranked, queryPreview, focusCharacters, source };
 }

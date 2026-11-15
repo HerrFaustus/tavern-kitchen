@@ -1,6 +1,5 @@
 import { watchChapterSaves } from '../modules/story-summary/maintenance/notification.js';
 import { createModuleEvents, event_types } from './event-manager.js';
-import { panelEnabled } from './panel-policy.js';
 import { requireAgent } from './panel-controls.js';
 import { registerGenerateInterceptor, unregisterGenerateInterceptor } from '../shared/common/generate-interceptor.js';
 import { getChatIdentity } from '../modules/story-summary/data/chat-identity.js';
@@ -11,19 +10,18 @@ import { generateFeatureText } from '../modules/text-api/host.js';
 import { createChapterProcessing } from './chapter-processing.js';
 
 export function floorTasks(settings) {
-    if (!settings.enabled) return [];
-    const world = settings.xiaobaiOs?.apps?.world || {}, map = settings.xiaobaiOs?.apps?.map || {};
+    const world = settings?.xiaobaiOs?.apps?.world || {};
     const tasks = [];
-    const add = (key, group, enabled, label = taskDefinitions[key]?.[0]) => { if (enabled) tasks.push({ key, group, label }); };
-    for (const key of ['memory', 'overview', 'people', 'places', 'situation', 'suspense', 'clues']) add(key, 'update', panelEnabled(key));
-    add('peopleEvolution','simulation',settings.xiaobaiOs?.enabled && world.peopleEvolution);
-    for (const key of ['subscribed','sceneryEvolution']) add(key,'simulation',settings.xiaobaiOs?.enabled && world[key]);
-    if (settings.xiaobaiOs?.enabled && ['occasional','lively'].includes(world.encounterFrequency)) {
-        tasks.push({key:'encounter',group:'simulation',label:taskDefinitions.encounter[0],frequency:world.encounterFrequency});
+    const add = (key, group, label = taskDefinitions[key]?.[0]) => tasks.push({ key, group, label });
+    for (const key of ['memory', 'overview', 'people', 'places', 'situation', 'suspense', 'clues']) add(key, 'update');
+    for (const key of ['peopleEvolution', 'subscribed', 'sceneryEvolution']) add(key, 'simulation');
+    const frequency = world.encounterFrequency ?? 'occasional';
+    if (['occasional', 'lively'].includes(frequency)) {
+        tasks.push({ key: 'encounter', group: 'simulation', label: taskDefinitions.encounter[0], frequency });
     }
-    add('mapEvolution','simulation',settings.xiaobaiOs?.enabled && map.autoMaintenance);
-    add('review','review',panelEnabled('proofreading'),'校对');
-    add('chapter','chapter',panelEnabled('proofreading') || panelEnabled('planner') && settings.enaPlanner?.onChapter,'章节整理');
+    add('mapEvolution', 'simulation');
+    add('review', 'review', '校对');
+    add('chapter', 'chapter', '章节整理');
     return tasks;
 }
 
@@ -33,21 +31,24 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
         const ctx = getContext(), chat = ctx.chat || [];
         return { owner: getChatIdentity(ctx), playerName:ctx.name1, chat, end: getSummarySourceEnd(chat, Math.min(chat.length - 1, streamStart ?? Infinity)) };
     };
-    const plannerEnabled = () => panelEnabled('planner') && settings.enaPlanner?.onChapter;
+    const plannerEnabled = () => true;
     const chapter = createChapterProcessing({read, memory, requireUpdate:() => requireAgent('update'),
-        reviewEnabled:() => panelEnabled('proofreading'), plannerEnabled,
+        reviewEnabled:() => true, plannerEnabled,
         writeChapter:(source, signal) => planner().onChapter(signal, source.end)});
     function render(info) {
         failure = info?.error ? info : null;
         statusNode?.remove(); statusNode = null;
         if (!info) return;
-        statusNode = document.createElement('div'); statusNode.id = 'tk-floor-status'; statusNode.setAttribute('role','status');
-        const title = document.createElement('span'); title.textContent = `后厨 · 第 ${info.floor + 1} 楼 · ${info.message}`; statusNode.append(title);
+        statusNode = document.createElement('div'); statusNode.id = 'tk-floor-status'; statusNode.setAttribute('role', info.error ? 'alert' : 'status');
+        const hasChat = (getContext().chat || []).length > 0;
+        const title = document.createElement('span');
+        title.textContent = hasChat ? `后厨 · 第 ${info.floor + 1} 楼 · ${info.message}` : `后厨 · ${info.message}`;
+        statusNode.append(title);
         const button = (label, action) => { const b = document.createElement('button'); b.type='button'; b.className='menu_button'; b.textContent=label;
             b.addEventListener('click', () => { Promise.resolve().then(action).catch(e => { title.textContent=e.message; }); }); statusNode.append(b); };
         if (info.error) {
             button('重试本楼', () => queue.settle());
-            button(info.error.agent ? '前往 API' : '查看恢复', () => info.error.agent ? workspace.visitBinding(info.error.agent) : workspace.open('data'));
+            button(info.error.agent ? '前往设置' : '查看恢复', () => info.error.agent ? workspace.visitBinding(info.error.agent) : workspace.open('data'));
             const entry = memory.getPublishedSummaryStore()?.floorWork?.[info.floor];
             for (const [id, item] of Object.entries(entry?.review || {})) {
                 if (entry.decisions?.[id] === 'rejected') continue;
@@ -70,10 +71,24 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
         save: memory.saveFloorWork, getService: () => archive().service, requireAgent, generate:generateFeatureText,
         review:memory.floorReview, chapter, status:render });
     const kick = () => { const ticket=++batch; queueMicrotask(() => { if (ticket === batch && !failure && archive() && streamStart === null) queue.settle().catch(error => { if (error.name !== 'AbortError' && !failure) console.warn('[TavernKitchen] 逐楼处理已中断',error); }); }); };
-    const settingsChanged = () => { queue.invalidate(); kick(); };
+    const settingsChanged = () => { failure = null; statusNode?.remove(); statusNode = null; queue.invalidate(); kick(); };
     const events = createModuleEvents('ordered-floors');
     registerGenerateInterceptor('ordered-floors', async (_chat, _size, abort, type) => {
-        if (['normal','continue','regenerate','swipe','group'].includes(type || 'normal')) await queue.beforeGeneration(abort);
+        if (!['normal','continue','regenerate','swipe','group'].includes(type || 'normal')) return;
+        // WHY: Check required agents before queue.beforeGeneration so an unconfigured-agent block
+        // fails closed immediately instead of pausing generation indefinitely while waiting to resume.
+        try {
+            await requireAgent('update');
+            await requireAgent('simulation');
+        } catch (error) {
+            const floor = Math.max(0, (getContext().chat || []).length - 1);
+            render({ floor, message: error.message, error });
+            abort();
+            return;
+        }
+        let aborted = false;
+        await queue.beforeGeneration(() => { aborted = true; abort(); });
+        if (aborted) return;
     }, 0);
     events.on(event_types.GENERATION_STARTED, (type,_params,dry) => {
         if (dry || ['quiet','impersonate'].includes(type)) return;
@@ -90,7 +105,7 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
     });
     events.on(event_types.GENERATION_STOPPED, () => { queue.cancelGeneration(); });
     window.addEventListener('tavernKitchen:floor-settings', settingsChanged);
-    const stopChapter = watchChapterSaves({ enabled:() => panelEnabled('planner') && settings.enaPlanner?.onChapter, changed:kick });
+    const stopChapter = watchChapterSaves({ enabled:() => true, changed:kick });
     window.addEventListener('tavernKitchen:summary-saved', kick);
     kick();
     return { settingsChanged, dispose() { queue.cancelGeneration(); queue.invalidate(); batch++; events.cleanup();

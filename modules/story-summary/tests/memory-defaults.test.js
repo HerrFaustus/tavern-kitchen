@@ -91,5 +91,5 @@ test('five-turn defaults and explicit overrides survive normalized storage', asy
     assert.equal(saved.ui.keepVisibleCount, 4);
     assert.equal(saved.ui.recallEarlyOriginal, true);
     assert.equal(saved.proofreadingInterval, 2);
-    assert.equal(saved.memoryMaintenanceEnabled, false);
+    assert.equal(saved.memoryMaintenanceEnabled, true);
 });

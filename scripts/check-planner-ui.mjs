@@ -24,7 +24,7 @@ async function inspect(doc, width, createPlannerSettings) {
         prepare: () => { manual++; },
         retry: () => { retries++; },
     });
-    const prepare = controls.querySelector('[data-prepare-note]'), retry = controls.querySelector('.tk-planner-controls button');
+    const prepare = controls.querySelector('[data-prepare-note]'), retry = controls.querySelector('.tk-planner-controls button:not([data-prepare-note])');
     prepare.click();
     view.status('等待正文生成', false);
     const initiallyHidden = retry.hidden;

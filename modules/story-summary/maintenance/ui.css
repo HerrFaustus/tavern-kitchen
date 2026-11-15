@@ -1,11 +1,10 @@
-#tab-agent { color: var(--txt); font-size: .875rem; line-height: 1.65; }
-#memory-agent-tab { font: inherit; background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 0; text-transform: none; letter-spacing: 0; }
-#memory-agent-tab.active { border-bottom-color: var(--hl); }
-#tab-agent [hidden] { display: none !important; }
-#tab-agent button { font: inherit; cursor: pointer; }
-#tab-agent button:disabled { opacity: .5; cursor: default; }
-#tab-agent :focus-visible { outline: 2px solid var(--hl); outline-offset: 4px; }
-#tab-agent summary { cursor: pointer; }
+#proofreading-page { color: var(--txt); font-size: .875rem; line-height: 1.65; }
+#proofreading-page [hidden] { display: none !important; }
+#proofreading-page button { font: inherit; cursor: pointer; }
+#proofreading-page button:disabled { opacity: .5; cursor: default; }
+#proofreading-page :focus-visible { outline: 2px solid var(--hl); outline-offset: 4px; }
+#proofreading-page summary { cursor: pointer; }
+.memory-actions-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .memory-proof-field { display: grid; gap: 4px; margin-block: 12px; }
 .memory-proof-field textarea { width: 100%; box-sizing: border-box; resize: vertical; }
 .memory-proof-field input { width: 6em; }
@@ -145,7 +144,7 @@ body:has(#settings-modal.assistant-page.active) { overflow: hidden; }
     .memory-source-note { padding-inline: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
-    #tab-agent { animation: none; }
+    #proofreading-page { animation: none; }
 }
 .memory-ranges { min-width: 0; margin: .75rem 0; font-size: .9em; }
 .memory-ranges[hidden] { display: none; }

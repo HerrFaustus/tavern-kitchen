@@ -4,36 +4,32 @@ import { element, button, disclosure } from './ui-elements.js';
 import { createOperationList } from './operation-list.js';
 import { reportMarkdown } from './report-markdown.js';
 import { createMemoryChatDialog } from './chat-ui.js';
-import { memoryChatErrorText } from './chat-copy.js';
+import { MEMORY_CHAT_COPY, memoryChatErrorText } from './chat-copy.js';
 import { createMaintenanceRangeView } from './range-view.js';
 
-export function createMemoryMaintenancePage(root, send) {
+export function createMemoryMaintenancePage(root, send, { settingsHost = null } = {}) {
     let chatId = null;
     let next = null;
     let runIds = [];
     let requestSequence = 0;
     let sourceRequest = null;
     const chat = createMemoryChatDialog({ send });
-    const authorization = element('section', 'memory-settings');
-    authorization.dataset.settingSection = 'function';
-    authorization.open = true;
-    const label = element('label', 'memory-authorization');
-    const toggle = element('input');
-    toggle.type = 'checkbox';
-    toggle.id = 'memory-maintenance-enabled';
-    toggle.setAttribute('role', 'switch');
-    label.append(element('span', 'memory-authorization-title', copy.toggle), element('small', '', copy.scope), toggle);
     const frequency = element('label', 'memory-proof-field', '自动校对频率（每几轮正文校对一次）');
     const interval = element('input');
+    interval.id = 'proofreading-interval';
     interval.type = 'number'; interval.min = '1'; interval.max = '100'; interval.value = '5';
     frequency.append(interval);
     const settingsState = element('p', 'memory-settings-state');
     settingsState.setAttribute('role', 'status');
-    authorization.append(label, element('p', 'memory-hint', copy.behavior), frequency, settingsState);
+    const settingsTarget = settingsHost || element('section', 'memory-settings');
+    settingsTarget.append(frequency, element('p', 'memory-hint', copy.behavior), settingsState);
+    const chatButton = button(MEMORY_CHAT_COPY.entry, () => chat.open());
+    chatButton.className = 'btn memory-chat-entry';
     const cancel = button(copy.cancel, () => send('MEMORY_MAINTENANCE_CANCEL'));
+    const actionsBar = element('div', 'memory-actions-bar');
+    actionsBar.append(chatButton, cancel);
     const recordsHeading = element('div', 'memory-records-heading');
-    recordsHeading.append(element('h3', '', copy.heading));
-    authorization.append(cancel);
+    recordsHeading.append(element('h3', '', copy.heading), actionsBar);
     const state = element('p', 'memory-state');
     state.setAttribute('role', 'status');
     state.setAttribute('aria-live', 'polite');
@@ -42,24 +38,19 @@ export function createMemoryMaintenancePage(root, send) {
     ranges.hidden = true;
     const index = element('div', 'memory-index-state');
     const repair = button(copy.repair, () => { repair.disabled = true; send('MEMORY_MAINTENANCE_REPAIR'); });
-    index.append(element('span', '', copy.indexPending));
-    authorization.append(repair);
+    repair.className = 'btn btn-sm';
+    index.append(element('span', '', copy.indexPending), repair);
+    settingsTarget.append(index);
     const list = element('div', 'memory-results');
     const empty = element('div', 'memory-empty');
-    const emptyHint = element('p');
+    const emptyHint = element('p', '', copy.emptyEnabled);
     empty.append(element('p', 'memory-empty-title', copy.empty), emptyHint);
     const more = button(copy.more, () => { more.disabled = true; send('MEMORY_MAINTENANCE_QUERY', { offset: next }); });
     more.classList.add('memory-more');
     const records = element('section', 'memory-record-view');
-    const controls = element('footer', 'tk-module-settings memory-controls');
-    controls.dataset.kitchenControls = 'proofreading';
-    records.append(recordsHeading, ranges, state, index, list, empty, more);
-    controls.append(authorization);
-    root.append(records, controls);
+    records.append(recordsHeading, ...(settingsHost ? [] : [settingsTarget]), ranges, state, list, empty, more);
+    root.append(records);
     cancel.hidden = index.hidden = repair.hidden = more.hidden = true;
-    const updateEmpty = () => { emptyHint.textContent = toggle.checked ? copy.emptyEnabled : copy.emptyDisabled; };
-    toggle.onchange = () => { settingsState.textContent = ''; updateEmpty(); };
-    updateEmpty();
 
     const reader = element('dialog', 'memory-reader');
     reader.setAttribute('aria-labelledby', 'memory-source-title');
@@ -272,14 +263,13 @@ export function createMemoryMaintenancePage(root, send) {
     }
 
     return {
-        controls,
+        controls: settingsTarget,
         setChat,
-        setEnabled(enabled, config = {}) {
-            toggle.checked = enabled === true; interval.value = String(config.proofreadingInterval || 5);
-            updateEmpty();
+        setEnabled(_enabled, config = {}) {
+            interval.value = String(config.proofreadingInterval || 5);
         },
         getPreferences: () => ({ proofreadingInterval: Math.min(100, Math.max(1, Math.trunc(Number(interval.value)) || 5)) }),
-        getEnabled: () => toggle.checked,
+        getEnabled: () => true,
         settingsSaved(success) { settingsState.textContent = success ? copy.settingsSaved : copy.settingsFailed; },
         open() { state.textContent = copy.loading; send('MEMORY_MAINTENANCE_QUERY'); },
         openChat() { chat.open(); },
@@ -321,7 +311,6 @@ export function createMemoryMaintenancePage(root, send) {
                 state.textContent = ownsAction ? progress : [state.textContent, progress].filter(Boolean).join(' · ');
             }
             state.dataset.status = data.state?.status || 'idle';
-            updateEmpty();
             cancel.hidden = !running;
             cancel.disabled = data.state?.status === 'saving';
             repair.disabled = running || blocked;

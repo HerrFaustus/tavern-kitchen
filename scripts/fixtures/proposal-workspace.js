@@ -64,8 +64,7 @@ export async function mountFixture() {
         if (view === 'world') archive.showProposals(frame);
         if (view === 'data') archive.showRecovery(frame);
     }
-    workspace.configure({ actions:{situation:()=>openView('world'),people:()=>openView('people'),data:()=>openView('data')},
-        panelSwitch:()=>({enabled:true,label:'启用局势',change(){}}) });
+    workspace.configure({ actions:{situation:()=>openView('world'),people:()=>openView('people'),data:()=>openView('data')} });
     globalThis.fixture = {workspace,archive,service,errors,chat,read:async()=>{const next=await service.read();
         return {worldId:next.worldId,branchId:next.branchId,version:next.version,entities:next.entities,updates:worldUpdates(next),receipts:next.receipts};}};
     await workspace.open('situation');

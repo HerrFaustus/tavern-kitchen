@@ -65,9 +65,9 @@ export function createRecallReuse() {
             && ticket.chatLength === context.chat.length;
     }
 
-    function adopt(ticket, context, { text, boundary, role, report }) {
+    function adopt(ticket, context, { text, boundary, role, report, recallTrace = null }) {
         if (!isCurrent(ticket, context)) return false;
-        memory = Object.freeze({ ...bindingOf(ticket), text, boundary, role, report });
+        memory = Object.freeze({ ...bindingOf(ticket), text, boundary, role, report, recallTrace });
         return true;
     }
 

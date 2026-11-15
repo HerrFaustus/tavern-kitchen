@@ -61,7 +61,7 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     }, true);
     const evolutionSettings = document.querySelector('.tk-workspace-controls .tk-evolution section');
     assert.ok(evolutionSettings);
-    assert.equal(evolutionSettings.querySelector('h5').textContent, '演化设置');
+    assert.equal(evolutionSettings.querySelector('h5').textContent, '演化');
     assert.equal(evolutionSettings.querySelector('details'), null);
     assert.ok(evolutionSettings.querySelector('input'));
 
@@ -109,17 +109,20 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     assert.equal(document.querySelector('[data-route="clues"]').textContent, '剧情线');
     assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '校对');
     assert.equal(getKitchenMount('proofreading'), getKitchenMount('memory'));
-    await workspace.open('memory-settings');
+    await workspace.open('recall');
     assert.equal(document.querySelector('[aria-selected="true"]').textContent, '剧情');
-    assert.equal(document.querySelector('[data-route="clues"]').textContent, '剧情线');
+    assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '召回');
+    assert.equal(getKitchenMount('recall'), getKitchenMount('memory'));
+    await workspace.open('memory-settings');
+    assert.equal(document.querySelector('[aria-selected="true"]').textContent, '设置');
     assert.equal(getKitchenMount('memory-settings'), getKitchenMount('memory'));
-    assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '总结');
-    assert.equal(document.querySelector('.tk-subnav [data-route="memory"]').textContent, '总结');
+    assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '剧情与召回');
+    assert.equal(document.querySelector('.tk-subnav [data-route="settings"]').textContent, 'API');
     await workspace.open('agent-api');
-    assert.equal(document.querySelector('[aria-selected="true"]').textContent, 'API');
+    assert.equal(document.querySelector('[aria-selected="true"]').textContent, '设置');
     assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, 'API');
-    assert.equal(document.querySelector('.tk-subnav').hidden, true);
-    assert.equal(document.querySelector('.tk-subnav [data-route="memory-settings"]'), null);
+    assert.equal(document.querySelector('.tk-subnav').hidden, false);
+    assert.ok(document.querySelector('.tk-subnav [data-route="settings-memory"]'));
     await workspace.open('planner');
     await setImmediate();
     assert.match(getKitchenMount('planner').textContent, /请先启用规划/);
@@ -147,8 +150,8 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     const initialize = [...panel.querySelectorAll('button')].find(button => button.textContent === '生成世界');
     initialize.click(); await setImmediate();
     assert.equal(initializations,1);
-    assert.ok(initialize.closest('.tk-workspace-controls'));
-    assert.equal(getKitchenMount('opening').querySelector('button'), null);
+    assert.ok(getKitchenMount('opening').contains(initialize));
+    assert.equal(document.querySelector('.tk-workspace-controls').hidden, true);
     assert.match(getKitchenMount('opening').textContent,/开局资料已保存/);
     const enabled = new Set(['map','settings']);
     workspace.configure({actions:{map(){}},visiblePanel:id=>enabled.has(id)});

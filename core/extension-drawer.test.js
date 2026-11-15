@@ -26,45 +26,28 @@ test('extension entry uses the native inline drawer and opens the workspace', ()
     assert.equal(opened, 1);
 });
 
-test('each panel can be enabled in place, even when all panels are off', async () => {
-    const { document, Event } = parseHTML('<html><body><div id="top-settings-holder"></div></body></html>');
-    const workspace = createKitchenWorkspace({documentTarget:document});
-    const enabled = new Set();
+test('all panels open directly without panel switches and show the native titlebar', async () => {
+    const { document } = parseHTML('<html><body><div id="top-settings-holder"></div></body></html>');
+    const workspace = createKitchenWorkspace({ documentTarget: document });
     let opens = 0;
-    function configure() {
-        workspace.configure({
-            visiblePanel:() => true,
-            actions:{map:() => { opens++; }},
-            panelSwitch:(id, label) => ({
-                enabled:enabled.has(id), label:'启用' + label,
-                change:checked => { if (checked) enabled.add(id); else enabled.delete(id); configure(); },
-            }),
-        });
-    }
-    configure();
+    workspace.configure({
+        visiblePanel: () => true,
+        actions: { map: () => { opens++; }, people: () => { opens++; } },
+    });
     await workspace.open('map');
     const page = document.querySelector('[role="tabpanel"]');
-    const toggle = () => page.querySelector('[data-panel="map"]');
     const body = page.querySelector('.tk-workspace-body');
     assert.ok(document.querySelector('#tk-workspace.fillRight'));
+    assert.equal(document.querySelector('.tk-workspace-titlebar h3').textContent, '酒馆后厨');
     assert.equal(document.querySelector('.tk-panel-settings'), null);
-    assert.ok(body.previousElementSibling.classList.contains('tk-workspace-controls'));
-    assert.ok(body.previousElementSibling.contains(toggle()), 'module controls remain alongside the readable archive');
-    assert.equal(body.contains(toggle()), false);
-    assert.equal(toggle().getAttribute('aria-label'), '启用地图');
+    assert.equal(page.querySelector('[data-panel]'), null);
     assert.equal(body.hidden, false);
     assert.equal(workspace.isActive('map'), true);
-    await setImmediate(); assert.equal(opens, 1);
-    for (const checked of [true,false,true]) {
-        toggle().checked = checked;
-        toggle().dispatchEvent(new Event('change'));
-        await setImmediate();
-        assert.equal(body.hidden, false);
-        assert.equal(workspace.isActive('map'), true);
-        assert.equal(toggle().checked, checked);
-    }
-    assert.equal(opens, 4);
+    await setImmediate();
+    assert.equal(opens, 1);
     await workspace.open('people');
-    assert.equal(page.querySelector('[data-panel="people"]').checked, false);
+    await setImmediate();
+    assert.equal(opens, 2);
+    assert.equal(workspace.isActive('people'), true);
     assert.equal(body.hidden, false);
 });

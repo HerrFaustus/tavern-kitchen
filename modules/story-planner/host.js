@@ -12,7 +12,7 @@ import { subscribeWorldSources } from '../world-records/sources.js';
 import { createPlannerSettings } from './settings-view.js';
 
 const ID = 'kitchen-chapter-note';
-export function installPlanner({snapshot, loadSnapshot, isVisible = () => true, getContext, settings = {}, saveSettings, enabled = () => true, checkBinding, visitBinding}) {
+export function installPlanner({snapshot, loadSnapshot, isVisible = () => true, getContext, settings = {}, enabled = () => true, checkBinding, visitBinding}) {
     let message = '', canRetry = false, view, viewVersion = 0, queued = false, loading = 0, refreshPending = false, disposed = false;
     const status = (text, retryable = false) => {
         message = text;
@@ -87,25 +87,12 @@ export function installPlanner({snapshot, loadSnapshot, isVisible = () => true, 
     }, GENERATE_INTERCEPTOR_ORDER.STORY_PLANNER);
     return {
         cancel() { reset(); },
-        async open(root, controlsRoot) {
+        async open(root) {
             viewVersion++;
             view?.removeControls();
+            settings.onChapter = true;
             view = createPlannerSettings(root, {
-                controlsRoot, enabled:enabled(), visitBinding,
-                autoPrepare: settings.onChapter === true,
-                async setAutoPrepare(enabled) {
-                    if (enabled) await checkBinding?.();
-                    const previous = settings.onChapter === true;
-                    settings.onChapter = enabled;
-                    if (!enabled) reset();
-                    try {
-                        if (await saveSettings?.() === false) throw new Error();
-                        globalThis.window?.dispatchEvent?.(new Event('tavernKitchen:floor-settings'));
-                    } catch {
-                        settings.onChapter = previous;
-                        throw new Error('编剧设置保存失败，请重试。');
-                    }
-                },
+                enabled:enabled(), visitBinding,
                 async prepare() {
                     await checkBinding?.();
                     await loadSnapshot?.(true);
@@ -128,7 +115,8 @@ export function installPlanner({snapshot, loadSnapshot, isVisible = () => true, 
             }
         },
         async onChapter(signal, end) {
-            if (!enabled() || !settings.onChapter) return;
+            if (!enabled()) return;
+            settings.onChapter = true;
             await checkBinding?.(); await loadSnapshot?.(true); writer.retry();
             if (!await writer.prepare(signal, end)) throw new Error('编剧札记尚未保存，请重试');
         },

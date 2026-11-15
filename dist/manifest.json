@@ -1,16 +1,16 @@
 {
-  "buildId": "624afd7a34e4bfc4952a",
+  "buildId": "178020e5a26b99722abb",
   "entries": {
     "apps/debug-panel": {
       "file": "apps/debug-panel-D8bR9Oy2.js",
       "css": []
     },
     "apps/story-summary": {
-      "file": "apps/story-summary-CqDz1WAq.js",
+      "file": "apps/story-summary-CmhWmkRD.js",
       "css": []
     },
     "apps/xiaobai-os": {
-      "file": "apps/xiaobai-os-0vMh3y7C.js",
+      "file": "apps/xiaobai-os-MXsyVjN5.js",
       "css": [
         "assets/xiaobai-os-BSXWZSzi.css"
       ]
@@ -46,17 +46,17 @@
       "dynamicImports": [],
       "css": []
     },
-    "apps/story-summary-CqDz1WAq.js": {
+    "apps/story-summary-CmhWmkRD.js": {
       "imports": [
         "shared/rolldown-runtime-CRqgUL4m.js",
-        "shared/domain-D9URl-a9.js",
-        "shared/config-local-cache-CTPyMzgc.js",
+        "shared/domain-Dbs6jYjX.js",
+        "shared/config-local-cache-DtgwBxL-.js",
         "shared/error-guidance-C2BGPK8o.js"
       ],
       "dynamicImports": [],
       "css": []
     },
-    "apps/xiaobai-os-0vMh3y7C.js": {
+    "apps/xiaobai-os-MXsyVjN5.js": {
       "imports": [
         "shared/async-errors-DrD0vbna.js",
         "shared/preload-helper-Ddh_c1lL.js",
@@ -66,8 +66,8 @@
         "shared/frame-bridge-B7v1o_ZS.js"
       ],
       "dynamicImports": [
-        "shared/AgentApiApp-Byk8CJKP.js",
-        "shared/MapApp-BfjVt0VZ.js",
+        "shared/AgentApiApp-D2wMFE--.js",
+        "shared/MapApp-DsYaRATZ.js",
         "shared/WorldApp-DV0p18px.js"
       ],
       "css": [
@@ -76,11 +76,11 @@
     },
     "host/plugin.js": {
       "imports": [
-        "shared/kitchen-workspace-PBJ5deXX.js",
+        "shared/kitchen-workspace-D1Soc1vz.js",
         "shared/preload-helper-Ddh_c1lL.js"
       ],
       "dynamicImports": [
-        "shared/kitchen-runtime-CYNDXEde.js"
+        "shared/kitchen-runtime-ws7QnrWR.js"
       ],
       "css": []
     },
@@ -129,18 +129,18 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/AgentApiApp-Byk8CJKP.js": {
+    "shared/AgentApiApp-D2wMFE--.js": {
       "imports": [
         "shared/runtime-core.esm-bundler-cPpmfXNb.js",
         "shared/provider-resolution-B6AkEyAZ.js",
-        "shared/profiles-NpsBV0Pk.js"
+        "shared/profiles-6e-OdkvB.js"
       ],
       "dynamicImports": [],
       "css": [
         "assets/AgentApiApp-IZRlz_yy.css"
       ]
     },
-    "shared/MapApp-BfjVt0VZ.js": {
+    "shared/MapApp-DsYaRATZ.js": {
       "imports": [
         "shared/types-DTobQMoL.js",
         "shared/runtime-core.esm-bundler-cPpmfXNb.js",
@@ -149,7 +149,7 @@
       ],
       "dynamicImports": [],
       "css": [
-        "assets/MapApp-DYN0GsYn.css"
+        "assets/MapApp-BbNnikY4.css"
       ]
     },
     "shared/WorldApp-DV0p18px.js": {
@@ -181,9 +181,9 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/config-local-cache-CTPyMzgc.js": {
+    "shared/config-local-cache-DtgwBxL-.js": {
       "imports": [
-        "shared/domain-D9URl-a9.js"
+        "shared/domain-Dbs6jYjX.js"
       ],
       "dynamicImports": [],
       "css": []
@@ -203,7 +203,7 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/domain-D9URl-a9.js": {
+    "shared/domain-Dbs6jYjX.js": {
       "imports": [
         "shared/rolldown-runtime-CRqgUL4m.js",
         "shared/types-DTobQMoL.js"
@@ -231,22 +231,22 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/gateway-ClKif8Sv.js": {
+    "shared/gateway-DPQ7LUsH.js": {
       "imports": [
         "shared/preload-helper-Ddh_c1lL.js",
         "shared/provider-resolution-B6AkEyAZ.js",
-        "shared/repository-BEdo_6eW.js",
+        "shared/repository-DyQWCxcZ.js",
         "shared/server-storage-CpwqPa7Y.js",
-        "shared/profile-runtime-CPQ_YNrr.js"
+        "shared/profile-runtime-sJP4v8ol.js"
       ],
       "dynamicImports": [
         "runtime/os-agent-4Bfgl_96.js"
       ],
       "css": []
     },
-    "shared/generation-host-_JwRK5I4.js": {
+    "shared/generation-host-B782iyOr.js": {
       "imports": [
-        "shared/kitchen-runtime-CYNDXEde.js",
+        "shared/kitchen-runtime-ws7QnrWR.js",
         "shared/recall-policy-wraHLbFW.js"
       ],
       "dynamicImports": [],
@@ -259,30 +259,30 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/host-2PmK6Uo6.js": {
+    "shared/host-BA20w7M1.js": {
       "imports": [
-        "shared/kitchen-runtime-CYNDXEde.js"
+        "shared/kitchen-runtime-ws7QnrWR.js"
       ],
       "dynamicImports": [],
       "css": []
     },
-    "shared/host-DGEPPlRy.js": {
-      "imports": [
-        "shared/domain-D9URl-a9.js",
-        "shared/profiles-NpsBV0Pk.js",
-        "shared/kitchen-runtime-CYNDXEde.js",
-        "shared/storage-BxeOFfxC.js"
-      ],
-      "dynamicImports": [],
-      "css": []
-    },
-    "shared/host-k6gWzK2z.js": {
+    "shared/host-BgYqMSdE.js": {
       "imports": [
         "shared/async-errors-DrD0vbna.js",
         "shared/event-manager-BErs-i52.js",
-        "shared/profiles-NpsBV0Pk.js",
-        "shared/kitchen-runtime-CYNDXEde.js",
-        "shared/storage-BxeOFfxC.js"
+        "shared/profiles-6e-OdkvB.js",
+        "shared/kitchen-runtime-ws7QnrWR.js",
+        "shared/storage-Bm4ujilW.js"
+      ],
+      "dynamicImports": [],
+      "css": []
+    },
+    "shared/host-Dt1AGzUN.js": {
+      "imports": [
+        "shared/domain-Dbs6jYjX.js",
+        "shared/profiles-6e-OdkvB.js",
+        "shared/kitchen-runtime-ws7QnrWR.js",
+        "shared/storage-Bm4ujilW.js"
       ],
       "dynamicImports": [],
       "css": []
@@ -292,14 +292,14 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/kitchen-runtime-CYNDXEde.js": {
+    "shared/kitchen-runtime-ws7QnrWR.js": {
       "imports": [
         "shared/rolldown-runtime-CRqgUL4m.js",
         "shared/constants-CF4HAj3B.js",
         "shared/async-errors-DrD0vbna.js",
-        "shared/kitchen-workspace-PBJ5deXX.js",
+        "shared/kitchen-workspace-D1Soc1vz.js",
         "shared/preload-helper-Ddh_c1lL.js",
-        "shared/domain-D9URl-a9.js",
+        "shared/domain-Dbs6jYjX.js",
         "shared/types-DTobQMoL.js",
         "shared/descriptor-BEqI4vD-.js",
         "shared/provider-resolution-B6AkEyAZ.js",
@@ -307,25 +307,25 @@
         "shared/protocol-Dz_gWSp9.js",
         "shared/debug-core-BiaGo9yA.js",
         "shared/event-manager-BErs-i52.js",
-        "shared/profiles-NpsBV0Pk.js",
-        "shared/repository-BEdo_6eW.js",
-        "shared/runtime-RVckZfn5.js",
+        "shared/profiles-6e-OdkvB.js",
+        "shared/repository-DyQWCxcZ.js",
+        "shared/runtime-iJikydIX.js",
         "shared/hierarchy-Dy5mpabT.js"
       ],
       "dynamicImports": [
-        "shared/repository-BEdo_6eW.js",
-        "shared/streaming-generation-D4EgP-s0.js",
-        "shared/gateway-ClKif8Sv.js",
-        "shared/host-2PmK6Uo6.js",
-        "shared/profile-service-DyY93js3.js",
-        "shared/story-summary-DuLTd_oj.js",
-        "shared/host-k6gWzK2z.js",
-        "shared/host-DGEPPlRy.js",
-        "shared/generation-host-_JwRK5I4.js"
+        "shared/repository-DyQWCxcZ.js",
+        "shared/streaming-generation-BIG1NM5p.js",
+        "shared/gateway-DPQ7LUsH.js",
+        "shared/host-BA20w7M1.js",
+        "shared/profile-service-DYH3suNv.js",
+        "shared/story-summary-Czb9f29L.js",
+        "shared/host-BgYqMSdE.js",
+        "shared/host-Dt1AGzUN.js",
+        "shared/generation-host-B782iyOr.js"
       ],
       "css": []
     },
-    "shared/kitchen-workspace-PBJ5deXX.js": {
+    "shared/kitchen-workspace-D1Soc1vz.js": {
       "imports": [
         "shared/constants-CF4HAj3B.js",
         "shared/async-errors-DrD0vbna.js"
@@ -353,26 +353,26 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/profile-runtime-CPQ_YNrr.js": {
+    "shared/profile-runtime-sJP4v8ol.js": {
       "imports": [
         "shared/preload-helper-Ddh_c1lL.js",
         "shared/provider-resolution-B6AkEyAZ.js",
-        "shared/profiles-NpsBV0Pk.js",
-        "shared/runtime-RVckZfn5.js"
+        "shared/profiles-6e-OdkvB.js",
+        "shared/runtime-iJikydIX.js"
       ],
       "dynamicImports": [
         "shared/server-storage-CpwqPa7Y.js"
       ],
       "css": []
     },
-    "shared/profile-service-DyY93js3.js": {
+    "shared/profile-service-DYH3suNv.js": {
       "imports": [
-        "shared/kitchen-runtime-CYNDXEde.js"
+        "shared/kitchen-runtime-ws7QnrWR.js"
       ],
       "dynamicImports": [],
       "css": []
     },
-    "shared/profiles-NpsBV0Pk.js": {
+    "shared/profiles-6e-OdkvB.js": {
       "imports": [
         "shared/provider-resolution-B6AkEyAZ.js"
       ],
@@ -407,11 +407,11 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/repository-BEdo_6eW.js": {
+    "shared/repository-DyQWCxcZ.js": {
       "imports": [
         "shared/rolldown-runtime-CRqgUL4m.js",
         "shared/preload-helper-Ddh_c1lL.js",
-        "shared/profiles-NpsBV0Pk.js"
+        "shared/profiles-6e-OdkvB.js"
       ],
       "dynamicImports": [
         "shared/server-storage-CpwqPa7Y.js"
@@ -421,19 +421,6 @@
     "shared/rolldown-runtime-CRqgUL4m.js": {
       "imports": [],
       "dynamicImports": [],
-      "css": []
-    },
-    "shared/runtime-RVckZfn5.js": {
-      "imports": [
-        "shared/preload-helper-Ddh_c1lL.js",
-        "shared/provider-resolution-B6AkEyAZ.js",
-        "shared/model-list-CIBuoYcO.js",
-        "shared/profiles-NpsBV0Pk.js",
-        "shared/abort-utils-C76zWFGO.js"
-      ],
-      "dynamicImports": [
-        "shared/provider-config-j2Y6mUZw.js"
-      ],
       "css": []
     },
     "shared/runtime-core.esm-bundler-cPpmfXNb.js": {
@@ -448,6 +435,19 @@
       "dynamicImports": [],
       "css": []
     },
+    "shared/runtime-iJikydIX.js": {
+      "imports": [
+        "shared/preload-helper-Ddh_c1lL.js",
+        "shared/provider-resolution-B6AkEyAZ.js",
+        "shared/model-list-CIBuoYcO.js",
+        "shared/profiles-6e-OdkvB.js",
+        "shared/abort-utils-C76zWFGO.js"
+      ],
+      "dynamicImports": [
+        "shared/provider-config-j2Y6mUZw.js"
+      ],
+      "css": []
+    },
     "shared/server-storage-CpwqPa7Y.js": {
       "imports": [
         "shared/rolldown-runtime-CRqgUL4m.js",
@@ -457,35 +457,35 @@
       "dynamicImports": [],
       "css": []
     },
-    "shared/storage-BxeOFfxC.js": {
+    "shared/storage-Bm4ujilW.js": {
       "imports": [
-        "shared/domain-D9URl-a9.js",
-        "shared/kitchen-runtime-CYNDXEde.js"
+        "shared/domain-Dbs6jYjX.js",
+        "shared/kitchen-runtime-ws7QnrWR.js"
       ],
       "dynamicImports": [],
       "css": []
     },
-    "shared/story-summary-DuLTd_oj.js": {
+    "shared/story-summary-Czb9f29L.js": {
       "imports": [
         "shared/constants-CF4HAj3B.js",
         "shared/async-errors-DrD0vbna.js",
-        "shared/kitchen-workspace-PBJ5deXX.js",
+        "shared/kitchen-workspace-D1Soc1vz.js",
         "shared/preload-helper-Ddh_c1lL.js",
-        "shared/domain-D9URl-a9.js",
-        "shared/config-local-cache-CTPyMzgc.js",
+        "shared/domain-Dbs6jYjX.js",
+        "shared/config-local-cache-DtgwBxL-.js",
         "shared/provider-resolution-B6AkEyAZ.js",
         "shared/openai-compatible-replay-policy-CcYlJbst.js",
         "shared/client-CIqCZa4d.js",
         "shared/protocol-Dz_gWSp9.js",
         "shared/debug-core-BiaGo9yA.js",
         "shared/event-manager-BErs-i52.js",
-        "shared/profiles-NpsBV0Pk.js",
-        "shared/repository-BEdo_6eW.js",
-        "shared/runtime-RVckZfn5.js",
+        "shared/profiles-6e-OdkvB.js",
+        "shared/repository-DyQWCxcZ.js",
+        "shared/runtime-iJikydIX.js",
         "shared/abort-utils-C76zWFGO.js",
-        "shared/kitchen-runtime-CYNDXEde.js",
+        "shared/kitchen-runtime-ws7QnrWR.js",
         "shared/server-storage-CpwqPa7Y.js",
-        "shared/profile-runtime-CPQ_YNrr.js",
+        "shared/profile-runtime-sJP4v8ol.js",
         "shared/recall-policy-wraHLbFW.js",
         "shared/json-candidate-CmEyWwSp.js"
       ],
@@ -494,13 +494,13 @@
       ],
       "css": []
     },
-    "shared/streaming-generation-D4EgP-s0.js": {
+    "shared/streaming-generation-BIG1NM5p.js": {
       "imports": [
         "shared/async-errors-DrD0vbna.js",
         "shared/provider-resolution-B6AkEyAZ.js",
         "shared/debug-core-BiaGo9yA.js",
         "shared/abort-utils-C76zWFGO.js",
-        "shared/kitchen-runtime-CYNDXEde.js",
+        "shared/kitchen-runtime-ws7QnrWR.js",
         "shared/json-candidate-CmEyWwSp.js"
       ],
       "dynamicImports": [],

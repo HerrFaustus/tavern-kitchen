@@ -15,10 +15,12 @@ test('deployment paths survive a shallow source checkout and a renamed install d
     assert.throws(() => hostPathForImport(path.join(pluginRoot, 'plugin-entry.js'), '../../../../../../private.json'));
 });
 
-test('new installs leave autonomous model calls disabled and the shipped app set contains no removed products', () => {
+test('new installs keep core modules enabled without legacy removed products', () => {
     const defaults = createDefaultXiaobaiOsSettings();
-    assert.equal(defaults.apps.map.autoMaintenance, false);
-    assert.equal(defaults.apps.world.subscribed, false);
+    assert.equal(defaults.apps.map.autoMaintenance, true);
+    assert.equal(defaults.apps.world.subscribed, true);
+    assert.equal(defaults.apps.world.peopleEvolution, true);
+    assert.equal(defaults.apps.world.sceneryEvolution, true);
     const host = JSON.parse(fs.readFileSync(path.join(pluginRoot, 'modules/xiaobai-os/host/app-catalog.json')));
     const shell = JSON.parse(fs.readFileSync(path.join(pluginRoot, 'modules/xiaobai-os/shell/app-catalog.json')));
     assert.deepEqual(new Set(host), new Set(['map', 'world', 'agent-api']));

@@ -247,7 +247,19 @@ export async function buildVectorPromptText(excludeLastAi = false, options = {})
     const finish = (text, reason = '') => {
         diagnostics.reason = reason;
         diagnostics.finishedAt ??= performance.now();
-        return { text, notice: null, diagnostics,
+        const recallTrace = recallResult ? {
+            mode: recallResult.mode || (assembly ? 'hybrid' : 'none'),
+            reranked: Boolean(recallResult.reranked),
+            queryPreview: recallResult.queryPreview || '',
+            focusCharacters: recallResult.focusCharacters || [],
+            hiddenThrough: meta?.hiddenThrough ?? -1,
+            backgroundItems: assembly?.backgroundItems ?? 0,
+            includedBackgroundItems: assembly?.includedBackgroundItems ?? 0,
+            rawBudgetUsed: assembly?.rawBudgetUsed ?? 0,
+            rawBudgetMax: assembly?.rawBudgetMax ?? 3000,
+            chunks: assembly?.traceChunks || [],
+        } : null;
+        return { text, notice: null, diagnostics, recallTrace,
             ...(captureEvidenceTrace ? { observation: { recallResult, meta, assembly } } : {}) };
     };
     if (!getSettings().storySummary?.enabled) return finish('', '剧情总结未启用');
@@ -270,6 +282,7 @@ export async function buildVectorPromptText(excludeLastAi = false, options = {})
         if (signal?.aborted) return finish('', '召回已取消');
         diagnostics.stage = 'prompt-assembly';
         assembly = buildRawPrompt(store, recallResult, hiddenThrough, { includeState });
+        meta = { ...(meta || {}), hiddenThrough };
         const text = assembly.promptText;
         diagnostics.stage = 'prompt-ready';
         return finish(text, text ? '' : '没有需要补入的早期记忆');
@@ -363,10 +376,20 @@ export function buildRawPrompt(store, recallResult, hiddenThrough, { includeStat
     background.push(...packed.map(entry => entry.line));
     const seen = new Set();
     const included = [];
+    const traceChunks = [];
     for (const chunk of recallResult.chunks || []) {
-        if (seen.has(chunk.chunkId) || chunk.floor > hiddenThrough) continue;
+        if (seen.has(chunk.chunkId)) continue;
         seen.add(chunk.chunkId);
-        if (pushWithBudget(raw, `[#${chunk.floor + 1} · ${chunk.speaker}] ${chunk.text}`, rawBudget)) included.push(chunk);
+        if (chunk.floor > hiddenThrough) {
+            if (traceChunks.length < 20) traceChunks.push({ ...chunk, included: false, filterReason: 'above_boundary' });
+            continue;
+        }
+        if (pushWithBudget(raw, `[#${chunk.floor + 1} · ${chunk.speaker}] ${chunk.text}`, rawBudget)) {
+            included.push(chunk);
+            if (traceChunks.length < 20) traceChunks.push({ ...chunk, included: true, filterReason: '' });
+        } else if (traceChunks.length < 20) {
+            traceChunks.push({ ...chunk, included: false, filterReason: 'budget_exceeded' });
+        }
     }
     const sections = [];
     if (stateLines.length) sections.push(`[当前相关状态]\n${stateLines.join('\n')}`);
@@ -376,6 +399,9 @@ export function buildRawPrompt(store, recallResult, hiddenThrough, { includeStat
     return {
         promptText: sections.length ? `<剧情记忆>\n${briefingNote}\n\n${sections.join('\n\n')}\n</剧情记忆>` : '',
         rawChunks: included,
+        traceChunks,
+        rawBudgetUsed: rawBudget.used,
+        rawBudgetMax: rawBudget.max,
         backgroundItems: items.length,
         includedBackgroundItems: background.length,
         tokens: constraints.used + plotBudget.used + rawBudget.used,

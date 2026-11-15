@@ -1,5 +1,5 @@
 import { parseHTML } from 'linkedom';
-import { mountEvolutionView, registerEvolutionReader } from './evolution-view.js';
+import { mountEvolutionView, mountWorldSettings, registerEvolutionReader } from './evolution-view.js';
 import { createSettingsRepository } from '../../host/settings-repository.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -49,88 +49,116 @@ test('automatic evolution separates character and situation writes and rechecks 
     assert.equal(current.world.news.length, 2);
 });
 
-test('section controls save independently and only display their own background entries', async t => {
-    const {document} = parseHTML('<html><body><section></section></body></html>');
-    const previous = globalThis.document;
-    globalThis.document = document; t.after(() => { globalThis.document = previous; });
-    const state = {enabled:true, apps:{world:{subscribed:true}}};
-    const preferences = {read:() => state, subscribe:() => () => {}, setWorldPreference(key, value) { state.apps.world[key] = value; }};
-    const current = {chatIdentity:'chat', world:{overview:'港口封航', news:[{id:'person-a',title:'信使绕路',body:'走山路'}, {id:'port',title:'旧局势',body:'候潮'}]}};
-    const disconnect = registerEvolutionReader({readCurrent:() => current, refreshCurrent:async () => current, subscribe:() => () => {}});
-    t.after(disconnect);
-    const parent = document.querySelector('section');
-    const stop = mountEvolutionView(parent, 'people', preferences);
-    assert.match(parent.textContent, /信使绕路/); assert.doesNotMatch(parent.textContent, /港口封航|旧局势/);
-    const input = parent.querySelector('input');
-    assert.equal(input.checked, false);
-    input.checked = true; await input.onchange();
-    assert.equal(state.apps.world.peopleEvolution, true);
-    stop();
-    const close = mountEvolutionView(parent, 'situation', preferences);
-    assert.match(parent.textContent, /港口封航/); assert.doesNotMatch(parent.textContent, /信使绕路/);
-    const second = parent.querySelector('input'); second.checked = false; await second.onchange();
-    assert.equal(state.apps.world.subscribed, false); assert.equal(state.apps.world.peopleEvolution, true);
-    close();
-});
-
-test('evolution switches persist independently across reloads', async () => {
-    const root = {};
-    const adapter = { getExtensionSettings: () => root, saveSettings: async () => true };
-    const repo = createSettingsRepository(adapter);
-    await repo.prepare();
-    await repo.setWorldPreference('subscribed', true);
-    await repo.setWorldPreference('peopleEvolution', true);
-    await repo.setWorldPreference('peopleEvolution', false);
-    await repo.setWorldPreference('sceneryEvolution', true);
-    await repo.setEncounterFrequency('lively');
-    const reloaded = await createSettingsRepository(adapter).prepare();
-    assert.equal(reloaded.apps.world.sceneryEvolution, true);
-    assert.equal(reloaded.apps.world.encounterFrequency, 'lively');
-    assert.equal(reloaded.apps.world.peopleEvolution, false);
-    assert.equal(reloaded.apps.world.subscribed, true);
-});
-
-test('inline situation switches accept only the active frame and restore saved state after failure', async t => {
+test('read-only evolution views filter section entries and push frame records without switches', async t => {
     const { document } = parseHTML('<html><body><section></section></body></html>');
     const previous = { document: globalThis.document, window: globalThis.window };
-    const listeners = new Set(), messages = [];
     globalThis.document = document;
     globalThis.window = {
         location: { origin: 'http://kitchen.test' },
-        addEventListener(type, listener) { if (type === 'message') listeners.add(listener); },
-        removeEventListener(type, listener) { if (type === 'message') listeners.delete(listener); },
+        addEventListener() {},
+        removeEventListener() {},
     };
-    let stop;
-    t.after(() => { stop?.(); Object.assign(globalThis, previous); });
-    const state = { enabled: true, apps: { world: { subscribed: false, sceneryEvolution: false } } };
-    let fail = false;
+    t.after(() => { Object.assign(globalThis, previous); });
+    const state = { enabled: true, apps: { world: { subscribed: true, peopleEvolution: true, sceneryEvolution: true } } };
+    const preferences = { read: () => state, subscribe: () => () => {} };
+    const current = { chatIdentity: 'chat', world: { overview: '港口封航', news: [{ id: 'person-a', title: '信使绕路', body: '走山路' }, { id: 'port', title: '旧局势', body: '候潮' }] } };
+    const disconnect = registerEvolutionReader({ readCurrent: () => current, refreshCurrent: async () => current, subscribe: () => () => {} });
+    t.after(disconnect);
+    const parent = document.querySelector('section');
+    const messages = [];
     const frame = { contentWindow: { postMessage(message) { messages.push(structuredClone(message)); } } };
+    const stop = mountEvolutionView(parent, 'people', preferences);
+    assert.match(parent.textContent, /信使绕路/); assert.doesNotMatch(parent.textContent, /港口封航|旧局势/);
+    assert.equal(parent.querySelector('input, select'), null);
+    stop();
+    const closeNoFrame = mountEvolutionView(parent, 'situation', preferences);
+    assert.match(parent.textContent, /港口封航/); assert.doesNotMatch(parent.textContent, /信使绕路/);
+    assert.equal(parent.querySelector('input, select'), null);
+    closeNoFrame();
+    const close = mountEvolutionView(parent, 'situation', preferences, frame);
+    assert.equal(parent.querySelector('input, select'), null);
+    assert.equal(messages.at(-1)?.type, 'WORLD_EVOLUTION_RECORDS');
+    assert.match(messages.at(-1)?.overview || '', /港口封航/);
+    close();
+});
+
+test('world settings persist encounterFrequency and injectToStory across reloads while forcing core evolutions on', async () => {
+    const root = {
+        xiaobaiOs: {
+            version: 1,
+            enabled: false,
+            apps: {
+                map: { autoMaintenance: false },
+                world: { subscribed: false, peopleEvolution: false, sceneryEvolution: false, encounterFrequency: 'occasional', injectToStory: true },
+            },
+        },
+    };
+    const adapter = { getExtensionSettings: () => root, saveSettings: async () => true };
+    const repo = createSettingsRepository(adapter);
+    const prepared = await repo.prepare();
+    assert.equal(prepared.apps.map.autoMaintenance, true);
+    assert.equal(prepared.apps.world.subscribed, true);
+    assert.equal(prepared.apps.world.peopleEvolution, true);
+    assert.equal(prepared.apps.world.sceneryEvolution, true);
+    await repo.setEncounterFrequency('lively');
+    await repo.setWorldPreference('injectToStory', false);
+    const reloaded = await createSettingsRepository(adapter).prepare();
+    assert.equal(reloaded.apps.world.sceneryEvolution, true);
+    assert.equal(reloaded.apps.world.peopleEvolution, true);
+    assert.equal(reloaded.apps.world.subscribed, true);
+    assert.equal(reloaded.apps.world.encounterFrequency, 'lively');
+    assert.equal(reloaded.apps.world.injectToStory, false);
+});
+
+test('world settings view persists encounterFrequency and injectToStory and restores saved state after failure', async t => {
+    const { document } = parseHTML('<html><body><section></section></body></html>');
+    const previous = globalThis.document;
+    globalThis.document = document; t.after(() => { globalThis.document = previous; });
+    const state = { enabled: true, apps: { world: { subscribed: true, peopleEvolution: true, sceneryEvolution: true, encounterFrequency: 'occasional', injectToStory: true } } };
+    let fail = false;
+    const listeners = new Set();
     const preferences = {
-        read: () => state, subscribe: () => () => {},
+        read: () => state,
+        subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+        async setEncounterFrequency(value) {
+            if (fail) throw new Error('保存失败');
+            state.apps.world.encounterFrequency = value;
+            listeners.forEach(fn => fn(state));
+        },
         async setWorldPreference(key, value) {
             if (fail) throw new Error('保存失败');
             state.apps.world[key] = value;
+            listeners.forEach(fn => fn(state));
         },
     };
-    stop = mountEvolutionView(document.querySelector('section'), 'situation', preferences, frame);
-    const receive = [...listeners][0];
-    const event = value => ({
-        origin: window.location.origin, source: frame.contentWindow,
-        data: { source: 'TavernKitchen-StoryFrame', type: 'WORLD_EVOLUTION_CHANGE', key: 'subscribed', value },
-    });
-    receive({ ...event(true), source: {} });
-    assert.equal(state.apps.world.subscribed, false);
-    receive(event(true));
+    const root = document.querySelector('section');
+    const stop = mountWorldSettings(root, preferences);
+    const select = root.querySelector('#tk-world-encounter-frequency');
+    const checkbox = root.querySelector('#tk-world-inject-to-story');
+    const selectedValue = () => [...select.querySelectorAll('option')].find(opt => opt.selected || opt.hasAttribute('selected'))?.getAttribute('value');
+    assert.equal(selectedValue(), 'occasional');
+    assert.equal(checkbox.checked, true);
+    for (const opt of select.querySelectorAll('option')) {
+        const match = opt.getAttribute('value') === 'off';
+        if (match) {
+            opt.setAttribute('selected', '');
+            opt.selected = true;
+        } else {
+            opt.removeAttribute('selected');
+        }
+    }
+    await select.onchange();
     await new Promise(resolve => setTimeout(resolve, 0));
-    assert.equal(messages.at(-1).settings.subscribed, true);
-    assert.equal(messages.at(-1).settings.pending, false);
+    assert.equal(state.apps.world.encounterFrequency, 'off');
+    assert.equal(selectedValue(), 'off');
     fail = true;
-    receive(event(false));
+    checkbox.checked = false;
+    await checkbox.onchange();
     await new Promise(resolve => setTimeout(resolve, 0));
-    assert.equal(messages.at(-1).settings.subscribed, true);
-    assert.match(messages.at(-1).settings.error, /保存失败/);
+    assert.equal(state.apps.world.injectToStory, true);
+    assert.equal(checkbox.checked, true);
+    assert.match(root.querySelector('[role="status"]').textContent, /保存失败/);
     stop();
-    assert.equal(listeners.size, 0);
 });
 import { registerSituationCatalog } from '../../../story-state/situation-links.js';
 import { createWorldMaintenanceSession } from './maintenance/session.js';

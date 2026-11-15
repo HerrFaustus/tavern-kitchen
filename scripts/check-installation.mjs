@@ -76,20 +76,57 @@ try {
         const name=decodeURIComponent(url.pathname);
         if(name === '/v1/chat/completions') {
             const body = route.request().postDataJSON();
-            const floor = body.messages?.[1]?.content?.startsWith('{') ? JSON.parse(body.messages[1].content).increment?.end : undefined;
-            modelCalls.push({model:body.model, messages:body.messages, floor});
+            const userText = body.messages?.[1]?.content || body.messages?.[0]?.content || '';
+            const parsedUser = typeof userText === 'string' && userText.startsWith('{') ? JSON.parse(userText) : null;
+            const floor = parsedUser?.increment?.end;
+            const isReviewToolTurn = Array.isArray(body.tools) && body.tools.some(t => t.function?.name === 'CompleteMaintenance');
+            const isLayerCascade = typeof body.messages?.[0]?.content === 'string' && body.messages[0].content.includes('只输出总结正文');
+            modelCalls.push({model:body.model, messages:body.messages, floor, kind:isReviewToolTurn ? 'review' : isLayerCascade ? 'layer' : 'turn'});
             if (floor === failFloor) return route.fulfill({status:503,json:{error:{message:'fixture floor 20'}}});
             if(failConnection) return route.fulfill({status:503,json:{error:{message:'fixture busy'}}});
-            const input = Number.isInteger(floor) && JSON.parse(body.messages[1].content);
-            const last = input?.increment?.messages?.at(-1);
+            const respondOpenAI = ({ content = null, toolCalls = null, finishReason = 'stop' }) => {
+                if (body.stream) {
+                    const delta = toolCalls
+                        ? { role: 'assistant', tool_calls: toolCalls.map((call, index) => ({ ...call, index })) }
+                        : { role: 'assistant', content };
+                    return route.fulfill({
+                        contentType: 'text/event-stream',
+                        body: 'data: ' + JSON.stringify({ choices: [{ index: 0, delta, finish_reason: null }] })
+                            + '\n\ndata: ' + JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: finishReason }], usage: { prompt_tokens: 7, completion_tokens: 4, total_tokens: 11 } })
+                            + '\n\ndata: [DONE]\n\n',
+                    });
+                }
+                return route.fulfill({
+                    json: {
+                        model: body.model,
+                        choices: [{ index: 0, message: { role: 'assistant', content: content ?? '', ...(toolCalls ? { tool_calls: toolCalls } : {}) }, finish_reason: finishReason }],
+                        usage: { prompt_tokens: 7, completion_tokens: 4, total_tokens: 11 },
+                    },
+                });
+            };
+            if (isReviewToolTurn) {
+                if (body.messages.at(-1)?.role === 'tool') return respondOpenAI({ content: '已完成本阶段校对。' });
+                const firstUser = body.messages.find(m => m.role === 'user')?.content || '{}';
+                const task = JSON.parse(firstUser).task || {};
+                const ranges = task.pending?.length ? task.pending : [{ from: 1, to: (task.cutoff ?? 0) + 1 }];
+                return respondOpenAI({
+                    toolCalls: ranges.map((range, i) => ({
+                        id: `call_review_${i + 1}`,
+                        type: 'function',
+                        function: { name: 'CompleteMaintenance', arguments: JSON.stringify({ from: range.from, to: range.to }) },
+                    })),
+                    finishReason: 'tool_calls',
+                });
+            }
+            if (isLayerCascade) return respondOpenAI({ content: '本阶段剧情整理摘要。' });
+            const last = parsedUser?.increment?.messages?.at(-1);
             const change = last?.text.includes('店主收下五金币，交出铜铃') ?
                 [{type:'trade',task:'overview',group:'买铃',direction:'buy',counterparty:'shop',item:'bell',price:4,
                     floor:last.floor,quote:'店主收下五金币，交出铜铃',paymentQuote:'收下五金币'}] : [];
             const content = body.model === 'stub-planner'
                 ? JSON.stringify({global:{text:'清河沿革',dependencies:[]},chapter:{text:'查证东桥。',dependencies:[]}})
-                : JSON.stringify({summary:last?.text || '旅人入镇，东桥有守卫。',changes:change});
-            if(body.stream) return route.fulfill({contentType:'text/event-stream',body:'data: '+JSON.stringify({choices:[{delta:{content},finish_reason:null}]})+'\n\ndata: '+JSON.stringify({choices:[{delta:{},finish_reason:'stop'}],usage:{prompt_tokens:7,completion_tokens:4,total_tokens:11}})+'\n\ndata: [DONE]\n\n'});
-            return route.fulfill({json:{model:body.model,choices:[{message:{role:'assistant',content},finish_reason:'stop'}],usage:{prompt_tokens:7,completion_tokens:4,total_tokens:11}}});
+                : JSON.stringify({summary:last?.text || '旅人入镇，东桥有守卫。',changes:change,plotLines:[],memoryTags:{characters:[],locations:[],times:[],keywords:[]}});
+            return respondOpenAI({ content });
         }
         if (name==='/') return route.fulfill({contentType:'text/html',body:'<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="'+base+manifest.css+'"><style>.drawer-toggle{min-width:32px;min-height:28px}#tk-workspace.openDrawer{position:fixed;inset:30px 0 0;width:100%;height:calc(100% - 30px);z-index:10;background:white}.closedDrawer{display:none}</style><div id="top-settings-holder"></div><div id="extensions_settings"></div><div id="chat"></div><div id="send_form"></div><script src="/fixture-jquery.js"></script><script type="module" src="'+base+manifest.js+'"></script>'});
         if(name==='/fixture-jquery.js') return route.fulfill({contentType:'text/javascript',body:readOfficialFile(host,'public/lib/jquery-3.5.1.min.js')});
@@ -108,29 +145,34 @@ try {
         await page.getByRole('button',{name:'酒馆后厨',exact:true}).first().click({timeout:5000});
         await page.waitForFunction(()=>document.querySelector('#tk-workspace')?.classList.contains('openDrawer'));
         await page.waitForTimeout(250);
+        assert.equal(await page.locator('[data-panel], .tk-feature-switch input[type="checkbox"]').count(), 0);
+        assert.equal(await page.getByRole('button', { name: '主角设置' }).count(), 0);
+        await page.locator('#tk-workspace .tk-close').click();
+        await page.waitForFunction(()=>document.querySelector('#tk-workspace')?.classList.contains('closedDrawer'));
         const observed = await page.evaluate(async()=>{
             for (const type of ['normal','continue','swipe','group']) await fixture.generate(type);
             await fixture.eventSource.emit(fixture.event_types.CHAT_CHANGED);
-            return { generated:fixture.generated, writes:fixture.writes, metadata:fixture.chat_metadata, prompts:Object.keys(fixture.extension_prompts),
-                enabled: Object.entries(fixture.extension_settings.TavernKitchen.panels || {}).filter(([,on])=>on).map(([k])=>k),
-                floorControls:document.querySelectorAll('#tk-floor-status,.tavernKitchen-story-summary-btn').length,
-                worlds:(await fixture.storedRows('TavernKitchen_WorldArchive','branches')).length,notes:(await fixture.storedRows('TavernKitchen.StoryPlanner','notes')).length };
+            return { generated:fixture.generated, writes:fixture.writes, storySummary:fixture.chat_metadata?.extensions?.TavernKitchen?.storySummary, prompts:Object.keys(fixture.extension_prompts),
+                panels: Object.keys(fixture.extension_settings.TavernKitchen?.panels || {}),
+                floorControls:document.querySelectorAll('#tk-floor-status').length,
+                worldRecords:(await fixture.storedRows('TavernKitchen_WorldArchive','branches')).reduce((sum,b)=>sum+(b.entities?.length||0)+(b.receipts?.length||0)+(b.events?.length||0),0),
+                notes:(await fixture.storedRows('TavernKitchen.StoryPlanner','notes')).length };
         });
-        assert.deepEqual(observed,{generated:4,writes:0,metadata:{},prompts:[],enabled:[],floorControls:0,worlds:0,notes:0});
-        for (const [key,value] of Object.entries(uninstalled)) assert.deepEqual(observed[key],value);
+        assert.deepEqual(observed,{generated:0,writes:0,storySummary:{},prompts:[],panels:[],floorControls:1,worldRecords:0,notes:0});
+        assert.equal(uninstalled.generated, 4);
         assert.deepEqual(failures,[]);
-        await page.getByRole('button',{name:'酒馆后厨',exact:true}).first().click();
-        await page.getByRole('button',{name:'主角设置'}).click();
-        await page.locator('[data-panel=overview]').click();
-        const missing=page.getByRole('alert').filter({hasText:'请先在API界面中配置更新agent'});
+        const missing=page.getByRole('alert').filter({hasText:'请先在设置中配置更新agent'});
         await missing.waitFor();
-        assert.equal(await page.locator('[data-panel=overview]').isChecked(),false);
-        await missing.getByRole('button',{name:'前往 API'}).click();
-        const api = page.frameLocator('iframe').last();
+        await missing.getByRole('button',{name:'前往设置'}).click();
+        await page.waitForFunction(()=>document.querySelector('#tk-workspace')?.classList.contains('openDrawer'));
+        const api = page.frameLocator('#tavernKitchen-os-iframe');
+        await api.locator('[data-agent-binding="update"]').waitFor();
+        await page.waitForFunction(()=>document.querySelector('#tavernKitchen-os-iframe')?.contentDocument?.activeElement?.dataset.agentBinding === 'update');
         const editor = api.getByText('编辑连接',{exact:true});
         await editor.click();
         const picker = api.getByLabel('选择连接',{exact:true});
         await picker.selectOption({label:'自定义连接'});
+        const presetIds = {};
         for(const [agent,label] of [['update','更新'],['simulation','推演'],['planner','编剧']]) {
             if(agent !== 'update'){
                 page.once('dialog',dialog=>dialog.accept(label+'测试连接'));
@@ -142,12 +184,15 @@ try {
             await api.getByLabel('模型',{exact:true}).fill('stub-'+agent);
             await api.locator('[data-save]').click();
             await api.getByRole('status').filter({hasText:'已保存'}).first().waitFor();
-            await api.getByLabel(label+' Agent',{exact:true}).selectOption(await picker.inputValue());
-            await api.getByRole('status').filter({hasText:'已保存'+label+' Agent'}).waitFor();
+            presetIds[agent] = await picker.inputValue();
+            if (agent !== 'update') {
+                await api.getByLabel(label+' Agent',{exact:true}).selectOption(presetIds[agent]);
+                await api.getByRole('status').filter({hasText:'已保存'+label+' Agent'}).waitFor();
+            }
         }
         assert.equal(modelCalls.length,0);
         assert.equal(await page.evaluate(()=>fixture.writes),0);
-        assert.equal(await page.evaluate(async()=>(await fixture.storedRows('TavernKitchen_WorldArchive','branches')).length),0);
+        assert.equal(await page.evaluate(async()=>(await fixture.storedRows('TavernKitchen_WorldArchive','branches')).reduce((sum,b)=>sum+(b.entities?.length||0)+(b.receipts?.length||0)+(b.events?.length||0),0)),0);
         for(const [index,role] of ['update','simulation','planner'].entries()){
             await picker.selectOption({label:['自定义连接','推演测试连接','编剧测试连接'][index]});
             failConnection=role==='simulation';
@@ -156,12 +201,12 @@ try {
         }
         failConnection=false;
         assert.deepEqual(modelCalls.map(call=>call.model),['stub-update','stub-simulation','stub-planner']);
-        await page.getByRole('button',{name:'返回主角'}).click();
-        await page.locator('[data-panel=overview]').check();
+        await api.getByLabel('更新 Agent',{exact:true}).selectOption(presetIds.update);
+        await api.getByRole('status').filter({hasText:'已保存更新 Agent'}).waitFor();
         await page.waitForFunction(()=>fixture.chat_metadata.extensions?.TavernKitchen?.storySummary?.floorWork?.[1]?.done.includes('overview'),undefined,{timeout:10000});
         assert.equal(modelCalls.length,4);
         assert.ok(modelCalls.at(-1).messages[0].content.includes('主角物品栏') || modelCalls.at(-1).messages[0].content.includes('主角的钱物'));
-        assert.ok(!modelCalls.at(-1).messages[0].content.includes('逐楼摘要'));
+        assert.ok(modelCalls.at(-1).messages[0].content.includes('只交付 summary'));
         const afterFirst=modelCalls.length;
         await page.evaluate(async()=>{
             fixture.chat.push({name:'旅人',is_user:true,mes:'给我看看。',send_date:'stream-user'});
@@ -182,21 +227,16 @@ try {
         await page.waitForFunction(()=>fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorWork?.[3]?.done.includes('overview'));
         assert.equal(modelCalls.length,afterFirst+1);
         assert.deepEqual(JSON.parse(modelCalls.at(-1).messages[1].content).increment.messages.map(m=>m.text),['给我看看。','只陈列货品。']);
-        await page.locator('[data-panel=overview]').uncheck();
         const connectionTests=modelCalls.slice(0,3).map(call=>call.model);
         await page.evaluate(() => {
             const chat=Array.from({length:100},(_,i)=>({mes:'虚构清河问答 '+i,is_user:i%2===0,name:i%2===0?'旅人':'店主',send_date:'test-'+i}));
             localStorage.setItem('chat',JSON.stringify(chat));localStorage.setItem('metadata','{}');localStorage.setItem('fixtureChatId','百楼旧事');
         });
-        async function openInventory(){
-            await page.getByRole('button',{name:'酒馆后厨',exact:true}).first().click();
-            await page.getByRole('button',{name:'主角设置'}).click();
-        }
-        await page.reload(); await openInventory();
         const start=modelCalls.length;
-        failFloor=39; await page.locator('[data-panel=overview]').check();
+        failFloor=39;
+        await page.reload();
         await page.getByRole('button',{name:'重试本楼'}).waitFor({timeout:90000});
-        assert.deepEqual(modelCalls.slice(start).map(r=>r.floor),Array.from({length:20},(_,i)=>2*i+1));
+        assert.deepEqual(modelCalls.slice(start).filter(r=>r.floor!=null).map(r=>r.floor),Array.from({length:20},(_,i)=>2*i+1));
         assert.match(await page.locator('#tk-floor-status').innerText(),/第 40 楼/);
         await page.evaluate(()=>{ window.interrupted=fixture.generate('group'); });
         await page.waitForTimeout(50);
@@ -211,18 +251,19 @@ try {
         await page.waitForFunction(()=>fixture.generated===1,undefined,{timeout:120000});
         assert.equal(await page.evaluate(()=>window.waitForGeneration),true);
         assert.equal(await page.evaluate(()=>Object.values(fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorWork).filter(row=>row.done.includes('overview')).length),50);
-        const backlog=modelCalls.slice(start).map(r=>r.floor);
+        const backlog=modelCalls.slice(start).filter(r=>r.floor!=null).map(r=>r.floor);
         assert.equal(backlog.length,52);
         assert.equal(backlog.filter(f=>f===39).length,3);
         assert.deepEqual(backlog.slice(22),Array.from({length:30},(_,i)=>41+2*i));
-        await openInventory(); await page.locator('[data-panel=overview]').uncheck();
+        assert.ok(modelCalls.slice(start).some(r=>r.kind==='review'));
         await page.evaluate(()=>localStorage.removeItem('fixtureChatId'));
 
         await page.evaluate(data=>fixture.installOld(data),old);
         await page.reload();
+        await page.waitForFunction(()=>fixture.chat_metadata.extensions?.TavernKitchen?.storySummary?.floorWork?.[1]?.done.includes('overview'),undefined,{timeout:10000});
         await page.getByRole('button',{name:'酒馆后厨',exact:true}).first().click();
         await page.locator('#tk-tab-data').click();
-        const data=page.frameLocator('iframe').last();
+        const data=page.frameLocator('#tk-memory-mount iframe');
         async function exportCard(){
             const pending=page.waitForEvent('download',{timeout:10000});
             await data.getByRole('button',{name:'导出后厨卡'}).click();
@@ -232,6 +273,7 @@ try {
         const upgraded=await exportCard();
         assert.equal(upgraded.data.world.branchId,old.selected);
         assert.deepEqual(upgraded.data.world.entities,old.card.data.world.entities);
+        assert.deepEqual(upgraded.data.world.receipts.slice(0,old.card.data.world.receipts.length),old.card.data.world.receipts);
         assert.equal(upgraded.data.notes[0].chapter.text,'东桥封锁旧稿');
         assert.equal(upgraded.data.memory.storySummary.json.arcs,undefined);
         for(const input of [old.card,upgraded]){
@@ -241,7 +283,7 @@ try {
             const restored=await exportCard();
             assert.equal(restored.data.world.branchId,old.selected);
             assert.equal(restored.data.world.worldId,old.card.data.world.worldId);
-            assert.deepEqual(restored.data.world.receipts,old.card.data.world.receipts);
+            assert.deepEqual(restored.data.world.receipts,input.data.world.receipts);
             assert.equal(restored.data.notes.length,1);
         }
         const inactive=old.branches.find(row=>row.branchId!==old.selected);
@@ -253,8 +295,6 @@ try {
         const inactiveNote=old.notes.find(note=>note.owner!==old.card.data.notes[0].owner);
         assert.deepEqual(preserved.notes.find(n=>n.id===inactiveNote.id),inactiveNote);
         await page.locator('#tk-tab-overview').click();
-        if (!await page.locator('[data-panel=overview]').isVisible()) await page.getByRole('button',{name:'主角设置'}).click();
-        await page.locator('[data-panel=overview]').check();
         await page.waitForFunction(()=>fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorWork?.[1]?.done.includes('overview'));
         await page.evaluate(async()=>{
             fixture.chat.push({name:'旅人',mes:'我递出五金币。',is_user:true,send_date:'buyer'},

@@ -22,7 +22,11 @@ export async function handleProfileRequest(data, signal) {
     if (data.action === 'call-stats' || data.action === 'clear-call-stats') return featureCalls.snapshot();
     const repository = await getTextApiRepository();
     if (data.action === 'load') return repository.load();
-    if (data.action === 'mutate') return repository.mutate(data.feature || 'library', data.mutation);
+    if (data.action === 'mutate') {
+        const result = await repository.mutate(data.feature || 'library', data.mutation);
+        globalThis.window?.dispatchEvent?.(new Event('tavernKitchen:floor-settings'));
+        return result;
+    }
     setHostChatCompletionsRequestHeadersProvider(() => getRequestHeaders());
     if (data.action === 'models') return listTextModels(data.preset, { signal });
     if (data.action === 'test') {
@@ -38,6 +42,7 @@ export async function handleProfileRequest(data, signal) {
         while (current.presets.some(p => p.name === name)) name = base + ' ' + n++;
         const id = createIdentifier();
         const settings = await repository.mutate('library', { type: 'add', id, name, preset: imported.preset });
+        globalThis.window?.dispatchEvent?.(new Event('tavernKitchen:floor-settings'));
         return { settings, id, message: imported.message };
     }
     throw new Error('未知的配置操作');

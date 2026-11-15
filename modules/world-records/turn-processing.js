@@ -15,6 +15,7 @@ import { currentTurns, turnEffectConflicts } from './turn-ledger.js';
 import { assertUpdateBudget, fitUpdateContext, worldUpdates } from './update-context.js';
 import { applyCommand, canonical, invariant } from './domain.js';
 import { taskDefinitions, actionProtocol, turnActionGroups, turnOperations } from './turn-actions.js';
+import { parseJsonResponse } from './json-response.js';
 
 function promptData(world, store, source, chat, keys, playerName) {
     const hero = protagonistIdentity(world.entities, playerName).hero;
@@ -127,6 +128,11 @@ export function createFloorProcessing({ read, tasks, store, save, getService, re
         if (group === 'review') return review.run(source, signal, check);
         if (group === 'chapter') return chapter.run(source, signal, check);
         const sim = group === 'simulation';
+        // WHY: Fail closed before touching IndexedDB when the update agent is not configured yet,
+        // avoiding empty branch/turn writes until the user binds an update connection.
+        if (!sim && !Object.values(data.floorWork?.[source.end]?.pending || {}).some(d => !d.sim && d.keys?.some(k => keys.includes(k)))) {
+            await requireAgent('update'); check();
+        }
         let state = await service.read(); check();
         invariant(!turnEffectConflicts(state).length, '旧楼已有世界效果，请先预览并原位恢复');
         state = await service.syncTurns(ctx.chat, { end: source.end, history: data.summaryHistory || [], preserveLater:true, guard: check }); check();
@@ -178,7 +184,7 @@ export function createFloorProcessing({ read, tasks, store, save, getService, re
         if (!draft && matched.length) {
             await requireAgent(sim ? 'simulation' : 'update'); check();
             const raw = await generate(sim ? 'world' : 'summary', { messages: request(brief, matched, sim), signal }); check();
-            const result = JSON.parse(raw.text.trim().replace(/^```(?:json)?\s*|\s*```$/gi, ''));
+            const result = parseJsonResponse(raw.text);
             invariant(result && typeof result === 'object' && !Array.isArray(result), '模型须返回本楼的 JSON 对象');
             if (matched.includes('memory')) invariant(typeof result.summary === 'string' && result.summary.trim() && result.summary.length <= 12000, '摘要为空或超出篇幅');
             if (matched.includes('clues')) invariant(Array.isArray(result.plotLines), '未返回剧情线清单，无变化时请返回空数组');
