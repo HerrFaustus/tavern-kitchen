@@ -228,6 +228,7 @@ try {
         assert.equal(modelCalls.length,afterFirst+1);
         assert.deepEqual(JSON.parse(modelCalls.at(-1).messages[1].content).increment.messages.map(m=>m.text),['给我看看。','只陈列货品。']);
         const connectionTests=modelCalls.slice(0,3).map(call=>call.model);
+        await page.waitForFunction(()=>!document.querySelector('#tk-floor-status')?.textContent?.trim()&&fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorWork?.[3]?.done.includes('mapEvolution'));
         await page.evaluate(() => {
             const chat=Array.from({length:100},(_,i)=>({mes:'虚构清河问答 '+i,is_user:i%2===0,name:i%2===0?'旅人':'店主',send_date:'test-'+i}));
             localStorage.setItem('chat',JSON.stringify(chat));localStorage.setItem('metadata','{}');localStorage.setItem('fixtureChatId','百楼旧事');

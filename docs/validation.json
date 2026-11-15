@@ -1,27 +1,10 @@
 {
-  "version": "0.2.33",
+  "version": "0.2.34",
   "status": "passed",
   "validated_on": "2026-11-15",
-  "build_id": "624afd7a34e4bfc4952a",
-  "product": "酒馆后厨 Tavern 扩展",
-  "publication": {
-    "tag": "v0.2.33",
-    "commit": "285274fe07d3c0714f785268ad9ad6cd49ce39d6",
-    "published_at": "2026-11-14T22:37:12Z",
-    "url": "https://github.com/HerrFaustus/tavern-kitchen/releases/tag/v0.2.33",
-    "workflow_url": "https://github.com/HerrFaustus/tavern-kitchen/actions/runs/43648917326",
-    "zip_sha256": "f9f27db26f5aacfdf3f726e742e546e9b3f3bb0cde49a49245f1509bfcdb133c",
-    "observed": "发布后从 GitHub Release 下载 ZIP、SHA-256 校验文件和 release-info.json，三份附件逐字节匹配本地验收件。下载 ZIP 的 SHA-256 也与最终复装回执一致。",
-    "replay_from_repo_root": [
-      "download_dir=$(mktemp -d)",
-      "gh release download v0.2.33 --repo HerrFaustus/tavern-kitchen --dir \"$download_dir\"",
-      "(cd \"$download_dir\" && shasum -a 256 -c tavern-kitchen-0.2.33.zip.sha256)",
-      "cmp \"$download_dir/tavern-kitchen-0.2.33.zip\" release/tavern-kitchen-0.2.33.zip",
-      "cmp \"$download_dir/tavern-kitchen-0.2.33.zip.sha256\" release/tavern-kitchen-0.2.33.zip.sha256",
-      "cmp \"$download_dir/release-info.json\" release/release-info.json"
-    ]
-  },
-  "code_baseline": "85d645dcbbe5ca8e66069dd8edd8ddae936e905d",
+  "build_id": "41466afcb8332219658e",
+  "product": "酒馆后厨 Tavern 扩展，本地安装包",
+  "code_baseline": "d7a9fe8119b8d171d8e6096ae0437d614bc36de4",
   "upgrade_fixture": {
     "commit": "506146623383fd9b6fea3cdd27c3ca1ca115f31a",
     "file": "scripts/fixtures/chat-0.2.32.json",
@@ -33,8 +16,8 @@
     "node": "24.22.3",
     "pnpm": "11.25.0",
     "python": "3.9.6",
-    "playwright": "1.62.1",
-    "browser": "Brave，Chromium 157.0.8103.50，无头模式",
+    "playwright": "1.64.1",
+    "browser": "Google Chrome for Testing，Chromium 156.0.8078.4，无头模式",
     "entry": "dist/host/plugin.js",
     "host_fixture": "scripts/fixtures/install-host.mjs",
     "host_reference": "SillyTavern 1.18.0，固定来源见 scripts/host/official.json",
@@ -43,10 +26,10 @@
       "stub-simulation",
       "stub-planner"
     ],
-    "network": "浏览器安装用例只接受本地样例域名，三个模型名称由 API 页保存，使用真实扩展适配器和浏览器请求。领域回归使用虚构聊天和确定性模型响应。"
+    "network": "浏览器安装用例只接受本地样例域名，三个模型名称由「设置 → API」保存，使用真实扩展适配器和浏览器请求。领域回归使用虚构聊天和确定性模型响应。"
   },
   "replay": {
-    "working_directory": "复现已发布的安装包时，在 v0.2.33 标签的干净检出根目录运行。安装包内附同版源码、脚本和旧档样例。",
+    "working_directory": "仓库根目录。安装包内附同版源码、脚本和旧档样例。",
     "setup": [
       "pnpm install --frozen-lockfile --ignore-scripts"
     ],
@@ -57,8 +40,8 @@
       "node scripts/check-ui.mjs",
       "python3 scripts/package.py",
       "node scripts/check-versions.mjs",
-      "(cd release && shasum -a 256 -c tavern-kitchen-0.2.33.zip.sha256)",
-      "node scripts/check-installation.mjs release/tavern-kitchen-0.2.33.zip > release/install-verification.json"
+      "(cd release && shasum -a 256 -c tavern-kitchen-0.2.34.zip.sha256)",
+      "node scripts/check-installation.mjs release/tavern-kitchen-0.2.34.zip > release/install-verification.json"
     ],
     "baseline": {
       "version": "0.2.32",
@@ -66,30 +49,30 @@
       "current_tests": 75,
       "command": "node --import tsx --test modules/world-records/update-llm.test.js modules/world-records/proposal-batch.test.js modules/story-summary/tests/summary-layers.test.js modules/story-summary/tests/compression-tree.test.js modules/story-planner/planner.test.js modules/story-state/plot-lines.test.js modules/world-records/recovery-panel.test.js modules/kitchen-data/card.test.js modules/text-api/tests/call-stats.test.js"
     },
-    "counting": "下面的定向用例集可以单独复跑，各组有共用用例。全量数来自 pnpm check 的一次运行。"
+    "counting": "下面的定向用例集可以单独复跑，各组有共用用例。全量数来自 node scripts/check.mjs 的一次运行。"
   },
   "acceptance": [
     {
       "id": 1,
-      "title": "干净安装、功能隔离与 API 绑定",
+      "title": "默认全开、缺绑定拦截与设置 → API",
       "status": "passed",
       "input": "空聊天元数据、空游戏数据库及未绑定连接。另用旧版冲突绑定、两个窗口宽度和一次 HTTP 503。",
       "actions": [
-        "分别在未安装和已安装全关的宿主样例走发送、续写、换候选、群聊及聊天切换。",
-        "从主角开关进入缺绑定提示，在 API 页分别保存三个命名连接并测试。返回原开关后单开主角。",
+        "分别在未安装与未绑定 Agent 的已安装宿主样例走发送、续写、换候选、群聊及聊天切换。",
+        "触发未绑定拦截提示后点「前往设置」，验证跨 iframe 聚焦更新 Agent 绑定行，并在「设置 → API」分别保存与测试三个命名连接。",
         "复跑旧绑定冲突、配置保存失败、取消和受保护请求字段的直连与宿主转发用例。"
       ],
-      "expected": "全关与宿主原样一致。只配 API 不发任务。失败的开关保持关闭，回到原位再次开启只运行所属功能。系统消息、工具与输出协议保持内置。",
+      "expected": "未安装时宿主原样放行；已安装但缺绑定时直接拦截生成并引导至「设置 → API」，零后台写入且只配连接不派发任务。系统消息、工具与输出协议保持内置，工作台不再呈现模块开关。",
       "observed": [
-        "四个正文入口均放行。聊天元数据写入、世界行、札记行、注入和聊天内控件均为零。",
-        "仅配置三个连接时零模型派发。三次测试分别命中三种模型，其中推演连接故意返回 503。此后单开主角只发送物品栏任务。",
-        "旧绑定分歧留供明确选择，取消及保存失败没有替玩家开功能。受保护字段的覆盖与排除均未传到模型，正常采样值及客户标头可用。"
+        "未安装时四个正文入口均放行；已安装且未配置更新 Agent 时四个生成入口均被前置拦截并在 #tk-floor-status 显示「请先在设置中配置更新agent」，元数据写入、世界记录、札记与正文注入均为零。",
+        "点击「前往设置」展开统一工作台并等待 #tavernKitchen-os-iframe 挂载后聚焦 [data-agent-binding=\"update\"]；在「设置 → API」保存与测试三个连接（推演测试故意返回 503，其余成功），工作台取消全部模块面板开关。",
+        "旧绑定分歧留供明确选择，取消及保存失败保持原配置；受保护字段的覆盖与排除均未传到模型，正常采样值及客户标头可用。"
       ],
       "focused_tests": 57,
       "commands": [
         "node --import tsx --test core/panel-controls.test.js modules/text-api/tests/profiles.test.js modules/text-api/tests/runtime.test.js modules/text-api/tests/call-stats.test.js",
         "node scripts/check-api-workspace.mjs",
-        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.33.zip"
+        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.34.zip"
       ]
     },
     {
@@ -98,20 +81,20 @@
       "status": "passed",
       "input": "50 组虚构问答、100 楼、无处理回执。第 20 条角色回复为界面第 40 楼。",
       "actions": [
-        "从正常开关启用逐楼更新，在第 20 条角色回复注入连接失败。",
+        "绑定「更新」与「推演」Agent 后触发逐楼结算，在第 20 条角色回复注入连接失败。",
         "请求群聊下一角色，重开后再请求续写并重复点击发送。修复后重试本楼。",
-        "另测仅玩家发言、流式片段、切候选、切聊天、关闭在途最后一项和停用后补记。"
+        "另测仅玩家发言、流式片段、切候选、切聊天、流式/预检截断与重记放行。"
       ],
       "expected": "前楼未结时，后楼与新正文派发数为零。重开从失败步骤续跑，玩家请求的正文仅放行一次。",
       "observed": [
-        "首次尝试 20 次，前 19 条已结。重开期间第 20 条再次失败，后楼请求与宿主正文均为零。修复后 50 条全部结清。",
-        "逐楼请求共 52 次。前 19 条各一次，第 20 条三次，后 30 条各一次。等待的正文只生成一次，重复点击被拦住。",
-        "只有玩家发言和流式片段时零请求，最终只处理选中回复和紧邻的玩家楼。关闭最后一项即时放行，迟到的更新零写入。无续写请求时只完成补记。"
+        "首次尝试在第 40 楼阻塞停止，后楼请求与宿主正文均为零；重开并修复后 50 条角色楼全部结清，主机正文放行 1 次。",
+        "逐楼请求共 52 次。只有玩家发言和流式中间片段时零请求，最终只处理选中回复和紧邻的玩家楼。",
+        "重记、换候选及切聊天保持各自独立隔离，迟到响应不会覆盖当前有效世界。"
       ],
       "focused_tests": 66,
       "commands": [
         "node --import tsx --test modules/world-records/floor-processing.test.js modules/world-records/turn-ledger.test.js modules/story-summary/tests/message-sources.test.js",
-        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.33.zip"
+        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.34.zip"
       ]
     },
     {
@@ -121,20 +104,20 @@
       "input": "主角 10 金币，店主无钱包或旧钱包 37。铜铃买价 5、卖价 3，守卫在东桥，远方船夫未获知封桥。",
       "actions": [
         "走买入、卖出、赊购、代管、归还和重复通知。另测库存不足、部分成交、配角间买卖和模型错报 4 金币。",
-        "在同一楼命中局势与地图两项，用全部更新落盘后的世界发起推演。用校对工具收束两段和一个章节，第一次保存故意失败，重试成功后让编剧写稿。",
+        "在同一楼命中局势与地图两项，用全部更新落盘后的世界发起推演。用校对工具收束两段和一个章节，第一次保存故意失败，重试成功后让默认开启节点的编剧写稿。",
         "分别核对三个 Agent 的任务、实际请求、连接测试及供应商给出的用量。"
       ],
       "expected": "钱、物和回执一次提交。推演合并，事实即时可读，人物知情有边界。编剧只在 L2 成功保存后运行。派发前失败或取消计零。",
       "observed": [
         "两种店主的主角余额均为 10 → 5 → 8，旧钱包仍为 37。赊购与归还没触发扣款，库存不足及不涉及主角的交易没有成交回执。三只铜铃中购买两只，按实际总价结算。模型报 4 时保留 10，界面按原文确认后按 5 扣款。",
-        "两项条件合并为 1 次推演。地图显示已封锁，来源标出店主知情，远方船夫没有相应认知。章节第一次保存失败时编剧为零。重试成功后，编剧读到封桥、知情范围和主角余额 8。",
+        "两项条件合并为 1 次推演。地图显示已封锁，来源标出店主知情，远方船夫没有相应认知。章节第一次保存失败时编剧为零；重试成功后，编剧读到封桥、知情范围和主角余额 8。",
         "含一次结章保存重试的联动样例共 12 次派发。更新 Agent 4 个任务、10 次请求，推演和编剧各 1 个任务、1 次请求。单独校对成功与连接测试失败的组合共 2 次请求、1 次失败，仅校对的 7 输入、4 输出计入用量。"
       ],
       "focused_tests": 53,
       "commands": [
         "node --import tsx --test modules/world-records/floor-processing.test.js modules/world-records/proposal-batch.test.js modules/world-records/authority.test.js modules/text-api/tests/call-stats.test.js",
         "node scripts/check-proposal-workspace.mjs",
-        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.33.zip"
+        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.34.zip"
       ]
     },
     {
@@ -157,24 +140,24 @@
       "commands": [
         "node --import tsx --test modules/world-records/recovery-panel.test.js modules/world-records/legacy-archive.test.js modules/kitchen-data/card.test.js modules/story-summary/tests/metadata-confirmation.test.js modules/story-summary/tests/memory-storage.test.js",
         "node scripts/check-proposal-workspace.mjs",
-        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.33.zip"
+        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.34.zip"
       ]
     },
     {
       "id": 5,
-      "title": "人物交接、剧情线、章节归并、札记与检索",
+      "title": "人物交接、剧情线、章节归并、札记与召回检索",
       "status": "passed",
       "input": "虚构的守卫阿棠、县衙库房钥匙、渡口沉船案与独立寻人线；连续章节、断章、十五轮未收束摘要、东桥旧札记、旧弧光与超长必需原文。",
       "actions": [
         "首次交接时同组建阿棠和钥匙，复跑有、无县衙归属依据的两种证词。给沉船调查改名并关联寻人线，追查候选引文。",
         "从校对读取叙事单元、引用原楼、收束阶段与 L2、确认保存，再读取跨章树。试验缺章、归并失败重开、源楼改写与更高层归并。",
-        "通过续写入口检查旧札记，对林疏局部改稿并试验漏答、越界更改沈砚及显式删除。导入含 arcs 的旧卡，断开查询向量，提交超过 20 万 UTF-16 代码单元的必需原文。"
+        "通过续写入口检查旧札记，对林疏局部改稿并试验漏答、越界更改沈砚及显式删除。导入含 arcs 的旧卡，断开查询向量，核对「剧情 → 召回」分轮可视化与超长必需原文拦截。"
       ],
-      "expected": "人物与物品身份稳定。剧情线可改名、分别结案并关联。只有连续已确认的三个章节触发 L3。过期或越界札记不进入正文。检索可降级，材料超限零派发。",
+      "expected": "人物与物品身份稳定。剧情线可改名、分别结案并关联。只有连续已确认的三个章节触发 L3。过期或越界札记不进入正文。召回结果结构化展示，检索可降级，材料超限零派发。",
       "observed": [
         "钥匙所有人为县衙、保管人为阿棠、使用人空，明早归还及原楼可追查。证词省略县衙时所有人空，重复通知仍只有一个交接回执。渡口调查沿用编号和早期证词，寻人线独立编号并保留关联。",
         "正常校对路径累计保存 18 个阶段、9 个章节。第二章后零 L3；第三章归并失败后只补 L3，最终得到 3 个 L3、1 个 L4，均可逐层展开。断章及十五个未经收束的 L0 不安排归并；改写中间证据后旧高层节点退出。",
-        "过期稿退出正文，查看零请求。漏答、只改未指定对象的依赖或越界删除均保住旧稿；合规改稿仅更新请求对象。旧 arcs 退出活跃记忆，普通关系、承诺和剧情线继续可读。查询向量失败后由关键词召回；必需原文超过 20 万时，该请求零派发。"
+        "过期稿退出正文，查看零请求；漏答或越界更改均保住旧稿，合规改稿仅更新请求对象。旧 arcs 退出活跃记忆，查询向量失败后退回关键词；「剧情 → 召回」可查看每轮命中/重排得分与裁剪片段；必需原文超过 20 万时零派发。"
       ],
       "focused_tests": 58,
       "commands": [
@@ -187,37 +170,39 @@
       "id": 6,
       "title": "构建、全量校验、九组界面回归及最终 ZIP 复装",
       "status": "passed",
-      "input": "当前冻结工作区、README 指定工具链、浏览器干净宿主样例及上面的 0.2.32 档案。",
+      "input": "0.2.34 发行工作区、Chromium 无头浏览器样例与 0.2.32 旧档。",
       "actions": [
-        "执行构建及检查；运行九组浏览器回归。打包并核对清单、许可、入口与 SHA-256。",
-        "从 ZIP 解压到新的临时扩展目录，在全新浏览器上下文从宿主清单加载构建入口，实际打开工作台；再装入旧档，导出并导回后厨卡。"
+        "执行质量校验、构建与全量检查；运行九组无头界面回归。",
+        "执行打包脚本输出 ZIP、SHA-256 与清单，核对版本与哈希。",
+        "从 release/tavern-kitchen-0.2.34.zip 解压到新临时目录，在无头浏览器加载扩展走通未绑定拦截、三连接配置、100 楼队列及 0.2.32 旧档导回。"
       ],
-      "expected": "构建产物可复现，所有检查通过。从最终 ZIP 打开的扩展可读旧数据，卡往返保留世界身份。",
+      "expected": "构建产物可复现，所有静态检查、全量测试、界面回归与 ZIP 复装全部通过，版本清单与包体逐字节吻合。",
       "observed": [
-        "pnpm build 与 pnpm check 均通过。构建标识 624afd7a34e4bfc4952a，9 个入口、737 个模块、52 个构建块。全量 1694 项通过，0 失败、0 跳过；记忆运行时 result=PASS。",
-        "工作台、API 布局、API 绑定、总结工作台、楼尾、地点地图、提案、编剧布局、编剧工作台九组全部通过。",
-        "归档含 manifest.json、dist/host/plugin.js、构建清单、源码、冻结与项目文档、许可和归属说明。复装脚本校验文件数、字节数、SHA-256 与版本，实际打开工作台，导回两份卡且保持单世界。最终 ZIP 的哈希和本次浏览器实测回执随包另存。"
+        "构建标识 41466afcb8332219658e，9 个入口、Vite 转换 750 个模块（入包 739 个模块、52 个分块）。全量 1699 项单元测试 0 失败、0 跳过；记忆运行时 result=PASS。",
+        "工作台、API 布局、API 绑定、总结工作台（含 设置 → 剧情与召回 与 剧情 → 召回）、楼尾、地点地图、提案、编剧布局、编剧工作台九组无头回归全部通过。",
+        "tavern-kitchen-0.2.34.zip 通过 check-versions.mjs、shasum 校验及最终 ZIP 安装复装验证，结果已写入 release/install-verification.json。"
       ],
       "commands": [
-        "pnpm build",
-        "pnpm check",
+        "node scripts/quality.mjs",
+        "node scripts/build.mjs",
+        "node scripts/check.mjs",
         "node scripts/check-ui.mjs",
         "python3 scripts/package.py",
         "node scripts/check-versions.mjs",
-        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.33.zip"
+        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.34.zip"
       ]
     }
   ],
   "artifacts": {
-    "zip": "release/tavern-kitchen-0.2.33.zip",
-    "checksum": "release/tavern-kitchen-0.2.33.zip.sha256",
+    "zip": "release/tavern-kitchen-0.2.34.zip",
+    "checksum": "release/tavern-kitchen-0.2.34.zip.sha256",
     "manifest": "release/release-info.json",
     "acceptance": "docs/validation.json",
     "final_zip_readback": "release/install-verification.json"
   },
   "limitations": [
     "验收使用本地模型桩和宿主接口样例。SillyTavern、TauriTavern 与在线模型的连续实玩不在验收范围。",
-    "记忆运行时走 main-fallback；缓存已就绪时预热阶段显示 SKIPPED，召回、提示一致性、会话释放、变更处理、重启及向量缓存导入检查均通过。",
+    "记忆运行时走 main-fallback；无预热会话缓存时 warm 阶段显示 SKIPPED (session-cache idle)，召回、提示一致性、会话释放、变更处理、重启及向量缓存导入检查均通过。",
     "客户端随包带源码，内置提示词在产品中隐藏，持有源码或检查网络请求的人仍可读取。"
   ]
 }

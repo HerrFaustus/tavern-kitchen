@@ -1,12 +1,12 @@
-# 酒馆后厨 0.2.33
+# 酒馆后厨 0.2.34
 
 酒馆后厨（Tavern Kitchen）是一个 SillyTavern 扩展。每次正文回复完成后，后厨记录发生了什么，把已确认的世界状态、近期原文和早期经历提供给下一次续写。
 
-0.2.33 已正式发布（六项成品验收及最终 ZIP 复装均已通过）；仓库现已在 `0.2.33` 基线上完成「设置收口与默认全开 + 原生顶栏按钮 + 召回可视」重构（尚未切分新版本标签，仓库 `dist/` 与文档已同步更新）。宿主生成角色正文，后厨按顺序结算已选回复。每份聊天维护一个世界。[下载 v0.2.33 ZIP](https://github.com/HerrFaustus/tavern-kitchen/releases/download/v0.2.33/tavern-kitchen-0.2.33.zip) · [SHA-256 校验文件](https://github.com/HerrFaustus/tavern-kitchen/releases/download/v0.2.33/tavern-kitchen-0.2.33.zip.sha256) · [发布页](https://github.com/HerrFaustus/tavern-kitchen/releases/tag/v0.2.33) · [成品规则](最终项目目标.md) · [验收记录](docs/validation.json)
+0.2.34 已完成全量测试、九组无头界面回归及最终 ZIP 安装复验（安装包位于 `release/tavern-kitchen-0.2.34.zip`、校验见 `release/release-info.json`）。宿主生成角色正文，后厨按顺序结算已选回复。每份聊天维护一个世界。[成品规则](最终项目目标.md) · [验收记录](docs/validation.json) · [版本历史](历史更新记录.md)
 
 ## 安装与开始
 
-1. 全新安装时将下载的 `tavern-kitchen-0.2.33.zip`（或本地 `pnpm build` 生成的包目录）解压到宿主的 `public/scripts/extensions/third-party/`，确认 `tavern-kitchen/manifest.json` 与 `tavern-kitchen/dist/host/plugin.js` 在同一扩展目录下，刷新宿主。升级时先在原浏览器的「数据」导出后厨卡，再用新目录覆盖原扩展文件并刷新。沿用原宿主账号、地址和浏览器配置文件即可读回原聊天、IndexedDB 世界以及札记。
+1. 全新安装时将 `release/tavern-kitchen-0.2.34.zip`（或仓库目录）解压到宿主的 `public/scripts/extensions/third-party/`，确认 `tavern-kitchen/manifest.json` 与 `tavern-kitchen/dist/host/plugin.js` 在同一扩展目录下，刷新宿主。升级时先在原浏览器的「数据」导出后厨卡，再用新目录覆盖原扩展文件并刷新。沿用原宿主账号、地址和浏览器配置文件即可读回原聊天、IndexedDB 世界以及札记。
 2. 打开聊天，点击顶栏最右的门形图标，或在扩展设置里点击「打开后厨」。顶栏下方显示原生工作台标题栏「酒馆后厨」与六个板块（主角、世界、剧情、编剧、设置、数据）。在「设置 → API → 编辑连接」新建或导入命名连接，填好地址和模型后保存，并分别为更新、推演、编剧 Agent 绑定连接（三者可共用一个）。
 3. 所有核心业务模块与后台演化（人物、地点与地图、局势、总结与召回、校对、编剧及章节自动更新札记）均固定默认开启，未绑定对应 Agent 时会在楼层状态栏直接拦截生成并给出前往「设置 → API」的入口。配置完成后在角色对话走完一轮即可到「剧情 → 总结」与「剧情 → 召回」查看本轮摘要与原文检索详情；要从角色卡、已启用的世界书条目和开场资料建档，到「世界 → 世界生成」点击生成；到「编剧」可随时点击「立即生成／更新札记」。
 
@@ -70,7 +70,7 @@
 
 宿主从扩展清单加载 `dist/host/plugin.js`。改启动和工作台行为时，从 `plugin-entry.js` 进入原生抽屉的引导与运行时。`index.js` 为仍缓存旧入口的安装转发到构建产物。改领域行为时，可从上面各功能的源码或测试进入。[扩展清单](manifest.json) · [启动源码](plugin-entry.js) · [旧入口](index.js)
 
-使用 Node.js 24、pnpm 11.25.0 和 Python 3。在仓库根目录运行以下命令，输出的安装包在 `release/`。要复现正式发布的 0.2.33 ZIP，请使用 `v0.2.33` 标签的干净检出，包内文档也取自该标签。
+使用 Node.js 24、pnpm 11.25.0 和 Python 3。在仓库根目录运行以下命令，输出的安装包在 `release/`。切换版本或复现指定版本 ZIP 时，可在对应标签或干净检出中构建，避免把上一版的本地归档带入版本检查。
 
 ```sh
 pnpm install --frozen-lockfile --ignore-scripts
@@ -79,7 +79,7 @@ pnpm check
 python3 scripts/package.py
 node scripts/check-versions.mjs
 node scripts/check-ui.mjs
-node scripts/check-installation.mjs release/tavern-kitchen-0.2.33.zip > release/install-verification.json
+node scripts/check-installation.mjs release/tavern-kitchen-0.2.34.zip > release/install-verification.json
 ```
 
 `pnpm build` 在暂存目录生成并校验产物后替换 `dist/`。`pnpm check` 核对质量、构建一致性、全部单元测试与记忆运行时。用 `node scripts/check-ui.mjs` 运行九组无头界面回归，也可单独运行其中一组。使用已有浏览器时可指定 `CHROMIUM_BIN` 与 `PLAYWRIGHT_MODULE`。[构建入口](scripts/build.mjs) · [检查入口](scripts/check.mjs)
