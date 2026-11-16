@@ -1,10 +1,10 @@
 {
-  "version": "0.2.34",
+  "version": "0.2.35",
   "status": "passed",
-  "validated_on": "2026-11-15",
-  "build_id": "41466afcb8332219658e",
-  "product": "酒馆后厨 Tavern 扩展，本地安装包",
-  "code_baseline": "d7a9fe8119b8d171d8e6096ae0437d614bc36de4",
+  "validated_on": "2026-11-16",
+  "build_id": "9dba7f4ff7ce73d6a3ae",
+  "product": "酒馆后厨 Tavern 扩展，本地安装包（终版收官）",
+  "code_baseline": "4cfa4f611485bc75658b820eecda1499043fd03a",
   "upgrade_fixture": {
     "commit": "506146623383fd9b6fea3cdd27c3ca1ca115f31a",
     "file": "scripts/fixtures/chat-0.2.32.json",
@@ -40,8 +40,8 @@
       "node scripts/check-ui.mjs",
       "python3 scripts/package.py",
       "node scripts/check-versions.mjs",
-      "(cd release && shasum -a 256 -c tavern-kitchen-0.2.34.zip.sha256)",
-      "node scripts/check-installation.mjs release/tavern-kitchen-0.2.34.zip > release/install-verification.json"
+      "(cd release && shasum -a 256 -c tavern-kitchen-0.2.35.zip.sha256)",
+      "node scripts/check-installation.mjs release/tavern-kitchen-0.2.35.zip > release/install-verification.json"
     ],
     "baseline": {
       "version": "0.2.32",
@@ -72,7 +72,7 @@
       "commands": [
         "node --import tsx --test core/panel-controls.test.js modules/text-api/tests/profiles.test.js modules/text-api/tests/runtime.test.js modules/text-api/tests/call-stats.test.js",
         "node scripts/check-api-workspace.mjs",
-        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.34.zip"
+        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.35.zip"
       ]
     },
     {
@@ -94,7 +94,7 @@
       "focused_tests": 66,
       "commands": [
         "node --import tsx --test modules/world-records/floor-processing.test.js modules/world-records/turn-ledger.test.js modules/story-summary/tests/message-sources.test.js",
-        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.34.zip"
+        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.35.zip"
       ]
     },
     {
@@ -117,7 +117,7 @@
       "commands": [
         "node --import tsx --test modules/world-records/floor-processing.test.js modules/world-records/proposal-batch.test.js modules/world-records/authority.test.js modules/text-api/tests/call-stats.test.js",
         "node scripts/check-proposal-workspace.mjs",
-        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.34.zip"
+        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.35.zip"
       ]
     },
     {
@@ -140,7 +140,7 @@
       "commands": [
         "node --import tsx --test modules/world-records/recovery-panel.test.js modules/world-records/legacy-archive.test.js modules/kitchen-data/card.test.js modules/story-summary/tests/metadata-confirmation.test.js modules/story-summary/tests/memory-storage.test.js",
         "node scripts/check-proposal-workspace.mjs",
-        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.34.zip"
+        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.35.zip"
       ]
     },
     {
@@ -170,39 +170,41 @@
       "id": 6,
       "title": "构建、全量校验、九组界面回归及最终 ZIP 复装",
       "status": "passed",
-      "input": "0.2.34 发行工作区、Chromium 无头浏览器样例与 0.2.32 旧档。",
+      "input": "0.2.35 终版发行工作区、Chromium 无头浏览器样例（含 360px 窄屏）与 0.2.32/0.2.34 旧档。",
       "actions": [
-        "执行质量校验、构建与全量检查；运行九组无头界面回归。",
+        "执行质量校验、类型检查、项目边界校验、构建与全量检查；运行九组无头界面回归（含 360px 窄屏与离线「后厨教程」弹窗检查）。",
         "执行打包脚本输出 ZIP、SHA-256 与清单，核对版本与哈希。",
-        "从 release/tavern-kitchen-0.2.34.zip 解压到新临时目录，在无头浏览器加载扩展走通未绑定拦截、三连接配置、100 楼队列及 0.2.32 旧档导回。"
+        "从 release/tavern-kitchen-0.2.35.zip 解压到新临时目录，在无头浏览器加载扩展走通未绑定拦截、三连接配置、100 楼队列（含 503 退避重试与续跑）及 0.2.32 旧档导回。"
       ],
-      "expected": "构建产物可复现，所有静态检查、全量测试、界面回归与 ZIP 复装全部通过，版本清单与包体逐字节吻合。",
+      "expected": "构建产物可复现，所有静态检查、类型与项目校验、全量测试、界面回归与 ZIP 复装全部通过，版本清单与包体逐字节吻合。",
       "observed": [
-        "构建标识 41466afcb8332219658e，9 个入口、Vite 转换 750 个模块（入包 739 个模块、52 个分块）。全量 1699 项单元测试 0 失败、0 跳过；记忆运行时 result=PASS。",
-        "工作台、API 布局、API 绑定、总结工作台（含 设置 → 剧情与召回 与 剧情 → 召回）、楼尾、地点地图、提案、编剧布局、编剧工作台九组无头回归全部通过。",
-        "tavern-kitchen-0.2.34.zip 通过 check-versions.mjs、shasum 校验及最终 ZIP 安装复装验证，结果已写入 release/install-verification.json。"
+        "构建标识 9dba7f4ff7ce73d6a3ae，9 个入口、Vite 转换 748 个模块（入包 737 个模块、52 个分块）。全量 1739 项单元测试 0 失败、0 跳过；记忆运行时 result=PASS（warm result=WARMED status=session-cache idle）。",
+        "工作台（含 360px 窄屏与「后厨教程」）、API 布局、API 绑定、总结工作台（含 设置 → 剧情与召回 与 剧情 → 召回）、楼尾、地点地图、提案、编剧布局、编剧工作台九组无头回归全部通过。",
+        "tavern-kitchen-0.2.35.zip 通过 check-versions.mjs、shasum 校验及最终 ZIP 安装复装验证，结果已写入 release/install-verification.json。"
       ],
       "commands": [
         "node scripts/quality.mjs",
+        "node scripts/typecheck.mjs",
         "node scripts/build.mjs",
         "node scripts/check.mjs",
+        "node scripts/check-project.mjs",
         "node scripts/check-ui.mjs",
         "python3 scripts/package.py",
         "node scripts/check-versions.mjs",
-        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.34.zip"
+        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.35.zip"
       ]
     }
   ],
   "artifacts": {
-    "zip": "release/tavern-kitchen-0.2.34.zip",
-    "checksum": "release/tavern-kitchen-0.2.34.zip.sha256",
+    "zip": "release/tavern-kitchen-0.2.35.zip",
+    "checksum": "release/tavern-kitchen-0.2.35.zip.sha256",
     "manifest": "release/release-info.json",
     "acceptance": "docs/validation.json",
     "final_zip_readback": "release/install-verification.json"
   },
   "limitations": [
     "验收使用本地模型桩和宿主接口样例。SillyTavern、TauriTavern 与在线模型的连续实玩不在验收范围。",
-    "记忆运行时走 main-fallback；无预热会话缓存时 warm 阶段显示 SKIPPED (session-cache idle)，召回、提示一致性、会话释放、变更处理、重启及向量缓存导入检查均通过。",
+    "记忆运行时走 main-fallback；warmRecallRuntime 通过短期只读会话租约预热索引并在会话释放后回归 session-cache idle（warm result=WARMED status=session-cache idle，零常驻向量），召回、提示一致性、会话释放、变更处理、重启及向量缓存导入检查均通过。",
     "客户端随包带源码，内置提示词在产品中隐藏，持有源码或检查网络请求的人仍可读取。"
   ]
 }
