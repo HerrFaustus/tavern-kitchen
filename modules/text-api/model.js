@@ -15,9 +15,8 @@ export const AGENT_BINDINGS = Object.freeze({
     planner: { name: '编剧', features: ['planner'] },
 });
 
-export function usableAgentConnection(preset, agent) {
-    return !!preset && (preset.kind || 'text') === 'text' && preset.provider !== HOST_PROVIDER && !!preset.model?.trim() && !!preset.baseUrl?.trim()
-        && (agent !== 'planner' || !!preset.apiKey?.trim());
+export function usableAgentConnection(preset) {
+    return !!preset && (preset.kind || 'text') === 'text' && preset.provider !== HOST_PROVIDER && !!preset.model?.trim() && !!preset.baseUrl?.trim();
 }
 
 export function featureBinding(settings, key) {

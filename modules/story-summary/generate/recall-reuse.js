@@ -24,7 +24,7 @@ export function createRecallReuse() {
     function prepare(context, type = 'normal') {
         // Quiet/impersonation calls keep their existing recall behavior and do
         // not own the conversational round's memory.
-        if (!['normal', 'continue', 'swipe', 'regenerate'].includes(type)) {
+        if (!['normal', 'continue', 'swipe', 'regenerate', 'group'].includes(type)) {
             return { ticket: null, memory: null };
         }
         const chat = context?.chat;

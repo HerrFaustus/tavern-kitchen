@@ -16,6 +16,9 @@ import {
     createEmbeddingFailureError,
     readEmbeddingVectors,
 } from './embedding-failure.js';
+import { isVectorApiConfigured, parseVectorApiKeys } from './api-config-policy.js';
+
+export { isVectorApiConfigured };
 
 const BASE_URL = 'https://api.siliconflow.cn';
 const EMBEDDING_MODEL = 'BAAI/bge-m3';
@@ -37,14 +40,7 @@ function getEmbeddingApiConfig() {
  * 从 localStorage 解析所有 Key（支持逗号、分号、竖线、换行分隔）
  */
 function parseKeys(rawKey) {
-    try {
-        const keyStr = String(rawKey || '');
-        return keyStr
-            .split(/[,;|\n]+/)
-            .map(k => k.trim())
-            .filter(k => k.length > 0);
-    } catch (caughtError) { console.warn({ source: import.meta.url, operation: "parseKeys" }, caughtError); }
-    return [];
+    return parseVectorApiKeys(rawKey);
 }
 
 /**
@@ -81,13 +77,13 @@ export async function embed(texts, options = {}) {
     if (!texts?.length) return [];
 
     const apiCfg = options.apiConfig || getEmbeddingApiConfig();
-    const key = getApiKey(apiCfg.key);
-    if (!key) {
+    if (!isVectorApiConfigured(apiCfg)) {
         throw createEmbeddingFailureError(
-            '未配置 Embedding API Key',
+            '未配置 Embedding API Key 或无 Key 本地接口',
             { kind: 'configuration' },
         );
     }
+    const key = getApiKey(apiCfg.key);
 
     const { timeout = 30000, signal } = options;
     const controller = new AbortController();
@@ -123,7 +119,8 @@ export async function embed(texts, options = {}) {
         const response = await send(endpoint.href, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${key}`,
+                // WHY: 无 Key 本地网关不可发送空的 Bearer Authorization，避免服务端鉴权解析报错。
+                ...(key ? { 'Authorization': `Bearer ${key}` } : {}),
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({

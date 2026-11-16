@@ -3,6 +3,7 @@ import { FunctionCallingConfigMode, GoogleGenAI, ThinkingLevel } from '@google/g
 import { buildSamplingParameters } from '../sampling.js';
 import { resolveAgentAuth } from '../provider-auth.js';
 import { attachRequestInspection, readResponseCompletion } from '../runtime/response-completion.js';
+import { runWithRetry, sanitizeErrorSecrets } from '../runtime/retry-policy.js';
 import {
     buildEffectiveReasoningConfig,
     buildSdkRequestInspection,
@@ -808,13 +809,34 @@ export class GoogleAdapter {
     }
 
     async sendTracked(sendPayload, task, effectiveReasoning, requestInspection) {
+        let streamStarted = false;
+        const trackedTask = typeof task.onStreamProgress === 'function'
+            ? {
+                ...task,
+                onStreamProgress: (progress) => {
+                    streamStarted = true;
+                    task.onStreamProgress(progress);
+                },
+            }
+            : task;
         try {
             return {
-                ...await this.sendThroughChat(this.activeChat, sendPayload, task, effectiveReasoning),
+                ...await runWithRetry(
+                    () => this.sendThroughChat(this.activeChat, sendPayload, trackedTask, effectiveReasoning),
+                    {
+                        signal: task.signal,
+                        timeoutMs: Number(this.config.timeoutMs) || 0,
+                        maxRetries: task.retryTransient === false ? 0 : 2,
+                        canRetry: () => !streamStarted,
+                    },
+                ),
                 requestInspection,
             };
         } catch (error) {
-            throw attachRequestInspection(error, requestInspection);
+            throw attachRequestInspection(
+                sanitizeErrorSecrets(error, this.auth?.apiKey || this.config?.apiKey),
+                requestInspection,
+            );
         }
     }
 

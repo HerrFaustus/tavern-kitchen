@@ -13,7 +13,7 @@ test('foreground adapter publishes only a whole chapter and clears its request-l
         'script.js': 'export const extension_prompts=globalThis.__plannerHost.prompts, extension_prompt_types={IN_CHAT:1}, extension_prompt_roles={SYSTEM:0};',
         'event-manager.js': 'export const event_types=new Proxy({},{get:(_,k)=>k}); export const createModuleEvents=()=>({on:(k,fn)=>globalThis.__plannerHost.events[k]=fn,cleanup(){}});',
         'generate-interceptor.js': 'export const GENERATE_INTERCEPTOR_ORDER={STORY_PLANNER:300}; export function registerGenerateInterceptor(id,fn){globalThis.__plannerHost.run=fn;} export function unregisterGenerateInterceptor(){}',
-        'host.js': 'export const resolveTextApi=async()=>({provider:"other",apiKey:"fixture"}); export const generateFeatureText=async()=>{globalThis.__plannerHost.calls++; return {text:JSON.stringify({global:{text:"后台全局",dependencies:[]},chapter:{text:"药车停在桥头。",dependencies:[]}})};};',
+        'host.js': 'export const resolveTextApi=async()=>({provider:"other",baseUrl:"http://127.0.0.1:8080/v1",model:"fixture-model",apiKey:""}); export const generateFeatureText=async()=>{globalThis.__plannerHost.calls++; return {text:JSON.stringify({global:{text:"后台全局",dependencies:[]},chapter:{text:"药车停在桥头。",dependencies:[]}})};};',
         'repository.js': 'export function getTextApiRepository(){}',
     };
     const result = await build({entryPoints:['modules/story-planner/host.js'],platform:'node',format:'esm',bundle:true,write:false,

@@ -181,6 +181,16 @@
     .archive-drawer-body { padding: 23px 20px; height: calc(100% - 69px); }
     .archive-reading .tl-pg-btn, .archive-reading .tl-pg-num { min-height: 44px; }
 }
+@media (max-width: 420px) {
+    .archive { padding: 0 12px 24px; }
+    .archive-topbar { height: auto; min-height: 52px; padding: 8px 0; flex-wrap: wrap; gap: 8px; }
+    .archive-topbar .archive-actions { flex-wrap: wrap; max-width: 100%; justify-content: flex-end; }
+    .archive-hero { flex-wrap: wrap; gap: 10px; }
+    .archive-generate { flex-wrap: wrap; max-width: 100%; }
+    .archive-nav { flex-wrap: wrap; gap: 8px; }
+    .archive-tabs { gap: 14px; flex-wrap: wrap; }
+    .archive-roster { grid-template-columns: minmax(0, 1fr); gap: 0; }
+}
 .timeline-unit { padding-block: 8px; border-top: 1px solid var(--bdr); min-width: 0; }
 .timeline-unit > summary { cursor: pointer; padding-block: 8px; color: var(--txt); overflow-wrap: anywhere; }
 .timeline-unit > summary:focus-visible { outline: 2px solid var(--archive-accent); outline-offset: 2px; }

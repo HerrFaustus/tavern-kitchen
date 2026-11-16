@@ -250,6 +250,7 @@ export async function buildVectorPromptText(excludeLastAi = false, options = {})
         const recallTrace = recallResult ? {
             mode: recallResult.mode || (assembly ? 'hybrid' : 'none'),
             reranked: Boolean(recallResult.reranked),
+            rerankStatus: recallResult.rerankStatus || (recallResult.reranked ? 'applied' : 'disabled'),
             queryPreview: recallResult.queryPreview || '',
             focusCharacters: recallResult.focusCharacters || [],
             hiddenThrough: meta?.hiddenThrough ?? -1,

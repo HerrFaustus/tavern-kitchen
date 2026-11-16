@@ -85,6 +85,12 @@ body:has(.memory-chat-dialog[open]) { overflow: hidden; }
     .memory-toolbar { flex-wrap: wrap; }
     .memory-toolbar .memory-heading { flex-basis: auto; }
 }
+@media (max-width: 420px) {
+    .memory-chat-header { flex-wrap: wrap; gap: 6px; padding: 8px 10px; }
+    .memory-chat-header-actions { flex-wrap: wrap; max-width: 100%; }
+    .memory-chat-icon-button { width: 34px; height: 34px; min-height: 34px; flex: 0 0 34px; }
+    .memory-chat-pages { flex-wrap: wrap; }
+}
 @media (max-height: 450px) {
     .memory-chat-header { min-height: 50px; padding-block: 4px; }
     .memory-chat-composer { padding-block: 6px; }

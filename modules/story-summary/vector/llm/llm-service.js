@@ -7,6 +7,7 @@ import { xbLog } from '../../../../core/debug-core.js';
 import { getVectorConfig } from '../../data/config.js';
 import { getDefaultApiPrefix, resolveApiBaseUrl } from '../../../../shared/common/openai-url-utils.js';
 import { createL0FailureError } from './l0-retry-policy.js';
+import { isVectorApiConfigured } from './api-config-policy.js';
 
 const MODULE_ID = 'vector-llm-service';
 const DEFAULT_L0_MODEL = 'Qwen/Qwen3-8B';
@@ -29,12 +30,16 @@ function getL0ApiConfig() {
 function normalizeL0ApiConfig(apiConfig = null) {
     const fallback = getL0ApiConfig();
     const next = apiConfig || {};
+    // WHY: 表单/测试显式传入 key: '' 时必须保留空串，防止回落到旧的已保存 Key，导致无 Key 测试误带鉴权头。
+    const rawKey = ('key' in next && next.key !== undefined) ? next.key : fallback.key;
+    const rawUrl = ('url' in next && next.url !== undefined && next.url !== '') ? next.url : fallback.url;
+    const rawModel = ('model' in next && next.model !== undefined && next.model !== '') ? next.model : fallback.model;
     return {
         requestExtras: (apiConfig || fallback).requestExtras,
         provider: String(next.provider || fallback.provider || 'siliconflow').trim(),
-        url: String(next.url || fallback.url || DEFAULT_L0_API_URL).trim(),
-        key: String(next.key || fallback.key || '').trim(),
-        model: String(next.model || fallback.model || DEFAULT_L0_MODEL).trim(),
+        url: String(rawUrl || DEFAULT_L0_API_URL).trim(),
+        key: String(rawKey || '').trim(),
+        model: String(rawModel || DEFAULT_L0_MODEL).trim(),
     };
 }
 
@@ -112,10 +117,10 @@ export async function callLLM(messages, options = {}) {
     } = options;
 
     const apiCfg = normalizeL0ApiConfig(apiConfig);
-    const apiKey = getNextKey(apiCfg.key);
-    if (!apiKey) {
-        throw createL0FailureError('L0 requires API key', { kind: 'configuration' });
+    if (!isVectorApiConfigured(apiCfg)) {
+        throw createL0FailureError('L0 requires API key or keyless local endpoint', { kind: 'configuration' });
     }
+    const apiKey = getNextKey(apiCfg.key);
 
     const normalizedMessages = normalizeMessages(messages);
     if (!normalizedMessages.length) {
@@ -155,7 +160,7 @@ export async function callLLM(messages, options = {}) {
         const response = await send(`${baseUrl}/chat/completions`, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${apiKey}`,
+                ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
                 'Content-Type': 'application/json',
             },
             body: requestBody,
@@ -214,8 +219,9 @@ export async function callLLM(messages, options = {}) {
 }
 
 export async function testL0Service(apiConfig = {}, { signal } = {}) {
-    if (!apiConfig?.key) {
-        throw new Error('请配置 L0 API Key');
+    const normalized = normalizeL0ApiConfig(apiConfig);
+    if (!isVectorApiConfigured(normalized)) {
+        throw new Error('请配置 L0 API Key 或无 Key 本地接口');
     }
     const result = await callLLM([
         { role: 'system', content: PROBE_SYSTEM },

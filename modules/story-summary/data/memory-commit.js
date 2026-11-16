@@ -210,6 +210,22 @@ export async function commitSummaryMemory(chatId, next, { previous = readSummary
         else transactions.delete(owner);
     };
     let saveSettled = false;
+    let saveError = null;
+    const isLargeChat = (() => {
+        const chat = Array.isArray(context?.chat) ? context.chat : [];
+        if (chat.length >= 200) return true;
+        let totalChars = 0;
+        for (const msg of chat) {
+            totalChars += typeof msg?.mes === 'string' ? msg.mes.length : 0;
+            if (totalChars >= 400_000) return true;
+        }
+        try {
+            if (JSON.stringify(expected).length >= 256_000) return true;
+        } catch (error) {
+            console.debug({ source: import.meta.url, operation: 'measureExpectedSize' }, error);
+        }
+        return false;
+    })();
     const assertNotSuperseded = () => {
         if (transaction.retirements?.length && !sameMemory(expected, baseline) && sameMemory(current(expected), current(baseline))) {
             throw new MetadataConfirmationError('metadata_source_changed');
@@ -217,7 +233,13 @@ export async function commitSummaryMemory(chatId, next, { previous = readSummary
     };
     const confirmAndPublish = async (timeoutMs = METADATA_CONFIRMATION_TIMEOUT_MS) => {
         assertNotSuperseded();
-        const persisted = await confirm(expected, rawPrevious, confirmedSnapshots.get(owner), { timeoutMs, savePending: () => !saveSettled, normalize: current });
+        const persisted = await confirm(expected, rawPrevious, confirmedSnapshots.get(owner), {
+            timeoutMs,
+            savePending: () => !saveSettled,
+            normalize: current,
+            allowSettledDegrade: () => saveSettled && !saveError,
+            isLargeChat,
+        });
         assertNotSuperseded();
         if (!sameMemory(project(owner), current(expected))) throw new MetadataConfirmationError('metadata_save_conflict', true);
         const sourceBoundariesPersisted = (sourceInvalidFloor == null || (expected.storySummary.sourceInvalidFromFloor ?? Infinity) <= sourceInvalidFloor)
@@ -236,7 +258,6 @@ export async function commitSummaryMemory(chatId, next, { previous = readSummary
         assertBaseline();
         install(owner, current(expected));
         staged = true;
-        let saveError;
         // The host owns this save; timing out our wait cannot cancel or replay it.
         const deadline = Date.now() + METADATA_CONFIRMATION_TIMEOUT_MS;
         // Invoke before yielding: SillyTavern's method reads the active chat, not

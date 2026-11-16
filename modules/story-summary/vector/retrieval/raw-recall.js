@@ -11,6 +11,7 @@ import { getMeta } from '../storage/chunk-store.js';
 import { boundRecallEmbeddingSegment } from './recall-query-bounds.js';
 import { searchRawRecallRuntime } from '../runtime/runtime.js';
 import { rerank } from '../llm/reranker.js';
+import { isVectorApiConfigured } from '../llm/api-config-policy.js';
 import { throwIfSignalAborted } from '../../../../shared/common/abort-utils.js';
 import { recordRecallFallback, recordRecallObservation, recordRecallRuntimeProgress } from '../../recall-diagnostics.js';
 
@@ -18,7 +19,7 @@ export async function recallRawMemory(vectorConfig, { hiddenThrough, focusOnly =
     diagnostics, withQueryEmbedding } = {}) {
     const { chatId, chat = [] } = getContext();
     const store = getPublishedSummaryStore();
-    const empty = { chunks: [], focusCharacters: [], stats: { documents: 0, candidates: 0 } };
+    const empty = { chunks: [], mode: 'none', reranked: false, rerankStatus: 'disabled', focusCharacters: [], stats: { documents: 0, candidates: 0 } };
     if (!chatId || !chat.length || hiddenThrough < 0) return empty;
     if (excludeLastAi && !chat.at(-1)?.is_user) hiddenThrough = Math.min(hiddenThrough, chat.length - 2);
     const queryMessages = chat.slice(0, excludeLastAi && !chat.at(-1)?.is_user ? -1 : undefined).slice(-3);
@@ -29,7 +30,7 @@ export async function recallRawMemory(vectorConfig, { hiddenThrough, focusOnly =
     const tokenizer = getTokenizerSnapshot();
     const focusCharacters = [...new Set(tokenizer.extractEntities(query))];
     const queryPreview = query.slice(0, 180);
-    if (focusOnly) return { ...empty, mode: 'focus-only', reranked: false, queryPreview, focusCharacters };
+    if (focusOnly) return { ...empty, mode: 'focus-only', reranked: false, rerankStatus: 'disabled', queryPreview, focusCharacters };
     const source = captureRangeSource(chat, 0, chat.length - 1);
     const assertCurrent = () => {
         throwIfSignalAborted(signal);
@@ -49,12 +50,15 @@ export async function recallRawMemory(vectorConfig, { hiddenThrough, focusOnly =
     const fingerprint = getEngineFingerprint(vectorConfig);
     const meta = await getMeta(chatId);
     assertCurrent();
-    if (vectorConfig.embeddingApi?.key && meta.fingerprint === fingerprint && (meta.lastChunkFloor ?? -1) >= 0) {
+    if (isVectorApiConfigured(vectorConfig.embeddingApi) && meta.fingerprint === fingerprint && (meta.lastChunkFloor ?? -1) >= 0) {
         if (diagnostics) diagnostics.stage = 'raw-embed';
         try {
             const request = () => embed([query], vectorConfig, { signal, timeout: 15000 });
             [queryVector] = await (withQueryEmbedding ? withQueryEmbedding(request) : request());
             if (!queryVector?.length || !Array.from(queryVector).every(Number.isFinite)) throw new Error('原文查询向量无效');
+            if (meta.dims > 0 && queryVector.length !== meta.dims) {
+                throw new Error(`查询向量维度(${queryVector.length})与缓存维度(${meta.dims})不一致`);
+            }
         } catch (error) {
             queryVector = null;
             assertCurrent();
@@ -68,11 +72,15 @@ export async function recallRawMemory(vectorConfig, { hiddenThrough, focusOnly =
         onProgress: event => recordRecallRuntimeProgress(diagnostics, event),
     });
     assertCurrent();
-    const mode = queryVector ? 'hybrid' : 'keyword';
+    if (result.stats?.vectorReadError) {
+        recordRecallFallback(diagnostics, 'raw-vector-read', new Error(result.stats.vectorReadError));
+    }
+    const mode = (queryVector && !result.stats?.vectorReadError) ? 'hybrid' : 'keyword';
     let reranked = false;
+    let rerankStatus = 'disabled';
     recordRecallObservation(diagnostics, 'raw', { phase: 'candidates', mode, documentCount: result.stats.documents });
     // One bounded pool; no event/floor rerank or graph expansion.
-    if (vectorConfig.rerankApi?.key && result.chunks.length > 1) {
+    if (isVectorApiConfigured(vectorConfig.rerankApi) && result.chunks.length > 1) {
         if (diagnostics) diagnostics.stage = 'raw-rerank';
         try {
             const ranked = await rerank(query, result.chunks.map(chunk => chunk.text), { topN: result.chunks.length, signal });
@@ -82,10 +90,12 @@ export async function recallRawMemory(vectorConfig, { hiddenThrough, focusOnly =
             result.chunks = result.chunks.map((chunk, index) => ({ ...chunk, _rerankScore: scores.get(index) ?? 0 }))
                 .sort((a, b) => b._rerankScore - a._rerankScore || b._score - a._score);
             reranked = true;
+            rerankStatus = 'applied';
         } catch (error) {
+            rerankStatus = 'failed';
             assertCurrent();
             recordRecallFallback(diagnostics, 'raw-rerank', error);
         }
     }
-    return { ...result, mode, reranked, queryPreview, focusCharacters, source };
+    return { ...result, mode, reranked, rerankStatus, queryPreview, focusCharacters, source };
 }

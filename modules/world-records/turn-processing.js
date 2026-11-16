@@ -160,6 +160,8 @@ export function createFloorProcessing({ read, tasks, store, save, getService, re
                     const effect = groupEffect(source,group);
                     if (entry.review) delete entry.review[effect];
                     if (entry.decisions?.[effect] === 'accepted') delete entry.decisions[effect];
+                    if (entry.editedGroups) delete entry.editedGroups[effect];
+                    if (entry.resolvedRefs) delete entry.resolvedRefs[effect];
                 }
             });
         }
@@ -214,28 +216,42 @@ export function createFloorProcessing({ read, tasks, store, save, getService, re
             }
             const oldTrade = group.rows.find(row => row.type === 'trade');
             if (oldTrade && legacyTradeRecorded(state,turn,oldTrade,brief.heroId)) continue;
-            const decision = store().floorWork[source.end]?.decisions?.[effectId];
+            const floorEntry = store().floorWork[source.end];
+            const decision = floorEntry?.decisions?.[effectId];
             if (decision === 'rejected') continue;
+            const effectiveRows = floorEntry?.editedGroups?.[effectId] || group.rows;
+            const resolvedRefs = floorEntry?.resolvedRefs?.[effectId] || {};
             const command = service.command(state, [], sim ? '逐楼推演' : '逐楼更新', { sourceId: turn.id, effectId });
             try {
                 const atFloor = historicalWorld(state,source.end);
-                command.operations = turnOperations(atFloor, group.rows, { source, playerName: ctx.playerName, effectId, commandId: command.id,
-                    omitted: savedDraft.omitted, reviewed: decision === 'accepted' });
+                command.operations = turnOperations(atFloor, effectiveRows, { source, playerName: ctx.playerName, effectId, commandId: command.id,
+                    omitted: savedDraft.omitted, reviewed: decision === 'accepted', resolvedRefs });
                 checkHistoricalFields(command.operations,atFloor,state);
                 // A story transaction overlays records onto the live module, preserving unrelated later changes.
                 if (atFloor !== state && command.operations.some(op => op.type === 'module')) {
-                    for (const row of group.rows.filter(r => r.type === 'story')) {
+                    for (const row of effectiveRows.filter(r => r.type === 'story')) {
                         const find = world => world.modules.story?.records.find(item => item.record.id === row.record.id) ?? null;
                         invariant(canonical(find(atFloor)) === canonical(find(state)), '该剧情记录在后楼已有变化，请从本楼重记');
                     }
-                    command.operations = turnOperations(state,group.rows,{source,playerName:ctx.playerName,effectId,commandId:command.id,
-                        omitted:savedDraft.omitted,reviewed:decision === 'accepted'});
+                    command.operations = turnOperations(state,effectiveRows,{source,playerName:ctx.playerName,effectId,commandId:command.id,
+                        omitted:savedDraft.omitted,reviewed:decision === 'accepted',resolvedRefs});
                 }
             } catch (error) {
                 check();
                 // The exact response stays in confirmed memory. Independent groups can still commit.
-                await save(source, check, entry => { (entry.review ??= {})[effectId] = { reason: error.message, rows: group.rows }; });
+                await save(source, check, entry => {
+                    (entry.review ??= {})[effectId] = {
+                        reason: error.message,
+                        rows: effectiveRows,
+                        ...(error.ambiguity ? { ambiguity: error.ambiguity } : {}),
+                    };
+                });
                 continue;
+            }
+            if (!command.operations.length && decision === 'accepted') {
+                // WHY: Emitting a verified_noop receipt gives reviewed zero-change groups a durable effectId receipt
+                // so the unresolved-review barrier below never deadlocks forever.
+                command.operations = [{ type: 'verified_noop', reason: '已核对无实质变更' }];
             }
             if (command.operations.length) {
                 try { await service.commit(command, {guard:check}); }
@@ -244,7 +260,7 @@ export function createFloorProcessing({ read, tasks, store, save, getService, re
                     // A deterministic condition needs player review. Storage or concurrent writes stay retryable.
                     try { applyCommand(state,command); }
                     catch (invalid) {
-                        await save(source,check,entry => { (entry.review ??= {})[effectId] = {reason:invalid.message,rows:group.rows}; });
+                        await save(source,check,entry => { (entry.review ??= {})[effectId] = {reason:invalid.message,rows:effectiveRows}; });
                         continue;
                     }
                     throw error;
@@ -255,7 +271,22 @@ export function createFloorProcessing({ read, tasks, store, save, getService, re
         state = await service.read(); check();
         const unresolved = Object.entries(latest?.review || {}).find(([id,item]) => item.rows.some(row => keys.includes(row.task)) && latest.decisions?.[id] !== 'rejected' && !state?.receipts.some(r => r.origin?.effectId === id));
         if (unresolved) throw new Error('本楼有待核变化，请在后厨核对：' + unresolved[1].reason);
-        await save(source, check, entry => { entry.done = [...new Set([...(entry.done || []), ...keys])]; for (const [id, previous] of Object.entries(entry.pending || {})) if (previous.keys?.every(k=>entry.done.includes(k))) delete entry.pending[id]; });
+        await save(source, check, entry => {
+            entry.done = [...new Set([...(entry.done || []), ...keys])];
+            for (const [id, previous] of Object.entries(entry.pending || {})) if (previous.keys?.every(k=>entry.done.includes(k))) delete entry.pending[id];
+            if (entry.review) {
+                for (const id of Object.keys(entry.review)) {
+                    if (state?.receipts.some(r => r.origin?.effectId === id) || entry.decisions?.[id] === 'rejected') {
+                        delete entry.review[id];
+                        if (entry.editedGroups) delete entry.editedGroups[id];
+                        if (entry.resolvedRefs) delete entry.resolvedRefs[id];
+                    }
+                }
+                if (!Object.keys(entry.review).length) delete entry.review;
+            }
+            if (entry.editedGroups && !Object.keys(entry.editedGroups).length) delete entry.editedGroups;
+            if (entry.resolvedRefs && !Object.keys(entry.resolvedRefs).length) delete entry.resolvedRefs;
+        });
     }
     return createTurnQueue({ read, tasks, complete, execute, status });
 }

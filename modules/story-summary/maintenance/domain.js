@@ -5,8 +5,14 @@ import { normalizeCharacterAliases, collectAliasGraphIssues } from '../data/char
 import { MemoryMaintenanceError, requireMemory } from './errors.js';
 import { eventSourceRange } from './records.js';
 import { parseStoryUpdates, STORY_FIELDS } from '../../story-state/records.js';
+import { authorityIndex, isPrivateStoryField } from '../../world-records/authority.js';
+import { FIELD_LABELS } from '../../world-records/domain.js';
+import { worldStoryRecords } from '../../world-records/world-story-state.js';
 
-export const MEMORY_COLLECTIONS = Object.freeze(['events', 'facts', 'characters', 'characterAliases', 'anchors', 'storyRecords']);
+// WHY: events 已从活跃维护视图下线，MEMORY_COLLECTIONS 仅保留 5 个当前集合；
+// 历史收据校对与旧单测底层批处理兼容通过 LEGACY_MEMORY_COLLECTIONS 识别旧 events。
+export const MEMORY_COLLECTIONS = Object.freeze(['facts', 'characters', 'characterAliases', 'anchors', 'storyRecords']);
+export const LEGACY_MEMORY_COLLECTIONS = Object.freeze(['events', ...MEMORY_COLLECTIONS]);
 // Maintenance withdraws a fact by deleting it; retraction is a generation protocol.
 export const EDITABLE_FIELDS = Object.freeze({
     events: ['title', 'timeLabel', 'summary', 'participants', 'causedBy', 'memoryRole'],
@@ -32,7 +38,7 @@ const text = value => typeof value === 'string' && !!value.trim();
 const texts = value => Array.isArray(value) && value.every(text);
 
 export function memoryItems(memory, collection) {
-    requireMemory(MEMORY_COLLECTIONS.includes(collection), 'invalid_operation');
+    requireMemory(LEGACY_MEMORY_COLLECTIONS.includes(collection), 'invalid_operation');
     if (collection === 'anchors') return memory.atoms;
     if (collection === 'characters') return memory.json.characters?.main || [];
     return memory.json[collection] || [];
@@ -60,6 +66,100 @@ export function* iterateMemoryRecords(memory, collections = MEMORY_COLLECTIONS) 
         if (collection === 'storyRecords' && value.kind === 'scene') continue;
         if (collection === 'facts' && value?.retracted === true) continue;
         yield { collection, key: memoryKey(collection, value), value };
+    }
+}
+
+const WORLD_STRUCTURED_FIELD_ALIASES = new Map([
+    ['coins', 'coins'], ['金币', 'coins'], ['余额', 'coins'], ['钱包', 'coins'],
+    ['owner', 'owner'], ['归属', 'owner'],
+    ['location', 'location'], ['所在地', 'location'], ['位置', 'location'],
+    ['parent', 'parent'], ['上级地点', 'parent'],
+]);
+const normalizeWorldName = value => String(value || '').trim().normalize('NFKC').toLocaleLowerCase();
+const canonicalWorldFieldKey = predicate => {
+    const raw = String(predicate || '').trim();
+    const lower = raw.toLocaleLowerCase();
+    if (WORLD_STRUCTURED_FIELD_ALIASES.has(raw)) return WORLD_STRUCTURED_FIELD_ALIASES.get(raw);
+    if (WORLD_STRUCTURED_FIELD_ALIASES.has(lower)) return WORLD_STRUCTURED_FIELD_ALIASES.get(lower);
+    const labelMatch = Object.entries(FIELD_LABELS).find(([, label]) => label === raw || label.toLocaleLowerCase() === lower);
+    return labelMatch ? labelMatch[0] : raw;
+};
+const isStructuredWorldFactField = predicate => {
+    const raw = String(predicate || '').trim();
+    return WORLD_STRUCTURED_FIELD_ALIASES.has(raw) || WORLD_STRUCTURED_FIELD_ALIASES.has(raw.toLocaleLowerCase());
+};
+function resolveWorldEntityForFact(fact, world) {
+    if (!world || !fact?.s) return null;
+    const { memoryNames } = authorityIndex(world);
+    const subjectKey = normalizeWorldName(fact.s);
+    if (memoryNames.has(subjectKey)) return memoryNames.get(subjectKey);
+    const matches = (world.entities || []).filter(entity =>
+        [entity.name, ...(entity.aliases || [])].some(name => normalizeWorldName(name) === subjectKey));
+    return matches.length === 1 ? matches[0] : null;
+}
+function formatWorldFieldValue(fieldRecord, world) {
+    const raw = fieldRecord?.value;
+    if (raw == null) return '';
+    if (typeof raw === 'object' && typeof raw.entityId === 'string') {
+        const { entities } = authorityIndex(world);
+        return entities.get(raw.entityId)?.name || raw.entityId;
+    }
+    if (typeof raw === 'object') return JSON.stringify(raw);
+    return String(raw);
+}
+export const isWorldOwnedStoryRecordKey = (key, world) => Boolean(world?.modules?.story?.records?.some(entry => entry.record?.id === key));
+
+// WHY: 校对视图必须融合 worldArchive 裁决真值（避免模型读取过期/被覆盖事实或结构化字段），
+// 同时隐藏 管理员私有/ 字段，并在写入侧以 readOnly / world_owned 强制守卫职责边界。
+export function inspectWorldMemoryRecord(collection, value, world) {
+    if (!world || !value) return { hidden: false, readOnly: false, owner: null, value };
+    if (collection === 'storyRecords') {
+        const worldOwned = isWorldOwnedStoryRecordKey(value.id, world);
+        return { hidden: false, readOnly: worldOwned, owner: worldOwned ? 'worldArchive' : null, value };
+    }
+    if (collection === 'facts') {
+        const predicate = String(value.p || '').trim();
+        const canon = canonicalWorldFieldKey(predicate);
+        const entity = resolveWorldEntityForFact(value, world);
+        const fields = entity?.fields || {};
+        const privateField = Object.entries(fields).find(([name, rec]) =>
+            rec?.nature === 'established_fact' && isPrivateStoryField(name)
+            && (name === canon || name === predicate || name === `管理员私有/${canon}` || name === `管理员私有/${predicate}`));
+        if (isPrivateStoryField(predicate) || privateField) {
+            return { hidden: true, readOnly: true, owner: 'worldArchive', value };
+        }
+        const settled = fields[canon]?.nature === 'established_fact' ? fields[canon]
+            : fields[predicate]?.nature === 'established_fact' ? fields[predicate] : null;
+        if (settled || isStructuredWorldFactField(predicate)) {
+            return { hidden: false, readOnly: true, owner: 'worldArchive',
+                value: settled ? { ...value, o: formatWorldFieldValue(settled, world) } : value };
+        }
+    }
+    return { hidden: false, readOnly: false, owner: null, value };
+}
+
+export function isWorldOwnedEditCommand(command, source, world) {
+    if (!world) return false;
+    if (command.collection === 'storyRecords') return isWorldOwnedStoryRecordKey(command.key, world);
+    if (command.collection !== 'facts') return false;
+    const existing = memoryItems(source, 'facts').find(item => !item.retracted && memoryKey('facts', item) === command.key) ?? null;
+    if (existing && inspectWorldMemoryRecord('facts', existing, world).readOnly) return true;
+    if (command.patch) {
+        const candidate = { ...(existing || {}), ...command.patch };
+        if (inspectWorldMemoryRecord('facts', candidate, world).readOnly) return true;
+    }
+    return false;
+}
+
+export function* iterateUnifiedMemoryRecords(memory, collections = MEMORY_COLLECTIONS, world = null) {
+    for (const collection of collections) {
+        const rawItems = memoryItems(memory, collection);
+        const items = collection === 'storyRecords' && world ? worldStoryRecords(world, rawItems) : rawItems;
+        for (const value of items) {
+            if (collection === 'storyRecords' && value.kind === 'scene') continue;
+            if (collection === 'facts' && value?.retracted === true) continue;
+            yield { collection, key: memoryKey(collection, value), value };
+        }
     }
 }
 

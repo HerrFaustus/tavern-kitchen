@@ -48,7 +48,7 @@ export function validateKitchenCard(value) {
     if (memory.storySummary.summaryHistory !== undefined && !Array.isArray(memory.storySummary.summaryHistory)) throw new Error('总结历史格式无效');
     if (world) {
         const parsed = validateWorld(structuredClone(world));
-        const replay = forkWorld(parsed, parsed.version, createIdentifier());
+        const replay = forkWorld(parsed, parsed.version, createIdentifier(), { verifyFullHistory: true });
         if (['entities','claims','sources','modules'].some(key => canonical(parsed[key] ?? null) !== canonical(replay[key] ?? null))) throw new Error('世界数据与历史不一致');
     }
     const compatibleNotes = notes.map(note => {

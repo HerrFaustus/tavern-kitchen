@@ -97,12 +97,15 @@ export function installPlanner({snapshot, loadSnapshot, isVisible = () => true, 
                     await checkBinding?.();
                     await loadSnapshot?.(true);
                     writer.retry();
-                    await writer.prepare();
-                    await refreshView();
+                    try { await writer.prepare(undefined, undefined, { force: true, throwOnError: true }); }
+                    finally { await refreshView(); }
                 },
                 async retry() {
-                    await checkBinding?.(); await loadSnapshot?.(true); writer.retry();
-                    await writer.prepare(); await refreshView();
+                    await checkBinding?.();
+                    await loadSnapshot?.(true);
+                    writer.retry();
+                    try { await writer.prepare(undefined, undefined, { force: true, throwOnError: true }); }
+                    finally { await refreshView(); }
                 },
             });
             view.status(message, canRetry);
@@ -118,7 +121,7 @@ export function installPlanner({snapshot, loadSnapshot, isVisible = () => true, 
             if (!enabled()) return;
             settings.onChapter = true;
             await checkBinding?.(); await loadSnapshot?.(true); writer.retry();
-            if (!await writer.prepare(signal, end)) throw new Error('编剧札记尚未保存，请重试');
+            if (!await writer.prepare(signal, end, { force: true })) throw new Error('编剧札记尚未保存，请重试');
         },
         dispose() { disposed = true; viewVersion++; view?.removeControls(); view = null; unsubscribeBridge(); unsubscribeSources(); reset(); events.cleanup(); unregisterGenerateInterceptor(ID); },
     };

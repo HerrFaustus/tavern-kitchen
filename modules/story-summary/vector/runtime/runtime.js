@@ -835,16 +835,30 @@ async function callRuntime(type, payload = {}, options = {}) {
 }
 
 export async function warmRecallRuntime(chatId, options = {}) {
-    if (!chatId) return null;
-    logRuntimeInfo('warm request', `chat=${chatId} reason=${options.reason || 'warm'}`);
-    const stats = createSessionIdleStats(chatId, {
-        backend: backendKind,
-        status: 'session-cache idle',
-        skipped: true,
-        reason: options.reason || 'warm',
+    const key = normalizeChatId(chatId);
+    if (!key) return null;
+    const reason = options.reason || 'warm';
+    throwIfSignalAborted(options.signal, 'RecallRuntime warm aborted');
+    logRuntimeInfo('warm request', `chat=${key} reason=${reason}`);
+    // WHY: 通过真实短期租约拉起运行后端并加载当前聊天的 Dexie 元数据与向量索引，预热完成后立即释放租约，
+    // 既兑现预热语义又保持“无常驻跨轮内存缓存”的设计边界。
+    const lease = await withRecallRuntimeSession(key, async session => {
+        throwIfSignalAborted(options.signal, 'RecallRuntime warm aborted');
+        return session;
+    }, {
+        reason,
+        timeoutMs: options.timeoutMs || SESSION_TIMEOUT_MS,
+        onProgress: options.onProgress,
     });
-    rememberStats(stats);
-    return { ready: false, skipped: true, stale: false, reason: options.reason || 'warm', stats };
+    const stats = {
+        ...(lease?.stats || createSessionIdleStats(key, { backend: backendKind })),
+        ready: Boolean(lease?.ready),
+        skipped: false,
+        reason,
+    };
+    // WHY: withRecallRuntimeSession 在 finally 中已释放租约并写入 session-cache idle 统计；
+    // 不要再用预热峰值的 lease.stats 覆盖 getRecallRuntimeStats()，避免误报仍有常驻向量缓存。
+    return { ready: Boolean(lease?.ready), skipped: false, stale: false, reason, stats };
 }
 
 export async function refreshRecallRuntime(chatId, options = {}) {

@@ -100,14 +100,14 @@ export const SUMMARY_FEEDBACK_COPY = Object.freeze({
             const rebuild = issues.some(issue => issue.action === 'rebuild');
             const advice = rebuild ? VECTOR_REBUILD_ADVICE : '';
             const anchors = issues.some(issue => issue.code === 'l0_gap')
-                ? '缺失的锚点文本需在「记忆锚点」中生成/补齐。' : '';
+                ? '缺失的楼层事件索引需在「记忆检索」中生成/补齐。' : '';
             return `${issues.map(issue => issue.message).join('、')}。${advice}${anchors}`;
         },
     }),
     anchors: Object.freeze({
-        success: '记忆锚点已清空',
-        failed: '记忆锚点未能完全清空，可能已有部分数据被清除。请重试。',
-        refreshFailed: '记忆锚点已清空，但面板统计更新失败。请重新打开面板查看。',
+        success: '楼层事件索引已清空',
+        failed: '楼层事件索引未能完全清空，可能已有部分数据被清除。请重试。',
+        refreshFailed: '楼层事件索引已清空，但面板统计更新失败。请重新打开面板查看。',
     }),
     vectors: Object.freeze({
         success: '向量数据已清除。如需恢复，请点击“补齐缺漏”。',

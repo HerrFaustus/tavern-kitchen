@@ -2,7 +2,6 @@ import type { XiaobaiOsSettingsRepository } from '../../host/settings-repository
 import type { XiaobaiOsChatIdentity } from '../../types.js';
 import { createAppRuntimeGroup } from '../../kernel/runtime-group.js';
 import { createMapController } from './host/controller.js';
-import { createMapMaintenanceParticipant } from './host/maintenance-participant.js';
 import { createMapPromptRuntime, type MapPromptEventHandlers } from './host/prompt-runtime.js';
 import { createMapSettingsRuntime } from './host/settings-runtime.js';
 import { createMapModule } from './module.js';
@@ -39,13 +38,10 @@ export function createProductionMapModule(dependencies: ProductionMapModuleDepen
         createService,
         async install({ map, maintenance, prompts, execution }) {
             execution.addCleanup(map.subscribe(notifyWorldSourcesChanged));
+            // WHY: 3A retires duplicate map MaintenanceRunner loop; simulation + world-records drive updates
+            // while createMapPromptRuntime remains read-only prompt projection fed by authorityMap.
             const injection = prompts.register(MAP_PROMPTS);
             execution.addCleanup(injection.dispose);
-            const unregisterParticipant = maintenance.registerParticipant(createMapMaintenanceParticipant({
-                map,
-                readSettings: () => dependencies.settings.read()?.apps.map ?? null,
-            }));
-            execution.addCleanup(unregisterParticipant);
             const controller = createMapController({
                 map,
                 settings: dependencies.settings,

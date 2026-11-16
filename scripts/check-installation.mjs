@@ -237,7 +237,7 @@ try {
         failFloor=39;
         await page.reload();
         await page.getByRole('button',{name:'重试本楼'}).waitFor({timeout:90000});
-        assert.deepEqual(modelCalls.slice(start).filter(r=>r.floor!=null).map(r=>r.floor),Array.from({length:20},(_,i)=>2*i+1));
+        assert.deepEqual(modelCalls.slice(start).filter(r=>r.floor!=null).map(r=>r.floor),[...Array.from({length:20},(_,i)=>2*i+1),39,39]);
         assert.match(await page.locator('#tk-floor-status').innerText(),/第 40 楼/);
         await page.evaluate(()=>{ window.interrupted=fixture.generate('group'); });
         await page.waitForTimeout(50);
@@ -253,9 +253,9 @@ try {
         assert.equal(await page.evaluate(()=>window.waitForGeneration),true);
         assert.equal(await page.evaluate(()=>Object.values(fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorWork).filter(row=>row.done.includes('overview')).length),50);
         const backlog=modelCalls.slice(start).filter(r=>r.floor!=null).map(r=>r.floor);
-        assert.equal(backlog.length,52);
-        assert.equal(backlog.filter(f=>f===39).length,3);
-        assert.deepEqual(backlog.slice(22),Array.from({length:30},(_,i)=>41+2*i));
+        assert.equal(backlog.length,56);
+        assert.equal(backlog.filter(f=>f===39).length,7);
+        assert.deepEqual(backlog.slice(26),Array.from({length:30},(_,i)=>41+2*i));
         assert.ok(modelCalls.slice(start).some(r=>r.kind==='review'));
         await page.evaluate(()=>localStorage.removeItem('fixtureChatId'));
 

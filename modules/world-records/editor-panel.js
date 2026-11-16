@@ -1,12 +1,13 @@
 import { protagonistIdentity } from '../story-state/protagonist-identity.js';
 import { createIdentifier } from '../../shared/common/identifier.js';
+import { BELIEFS, PRESENCE, THREAD_STATUS, availableStoryRecords, parseStoryUpdates } from '../story-state/records.js';
 import { FIELD_LABELS, KINDS, NATURES } from './domain.js';
 import { PERSON_SECTIONS, POSSESSION_ROLES, RELATION_PREFIX } from './person-fields.js';
+import { applyWorldStoryProposal, worldStoryRecords } from './world-story-state.js';
 
 const PRESET_PERSON_FIELDS = [
     ...new Set([
         ...Object.values(PERSON_SECTIONS).flat(),
-        'coins',
         'location',
         'owner',
         ...Object.keys(POSSESSION_ROLES),
@@ -16,20 +17,29 @@ const PRESET_PERSON_FIELDS = [
 
 const PRESET_WORLD_FIELDS = [
     ...new Set([
-        ...Object.keys(FIELD_LABELS),
+        ...Object.keys(FIELD_LABELS).filter(k => k !== 'coins'),
         ...Object.keys(POSSESSION_ROLES),
     ]),
 ];
 
 const REFERENCE_FIELDS = new Set(['owner', 'location', 'parent', ...Object.keys(POSSESSION_ROLES)]);
 const PLACE_REFERENCE_FIELDS = new Set(['location', 'parent']);
+const MANUAL_STORY_KINDS = [
+    ['situation', '局势'],
+    ['plan', '计划'],
+    ['goal', '目标'],
+    ['suspense', '悬念'],
+    ['clock', '时钟'],
+    ['knowledge', '认知'],
+    ['person', '在场人物'],
+];
 
 /**
  * Manual world intervention drawer mounted inside the existing people/situation tabs.
  * Every mutation goes through createWorldService commands so provenance, branch scope
  * and optimistic version checks remain uniform with automatic updates.
  */
-export function createWorldEditorPanel({ service, getIdentity, section = 'situation', getSelectedPerson, getPlayerName = () => '' }) {
+export function createWorldEditorPanel({ service, getIdentity, section = 'situation', getSelectedPerson, getPlayerName = () => '', getMemorySnapshot = () => null }) {
     let root;
     let doc;
     let state = null;
@@ -140,7 +150,7 @@ export function createWorldEditorPanel({ service, getIdentity, section = 'situat
             });
     }
 
-    function openForm(drawer, title, nodes, commitTitle, buildOperations) {
+    function openForm(drawer, title, nodes, commitTitle, buildOperations, { needsCommand = false } = {}) {
         if (busy || !state) return;
         const expected = state;
         editing = true;
@@ -168,7 +178,12 @@ export function createWorldEditorPanel({ service, getIdentity, section = 'situat
         form.addEventListener('submit', event => {
             event.preventDefault();
             run(() => {
-                command ||= service.command(expected, buildOperations(), commitTitle);
+                command ||= (() => {
+                    if (!needsCommand) return service.command(expected, buildOperations(), commitTitle);
+                    const cmd = service.command(expected, [], commitTitle);
+                    cmd.operations = buildOperations(cmd);
+                    return cmd;
+                })();
                 return service.commit(command);
             }, status, [...form.querySelectorAll('button,input,select,textarea')]);
         });
@@ -324,11 +339,21 @@ export function createWorldEditorPanel({ service, getIdentity, section = 'situat
             setSelectValue(refSelect, '');
         };
 
+        const isWalletInput = () => {
+            const raw = fieldInput.value.trim();
+            const resolved = resolveFieldKey(raw);
+            return resolved === 'coins' || ['coins', '金币', '余额', '钱包'].includes(raw);
+        };
+
         const syncValueMode = () => {
             const fieldKey = resolveFieldKey(fieldInput.value);
-            if (fieldKey === 'coins' || fieldInput.value.trim() === '金币') {
-                setSelectValue(valueTypeSelect, 'number');
-            } else if (REFERENCE_FIELDS.has(fieldKey)) {
+            if (isWalletInput()) {
+                refSelect.hidden = true;
+                textValueInput.hidden = false;
+                currentSummary.textContent = '金币余额须通过「调整余额」专用账本维护，不能在此直接设置。';
+                return;
+            }
+            if (REFERENCE_FIELDS.has(fieldKey)) {
                 setSelectValue(valueTypeSelect, 'reference');
             }
             const isRef = getSelectValue(valueTypeSelect) === 'reference';
@@ -362,7 +387,7 @@ export function createWorldEditorPanel({ service, getIdentity, section = 'situat
             '设置 / 覆写对象属性',
             [
                 fieldLabel('目标对象', entitySelect),
-                fieldLabel('属性名（如 身份、金币、owner、location）', fieldInput),
+                fieldLabel('属性名（如 身份、owner、location）', fieldInput),
                 currentSummary,
                 fieldLabel('值类型', valueTypeSelect),
                 fieldLabel('值', valueWrap),
@@ -373,6 +398,8 @@ export function createWorldEditorPanel({ service, getIdentity, section = 'situat
             () => {
                 const key = resolveFieldKey(fieldInput.value);
                 if (!key) throw new Error('请填写属性名。');
+                // WHY: Coins must stay behind the dedicated non-negative ledger form to preserve accounting invariants.
+                if (isWalletInput()) throw new Error('金币余额请通过「调整余额」专用账本维护，不能直接覆写。');
                 const mode = getSelectValue(valueTypeSelect);
                 let parsed;
                 if (mode === 'reference') {
@@ -487,6 +514,451 @@ export function createWorldEditorPanel({ service, getIdentity, section = 'situat
         );
     }
 
+    function renderClearFieldForm(drawer) {
+        const entities = state.entities;
+        if (!entities.length) return;
+        const clearableKeys = entity => Object.keys(entity?.fields || {}).filter(k => k !== 'coins');
+        const pref = preferredEntity();
+        const defaultEntity = (pref && clearableKeys(pref).length ? pref : entities.find(e => clearableKeys(e).length)) || pref || entities[0];
+        const entitySelect = select(entities.map(item => [item.id, entityLabel(item)]), defaultEntity.id);
+        const fieldSelect = select([], '');
+        const currentNote = el('p', undefined, 'tk-record-note');
+        const refreshFields = () => {
+            const entity = entities.find(item => item.id === getSelectValue(entitySelect));
+            const keys = clearableKeys(entity);
+            fieldSelect.replaceChildren();
+            for (const key of keys) {
+                const opt = el('option', FIELD_LABELS[key] ? `${FIELD_LABELS[key]}（${key}）` : key);
+                opt.value = key;
+                fieldSelect.append(opt);
+            }
+            setSelectValue(fieldSelect, keys[0] || '');
+            const activeKey = getSelectValue(fieldSelect);
+            currentNote.textContent = activeKey
+                ? `当前值：${formatValue(entity.fields[activeKey]?.value)}`
+                : '该对象暂无可清空的非余额属性。';
+        };
+        const refreshPreview = () => {
+            const entity = entities.find(item => item.id === getSelectValue(entitySelect));
+            const key = getSelectValue(fieldSelect);
+            currentNote.textContent = key && entity?.fields?.[key]
+                ? `当前值：${formatValue(entity.fields[key].value)}`
+                : '该对象暂无可清空的非余额属性。';
+        };
+        entitySelect.addEventListener('change', refreshFields);
+        fieldSelect.addEventListener('change', refreshPreview);
+        refreshFields();
+        openForm(
+            drawer,
+            '清空对象属性',
+            [fieldLabel('目标对象', entitySelect), fieldLabel('要清空的属性', fieldSelect), currentNote],
+            '手动清空属性',
+            () => {
+                const entityId = getSelectValue(entitySelect);
+                const field = getSelectValue(fieldSelect);
+                if (!field) throw new Error('该对象暂无可清空的非余额属性。');
+                return [{ type: 'clear_field', entityId, field }];
+            },
+        );
+    }
+
+    function renderMergeForm(drawer) {
+        const entities = state.entities;
+        if (entities.length < 2) return;
+        const pref = preferredEntity() || entities[0];
+        const sourceSelect = select(entities.map(item => [item.id, entityLabel(item)]), pref.id);
+        const targetSelect = select([], '');
+        const hint = el('p', '合并将把源对象的名称/别名、来源绑定、目标缺失的属性、被引用关系与候选一并并入目标对象，并移除源对象。', 'tk-record-note');
+        const confirmCheck = input('checkbox');
+        confirmCheck.className = '';
+        const confirmWrap = el('label', undefined, 'tk-world-editor-field');
+        confirmWrap.append(confirmCheck, el('span', '确认不可逆合并并移除被合并对象'));
+        const refreshTargets = () => {
+            const src = entities.find(item => item.id === getSelectValue(sourceSelect));
+            const compatible = entities.filter(item => item.id !== src?.id && (item.kind === src?.kind || item.kind === 'subject' || src?.kind === 'subject'));
+            targetSelect.replaceChildren();
+            for (const item of compatible) {
+                const opt = el('option', entityLabel(item));
+                opt.value = item.id;
+                targetSelect.append(opt);
+            }
+            setSelectValue(targetSelect, compatible[0]?.id || '');
+        };
+        sourceSelect.addEventListener('change', refreshTargets);
+        refreshTargets();
+        openForm(
+            drawer,
+            '合并重复对象',
+            [fieldLabel('被合并（将删除）的对象', sourceSelect), fieldLabel('保留并合入的目标对象', targetSelect), hint, confirmWrap],
+            '手动合并对象',
+            () => {
+                const sourceId = getSelectValue(sourceSelect);
+                const targetId = getSelectValue(targetSelect);
+                if (!targetId) throw new Error('没有兼容类型可合并的目标对象。');
+                if (!confirmCheck.checked) throw new Error('请先勾选确认合并操作。');
+                return [{ type: 'merge_entities', sourceId, targetId }];
+            },
+        );
+    }
+
+    function renderDeleteForm(drawer) {
+        const entities = state.entities;
+        if (!entities.length) return;
+        const pref = preferredEntity() || entities[0];
+        const entitySelect = select(entities.map(item => [item.id, entityLabel(item)]), pref.id);
+        const impactNote = el('p', undefined, 'tk-record-note');
+        const confirmCheck = input('checkbox');
+        confirmCheck.className = '';
+        const confirmWrap = el('label', undefined, 'tk-world-editor-field');
+        confirmWrap.append(confirmCheck, el('span', '确认永久删除该对象及指向它的引用和候选'));
+        const refreshImpact = () => {
+            const id = getSelectValue(entitySelect);
+            const incoming = entities.filter(e => e.id !== id && Object.values(e.fields || {}).some(f => f?.value?.entityId === id)).length;
+            const claimsCount = (state.claims || []).filter(c => c.entityId === id).length;
+            impactNote.textContent = `删除将同时清理 ${incoming} 处其他对象的引用及 ${claimsCount} 条关联合同候选。`;
+        };
+        entitySelect.addEventListener('change', refreshImpact);
+        refreshImpact();
+        openForm(
+            drawer,
+            '删除世界对象',
+            [fieldLabel('要删除的对象', entitySelect), impactNote, confirmWrap],
+            '手动删除对象',
+            () => {
+                if (!confirmCheck.checked) throw new Error('请先勾选确认删除该对象。');
+                return [{ type: 'delete_entity', entityId: getSelectValue(entitySelect) }];
+            },
+        );
+    }
+
+    function renderResolveClaimsForm(drawer) {
+        const pending = (state.claims || []).filter(c => c.status === 'pending');
+        if (!pending.length) return;
+        const prefId = preferredEntity()?.id;
+        const sorted = [...pending].sort((a, b) => Number(b.entityId === prefId) - Number(a.entityId === prefId));
+        const claimLabel = c => {
+            const name = state.entities.find(e => e.id === c.entityId)?.name || c.entityId;
+            return `${name} · ${FIELD_LABELS[c.field] || c.field} = ${formatValue(c.value)}（${NATURES[c.nature] || c.nature}）`;
+        };
+        const claimSelect = select(sorted.map(c => [c.id, claimLabel(c)]), sorted[0].id);
+        const detailNote = el('p', undefined, 'tk-record-note');
+        const statusSelect = select([['accepted', '采纳为已确认事实'], ['dismissed', '忽略 / 驳回']], 'accepted');
+        const syncDetail = () => {
+            const c = sorted.find(item => item.id === getSelectValue(claimSelect));
+            detailNote.textContent = c ? `来源：${c.source?.label || '未标注'}` : '';
+        };
+        claimSelect.addEventListener('change', syncDetail);
+        syncDetail();
+        openForm(
+            drawer,
+            '裁决待核候选',
+            [fieldLabel('待处理候选', claimSelect), detailNote, fieldLabel('裁决结果', statusSelect)],
+            '手动裁决候选',
+            () => [{ type: 'resolve', claimId: getSelectValue(claimSelect), status: getSelectValue(statusSelect) }],
+        );
+    }
+
+    function renderCoinsLedgerForm(drawer) {
+        const people = state.entities.filter(e => e.kind === 'person');
+        if (!people.length) return;
+        const { hero } = protagonistIdentity(state.entities, getPlayerName());
+        const pref = isInventory ? hero : (preferredEntity()?.kind === 'person' ? preferredEntity() : hero);
+        const personSelect = select(people.map(p => [p.id, p.name]), (pref || people[0]).id);
+        const modeSelect = select([['set', '设定明确余额'], ['add', '入账（+金币）'], ['sub', '支出（-金币）']], 'set');
+        const amountInput = input('number', '0');
+        amountInput.min = '0';
+        amountInput.step = '1';
+        amountInput.required = true;
+        const currentNote = el('p', undefined, 'tk-record-note');
+        const previewNote = el('p', undefined, 'tk-record-note');
+        const reasonInput = input('text', '玩家账本核对');
+        reasonInput.required = true;
+        const confirmCheck = input('checkbox');
+        confirmCheck.className = '';
+        const confirmWrap = el('label', undefined, 'tk-world-editor-field');
+        confirmWrap.append(confirmCheck, el('span', '确认写入本次金币余额变动'));
+        const computeNext = () => {
+            const entity = people.find(p => p.id === getSelectValue(personSelect));
+            const current = entity?.fields?.coins?.value;
+            const base = Number.isSafeInteger(current) ? current : 0;
+            const amount = Number(amountInput.value);
+            const mode = getSelectValue(modeSelect);
+            const nextVal = mode === 'add' ? base + amount : mode === 'sub' ? base - amount : amount;
+            return { current, base, nextVal, mode, amount };
+        };
+        const syncCoins = (resetAmount = false) => {
+            const entity = people.find(p => p.id === getSelectValue(personSelect));
+            const cur = entity?.fields?.coins?.value;
+            if (resetAmount && getSelectValue(modeSelect) === 'set') amountInput.value = String(Number.isSafeInteger(cur) ? cur : 0);
+            const { current, nextVal } = computeNext();
+            currentNote.textContent = Number.isSafeInteger(current) ? `当前余额：${current} 金币` : '当前尚未建账（按 0 金币起算）';
+            previewNote.textContent = Number.isSafeInteger(nextVal) && nextVal >= 0
+                ? `调整后余额：${nextVal} 金币`
+                : '调整后余额无效（须为非负整数金币）';
+        };
+        personSelect.addEventListener('change', () => syncCoins(true));
+        modeSelect.addEventListener('change', () => syncCoins(true));
+        amountInput.addEventListener('input', () => syncCoins(false));
+        syncCoins(true);
+        openForm(
+            drawer,
+            '金币账本调整',
+            [
+                fieldLabel('账户人物', personSelect),
+                currentNote,
+                fieldLabel('调整方式', modeSelect),
+                fieldLabel('金额 / 目标余额（金币）', amountInput),
+                previewNote,
+                fieldLabel('调整原因（必填）', reasonInput),
+                confirmWrap,
+            ],
+            '手动调整金币余额',
+            () => {
+                if (!confirmCheck.checked) throw new Error('请先勾选确认登记余额变动。');
+                const reason = reasonInput.value.trim();
+                if (!reason) throw new Error('请填写余额调整原因。');
+                const { nextVal, mode, amount } = computeNext();
+                if (!Number.isSafeInteger(amount) || amount < 0 || !Number.isSafeInteger(nextVal) || nextVal < 0) {
+                    throw new Error('调整后余额必须是非负整数金币。');
+                }
+                const verb = mode === 'add' ? `+${amount}` : mode === 'sub' ? `-${amount}` : `=${nextVal}`;
+                return [{
+                    type: 'set',
+                    entityId: getSelectValue(personSelect),
+                    field: 'coins',
+                    value: nextVal,
+                    source: manualSource(`账本调整（${verb}）：${reason}`),
+                }];
+            },
+        );
+    }
+
+    function renderStoryRecordForm(drawer) {
+        const snapshot = getMemorySnapshot?.();
+        const baseline = snapshot?.enabled ? availableStoryRecords(snapshot.store, snapshot.invalidFrom) : [];
+        const records = worldStoryRecords(state, baseline);
+        const modeSelect = select(
+            records.length ? [['add', '新增记录'], ['edit', '编辑已有记录'], ['delete', '删除已有记录']] : [['add', '新增记录']],
+            'add',
+        );
+        const recordSelect = select(
+            records.map(r => [r.id, `${MANUAL_STORY_KINDS.find(([k]) => k === r.kind)?.[1] || r.kind} · ${r.title || r.label || r.content || r.name || r.id}`]),
+            records[0]?.id || '',
+        );
+        const kindSelect = select(MANUAL_STORY_KINDS, isPeople ? 'plan' : 'situation');
+        const titleInput = input('text');
+        const descriptionInput = el('textarea', undefined, 'text_pole');
+        descriptionInput.rows = 2;
+        const holdersInput = input('text', getPlayerName() || '');
+        const conditionsInput = input('text');
+        const statusNoteInput = input('text');
+        const scopeInput = input('text');
+        const statusSelect = select(Object.entries(THREAD_STATUS), 'open');
+        const dueInput = input('text');
+        const reasonInput = input('text');
+        const labelInput = input('text');
+        const dateInput = input('text');
+        const personInput = input('text', getSelectedPerson?.() || '');
+        const contentInput = el('textarea', undefined, 'text_pole');
+        contentInput.rows = 2;
+        const certaintySelect = select(Object.entries(BELIEFS), 'known');
+        const evidenceInput = input('text', '玩家人工补录');
+        const learnedAtInput = input('text');
+        const presenceSelect = select(Object.entries(PRESENCE), 'present');
+        const presenceNoteInput = input('text');
+        const natureSelect = select([['established_fact', '已确认事实'], ['intention', '计划意图'], ['belief', '角色认知'], ['rumor', '传闻'], ['hypothesis', '推测']], 'established_fact');
+        const sourceInput = input('text', '玩家手动维护');
+        sourceInput.required = true;
+        const confirmDeleteCheck = input('checkbox');
+        confirmDeleteCheck.className = '';
+        const confirmDeleteWrap = el('label', undefined, 'tk-world-editor-field');
+        confirmDeleteWrap.append(confirmDeleteCheck, el('span', '确认删除该条剧情记录'));
+
+        const wraps = {
+            record: fieldLabel('选择现有记录', recordSelect),
+            kind: fieldLabel('记录类型', kindSelect),
+            title: fieldLabel('标题', titleInput),
+            description: fieldLabel('具体描述', descriptionInput),
+            holders: fieldLabel('持有人（逗号分隔）', holdersInput),
+            conditions: fieldLabel('条件约束', conditionsInput),
+            statusNote: fieldLabel('当前进展', statusNoteInput),
+            scope: fieldLabel('影响范围', scopeInput),
+            status: fieldLabel('状态', statusSelect),
+            due: fieldLabel('期限', dueInput),
+            reason: fieldLabel('结案原因（非进行中时必填）', reasonInput),
+            label: fieldLabel('故事时间文本', labelInput),
+            date: fieldLabel('可计算日期 YYYY-MM-DD（可留空）', dateInput),
+            person: fieldLabel('人物名', personInput),
+            content: fieldLabel('认知内容', contentInput),
+            certainty: fieldLabel('认知性质', certaintySelect),
+            evidence: fieldLabel('获知依据', evidenceInput),
+            learnedAt: fieldLabel('获知时间', learnedAtInput),
+            presence: fieldLabel('在场度', presenceSelect),
+            presenceNote: fieldLabel('在场依据', presenceNoteInput),
+            nature: fieldLabel('记录性质', natureSelect),
+            source: fieldLabel('来源说明', sourceInput),
+            confirmDelete: confirmDeleteWrap,
+        };
+
+        const populateFromRecord = r => {
+            if (!r) return;
+            setSelectValue(kindSelect, r.kind);
+            titleInput.value = r.title || '';
+            descriptionInput.value = r.description || '';
+            holdersInput.value = (r.holders || []).join('，');
+            conditionsInput.value = r.conditions || '';
+            statusNoteInput.value = r.statusNote || '';
+            scopeInput.value = r.scope || '';
+            setSelectValue(statusSelect, r.status || 'open');
+            dueInput.value = r.due || '';
+            reasonInput.value = r.reason || '';
+            labelInput.value = r.label || '';
+            dateInput.value = r.date || '';
+            personInput.value = r.kind === 'knowledge' ? (r.person || '') : (r.name || '');
+            contentInput.value = r.content || '';
+            setSelectValue(certaintySelect, r.certainty || 'known');
+            evidenceInput.value = r.evidence || '玩家人工补录';
+            learnedAtInput.value = r.learnedAt || '';
+            setSelectValue(presenceSelect, r.presence || 'present');
+            presenceNoteInput.value = r.note || '';
+            setSelectValue(natureSelect, r._nature || 'established_fact');
+        };
+
+        const syncVisibility = () => {
+            const mode = getSelectValue(modeSelect);
+            const isDelete = mode === 'delete';
+            const kind = getSelectValue(kindSelect);
+            wraps.record.hidden = mode === 'add';
+            wraps.kind.hidden = isDelete;
+            kindSelect.disabled = mode === 'edit';
+            wraps.confirmDelete.hidden = !isDelete;
+            wraps.source.hidden = false;
+
+            const isThread = ['situation', 'plan', 'goal', 'suspense'].includes(kind);
+            const isAgenda = ['plan', 'goal'].includes(kind);
+            wraps.title.hidden = isDelete || !isThread;
+            wraps.description.hidden = isDelete || !isThread;
+            wraps.holders.hidden = isDelete || !isAgenda;
+            wraps.conditions.hidden = isDelete || !isAgenda;
+            wraps.statusNote.hidden = isDelete || !isAgenda;
+            wraps.scope.hidden = isDelete || kind !== 'situation';
+            wraps.status.hidden = isDelete || !isThread;
+            wraps.due.hidden = isDelete || !isThread;
+            wraps.reason.hidden = isDelete || !isThread;
+            wraps.label.hidden = isDelete || kind !== 'clock';
+            wraps.date.hidden = isDelete || kind !== 'clock';
+            wraps.person.hidden = isDelete || !['knowledge', 'person'].includes(kind);
+            wraps.content.hidden = isDelete || kind !== 'knowledge';
+            wraps.certainty.hidden = isDelete || kind !== 'knowledge';
+            wraps.evidence.hidden = isDelete || kind !== 'knowledge';
+            wraps.learnedAt.hidden = isDelete || kind !== 'knowledge';
+            wraps.presence.hidden = isDelete || kind !== 'person';
+            wraps.presenceNote.hidden = isDelete || kind !== 'person';
+            wraps.nature.hidden = isDelete || !['plan', 'goal', 'knowledge'].includes(kind);
+        };
+
+        modeSelect.addEventListener('change', () => {
+            if (getSelectValue(modeSelect) !== 'add') {
+                populateFromRecord(records.find(r => r.id === getSelectValue(recordSelect)));
+            }
+            syncVisibility();
+        });
+        recordSelect.addEventListener('change', () => {
+            if (getSelectValue(modeSelect) !== 'add') {
+                populateFromRecord(records.find(r => r.id === getSelectValue(recordSelect)));
+            }
+            syncVisibility();
+        });
+        kindSelect.addEventListener('change', syncVisibility);
+        syncVisibility();
+
+        openForm(
+            drawer,
+            '维护剧情状态记录',
+            [
+                fieldLabel('操作类型', modeSelect),
+                ...Object.values(wraps),
+            ],
+            '手动维护剧情记录',
+            cmd => {
+                const mode = getSelectValue(modeSelect);
+                const src = manualSource(sourceInput.value);
+                if (mode === 'delete') {
+                    if (!confirmDeleteCheck.checked) throw new Error('请先勾选确认删除该条剧情记录。');
+                    const target = records.find(r => r.id === getSelectValue(recordSelect));
+                    if (!target) throw new Error('未找到要删除的剧情记录。');
+                    const [parsed] = parseStoryUpdates([{ id: target.id, kind: target.kind, remove: true }], { requireHolders: true });
+                    const applied = applyWorldStoryProposal(
+                        state,
+                        { record: parsed, nature: 'established_fact' },
+                        src,
+                        (cmd.expectedVersion ?? state.version) + 1,
+                        `event:${cmd.id}`,
+                        `manual:${cmd.id}:${parsed.id}`,
+                        { start: 0, end: 0 },
+                    );
+                    return [{ type: 'module', module: 'story', value: applied.value }];
+                }
+                const kind = mode === 'edit'
+                    ? (records.find(r => r.id === getSelectValue(recordSelect))?.kind || getSelectValue(kindSelect))
+                    : getSelectValue(kindSelect);
+                const id = mode === 'edit'
+                    ? getSelectValue(recordSelect)
+                    : (kind === 'clock' ? 'clock' : `manual-${createIdentifier()}`);
+                let raw = { id, kind };
+                if (kind === 'clock') {
+                    raw = { ...raw, label: labelInput.value.trim(), date: dateInput.value.trim() };
+                } else if (kind === 'person') {
+                    raw = { ...raw, name: personInput.value.trim(), presence: getSelectValue(presenceSelect), note: presenceNoteInput.value.trim() };
+                } else if (kind === 'knowledge') {
+                    raw = {
+                        ...raw,
+                        person: personInput.value.trim(),
+                        content: contentInput.value.trim(),
+                        certainty: getSelectValue(certaintySelect),
+                        evidence: evidenceInput.value.trim(),
+                        learnedAt: learnedAtInput.value.trim(),
+                    };
+                } else {
+                    raw = {
+                        ...raw,
+                        title: titleInput.value.trim(),
+                        description: descriptionInput.value.trim(),
+                        status: getSelectValue(statusSelect),
+                        due: dueInput.value.trim(),
+                        reason: reasonInput.value.trim(),
+                        ...(kind === 'situation' && scopeInput.value.trim() ? { scope: scopeInput.value.trim() } : {}),
+                        ...(['plan', 'goal'].includes(kind) ? {
+                            holders: holdersInput.value.split(/[,，]/).map(item => item.trim()).filter(Boolean),
+                            conditions: conditionsInput.value.trim(),
+                            statusNote: statusNoteInput.value.trim(),
+                        } : {}),
+                    };
+                }
+                const [parsed] = parseStoryUpdates([raw], { requireHolders: true });
+                let nature = 'established_fact';
+                if (['plan', 'goal'].includes(kind)) {
+                    const picked = getSelectValue(natureSelect);
+                    nature = ['established_fact', 'intention'].includes(picked) ? picked : 'established_fact';
+                } else if (kind === 'knowledge') {
+                    const picked = getSelectValue(natureSelect);
+                    nature = ['established_fact', 'belief', 'rumor', 'hypothesis'].includes(picked) ? picked : 'established_fact';
+                }
+                const applied = applyWorldStoryProposal(
+                    state,
+                    { record: parsed, nature },
+                    src,
+                    (cmd.expectedVersion ?? state.version) + 1,
+                    `event:${cmd.id}`,
+                    `manual:${cmd.id}:${parsed.id}`,
+                    { start: 0, end: 0 },
+                );
+                return [{ type: 'module', module: 'story', value: applied.value }];
+            },
+            { needsCommand: true },
+        );
+    }
+
     function show(next) {
         if (!root || editing || busy) return;
         if (!next) {
@@ -513,8 +985,11 @@ export function createWorldEditorPanel({ service, getIdentity, section = 'situat
 
         const entities = next.entities || [];
         const peopleCount = entities.filter(item => ['person', 'subject'].includes(item.kind)).length;
+        const personCount = entities.filter(item => item.kind === 'person').length;
         const actorCount = entities.filter(item => ['person', 'organization'].includes(item.kind)).length;
         const itemCount = entities.filter(item => item.kind === 'item').length;
+        const hasClearableField = entities.some(item => Object.keys(item.fields || {}).some(k => k !== 'coins'));
+        const pendingClaimsCount = (next.claims || []).filter(item => item.status === 'pending').length;
 
         const actions = el('div', undefined, 'tk-world-editor-actions');
         if (!isInventory) actions.append(button(isPeople ? '+ 新增人物' : '+ 新增对象', () => renderCreateForm(drawer)));
@@ -524,12 +999,22 @@ export function createWorldEditorPanel({ service, getIdentity, section = 'situat
                 button('编辑名称', () => renderRenameForm(drawer)),
                 button('设置属性', () => renderFieldForm(drawer)),
             );
+            if (hasClearableField) actions.append(button('清空属性', () => renderClearFieldForm(drawer)));
+            if (entities.length >= 2) actions.append(button('合并对象', () => renderMergeForm(drawer)));
+            actions.append(button('删除对象', () => renderDeleteForm(drawer)));
         }
         if (isPeople && peopleCount >= 2 && preferredEntity()) {
             actions.append(button('绑定关系', () => renderRelationForm(drawer)));
         }
         if (isInventory && protagonistIdentity(entities, getPlayerName()).hero && actorCount >= 2 && itemCount >= 1) {
             actions.append(button('登记交易', () => renderPurchaseForm(drawer)));
+        }
+        if (personCount >= 1 && (isInventory ? protagonistIdentity(entities, getPlayerName()).hero : (!isPeople || preferredEntity()?.kind === 'person'))) {
+            actions.append(button('调整余额', () => renderCoinsLedgerForm(drawer)));
+        }
+        if (!isInventory) {
+            if (pendingClaimsCount > 0) actions.append(button(`裁决候选（${pendingClaimsCount}）`, () => renderResolveClaimsForm(drawer)));
+            actions.append(button('维护剧情记录', () => renderStoryRecordForm(drawer)));
         }
 
         const versionNote = el('p', `当前世界档案共有 ${entities.length} 个对象（第 ${next.version} 版 · ${next.branchId}）。`, 'tk-record-note');

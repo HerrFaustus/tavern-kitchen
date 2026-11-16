@@ -161,9 +161,9 @@ export function repeatedProposalReview(state, command) {
     if (!reviews.some(Boolean)) return null;
     check(reviews.every(Boolean) && new Set(reviews.map(review => review.commandId)).size === 1, '同轮提案已有部分处理，不能重新拆分提交');
     const receipt = state.receipts.find(item => item.commandId === reviews[0].commandId); check(receipt, '处理回执缺失');
-    const saved = JSON.parse(receipt.fingerprint);
-    check(equal(saved.operations.map(op => [op.requestId, op.index]), command.operations.map(op => [op.requestId, op.index]))
-        && saved.reviewMode === command.reviewMode && equal(saved.origins ?? null, command.origins ?? null)
+    const saved = receipt.fingerprint.startsWith('{') ? JSON.parse(receipt.fingerprint) : receipt.reviewMeta;
+    check(saved && equal(saved.operations.map(op => [op.requestId, op.index]), command.operations.map(op => [op.requestId, op.index]))
+        && (saved.reviewMode ?? undefined) === command.reviewMode && equal(saved.origins ?? null, command.origins ?? null)
         && equal(saved.origin ?? null, command.origin ?? null), '同轮提案不能改变提交范围或确认方式');
     return receipt;
 }
@@ -276,12 +276,15 @@ export function validateProposalReviewHistory(state) {
         const receipt = state.receipts.find(item => item.commandId === review.commandId);
         const event = state.events.find(item => item.id === review.eventId);
         check(receipt && event && receipt.eventId === review.eventId && receipt.version === review.worldVersion && event.version === review.worldVersion, '处理回执与历史不一致');
-        const command = JSON.parse(receipt.fingerprint), matches = command.operations?.filter(op => op.type === 'review_update'
+        const legacy = receipt.fingerprint.startsWith('{');
+        const command = legacy ? JSON.parse(receipt.fingerprint) : receipt.reviewMeta;
+        const matches = command?.operations?.filter(op => op.type === 'review_update'
             && op.requestId === record.update.requestId && op.index === review.index), operation = matches?.[0];
+        const opReviewFingerprint = legacy ? reviewDigest(operation) : operation?.reviewFingerprint;
         check(matches?.length === 1 && (command.reviewMode ? ['manual', 'automatic'].includes(command.reviewMode) : command.operations.length === 1)
             && review.mode === command.reviewMode && operation.requestId === record.update.requestId
             && command.expectedVersion === review.worldVersion - 1 && command.worldId === state.worldId
-            && operation.index === review.index && operation.fingerprint === record.fingerprint && review.fingerprint === reviewDigest(operation), '处理回执与提案不一致');
+            && operation.index === review.index && operation.fingerprint === record.fingerprint && review.fingerprint === opReviewFingerprint, '处理回执与提案不一致');
         check(event.effects.some(effect => effect.type === 'review' && effect.id === `${UPDATE_PREFIX}${record.update.requestId}`
             && effect.before === null && equal(effect.after, review)), '处理记录缺少同笔提交依据');
         const proposal = review.proposal;

@@ -16,6 +16,7 @@ import { maintenanceRanges, maintenanceTask } from './ranges.js';
 import { executeMemoryTask, hasMaintenanceBoundary } from './execution.js';
 import { readMaintenanceDiagnostics, createMaintenanceStatusReader } from './diagnostics.js';
 import { createMemoryChatController } from './chat-controller.js';
+import { worldAuthorityForContext } from '../../world-records/authority-context.js';
 
 export function createMemoryMaintenanceHost({ generateReviewedLayer, isEnabled, invalidateRecall, refreshSummary, changed, readSummaryDiagnostics, submitted, chatChanged = () => {} }) {
     let unregister = null, chat = null, executing = 0, refreshAfterRun = false, publishedRevision = 0;
@@ -26,7 +27,8 @@ export function createMemoryMaintenanceHost({ generateReviewedLayer, isEnabled, 
         const context = getContext();
         const store = getSummaryStore();
         return { identity: getChatIdentity(context), chatId: context.chatId, chat: context.chat, store, json: store?.json,
-            cutoff: store?.lastSummarizedMesId, atoms: getStateAtoms(), l0Index: getL0Index() };
+            cutoff: store?.lastSummarizedMesId, atoms: getStateAtoms(), l0Index: getL0Index(),
+            world: worldAuthorityForContext(context) };
     };
     const execute = async (task, options) => {
         executing++;

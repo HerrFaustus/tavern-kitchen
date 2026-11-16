@@ -1,7 +1,8 @@
 import manifest from '../manifest.json' with { type: 'json' };
+import { openKitchenTutorial } from './kitchen-tutorial.js';
 
 /** Native SillyTavern extension drawer for the workspace entry. */
-export function createExtensionDrawer({ doc = document, onOpen = () => {} } = {}) {
+export function createExtensionDrawer({ doc = document, onOpen = () => {}, onTutorial = () => openKitchenTutorial({ doc }) } = {}) {
     const container = doc.createElement('div');
     container.id = 'tavern-kitchen-extension';
     container.className = 'extension_container';
@@ -30,8 +31,8 @@ export function createExtensionDrawer({ doc = document, onOpen = () => {} } = {}
     const tutorial = doc.createElement('button');
     tutorial.type = 'button';
     tutorial.className = 'menu_button';
-    tutorial.textContent = '后厨教程（待做）';
-    tutorial.disabled = true;
+    tutorial.textContent = '后厨教程';
+    tutorial.addEventListener('click', () => onTutorial());
     content.append(version, shortcut, tutorial);
     drawer.append(header, content);
     container.append(drawer);

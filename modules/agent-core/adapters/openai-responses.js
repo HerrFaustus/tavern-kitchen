@@ -1,8 +1,10 @@
 import { fetchWithExtras } from '../../../shared/common/request-extras.js';
+import { composeAuthorizedFetch } from '../provider-auth.js';
 import OpenAI from 'openai';
 import { buildSamplingParameters } from '../sampling.js';
 import { resolveAgentAuth } from '../provider-auth.js';
 import { readResponseCompletion } from '../runtime/response-completion.js';
+import { runWithRetry, sanitizeErrorSecrets } from '../runtime/retry-policy.js';
 import {
     buildEffectiveReasoningConfig,
     buildSdkRequestInspection,
@@ -349,7 +351,7 @@ export class OpenAIResponsesAdapter {
         this.auth = resolveAgentAuth('openai-responses', config.apiKey);
         this.client = new OpenAI({
             ...this.auth.sdkOptions,
-            ...(config.requestExtras && {fetch: fetchWithExtras(config)}),
+            ...(config.requestExtras && { fetch: composeAuthorizedFetch(this.auth, fetchWithExtras(config)) }),
             baseURL: String(config.baseUrl || 'https://api.openai.com/v1').replace(/\/$/, ''),
             timeout: Number(config.timeoutMs) || 15 * 60 * 1000,
             maxRetries: 0,
@@ -448,10 +450,11 @@ export class OpenAIResponsesAdapter {
             };
         };
         const attachRequestInspection = (error) => {
-            if (error && typeof error === 'object') {
-                error.requestInspection = buildRequestInspection();
+            const clean = sanitizeErrorSecrets(error, this.auth?.apiKey);
+            if (clean && typeof clean === 'object') {
+                clean.requestInspection = buildRequestInspection();
             }
-            return error;
+            return clean;
         };
         const parseResponse = (response) => {
             assertResponsesResponseShape(response);
@@ -492,12 +495,12 @@ export class OpenAIResponsesAdapter {
             }
         };
 
-        const createStreamRequest = async (legacySystemInInput = false, reason = 'initial') => {
-            const body = this.buildRequestBody(task, legacySystemInInput, effectiveReasoning);
+        const createStreamRequest = async (legacySystemInInput = false, reason = 'initial', streamTask = task) => {
+            const body = this.buildRequestBody(streamTask, legacySystemInInput, effectiveReasoning);
             recordRequest(body, legacySystemInInput, reason);
             try {
                 const stream = this.client.responses.stream(body, {
-                    signal: task.signal,
+                    signal: streamTask.signal,
                 });
                 const textByPart = new Map();
                 const reasoningByPart = new Map();
@@ -522,7 +525,7 @@ export class OpenAIResponsesAdapter {
                             .sort(([left], [right]) => comparePartKeys(left, right))
                             .forEach(([, text]) => pushThought(thoughts, '推理摘要', text));
                     }
-                    emitStreamProgress(task, {
+                    emitStreamProgress(streamTask, {
                         activity,
                         text: Array.from(textByPart.entries())
                             .sort(([left], [right]) => comparePartKeys(left, right))
@@ -594,20 +597,42 @@ export class OpenAIResponsesAdapter {
         };
 
         const allowCompatibilityFallback = !isOfficialOpenAIBaseUrl(this.config.baseUrl);
+        let streamStarted = false;
+        const streamTask = typeof task.onStreamProgress === 'function'
+            ? {
+                ...task,
+                onStreamProgress: (progress) => {
+                    streamStarted = true;
+                    task.onStreamProgress(progress);
+                },
+            }
+            : task;
         const sendRequest = typeof task.onStreamProgress === 'function'
-            ? createStreamRequest
+            ? (legacySystemInInput, reason) => createStreamRequest(legacySystemInInput, reason, streamTask)
             : createRequest;
+        const executeWithRetry = (legacySystemInInput, reason) => runWithRetry(
+            () => {
+                streamStarted = false;
+                return sendRequest(legacySystemInInput, reason);
+            },
+            {
+                signal: task.signal,
+                timeoutMs: Number(this.config.timeoutMs) || 0,
+                maxRetries: task.retryTransient === false ? 0 : 2,
+                canRetry: () => !streamStarted,
+            },
+        );
         let response;
         let parsed;
 
         try {
-            response = await sendRequest(false, 'initial');
+            response = await executeWithRetry(false, 'initial');
             parsed = parseResponse(response);
         } catch (error) {
             if (!allowCompatibilityFallback || !shouldRetryWithLegacySystem(error)) {
                 throw attachRequestInspection(error);
             }
-            response = await sendRequest(true, 'legacy_system_error');
+            response = await executeWithRetry(true, 'legacy_system_error');
             try {
                 parsed = parseResponse(response);
             } catch (retryError) {
@@ -619,7 +644,7 @@ export class OpenAIResponsesAdapter {
             && requestAttempts.length < 2
             && !parsed.text
             && !parsed.toolCalls.length) {
-            response = await sendRequest(true, 'empty_response');
+            response = await executeWithRetry(true, 'empty_response');
             try {
                 parsed = parseResponse(response);
             } catch (retryError) {

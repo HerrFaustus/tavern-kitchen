@@ -9,7 +9,12 @@ import { createExtensionDrawer } from './extension-drawer.js';
 test('extension entry uses the native inline drawer and opens the workspace', () => {
     const { document } = parseHTML('<html><body><div id="extensions_settings"></div></body></html>');
     let opened = 0;
-    const container = createExtensionDrawer({ doc: document, onOpen: () => { opened++; } });
+    let tutorialOpened = 0;
+    const container = createExtensionDrawer({
+        doc: document,
+        onOpen: () => { opened++; },
+        onTutorial: () => { tutorialOpened++; },
+    });
     document.querySelector('#extensions_settings').append(container);
     assert.equal(container.className, 'extension_container');
     assert.equal(container.querySelector('.inline-drawer-toggle.inline-drawer-header b').textContent, '酒馆后厨');
@@ -19,11 +24,13 @@ test('extension entry uses the native inline drawer and opens the workspace', ()
     const content = container.querySelector('.inline-drawer-content');
     assert.equal(content.childElementCount, 4);
     assert.equal(content.children[1].textContent, '版本 ' + manifest.version);
-    assert.equal(content.children[3].textContent, '后厨教程（待做）');
-    assert.equal(content.children[3].disabled, true);
+    assert.equal(content.children[3].textContent, '后厨教程');
+    assert.equal(content.children[3].disabled, false);
     assert.equal(content.querySelector('input, select, a'), null);
     button.click();
     assert.equal(opened, 1);
+    content.children[3].click();
+    assert.equal(tutorialOpened, 1);
 });
 
 test('all panels open directly without panel switches and show the native titlebar', async () => {

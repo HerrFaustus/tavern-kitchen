@@ -69,6 +69,7 @@ export function applyImportedSummaryBoundary(store, boundary) {
     store.lastSummarizedMesId = boundary;
     store.summaryHistory = [createSummaryBaseline(boundary)];
     delete store.floorDrafts;
+    delete store.floorWork;
     delete store.pendingImportBoundary;
     if (store.json.importedRounds) {
         store.summaryHistory[0].importedRounds = store.json.importedRounds;
@@ -88,6 +89,7 @@ export function prepareImportedSummary(previous, json, boundary) {
     if (active !== json) store.legacyArcArchive ??= { json:structuredClone(json) };
     store.json = structuredClone(active);
     delete store.floorDrafts;
+    delete store.floorWork;
     store.json.facts = assignImportedFactIds(store.json.facts);
     delete store.summaryInvalid;
     delete store.sourceInvalidFromFloor;

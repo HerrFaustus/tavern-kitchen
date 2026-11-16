@@ -5,9 +5,12 @@ import { registerGenerateInterceptor, unregisterGenerateInterceptor } from '../s
 import { getChatIdentity } from '../modules/story-summary/data/chat-identity.js';
 import { getSummarySourceEnd } from '../modules/story-summary/generate/source-boundary.js';
 import { createFloorProcessing } from '../modules/world-records/turn-processing.js';
-import { paidPrice, taskDefinitions } from '../modules/world-records/turn-actions.js';
+import { taskDefinitions } from '../modules/world-records/turn-actions.js';
 import { generateFeatureText } from '../modules/text-api/host.js';
 import { createChapterProcessing } from './chapter-processing.js';
+import { preflightOrderedFloorAgents, renderFloorStatus, resolveFailureRoute } from './floor-status.js';
+
+export { preflightOrderedFloorAgents, resolveFailureRoute };
 
 export function floorTasks(settings) {
     const world = settings?.xiaobaiOs?.apps?.world || {};
@@ -37,35 +40,20 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
         writeChapter:(source, signal) => planner().onChapter(signal, source.end)});
     function render(info) {
         failure = info?.error ? info : null;
-        statusNode?.remove(); statusNode = null;
-        if (!info) return;
-        statusNode = document.createElement('div'); statusNode.id = 'tk-floor-status'; statusNode.setAttribute('role', info.error ? 'alert' : 'status');
-        const hasChat = (getContext().chat || []).length > 0;
-        const title = document.createElement('span');
-        title.textContent = hasChat ? `后厨 · 第 ${info.floor + 1} 楼 · ${info.message}` : `后厨 · ${info.message}`;
-        statusNode.append(title);
-        const button = (label, action) => { const b = document.createElement('button'); b.type='button'; b.className='menu_button'; b.textContent=label;
-            b.addEventListener('click', () => { Promise.resolve().then(action).catch(e => { title.textContent=e.message; }); }); statusNode.append(b); };
-        if (info.error) {
-            button('重试本楼', () => queue.settle());
-            button(info.error.agent ? '前往设置' : '查看恢复', () => info.error.agent ? workspace.visitBinding(info.error.agent) : workspace.open('data'));
-            const entry = memory.getPublishedSummaryStore()?.floorWork?.[info.floor];
-            for (const [id, item] of Object.entries(entry?.review || {})) {
-                if (entry.decisions?.[id] === 'rejected') continue;
-                const corrections = item.rows.filter(r => r.type === 'trade' && paidPrice(r.paymentQuote) !== null && r.price !== paidPrice(r.paymentQuote));
-                const why = document.createElement('span');
-                why.textContent = item.rows.map(r => r.type === 'trade' ? `${r.quote} · 模型价 ${r.price} 金币 · 收付依据「${r.paymentQuote}」` : `${r.quote}（${r.field || r.type}）`).join('、');
-                statusNode.append(why);
-                const accept = corrections.length ? '按原文价确认（' + corrections.map(r => paidPrice(r.paymentQuote) + ' 金币').join('、') + '）' : '确认该组';
-                for (const [value,label] of [['accepted',accept],['rejected','拒绝该组']]) button(label, async () => {
-                    const owner=read().owner;
-                    await memory.saveFloorWork(entry.source, () => { if (read().owner !== owner || failure !== info) throw new Error('请重新核对本楼'); },
-                        (record) => { (record.decisions ??= {})[id]=value; });
-                    await queue.settle();
-                });
-            }
-        }
-        (document.querySelector('#send_form') || document.querySelector('#tk-workspace'))?.prepend(statusNode);
+        statusNode?.remove();
+        statusNode = renderFloorStatus({
+            doc: document,
+            info,
+            hasChat: (getContext().chat || []).length > 0,
+            entry: info ? memory.getPublishedSummaryStore()?.floorWork?.[info.floor] : null,
+            readOwner: () => read().owner,
+            isCurrentFailure: () => failure === info,
+            onRetry: () => queue.settle(),
+            onOpenAgent: agent => workspace.visitBinding(agent),
+            onOpenRecovery: route => workspace.open(route),
+            onSaveFloorWork: memory.saveFloorWork,
+        });
+        if (statusNode) (document.querySelector('#send_form') || document.querySelector('#tk-workspace'))?.prepend(statusNode);
     }
     const queue = createFloorProcessing({ read, tasks:() => floorTasks(settings), store:() => memory.getPublishedSummaryStore() || {},
         save: memory.saveFloorWork, getService: () => archive().service, requireAgent, generate:generateFeatureText,
@@ -75,17 +63,8 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
     const events = createModuleEvents('ordered-floors');
     registerGenerateInterceptor('ordered-floors', async (_chat, _size, abort, type) => {
         if (!['normal','continue','regenerate','swipe','group'].includes(type || 'normal')) return;
-        // WHY: Check required agents before queue.beforeGeneration so an unconfigured-agent block
-        // fails closed immediately instead of pausing generation indefinitely while waiting to resume.
-        try {
-            await requireAgent('update');
-            await requireAgent('simulation');
-        } catch (error) {
-            const floor = Math.max(0, (getContext().chat || []).length - 1);
-            render({ floor, message: error.message, error });
-            abort();
-            return;
-        }
+        const floor = Math.max(0, (getContext().chat || []).length - 1);
+        if (!await preflightOrderedFloorAgents({ floor, checkAgent: requireAgent, render, abort })) return;
         let aborted = false;
         await queue.beforeGeneration(() => { aborted = true; abort(); });
         if (aborted) return;
@@ -106,8 +85,63 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
     events.on(event_types.GENERATION_STOPPED, () => { queue.cancelGeneration(); });
     window.addEventListener('tavernKitchen:floor-settings', settingsChanged);
     const stopChapter = watchChapterSaves({ enabled:() => true, changed:kick });
-    window.addEventListener('tavernKitchen:summary-saved', kick);
+    const onSummarySaved = () => {
+        // WHY: executeRollback may finish deleting stale floorWork slightly after MESSAGE_SWIPED's microtask kick latched a source-change failure;
+        // clearing that stale error once on summary-saved lets floor processing either settle or advance to world-conflict recovery.
+        if (failure?.message?.includes('原文或候选已改变')) {
+            failure = null;
+            statusNode?.remove();
+            statusNode = null;
+        }
+        kick();
+    };
+    window.addEventListener('tavernKitchen:summary-saved', onSummarySaved);
     kick();
-    return { settingsChanged, dispose() { queue.cancelGeneration(); queue.invalidate(); batch++; events.cleanup();
-        unregisterGenerateInterceptor('ordered-floors'); stopChapter(); window.removeEventListener('tavernKitchen:summary-saved',kick); window.removeEventListener('tavernKitchen:floor-settings',settingsChanged); } };
+    async function settleManual() {
+        if (!archive()) throw new Error('世界档案尚未就绪，请先打开对话或完成开局初始化。');
+        if (streamStart !== null) throw new Error('正在生成正文，请等待本轮输出完成后再手动补齐总结。');
+        const floor = Math.max(0, (getContext().chat || []).length - 1);
+        await preflightOrderedFloorAgents({ floor, checkAgent: requireAgent, render, throwOnRequired: true });
+        if (failure) {
+            failure = null;
+            statusNode?.remove();
+            statusNode = null;
+            queue.invalidate();
+        }
+        await queue.settle();
+    }
+    function cancelManual() {
+        batch++;
+        queue.invalidate();
+    }
+    async function rerunFloor(floor) {
+        if (!archive()) throw new Error('世界档案尚未就绪，请先打开对话或完成开局初始化。');
+        if (streamStart !== null) throw new Error('正在生成正文，请等待本轮输出完成后再重跑本楼。');
+        await preflightOrderedFloorAgents({ floor, checkAgent: requireAgent, render, throwOnRequired: true });
+        const store = memory.getPublishedSummaryStore() || {};
+        const laterHistory = (store.summaryHistory || []).some(entry => entry?.kind === 'batch' && entry.endMesId > floor);
+        const laterWork = Object.entries(store.floorWork || {}).some(([k, row]) => Number(k) > floor
+            && ((row?.done?.length || 0) > 0 || row?.reviewed || Object.keys(row?.pending || {}).length > 0));
+        const worldService = archive()?.service;
+        const world = worldService ? await worldService.read() : null;
+        const eventsList = world?.events || [];
+        const laterWorld = eventsList.some(event => Number.isInteger(event.at) && event.at > floor);
+        const firstFloorIdx = eventsList.findIndex(event => event.at === floor);
+        const hasLaterManual = firstFloorIdx >= 0 && eventsList.slice(firstFloorIdx).some(event => event.at === null);
+        if (laterHistory || laterWork || laterWorld || hasLaterManual) {
+            throw new Error(`第 ${floor + 1} 楼之后已有后续楼层或手工世界修订记录；请先在「数据」中回退到对应位置后再重跑。`);
+        }
+        await memory.resetFloorForRerun(floor);
+        if (firstFloorIdx >= 0 && worldService) {
+            const targetVersion = firstFloorIdx > 0 ? eventsList[firstFloorIdx - 1].version : 0;
+            await worldService.rewind(world.version, targetVersion);
+        }
+        failure = null;
+        statusNode?.remove();
+        statusNode = null;
+        queue.invalidate();
+        await queue.settle();
+    }
+    return { settingsChanged, settleManual, cancelManual, rerunFloor, dispose() { queue.cancelGeneration(); queue.invalidate(); batch++; events.cleanup();
+        unregisterGenerateInterceptor('ordered-floors'); stopChapter(); window.removeEventListener('tavernKitchen:summary-saved',onSummarySaved); window.removeEventListener('tavernKitchen:floor-settings',settingsChanged); } };
 }

@@ -8,7 +8,13 @@ import { validatePersonField } from './person-fields.js';
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
 
 // Host-independent world archive. Only established fields participate in commands.
-export const SCHEMA = 3;
+// WHY: Schema 4 compacts O(N^2) full-entity snapshots to sparse deltas, uses SHA-256 command/effect
+// digests instead of raw command JSON, and records periodic checkpoints for fast branch forks.
+// DO NOT drop support for reading/replaying schema 1..3 snapshots and JSON-format receipts.
+export const SCHEMA = 4;
+export const CHECKPOINT_INTERVAL = 25;
+export const MAX_RECENT_CHECKPOINTS = 8;
+const isSha256Hex = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 export const KINDS = { person: '人物', organization: '组织', place: '地点', item: '物品', subject: '未分类' };
 export const NATURES = { established_fact: '已确认事实', rumor: '传闻', belief: '角色认知', intention: '计划', hypothesis: '推测', creative_proposal: '创作候选', unclassified: '待确认' };
 export const FIELD_LABELS = { coins: '金币', owner: '归属', location: '所在地', parent: '上级地点', description: '描述' };
@@ -61,7 +67,7 @@ function sourceOf(value) {
     return { module: text(value.module, '来源类型', 100), key: text(value.key, '来源标识', 1000), label: text(value.label, '来源说明', 4000), ...(value.task && {task:text(value.task,'来源功能',80)}), ...(value.proof && Number.isSafeInteger(value.proof.floor) && {proof:{floor:value.proof.floor,quote:text(value.proof.quote,'来源引文',1200)}}), ...(value.module === 'simulation' && {knownBy: (value.knownBy || []).map(id => text(id, '知情人', 200))}) };
 }
 export function validateWorld(state) {
-    invariant([1, 2, SCHEMA].includes(state?.schema), '不支持的世界档案版本');
+    invariant([1, 2, 3, SCHEMA].includes(state?.schema), '不支持的世界档案版本');
     jsonValue(state);
     text(state.worldId); text(state.branchId); text(state.title);
     invariant(Number.isSafeInteger(state.version) && state.version >= 0, '世界版本无效');
@@ -81,7 +87,20 @@ export function validateWorld(state) {
         }
         // Schema 3 backups may contain the retired module's JSON. Keep it as an
         // opaque archive for history/exports; no command can write or execute it.
-        if (state.modules.variables !== undefined) invariant(state.schema === 3 && state.modules.variables && typeof state.modules.variables === 'object' && !Array.isArray(state.modules.variables), '历史模块归档无效');
+        if (state.modules.variables !== undefined) invariant(state.schema >= 3 && state.modules.variables && typeof state.modules.variables === 'object' && !Array.isArray(state.modules.variables), '历史模块归档无效');
+    }
+    if (state.checkpoints !== undefined) {
+        invariant(Array.isArray(state.checkpoints), '世界检查点结构无效');
+        let lastCp = 0;
+        for (const cp of state.checkpoints) {
+            invariant(cp && typeof cp === 'object' && Number.isSafeInteger(cp.version) && cp.version > lastCp
+                && cp.version <= state.version && cp.version % CHECKPOINT_INTERVAL === 0
+                && Array.isArray(cp.entities) && Array.isArray(cp.claims)
+                && cp.sources && typeof cp.sources === 'object' && !Array.isArray(cp.sources)
+                && cp.modules && typeof cp.modules === 'object' && !Array.isArray(cp.modules)
+                && cp.digest === memoryDigest({ entities: cp.entities, claims: cp.claims, sources: cp.sources, modules: cp.modules }), '世界检查点校验失败');
+            lastCp = cp.version;
+        }
     }
     invariant(new Set(state.entities.map(e => e.id)).size === state.entities.length, '对象身份重复');
     const bindings = new Set();
@@ -104,15 +123,26 @@ export function validateWorld(state) {
             const { sourceId, effectId } = receipt.origin;
             invariant(turnById(state, sourceId) && typeof effectId === 'string' && effectId.trim() && effectId.length <= 200
                 && canonical(event.origin) === canonical(receipt.origin) && typeof receipt.effectFingerprint === 'string', '效果来源回执无效');
-            let executed;
-            try { executed = JSON.parse(receipt.fingerprint); } catch { throw new Error('效果命令回执无效'); }
-            invariant(executed.id === receipt.commandId && executed.worldId === state.worldId && executed.expectedVersion === i
-                && canonical(executed) === receipt.fingerprint && canonical(executed.origin) === canonical(receipt.origin)
-                && canonical(executed.operations) === receipt.effectFingerprint, '效果命令与回执不一致');
-            invariant(canonical(receipt.origins ?? null) === canonical(executed.origins ?? null)
-                && canonical(event.origins ?? null) === canonical(receipt.origins ?? null), '同轮效果来源回执不完整');
-            if (receipt.origins) invariant(['manual', 'automatic'].includes(executed.reviewMode)
-                && receipt.origins.length === executed.operations.length && executed.operations.every(op => op.type === 'review_update' && op.action === 'accepted'), '同轮效果来源回执无效');
+            invariant(canonical(receipt.origins ?? null) === canonical(event.origins ?? null), '同轮效果来源回执不完整');
+            if (typeof receipt.fingerprint === 'string' && receipt.fingerprint.startsWith('{')) {
+                let executed;
+                try { executed = JSON.parse(receipt.fingerprint); } catch { throw new Error('效果命令回执无效'); }
+                invariant(executed.id === receipt.commandId && executed.worldId === state.worldId && executed.expectedVersion === i
+                    && canonical(executed) === receipt.fingerprint && canonical(executed.origin) === canonical(receipt.origin)
+                    && canonical(executed.operations) === receipt.effectFingerprint, '效果命令与回执不一致');
+                invariant(canonical(receipt.origins ?? null) === canonical(executed.origins ?? null), '同轮效果来源回执不完整');
+                if (receipt.origins) invariant(['manual', 'automatic'].includes(executed.reviewMode)
+                    && receipt.origins.length === executed.operations.length && executed.operations.every(op => op.type === 'review_update' && op.action === 'accepted'), '同轮效果来源回执无效');
+            } else {
+                invariant(isSha256Hex(receipt.fingerprint) && isSha256Hex(receipt.effectFingerprint), '效果命令与回执不一致');
+                if (receipt.origins) {
+                    const meta = receipt.reviewMeta;
+                    invariant(meta && ['manual', 'automatic'].includes(meta.reviewMode)
+                        && canonical(meta.origins ?? null) === canonical(receipt.origins)
+                        && Array.isArray(meta.operations) && receipt.origins.length === meta.operations.length
+                        && meta.operations.every(op => op.type === 'review_update' && op.action === 'accepted'), '同轮效果来源回执无效');
+                }
+            }
             for (const origin of [receipt.origin, ...(receipt.origins || [])]) {
                 invariant(origin.sourceId === sourceId && typeof origin.effectId === 'string' && origin.effectId.trim()
                     && origin.effectId.length <= 200, '同轮效果来源无效');
@@ -123,20 +153,124 @@ export function validateWorld(state) {
     validateProposalReviewHistory(state); checkGraph(state); return state;
 }
 
+const isPlainObject = value => !!value && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
+const ENTITY_META_KEYS = ['name', 'kind', 'aliases', 'bindings', 'revision', 'source'];
+
+function diffEntityEffect(id, before, after) {
+    const beforePatch = {}, afterPatch = {};
+    for (const key of ENTITY_META_KEYS) {
+        if (canonical(before[key]) !== canonical(after[key])) {
+            beforePatch[key] = structuredClone(before[key]);
+            afterPatch[key] = structuredClone(after[key]);
+        }
+    }
+    const fieldsBefore = {}, fieldsAfter = {};
+    for (const key of new Set([...Object.keys(before.fields || {}), ...Object.keys(after.fields || {})])) {
+        const had = Object.hasOwn(before.fields || {}, key);
+        const has = Object.hasOwn(after.fields || {}, key);
+        const prev = had ? before.fields[key] : null;
+        const next = has ? after.fields[key] : null;
+        if (canonical(prev) !== canonical(next)) {
+            fieldsBefore[key] = structuredClone(prev);
+            fieldsAfter[key] = structuredClone(next);
+        }
+    }
+    if (Object.keys(fieldsBefore).length) {
+        beforePatch.fields = fieldsBefore;
+        afterPatch.fields = fieldsAfter;
+    }
+    return { type: 'entity', id, delta: true, before: beforePatch, after: afterPatch };
+}
+
+function applyEntityEffect(list, change) {
+    const index = list.findIndex(x => x.id === change.id);
+    if (!change.delta) {
+        invariant(canonical(list[index] ?? null) === canonical(change.before), '对象历史不连续');
+        if (change.after === null) {
+            invariant(index >= 0, '对象历史不连续');
+            list.splice(index, 1);
+        } else if (index < 0) list.push(structuredClone(change.after));
+        else list[index] = structuredClone(change.after);
+        return;
+    }
+    const current = index >= 0 ? list[index] : null;
+    invariant(current && isPlainObject(change.before) && isPlainObject(change.after), '对象历史不连续');
+    for (const key of ENTITY_META_KEYS) {
+        if (Object.hasOwn(change.before, key)) {
+            invariant(canonical(current[key] ?? null) === canonical(change.before[key]), '对象历史不连续');
+        }
+    }
+    for (const [key, prev] of Object.entries(change.before.fields || {})) {
+        const cur = Object.hasOwn(current.fields || {}, key) ? current.fields[key] : null;
+        invariant(canonical(cur) === canonical(prev), '对象历史不连续');
+    }
+    const next = structuredClone(current);
+    for (const key of ENTITY_META_KEYS) {
+        if (Object.hasOwn(change.after, key)) next[key] = structuredClone(change.after[key]);
+    }
+    for (const [key, value] of Object.entries(change.after.fields || {})) {
+        if (value === null) delete next.fields[key];
+        else next.fields[key] = structuredClone(value);
+    }
+    list[index] = next;
+}
+
+function diffSourceEffect(id, before, after) {
+    const beforePatch = {}, afterPatch = {}, added = [], unset = [];
+    for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+        const had = Object.hasOwn(before, key), has = Object.hasOwn(after, key);
+        if (!had && has) {
+            added.push(key);
+            afterPatch[key] = structuredClone(after[key]);
+        } else if (had && !has) {
+            unset.push(key);
+            beforePatch[key] = structuredClone(before[key]);
+        } else if (canonical(before[key]) !== canonical(after[key])) {
+            beforePatch[key] = structuredClone(before[key]);
+            afterPatch[key] = structuredClone(after[key]);
+        }
+    }
+    return { type: 'source', id, delta: true, before: beforePatch, after: afterPatch, ...(added.length ? { added } : {}), ...(unset.length ? { unset } : {}) };
+}
+
+function applySourceEffect(sources, change) {
+    if (!change.delta) {
+        invariant(canonical(sources[change.id] ?? null) === canonical(change.before), '来源历史不连续');
+        sources[change.id] = structuredClone(change.after);
+        return;
+    }
+    const current = sources[change.id];
+    invariant(isPlainObject(current) && isPlainObject(change.before) && isPlainObject(change.after), '来源历史不连续');
+    for (const [key, prev] of Object.entries(change.before)) {
+        invariant(Object.hasOwn(current, key) && canonical(current[key]) === canonical(prev), '来源历史不连续');
+    }
+    for (const key of change.added || []) invariant(!Object.hasOwn(current, key), '来源历史不连续');
+    const next = structuredClone(current);
+    for (const key of change.unset || []) delete next[key];
+    Object.assign(next, structuredClone(change.after));
+    sources[change.id] = next;
+}
+
 export function applyCommand(previous, command, reviewContext = {}) {
     invariant(command && typeof command === 'object', '命令无效'); jsonValue(command);
     text(command.id, '命令标识', 200); text(command.title, '变更说明', 1000); text(command.at, '记录时间', 100);
     invariant(command.worldId === previous.worldId && command.branchId === previous.branchId, '世界或分支已切换，请重新打开档案');
-    const fingerprint = canonical(command);
+    const fingerprint = memoryDigest(command);
+    const operationsDigest = command.origin ? memoryDigest(command.operations) : undefined;
     const receipt = previous.receipts.find(r => r.commandId === command.id);
-    if (receipt) { invariant(receipt.fingerprint === fingerprint, '同一命令标识不能提交不同内容'); return { state: previous, receipt, repeated: true }; }
+    if (receipt) {
+        const expectedPrint = receipt.fingerprint.startsWith('{') ? canonical(command) : fingerprint;
+        invariant(receipt.fingerprint === expectedPrint, '同一命令标识不能提交不同内容');
+        return { state: previous, receipt, repeated: true };
+    }
     const reviewed = repeatedProposalReview(previous, command);
     if (reviewed) return { state: previous, receipt: reviewed, repeated: true };
     if (command.origin) {
         assertTurnOrigin(previous, command.origin);
         const executed = previous.receipts.find(r => [r.origin, ...(r.origins || [])].some(origin => origin?.sourceId === command.origin.sourceId && origin.effectId === command.origin.effectId));
         if (executed) {
-            invariant(executed.effectFingerprint === canonical(command.operations), '同一来源效果编号不能提交不同内容');
+            const expectedEffects = executed.effectFingerprint?.startsWith('[') ? canonical(command.operations) : operationsDigest;
+            invariant(executed.effectFingerprint === expectedEffects, '同一来源效果编号不能提交不同内容');
             return { state: previous, receipt: executed, repeated: true };
         }
         invariant(!command.operations?.some(op => op.type === 'source'), '执行效果不能改写来源记录');
@@ -155,9 +289,13 @@ export function applyCommand(previous, command, reviewContext = {}) {
     invariant(isReview || !command.reviewMode && !command.origins, '同轮确认只能处理世界提案');
     const operations = isReview ? prepareProposalReview(previous, command, reviewContext) : command.operations;
     const state = structuredClone(previous); const effects = [], trades = []; const version = state.version + 1;
-    if (isReview) state.schema = SCHEMA;
+    state.schema = SCHEMA;
     const eventId = `event:${command.id}`;
-    const record = (type, id, before, after) => effects.push({ type, id, before: before ?? null, after: structuredClone(after) });
+    const record = (type, id, before, after) => {
+        if (type === 'entity' && before && after) { effects.push(diffEntityEffect(id, before, after)); return; }
+        if (type === 'source' && isPlainObject(before) && isPlainObject(after)) { effects.push(diffSourceEffect(id, before, after)); return; }
+        effects.push({ type, id, before: before ? structuredClone(before) : null, after: after == null ? null : structuredClone(after) });
+    };
     function mutate(id, update) { const entity = entityById(state, id); const before = structuredClone(entity); update(entity); entity.revision = version; record('entity', id, before, entity); }
     function setField(id, field, value, source) {
         field = safeField(field); validateReference(state, field, value);
@@ -190,9 +328,95 @@ export function applyCommand(previous, command, reviewContext = {}) {
             const key = safeField(op.field);
             invariant(entityById(state,op.entityId).fields[key]?.source.module === 'world-opening','仅能清除已失效的开局字段');
             mutate(op.entityId,e => { delete e.fields[key]; });
+        } else if (op.type === 'clear_field') {
+            const key = safeField(op.field);
+            invariant(!['coins', '金币', '余额', '钱包'].includes(op.field?.trim?.()) && key !== 'coins', '金币余额请通过账本调整，不能直接清空');
+            invariant(Object.hasOwn(entityById(state, op.entityId).fields, key), '要清除的属性不存在');
+            mutate(op.entityId, e => { delete e.fields[key]; });
+        } else if (op.type === 'delete_entity') {
+            const index = state.entities.findIndex(e => e.id === op.entityId);
+            invariant(index >= 0, '档案对象不存在');
+            for (const other of state.entities) {
+                if (other.id === op.entityId) continue;
+                const staleKeys = Object.keys(other.fields).filter(k => other.fields[k]?.value && typeof other.fields[k].value === 'object' && other.fields[k].value.entityId === op.entityId);
+                if (staleKeys.length) mutate(other.id, e => { for (const k of staleKeys) delete e.fields[k]; });
+            }
+            for (let i = state.claims.length - 1; i >= 0; i--) {
+                const c = state.claims[i];
+                if (c.entityId === op.entityId || (c.status === 'pending' && c.value && typeof c.value === 'object' && c.value.entityId === op.entityId)) {
+                    record('claim', c.id, c, null);
+                    state.claims.splice(i, 1);
+                }
+            }
+            const beforeSrc = structuredClone(state.entities[index]);
+            state.entities.splice(index, 1);
+            record('entity', beforeSrc.id, beforeSrc, null);
+        } else if (op.type === 'merge_entities') {
+            const src = entityById(state, op.sourceId), dst = entityById(state, op.targetId);
+            invariant(src.id !== dst.id, '不能将对象合并到自身');
+            invariant(src.kind === dst.kind || src.kind === 'subject' || dst.kind === 'subject', '不同类型的对象不能直接合并');
+            const srcSnapshot = structuredClone(src);
+            mutate(dst.id, target => {
+                if (target.kind === 'subject' && srcSnapshot.kind !== 'subject') target.kind = srcSnapshot.kind;
+                target.aliases = [...new Set([...target.aliases, srcSnapshot.name, ...srcSnapshot.aliases].filter(a => a && a !== target.name))];
+                target.bindings = [...new Set([...target.bindings, ...srcSnapshot.bindings])];
+                for (const key of Object.keys(target.fields)) {
+                    const val = target.fields[key]?.value;
+                    if (val && typeof val === 'object' && val.entityId === srcSnapshot.id) delete target.fields[key];
+                }
+                for (const [key, fieldRecord] of Object.entries(srcSnapshot.fields)) {
+                    if (Object.hasOwn(target.fields, key)) continue;
+                    const val = fieldRecord?.value;
+                    if (val && typeof val === 'object' && (val.entityId === target.id || val.entityId === srcSnapshot.id)) continue;
+                    target.fields[key] = structuredClone(fieldRecord);
+                }
+            });
+            for (const other of state.entities) {
+                if (other.id === srcSnapshot.id || other.id === dst.id) continue;
+                const redirectKeys = Object.keys(other.fields).filter(k => other.fields[k]?.value && typeof other.fields[k].value === 'object' && other.fields[k].value.entityId === srcSnapshot.id);
+                if (redirectKeys.length) {
+                    mutate(other.id, entity => {
+                        for (const key of redirectKeys) {
+                            entity.fields[key] = { ...structuredClone(entity.fields[key]), value: { entityId: dst.id } };
+                        }
+                    });
+                }
+            }
+            for (let i = state.claims.length - 1; i >= 0; i--) {
+                const claim = state.claims[i];
+                const redirectEntity = claim.entityId === srcSnapshot.id;
+                const redirectValue = claim.value && typeof claim.value === 'object' && claim.value.entityId === srcSnapshot.id;
+                if (!redirectEntity && !redirectValue) continue;
+                const beforeClaim = structuredClone(claim);
+                const nextEntityId = redirectEntity ? dst.id : claim.entityId;
+                const nextValue = redirectValue ? { ...structuredClone(claim.value), entityId: dst.id } : claim.value;
+                // WHY: Merging two entities must drop self-referential claims created by redirecting either endpoint.
+                const becomesSelfLoop = nextEntityId === dst.id && (
+                    claim.field === `关系:${dst.id}`
+                    || claim.field === `关系:${srcSnapshot.id}`
+                    || (nextValue && typeof nextValue === 'object' && nextValue.entityId === dst.id)
+                );
+                if (becomesSelfLoop) {
+                    state.claims.splice(i, 1);
+                    record('claim', claim.id, beforeClaim, null);
+                    continue;
+                }
+                claim.entityId = nextEntityId;
+                claim.value = nextValue;
+                record('claim', claim.id, beforeClaim, claim);
+            }
+            const srcIndex = state.entities.findIndex(e => e.id === srcSnapshot.id);
+            state.entities.splice(srcIndex, 1);
+            record('entity', srcSnapshot.id, srcSnapshot, null);
+        } else if (op.type === 'verified_noop') {
+            // WHY: Reviewed floor groups that yield 0 mutations still need a durable turn receipt;
+            // otherwise turn-processing.js re-blocks on the unhandled review group forever.
+            text(op.reason ?? '已核对无实质变更', '核对说明', 500);
         } else if (op.type === 'claim') {
             invariant(op.nature !== 'established_fact' && Object.hasOwn(NATURES, op.nature), '候选性质无效'); entityById(state, op.entityId);
-            const claim = { id: text(op.id, '记录标识', 200), entityId: op.entityId, field: safeField(op.field), value: structuredClone(op.value), nature: op.nature, source: sourceOf(op.source), status: 'pending', eventId, version };
+            const claimField = safeField(op.field);
+            if (claimField === 'coins') invariant(typeof op.value === 'string' || (Number.isSafeInteger(op.value) && op.value >= 0), '金币必须是非负安全整数或原文描述');
+            const claim = { id: text(op.id, '记录标识', 200), entityId: op.entityId, field: claimField, value: structuredClone(op.value), nature: op.nature, source: sourceOf(op.source), status: 'pending', eventId, version };
             invariant(!state.claims.some(c => c.id === claim.id), '记录标识重复'); state.claims.push(claim); record('claim', claim.id, null, claim);
         } else if (op.type === 'resolve') {
             const claim = state.claims.find(c => c.id === op.claimId); invariant(claim?.status === 'pending', '该候选已处理或已撤回');
@@ -254,26 +478,67 @@ export function applyCommand(previous, command, reviewContext = {}) {
     const origin = command.origin ? { origin: structuredClone(command.origin), ...(command.origins ? { origins: structuredClone(command.origins) } : {}) } : {};
     state.events.push({ id: eventId, commandId: command.id, title: command.title, at: command.at, version, effects, ...origin });
     const nextReceipt = { commandId: command.id, fingerprint, eventId, version, ...origin,
-        ...(trades.length && {trades}),
-        ...(command.origin ? { effectFingerprint: canonical(command.operations) } : {}) };
-    state.receipts.push(nextReceipt); validateWorld(state);
+        ...(trades.length && { trades }),
+        ...(command.origin ? { effectFingerprint: operationsDigest } : {}),
+        ...(isReview ? { reviewMeta: {
+            ...(command.reviewMode !== undefined ? { reviewMode: command.reviewMode } : {}),
+            expectedVersion: command.expectedVersion,
+            worldId: command.worldId,
+            ...(command.origin ? { origin: structuredClone(command.origin) } : {}),
+            ...(command.origins ? { origins: structuredClone(command.origins) } : {}),
+            operations: command.operations.map(op => ({
+                type: op.type,
+                action: op.action,
+                requestId: op.requestId,
+                index: op.index,
+                fingerprint: op.fingerprint,
+                reviewFingerprint: memoryDigest({ action: op.action, proposal: op.proposal ?? null, reason: op.reason ?? null }),
+            })),
+        } } : {}) };
+    state.receipts.push(nextReceipt);
+    if (version > 0 && version % CHECKPOINT_INTERVAL === 0) {
+        const modules = state.modules || {};
+        const checkpoint = { version, digest: memoryDigest({ entities: state.entities, claims: state.claims, sources: state.sources, modules }),
+            entities: structuredClone(state.entities), claims: structuredClone(state.claims), sources: structuredClone(state.sources), modules: structuredClone(modules) };
+        const list = [...(state.checkpoints || []), checkpoint];
+        const recent = new Set(list.slice(-MAX_RECENT_CHECKPOINTS).map(item => item.version));
+        state.checkpoints = list.filter(item => item.version % (CHECKPOINT_INTERVAL * 4) === 0 || recent.has(item.version));
+    }
+    validateWorld(state);
     return { state, receipt: nextReceipt, repeated: false };
 }
 
-export function forkWorld(state, version, branchId) {
+export function forkWorld(state, version, branchId, { verifyFullHistory = false } = {}) {
     invariant(Number.isSafeInteger(version) && version >= 0 && version <= state.version, '分支起点无效');
     const next = emptyWorld(state.worldId, text(branchId), state.title);
-    for (const event of state.events.slice(0, version)) for (const change of event.effects) {
+    let startIndex = 0;
+    if (!verifyFullHistory && Array.isArray(state.checkpoints) && state.checkpoints.length) {
+        const cp = [...state.checkpoints].reverse().find(item => item.version <= version);
+        if (cp) {
+            invariant(cp.digest === memoryDigest({ entities: cp.entities, claims: cp.claims, sources: cp.sources, modules: cp.modules }), '世界检查点校验失败');
+            next.entities = structuredClone(cp.entities);
+            next.claims = structuredClone(cp.claims);
+            next.sources = structuredClone(cp.sources);
+            next.modules = structuredClone(cp.modules);
+            startIndex = cp.version;
+        }
+    }
+    for (const event of state.events.slice(startIndex, version)) for (const change of event.effects) {
         invariant(['source', 'entity', 'claim', 'module', 'review'].includes(change.type), '历史变更类型无效');
         if (change.type === 'module') { invariant(['map', 'story', 'variables'].includes(change.id) && canonical(next.modules[change.id] ?? null) === canonical(change.before), '模块历史不连续'); next.modules[change.id] = structuredClone(change.after); }
         else if (change.type === 'review') {
             const record = next.sources[change.id];
             invariant(record?.kind === 'independent_world_update' && change.before === null && !record.reviews?.some(review => review.index === change.after.index), '提案处理历史不连续');
             next.sources[change.id] = { ...record, reviews: [...(record.reviews || []), structuredClone(change.after)] };
-        } else if (change.type === 'source') { invariant(canonical(next.sources[change.id] ?? null) === canonical(change.before), '来源历史不连续'); next.sources[change.id] = structuredClone(change.after); }
-        else { const list = change.type === 'entity' ? next.entities : next.claims; const index = list.findIndex(x => x.id === change.id); invariant(canonical(list[index] ?? null) === canonical(change.before), '对象历史不连续'); if (index < 0) list.push(structuredClone(change.after)); else list[index] = structuredClone(change.after); }
+        } else if (change.type === 'source') applySourceEffect(next.sources, change);
+        else if (change.type === 'entity') applyEntityEffect(next.entities, change);
+        else { const list = next.claims; const index = list.findIndex(x => x.id === change.id); invariant(canonical(list[index] ?? null) === canonical(change.before), '对象历史不连续'); if (change.after === null) { invariant(index >= 0, '对象历史不连续'); list.splice(index, 1); } else if (index < 0) list.push(structuredClone(change.after)); else list[index] = structuredClone(change.after); }
     }
     next.version = version; next.events = structuredClone(state.events.slice(0, version)); next.receipts = structuredClone(state.receipts.slice(0, version));
+    if (Array.isArray(state.checkpoints)) {
+        const retained = state.checkpoints.filter(item => item.version <= version);
+        if (retained.length) next.checkpoints = structuredClone(retained);
+    }
     if (state.withdrawn) next.withdrawn = structuredClone(state.withdrawn);
     next.parent = { branchId: state.branchId, version }; return validateWorld(next);
 }

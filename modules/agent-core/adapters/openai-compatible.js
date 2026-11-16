@@ -1,8 +1,16 @@
 import { fetchWithExtras } from '../../../shared/common/request-extras.js';
+import { composeAuthorizedFetch } from '../provider-auth.js';
 import OpenAI from 'openai';
 import { buildSamplingParameters } from '../sampling.js';
 import { resolveAgentAuth } from '../provider-auth.js';
 import { attachRequestInspection, readResponseCompletion } from '../runtime/response-completion.js';
+import {
+    detectFallbackTokenLimitParam,
+    getCachedTokenLimitParam,
+    runWithRetry,
+    sanitizeErrorSecrets,
+    setCachedTokenLimitParam,
+} from '../runtime/retry-policy.js';
 import {
     getLastUserMessageIndex,
     shouldPreserveHistoricalReasoning,
@@ -987,14 +995,26 @@ function describeStreamedResponse(snapshot, finishReason, model) {
     };
 }
 
+function swapTokenLimitField(body, targetParam) {
+    const value = body?.max_completion_tokens ?? body?.max_tokens;
+    const next = { ...body };
+    delete next.max_tokens;
+    delete next.max_completion_tokens;
+    if (value !== undefined && (targetParam === 'max_completion_tokens' || targetParam === 'max_tokens')) {
+        next[targetParam] = value;
+    }
+    return next;
+}
+
 export class OpenAICompatibleAdapter {
     constructor(config) {
         this.config = config;
+        this.baseUrl = String(config.baseUrl || 'https://api.openai.com/v1').replace(/\/$/, '');
         this.auth = resolveAgentAuth('openai-compatible', config.apiKey);
         this.client = new OpenAI({
             ...this.auth.sdkOptions,
-            ...(config.requestExtras && {fetch: fetchWithExtras(config)}),
-            baseURL: String(config.baseUrl || 'https://api.openai.com/v1').replace(/\/$/, ''),
+            ...(config.requestExtras && { fetch: composeAuthorizedFetch(this.auth, fetchWithExtras(config)) }),
+            baseURL: this.baseUrl,
             timeout: Number(config.timeoutMs) || 15 * 60 * 1000,
             maxRetries: 0,
             dangerouslyAllowBrowser: true,
@@ -1019,17 +1039,17 @@ export class OpenAICompatibleAdapter {
             { ...this.config, provider: 'openai-compatible' }, nativeTools, reasoning,
         );
         const samplingParams = buildSamplingParameters('openai-compatible', this.config.sampling);
+        const tokenLimitField = task.maxTokens
+            ? (getCachedTokenLimitParam(this.baseUrl, this.config.model)
+                || (usesMaxCompletionTokens(this.config.model) ? 'max_completion_tokens' : 'max_tokens'))
+            : null;
         const body = {
             model: this.config.model,
             messages: isTaggedMode ? buildTaggedMessages(task, this.config.model) : buildNativeMessages(task, this.config.model, {
                 preserveReasoningContent: deepSeekThinkingWithTools,
             }),
             ...(nativeTools ? { tools: nativeTools, tool_choice: task.toolChoice || 'auto' } : {}),
-            ...(task.maxTokens
-                ? (usesMaxCompletionTokens(this.config.model)
-                    ? { max_completion_tokens: task.maxTokens }
-                    : { max_tokens: task.maxTokens })
-                : {}),
+            ...(tokenLimitField ? { [tokenLimitField]: task.maxTokens } : {}),
             ...samplingParams,
         };
         // Inherit can enable thinking too. Only an explicit off permits forced tools;
@@ -1099,6 +1119,7 @@ export class OpenAICompatibleAdapter {
             const error = new Error(describeOpenAICompatibleHttpError(errorText, response.status));
             error.status = response.status;
             error.body = errorText;
+            error.headers = response.headers;
             throw error;
         }
         const assistantSnapshot = {
@@ -1167,7 +1188,7 @@ export class OpenAICompatibleAdapter {
         try {
             return await this.runChat(task, sent);
         } catch (error) {
-            throw attachRequestInspection(error, sent.requestInspection);
+            throw attachRequestInspection(sanitizeErrorSecrets(error, this.auth?.apiKey), sent.requestInspection);
         }
     }
 
@@ -1176,125 +1197,163 @@ export class OpenAICompatibleAdapter {
         const toolMode = this.config.toolMode || 'native';
         const isTaggedMode = toolMode === 'tagged-json' && Array.isArray(task.tools) && task.tools.length > 0;
         const shouldUseStreaming = typeof task.onStreamProgress === 'function';
-        const body = this.buildRequestBody(task, effectiveReasoning);
-        const requestInspection = this.inspectRequest(task, { body, effectiveReasoning });
-        sent.requestInspection = requestInspection;
-        const createRequest = request => request(body);
-        if (shouldUseStreaming) {
-            if (!isTaggedMode) {
-                const result = await createRequest((requestBody) => (
-                    this.streamNativeChatCompletions(task, requestBody, effectiveReasoning)
-                ));
-                return {
-                    ...result,
-                    requestInspection,
-                };
+        let activeBody = this.buildRequestBody(task, effectiveReasoning);
+        let streamStarted = false;
+        const trackedTask = shouldUseStreaming
+            ? {
+                ...task,
+                onStreamProgress: (progress) => {
+                    streamStarted = true;
+                    task.onStreamProgress(progress);
+                },
             }
-            const stream = await createRequest((requestBody) => this.client.chat.completions.create({
+            : task;
+        sent.requestInspection = this.inspectRequest(trackedTask, { body: activeBody, effectiveReasoning });
+
+        const sendOnce = async (requestBody) => {
+            const requestInspection = this.inspectRequest(trackedTask, { body: requestBody, effectiveReasoning });
+            sent.requestInspection = requestInspection;
+            if (shouldUseStreaming) {
+                if (!isTaggedMode) {
+                    const result = await this.streamNativeChatCompletions(trackedTask, requestBody, effectiveReasoning);
+                    return {
+                        ...result,
+                        requestInspection,
+                    };
+                }
+                const stream = await this.client.chat.completions.create({
                     ...requestBody,
                     stream: true,
                 }, {
-                    signal: task.signal,
-                }));
-            const assistantSnapshot = {
-                role: 'assistant',
-            };
-            let lastFinishReason;
-            let lastModel = this.config.model;
-            let providerPayload;
+                    signal: trackedTask.signal,
+                });
+                const assistantSnapshot = {
+                    role: 'assistant',
+                };
+                let lastFinishReason;
+                let lastModel = this.config.model;
+                let providerPayload;
 
-            for await (const chunk of stream) {
-                lastModel = chunk.model || lastModel;
-                const choice = chunk.choices?.[0];
-                accumulateStreamedAssistantSnapshot(assistantSnapshot, choice);
-                if (choice?.finish_reason) {
-                    lastFinishReason = choice.finish_reason;
+                for await (const chunk of stream) {
+                    lastModel = chunk.model || lastModel;
+                    const choice = chunk.choices?.[0];
+                    accumulateStreamedAssistantSnapshot(assistantSnapshot, choice);
+                    if (choice?.finish_reason) {
+                        lastFinishReason = choice.finish_reason;
+                    }
+
+                    const thinkTagged = analyzeAssistantText(getStreamedSnapshotText(assistantSnapshot), { streaming: true });
+                    const standardToolCalls = getStreamedSnapshotToolCalls(assistantSnapshot);
+                    const progressToolCalls = standardToolCalls.length
+                        ? standardToolCalls
+                        : thinkTagged.draft;
+                    const cleanedText = standardToolCalls.length
+                        ? thinkTagged.cleaned
+                        : thinkTagged.text;
+                    emitStreamProgress(trackedTask, {
+                        text: cleanedText,
+                        thoughts: visibleThoughts(
+                            effectiveReasoning,
+                            extractThoughtsFromMessage(assistantSnapshot, choice).concat(thinkTagged.thoughts),
+                        ),
+                        ...(progressToolCalls.length ? { toolCalls: progressToolCalls } : {}),
+                        ...(!standardToolCalls.length && progressToolCalls.length ? { toolCallDraft: true } : {}),
+                    }, effectiveReasoning);
                 }
-
-                const thinkTagged = analyzeAssistantText(getStreamedSnapshotText(assistantSnapshot), { streaming: true });
-                const standardToolCalls = getStreamedSnapshotToolCalls(assistantSnapshot);
-                const progressToolCalls = standardToolCalls.length
-                    ? standardToolCalls
-                    : thinkTagged.draft;
+                const finalCompletion = typeof stream.finalChatCompletion === 'function'
+                    ? await stream.finalChatCompletion()
+                    : null;
+                const finalChoice = finalCompletion?.choices?.[0] || null;
+                const finalMessage = finalChoice?.message || assistantSnapshot;
+                assertSignedToolCallsIntact(finalMessage);
+                const replayableFinalMessage = mergeReplayMessages(
+                    assistantSnapshot,
+                    buildReplayableAssistantMessage(finalMessage, finalChoice || {}),
+                );
+                assertSignedToolCallsIntact(replayableFinalMessage);
+                providerPayload = buildProviderPayload(replayableFinalMessage);
+                const standardToolCalls = getStreamedSnapshotToolCalls(replayableFinalMessage);
+                const thinkTagged = analyzeAssistantText(getStreamedSnapshotText(replayableFinalMessage));
+                const thoughts = extractThoughtsFromMessage(replayableFinalMessage, finalChoice || {});
+                thinkTagged.thoughts.forEach((item) => thoughts.push(item));
+                const taggedToolCalls = standardToolCalls.length ? [] : extractResponseTaggedToolCalls(trackedTask, thinkTagged, finalMessage, requestInspection);
+                const toolCalls = [...standardToolCalls, ...taggedToolCalls];
                 const cleanedText = standardToolCalls.length
                     ? thinkTagged.cleaned
                     : thinkTagged.text;
-                emitStreamProgress(task, {
+
+                return {
                     text: cleanedText,
-                    thoughts: visibleThoughts(
-                        effectiveReasoning,
-                        extractThoughtsFromMessage(assistantSnapshot, choice).concat(thinkTagged.thoughts),
-                    ),
-                    ...(progressToolCalls.length ? { toolCalls: progressToolCalls } : {}),
-                    ...(!standardToolCalls.length && progressToolCalls.length ? { toolCallDraft: true } : {}),
-                }, effectiveReasoning);
+                    toolCalls,
+                    thoughts: visibleThoughts(effectiveReasoning, thoughts),
+                    ...readResponseCompletion('openai', lastFinishReason, !!finalMessage.refusal, finalCompletion
+                        ? describeCompletionResponse(finalCompletion, finalChoice || {}, finalMessage)
+                        : describeStreamedResponse(finalMessage, lastFinishReason, lastModel)),
+                    model: lastModel,
+                    provider: 'openai-compatible',
+                    providerPayload,
+                    requestInspection,
+                    ...captureRawAssistantMessage(trackedTask, finalMessage),
+                };
             }
-            const finalCompletion = typeof stream.finalChatCompletion === 'function'
-                ? await stream.finalChatCompletion()
-                : null;
-            const finalChoice = finalCompletion?.choices?.[0] || null;
-            const finalMessage = finalChoice?.message || assistantSnapshot;
-            assertSignedToolCallsIntact(finalMessage);
-            const replayableFinalMessage = mergeReplayMessages(
-                assistantSnapshot,
-                buildReplayableAssistantMessage(finalMessage, finalChoice || {}),
-            );
-            assertSignedToolCallsIntact(replayableFinalMessage);
-            providerPayload = buildProviderPayload(replayableFinalMessage);
-            const standardToolCalls = getStreamedSnapshotToolCalls(replayableFinalMessage);
-            const thinkTagged = analyzeAssistantText(getStreamedSnapshotText(replayableFinalMessage));
-            const thoughts = extractThoughtsFromMessage(replayableFinalMessage, finalChoice || {});
+
+            const response = await this.client.chat.completions.create(requestBody, {
+                signal: trackedTask.signal,
+            });
+
+            const choice = response.choices?.[0] || {};
+            const message = choice.message || {};
+            assertSignedToolCallsIntact(message);
+            const thoughts = extractThoughtsFromMessage(message, choice);
+            const standardToolCalls = buildToolCallResultsFromOpenAI(message.tool_calls || []);
+            const contentText = flattenTextContent(message.content);
+            const thinkTagged = analyzeAssistantText(contentText);
             thinkTagged.thoughts.forEach((item) => thoughts.push(item));
-            const taggedToolCalls = standardToolCalls.length ? [] : extractResponseTaggedToolCalls(task, thinkTagged, finalMessage, requestInspection);
+            const taggedToolCalls = standardToolCalls.length ? [] : extractResponseTaggedToolCalls(trackedTask, thinkTagged, message, requestInspection);
             const toolCalls = [...standardToolCalls, ...taggedToolCalls];
             const cleanedText = standardToolCalls.length
                 ? thinkTagged.cleaned
                 : thinkTagged.text;
+            const replayableMessage = buildReplayableAssistantMessage(message, choice);
 
             return {
                 text: cleanedText,
                 toolCalls,
                 thoughts: visibleThoughts(effectiveReasoning, thoughts),
-                ...readResponseCompletion('openai', lastFinishReason, !!finalMessage.refusal, finalCompletion
-                    ? describeCompletionResponse(finalCompletion, finalChoice || {}, finalMessage)
-                    : describeStreamedResponse(finalMessage, lastFinishReason, lastModel)),
-                model: lastModel,
+                ...readResponseCompletion('openai', choice.finish_reason, !!message.refusal, describeCompletionResponse(response, choice, message)),
+                model: response.model || this.config.model,
                 provider: 'openai-compatible',
-                providerPayload,
+                providerPayload: buildProviderPayload(replayableMessage),
                 requestInspection,
-                ...captureRawAssistantMessage(task, finalMessage),
+                ...captureRawAssistantMessage(trackedTask, message),
             };
-        }
-
-        const response = await createRequest((requestBody) => this.client.chat.completions.create(requestBody, {
-                signal: task.signal,
-            }));
-
-        const choice = response.choices?.[0] || {};
-        const message = choice.message || {};
-        assertSignedToolCallsIntact(message);
-        const thoughts = extractThoughtsFromMessage(message, choice);
-        const standardToolCalls = buildToolCallResultsFromOpenAI(message.tool_calls || []);
-        const contentText = flattenTextContent(message.content);
-        const thinkTagged = analyzeAssistantText(contentText);
-        thinkTagged.thoughts.forEach((item) => thoughts.push(item));
-        const taggedToolCalls = standardToolCalls.length ? [] : extractResponseTaggedToolCalls(task, thinkTagged, message, requestInspection);
-        const toolCalls = [...standardToolCalls, ...taggedToolCalls];
-        const cleanedText = standardToolCalls.length
-            ? thinkTagged.cleaned
-            : thinkTagged.text;
-        const replayableMessage = buildReplayableAssistantMessage(message, choice);
-
-        return {
-            text: cleanedText,
-            toolCalls,
-            thoughts: visibleThoughts(effectiveReasoning, thoughts),
-            ...readResponseCompletion('openai', choice.finish_reason, !!message.refusal, describeCompletionResponse(response, choice, message)),
-            model: response.model || this.config.model,
-            provider: 'openai-compatible',
-            providerPayload: buildProviderPayload(replayableMessage),
-            requestInspection,
-            ...captureRawAssistantMessage(task, message),
         };
+
+        let paramFallbackUsed = false;
+        const executeWithParamFallback = async () => {
+            try {
+                return await sendOnce(activeBody);
+            } catch (error) {
+                // WHY: Third-party OpenAI-compatible gateways disagree on max_tokens vs max_completion_tokens
+                // regardless of model name; swap once on rejection and cache per (baseUrl, model).
+                if (!paramFallbackUsed && !streamStarted && (activeBody.max_tokens !== undefined || activeBody.max_completion_tokens !== undefined)) {
+                    const fallbackParam = detectFallbackTokenLimitParam(error);
+                    if (fallbackParam && !Object.hasOwn(activeBody, fallbackParam)) {
+                        paramFallbackUsed = true;
+                        setCachedTokenLimitParam(this.baseUrl, this.config.model, fallbackParam);
+                        activeBody = swapTokenLimitField(activeBody, fallbackParam);
+                        return await sendOnce(activeBody);
+                    }
+                }
+                throw error;
+            }
+        };
+
+        return await runWithRetry(executeWithParamFallback, {
+            signal: task.signal,
+            timeoutMs: Number(this.config.timeoutMs) || 0,
+            maxRetries: task.retryTransient === false ? 0 : 2,
+            canRetry: () => !streamStarted,
+        });
     }
 }

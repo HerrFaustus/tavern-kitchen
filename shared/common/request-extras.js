@@ -36,18 +36,21 @@ export function parseRequestExtras(config) {
     return result;
 }
 
-export function fetchWithExtras(config) {
+export function fetchWithExtras(config, baseFetch = null) {
+    const resolvedBase = typeof baseFetch === 'function'
+        ? baseFetch
+        : (url, init) => globalThis.fetch(url, init);
     const extras = parseRequestExtras(config);
-    if (!Object.keys(extras).length) return globalThis.fetch.bind(globalThis);
+    if (!Object.keys(extras).length) return resolvedBase;
     return (url, init = {}) => {
         const headers = new Headers(init.headers);
-        for (const [key,value] of Object.entries(extras.includeHeaders || {})) headers.set(key,value);
+        for (const [key, value] of Object.entries(extras.includeHeaders || {})) headers.set(key, value);
         let body = init.body;
         if (typeof body === 'string' && (extras.includeBody || extras.excludeBody)) {
             const data = { ...JSON.parse(body), ...extras.includeBody };
             for (const name of extras.excludeBody || []) delete data[name];
             body = JSON.stringify(data);
         }
-        return fetch(url, { ...init, headers, body });
+        return resolvedBase(url, { ...init, headers, body });
     };
 }

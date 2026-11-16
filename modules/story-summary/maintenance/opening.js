@@ -7,7 +7,7 @@ import { MEMORY_PAGE_SIZE } from './limits.js';
 /** The directory is lightweight; only budget-sized pages are projected into the opening. */
 export function buildMemoryOpening({ task, read, maxTokens }) {
     const ranges = unionRanges([...task.pending, ...task.contextRanges]);
-    const opening = { task, memory: [], memoryDirectory: MEMORY_COLLECTIONS.filter(name => name !== 'events').map(collection => {
+    const opening = { task, memory: [], memoryDirectory: MEMORY_COLLECTIONS.map(collection => {
         const total = read({ collection, ranges, limit: 0 }).total;
         return { collection, total, next: total ? { collection, ranges } : null };
     }) };

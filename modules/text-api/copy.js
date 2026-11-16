@@ -11,7 +11,7 @@ export const TEXT_API_COPY = Object.freeze({
     stream: '流式输出', temperature: '温度', maxTokens: '最大输出 Token',
     sampling: '生成参数', prefix: '路径前缀', autoPrefix: '自动', customPrefix: '自定义',
     reasoning: '思考模式', effort: '思考强度', budget: '思考 Token 预算',
-    inherit: '不发送', plannerKey: '编剧需要填写所选配置的 API Key',
+    inherit: '不发送',
     modelRequired: '请填写模型名称', urlRequired: '请填写 API 地址',
     unavailable: '配置尚未加载，请重试', invalid: 'API 配置配置格式无效',
     requestFailed: '请求失败',

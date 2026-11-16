@@ -11,7 +11,7 @@ const shims = {
     'script.js': 'export const extension_prompts=globalThis.__plannerFixture.prompts,extension_prompt_types={IN_CHAT:1},extension_prompt_roles={SYSTEM:0};',
     'event-manager.js': 'export const event_types=new Proxy({},{get:(_,key)=>key}); export const createModuleEvents=()=>({on:(key,fn)=>{globalThis.__plannerFixture.events[key]=fn;},cleanup(){}});',
     'generate-interceptor.js': 'export const GENERATE_INTERCEPTOR_ORDER={STORY_PLANNER:300}; export const registerGenerateInterceptor=(_id,fn)=>{globalThis.__plannerFixture.interceptor=fn;}; export const unregisterGenerateInterceptor=()=>{};',
-    'text-api-host.js': 'export const resolveTextApi=async()=>({provider:"other",apiKey:"fixture"}); export const generateFeatureText=async()=>{const f=globalThis.__plannerFixture;f.calls++;if(f.failNextRequest){f.failNextRequest=false;throw Error("fixture failure");}return {text:JSON.stringify({global:{text:"幕后线索尚未揭晓。",dependencies:[]},chapter:{text:"旅人站在码头。\\n海风吹动斗篷。\\n"+"船工低声商议潮水与航程。".repeat(240),dependencies:[]}})};};',
+    'text-api-host.js': 'export const resolveTextApi=async()=>({provider:"other",baseUrl:"http://fixture.test/v1",model:"stub-planner",apiKey:"fixture"}); export const generateFeatureText=async()=>{const f=globalThis.__plannerFixture;f.calls++;if(f.failNextRequest){f.failNextRequest=false;throw Error("fixture failure");}return {text:JSON.stringify({global:{text:"幕后线索尚未揭晓。",dependencies:[]},chapter:{text:"旅人站在码头。\\n海风吹动斗篷。\\n"+"船工低声商议潮水与航程。".repeat(240),dependencies:[]}})};};',
 };
 const bundle = await build({absWorkingDir:root,entryPoints:['scripts/fixtures/planner-workspace.js'],bundle:true,write:false,format:'esm',platform:'browser',
     plugins:[{name:'planner-fixture-boundaries',setup(api){

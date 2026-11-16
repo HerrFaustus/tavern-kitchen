@@ -138,7 +138,7 @@ async function main() {
 
     const checks = [
         ['rawRecall', raw.chunks[0]?.chunkId === 'c-1-0' && raw.stats.usableVectors === 2 && raw.stats.cacheMode === 'none'],
-        ['warmSkipped', !!warm?.skipped && !warmStats.chunkVectors && !warmStats.eventVectors && !warmStats.stateVectors],
+        ['warmSessionReleased', !!warm?.ready && !warm?.skipped && warmStats.status === 'session-cache idle' && !warmStats.chunkVectors && !warmStats.eventVectors && !warmStats.stateVectors],
         ['sessionReady', !!lease?.ready],
         ['l1TopChunk', top?.chunkId === 'c-1-0'],
         ['l1DbFallback', Number(l1Stats.cacheFallbackDbTime || 0) === 0],
@@ -168,7 +168,7 @@ async function main() {
     console.log('[story-summary-runtime]');
     console.log(`rawRecall=${checks.find(([name]) => name === 'rawRecall')[1] ? 'PASS' : 'FAIL'}`);
     console.log(`runtime backend=${backend}`);
-    console.log(`warm result=${warm?.skipped ? 'SKIPPED' : 'FAIL'} status=${warmStats.status || 'unknown'}`);
+    console.log(`warm result=${warm?.ready && !warm?.skipped ? 'WARMED' : (warm?.skipped ? 'SKIPPED' : 'FAIL')} status=${warmStats.status || 'unknown'}`);
     console.log(`L0/L1/L2 cache owner=${cacheOwner}`);
     console.log(`DB fallback count=${Number(l1Stats.cacheFallbackDbTime || 0) === 0 ? 0 : 1}`);
     console.log(`promptParity=${promptParity}`);

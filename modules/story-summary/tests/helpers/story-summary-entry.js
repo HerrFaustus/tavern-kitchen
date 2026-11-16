@@ -13,6 +13,7 @@ import { worldAuthorityForContext, authorityStoryStore } from '../../../world-re
 import { getSummarySourceEnd } from '../../generate/source-boundary.js';
 import { SUMMARY_BATCH_FLOORS } from '../../data/summary-workflow.js';
 import { clearRecallHistory } from '../../recall-history.js';
+import { isVectorApiConfigured } from '../../vector/llm/api-config-policy.js';
 
 // Execute production entrypoints with explicit boundary dependencies. Never
 // assert source spelling: these tests protect observable state and stored data.
@@ -26,7 +27,7 @@ export function entry(names, dependencies) {
     // Main-reply behavior is tested through its controller and actual persistence separately.
     const context = vm.createContext({ panelEnabled, getSummarySourceEnd, observeBackgroundTask, MEMORY_CHAT_MESSAGES, refreshFloorSummaries, floorCoverageEnd, SUMMARY_BATCH_FLOORS,
         timelineRounds, summaryLayers, firstInvalidMemorySource, prepareMemorySources, validateMemorySources, worldAuthorityForContext, authorityStoryStore,
-        clearRecallHistory, getSummaryPanelConfig: () => ({ inlineSummary: { enabled: false } }), ...dependencies });
+        clearRecallHistory, isVectorApiConfigured, getSummaryPanelConfig: () => ({ inlineSummary: { enabled: false } }), ...dependencies });
     vm.runInContext(declarations.filter(node => node.type === 'FunctionDeclaration' ? names.includes(node.id.name)
         : node.type === 'VariableDeclaration' && node.declarations.some(item => names.includes(item.id.name)))
         .map(node => source.slice(node.start, node.end)).join('\n')

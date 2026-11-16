@@ -1,10 +1,12 @@
 import { stripFloorProtocol } from '../inline/protocol.js';
+import { applyTextFilterRules } from '../data/text-filter-rules.js';
 import { readPlotLines } from '../../story-state/plot-lines.js';
 import { prepareMemoryTags } from '../data/memory-tags.js';
 import { reviewedRounds, roundSourceId } from '../data/summary-layers.js';
 import { isRangeSourceCurrent } from '../data/turn-source.js';
 import { readNarrativeUnits, requestNarrativeClosure, validateStagedUnits } from './narrative-review.js';
-import { editMemoryBatch, iterateMemoryRecords, memoryItems, memoryKey, sameMemory, MEMORY_COLLECTIONS } from './domain.js';
+import { editMemoryBatch, inspectWorldMemoryRecord, isWorldOwnedEditCommand, iterateMemoryRecords,
+    iterateUnifiedMemoryRecords, memoryItems, memoryKey, sameMemory, MEMORY_COLLECTIONS } from './domain.js';
 import { createEvidenceReader } from './evidence.js';
 import { MemoryMaintenanceError, requireMemory, memoryUpdated } from './errors.js';
 import { projectMemoryRecord, memoryPolicy, recordHandle } from './records.js';
@@ -19,17 +21,20 @@ export { projectMemoryRecord } from './records.js';
 export { MEMORY_PAGE_CHARS, MEMORY_PAGE_SIZE, OPENING_TOKENS } from './limits.js';
 
 const generation = ({ maintenance: _receipts, reviewLayers: _layers, roundRevisions: _revisions, ...batch }) => batch;
-const find = (memory, { collection, key }) => {
-    const value = memoryItems(memory, collection).find(item => memoryKey(collection, item) === key) ?? null;
-    return collection === 'facts' && value?.retracted ? null : value;
+const find = (memory, { collection, key }, activeWorld = null) => {
+    for (const record of iterateUnifiedMemoryRecords(memory, [collection], activeWorld)) {
+        if (record.key === key) return record.value;
+    }
+    return null;
 };
 const targets = commands => commands.flatMap(command => [command, ...(command.removeIds || []).map(key => ({ collection: 'events', key }))]);
-function recordLookup(memory) {
+function recordLookup(memory, activeWorld = null) {
     const indexes = new Map();
+    const world = activeWorld ?? memory.world ?? null;
     return ({ collection, key }) => {
         if (!indexes.has(collection)) {
             const values = new Map();
-            for (const record of iterateMemoryRecords(memory, [collection])) values.set(record.key, record.value);
+            for (const record of iterateUnifiedMemoryRecords(memory, [collection], world)) values.set(record.key, record.value);
             indexes.set(collection, values);
         }
         return indexes.get(collection).get(key) ?? null;
@@ -38,8 +43,8 @@ function recordLookup(memory) {
 
 /** One task borrows published records; only observed values and changed records are detached. */
 export function createMemorySession({ chatId, chat, json, atoms, l0Index, cutoff, start = 0, store,
-    generateReviewedLayer, filterRules = [], openingTokens = OPENING_TOKENS }) {
-    let source = { json: json || {}, atoms }, history = store?.summaryHistory || [];
+    generateReviewedLayer, filterRules = [], openingTokens = OPENING_TOKENS, world = null }) {
+    let source = { json: json || {}, atoms }, history = store?.summaryHistory || [], worldState = world ?? null;
     const originalBatches = history.map(generation);
     const policy = memoryPolicy(filterRules), evidence = createEvidenceReader(() => chat, cutoff, filterRules);
     const observed = new Map(), overlay = new Map(), conflicts = new Map(), completionBaseline = new Map();
@@ -96,9 +101,10 @@ export function createMemorySession({ chatId, chat, json, atoms, l0Index, cutoff
         source = { json: current.json || {}, atoms: current.atoms };
         history = current.store?.summaryHistory || history;
         chat = current.chat; l0Index = current.l0Index;
+        if (Object.hasOwn(current, 'world')) worldState = current.world ?? null;
     }
     function assertRunOwnership(memory, keys, batches = history) {
-        const owner = ownerFor(batches), lookup = recordLookup(memory);
+        const owner = ownerFor(batches), lookup = recordLookup(memory, memory.world ?? worldState);
         const later = keys.filter(key => {
             const value = lookup(key);
             return value && owner({ ...key, value }).range.to > cutoff + 1;
@@ -106,7 +112,7 @@ export function createMemorySession({ chatId, chat, json, atoms, l0Index, cutoff
         if (later.length) throw memoryUpdated(later);
     }
     function assertKnown(memory, keys, completion = false) {
-        const lookup = recordLookup(memory);
+        const lookup = recordLookup(memory, memory.world ?? worldState);
         const changed = keys.filter(key => {
             const seen = observed.get(recordHandle(key));
             return seen && !sameMemory(lookup(key), seen.value);
@@ -117,14 +123,17 @@ export function createMemorySession({ chatId, chat, json, atoms, l0Index, cutoff
         }
     }
     function* records(collections = MEMORY_COLLECTIONS, memory = source, withDraft = true) {
+        const activeWorld = memory === source ? worldState : (memory.world ?? null);
         const found = new Set();
-        for (const record of iterateMemoryRecords(memory, collections)) {
+        for (const record of iterateUnifiedMemoryRecords(memory, collections, activeWorld)) {
             const handle = recordHandle(record);
             if (overlay.has(handle)) found.add(handle);
             const change = withDraft ? overlay.get(handle) : null;
             const value = change && !conflicts.has(handle) ? change.after : record.value;
             if (value == null || (record.collection === 'anchors' && value.floor > cutoff)) continue;
-            yield { ...record, value };
+            const worldInfo = activeWorld ? inspectWorldMemoryRecord(record.collection, value, activeWorld) : null;
+            if (worldInfo?.hidden) continue;
+            yield { ...record, value, ...(worldInfo ? { worldValue: worldInfo.value, worldInfo } : {}) };
         }
         if (withDraft) for (const [handle, change] of overlay) {
             if (!found.has(handle) && change.after != null && collections.includes(change.collection)) {
@@ -186,11 +195,18 @@ export function createMemorySession({ chatId, chat, json, atoms, l0Index, cutoff
             // Explicit rereads of a conflicted target show the current published value.
             const handle = recordHandle(record), conflict = conflicts.get(handle);
             if (conflict) {
-                const value = find(source, record);
+                const value = find(source, record, worldState);
                 if (value == null) continue;
-                record = { ...record, value };
+                const worldInfo = worldState ? inspectWorldMemoryRecord(record.collection, value, worldState) : null;
+                if (worldInfo?.hidden) continue;
+                record = { ...record, value, ...(worldInfo ? { worldValue: worldInfo.value, worldInfo } : {}) };
             }
-            if (needle && !JSON.stringify(projectMemoryRecord(record, history, responsibility).value).toLocaleLowerCase().includes(needle)) continue;
+            if (needle && !JSON.stringify(projectMemoryRecord(
+                record.worldValue ? { ...record, value: record.worldValue } : record,
+                history,
+                responsibility,
+                record.worldInfo,
+            ).value).toLocaleLowerCase().includes(needle)) continue;
             total++;
             if (cursor && (textOffset ? handle < cursor : handle <= cursor)) continue;
             eligible++;
@@ -211,7 +227,7 @@ export function createMemorySession({ chatId, chat, json, atoms, l0Index, cutoff
         for (const { record, responsibility } of selected.slice(0, limit)) {
             const handle = recordHandle(record), begin = items.length ? 0 : textOffset;
             if (begin) assertKnown(source, [record]);
-            const projected = projectMemoryRecord(record, history, responsibility), text = JSON.stringify(projected);
+            const projected = projectMemoryRecord(record.worldValue ? { ...record, value: record.worldValue } : record, history, responsibility, record.worldInfo), text = JSON.stringify(projected);
             requireMemory(begin <= text.length, 'invalid_arguments', '', 'textOffset');
             if (items.length && text.length > budget) { next = { cursor: recordHandle(items.at(-1)) }; break; }
             if (conflicts.has(handle)) {
@@ -250,6 +266,16 @@ export function createMemorySession({ chatId, chat, json, atoms, l0Index, cutoff
         ensurePending().completions = unionRanges([...(pending?.completions || []), { from, to }]);
         return { status: 'staged', changed: 0, task: task({ includeStaged: true }) };
     }
+    function validateEditEvidence(evidenceArgs) {
+        requireMemory(evidenceArgs && typeof evidenceArgs === 'object'
+            && Number.isInteger(evidenceArgs.floor) && typeof evidenceArgs.quote === 'string', 'invalid_evidence', '', 'evidence');
+        requireMemory(evidenceArgs.floor >= 1 && evidenceArgs.floor <= cutoff + 1, 'source_boundary', '', 'evidence.floor');
+        const message = chat?.[evidenceArgs.floor - 1];
+        requireMemory(message && !(message.is_system && message.extra?.type), 'source_missing', '', 'evidence.floor');
+        const quote = evidenceArgs.quote;
+        const story = applyTextFilterRules(stripFloorProtocol(String(message.mes || '')), filterRules);
+        requireMemory(quote.trim().length > 0 && quote.length <= 1000 && story.includes(quote), 'invalid_evidence', '', 'evidence.quote');
+    }
     function submit(args) {
         try {
             validateToolArguments(args, MEMORY_TOOLS.find(tool => tool.function.name === 'EditMemory').function.parameters);
@@ -271,6 +297,17 @@ export function createMemorySession({ chatId, chat, json, atoms, l0Index, cutoff
                 }
             });
             if (errors.length) throw MemoryMaintenanceError.batch(errors, ['records', 'references']);
+            if (commands.length > 0 || args.evidence !== undefined) validateEditEvidence(args.evidence);
+            if (worldState) {
+                const worldErrors = [];
+                for (const [index, command] of commands.entries()) {
+                    if (!isWorldOwnedEditCommand(command, source, worldState)) continue;
+                    const err = new MemoryMaintenanceError('world_owned', '', 'key');
+                    err.entry = `edits[${index}]`;
+                    worldErrors.push(err);
+                }
+                if (worldErrors.length) throw MemoryMaintenanceError.batch(worldErrors, ['records', 'references']);
+            }
             const keys = targets(commands), repairing = new Set(keys.map(recordHandle).filter(handle => conflicts.get(handle)?.refreshed));
             const removed = new Set(), affected = new Set(repairing);
             // A renamed/deleted record may have later edits under its new key. Drop that
@@ -289,7 +326,7 @@ export function createMemorySession({ chatId, chat, json, atoms, l0Index, cutoff
             assertKnown(source, keys.filter(record => !repairing.has(recordHandle(record))));
             assertRunOwnership(source, keys);
             const retained = (pending?.commands || []).filter((_command, index) => !removed.has(index));
-            const applicable = commands.filter(command => !(command.kind === 'delete' && repairing.has(recordHandle(command)) && find(source, command) == null));
+            const applicable = commands.filter(command => !(command.kind === 'delete' && repairing.has(recordHandle(command)) && find(source, command, worldState) == null));
             const incremental = !repairing.size;
             if (incremental) assertKnown(source, [...overlay.values()]);
             const all = incremental ? applicable : [...retained, ...applicable];
@@ -301,7 +338,7 @@ export function createMemorySession({ chatId, chat, json, atoms, l0Index, cutoff
             if (incremental) appendDraft(all, result.results);
             else installDraft(all, result.results);
             for (const handle of repairing) if (completionBaseline.has(handle)) {
-                const original = completionBaseline.get(handle), value = find(source, original);
+                const original = completionBaseline.get(handle), value = find(source, original, worldState);
                 if (value == null) completionBaseline.delete(handle);
                 else completionBaseline.set(handle, { ...original, value });
             }
@@ -332,7 +369,7 @@ export function createMemorySession({ chatId, chat, json, atoms, l0Index, cutoff
     function assertCurrent(current) {
         assertBoundary(current);
         if (pending?.revisions?.length || pending?.layers?.length) validateStagedUnits(reviewState(current), pending.layers);
-        const memory = { json: current.json || {}, atoms: current.atoms }, batches = current.store?.summaryHistory || history;
+        const memory = { json: current.json || {}, atoms: current.atoms, world: Object.hasOwn(current, 'world') ? current.world : worldState }, batches = current.store?.summaryHistory || history;
         const keys = [...overlay.values()];
         if (pending?.completions.length) {
             const owner = ownerFor(batches);

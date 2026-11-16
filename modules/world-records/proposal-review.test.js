@@ -193,3 +193,26 @@ test('confirmed story removal overrides legacy data while preserving the raw mem
     const restored = await f.service.restore(state, state); assert.equal(worldStoryRecords(restored, f.baseline).length, 0);
     const fork = await f.service.rewind(restored, f.state.version); assert.deepEqual(worldStoryRecords(fork, f.baseline), [old]);
 });
+
+test('Schema 4 compact receipts support idempotent retry and reject conflicting review payloads', async t => {
+    const f = await fixture(t);
+    const cmd = {
+        ...f.service.proposalCommand(f.state, f.requestId, 0, 'accepted'),
+        id: 'review-fixed-id',
+    };
+    const first = await f.service.commit(cmd);
+    assert.equal(first.state.receipts.at(-1).reviewMeta?.operations?.[0]?.action, 'accepted');
+    assert.equal(first.state.receipts.at(-1).fingerprint.length, 64);
+    const retry = await f.service.commit(cmd);
+    assert.equal(retry.repeated, true);
+    const conflict = {
+        ...f.service.proposalCommand(f.state, f.requestId, 0, 'rejected'),
+        id: 'review-fixed-id',
+    };
+    await assert.rejects(() => f.service.commit(conflict), /同一命令标识不能提交不同内容/);
+    const secondCmdConflict = {
+        ...f.service.proposalCommand(f.state, f.requestId, 0, 'rejected'),
+        id: 'review-second-id',
+    };
+    await assert.rejects(() => f.service.commit(secondCmdConflict), /该提案已处理，不能提交不同结果/);
+});

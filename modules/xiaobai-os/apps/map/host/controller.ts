@@ -10,8 +10,9 @@ import type {
 } from '../../../types.js';
 import type { MapService } from '../application/service.js';
 import type { MapClientState, MapClientStatus } from '../types.js';
+import { parseMapDomain } from '../../../domains/map/invariants.js';
 import { readMapConditions } from '../../../../story-state/situation-links.js';
-import { maintenanceState, skippedMaintenanceMessage } from './maintenance-state.js';
+import { maintenanceState } from './maintenance-state.js';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -134,21 +135,6 @@ export function createMapController({
         activation = null;
     }
 
-    function startMaintenance(
-        mode: 'manual' | 'rebuild',
-    ): { started: boolean; status: string; message: string; state: MapClientState } {
-        const start = mode === 'rebuild'
-            ? maintenance.startRebuild('map')
-            : maintenance.startManual('map');
-        return {
-            started: start.status === 'started',
-            status: start.status,
-            message: start.status === 'skipped' ? skippedMaintenanceMessage(start.reason)
-                : start.status === 'busy' ? '地图正在更新，请等待当前更新完成。' : '',
-            state: emitState(),
-        };
-    }
-
     async function handleMessage(message: XiaobaiOsHostFrameMessage): Promise<unknown> {
         const payload = isRecord(message.payload) ? message.payload : {};
         const current = assertActivation(payload);
@@ -179,11 +165,17 @@ export function createMapController({
             assertSameActivation(current, payload);
             return emitState(current);
         }
-        if (message.type === 'map/maintain-once') {
-            return startMaintenance('manual');
+        if (message.type === 'map/update-data') {
+            const expectedRevision = typeof payload.expectedRevision === 'number'
+                ? payload.expectedRevision
+                : (map.readCurrent().map?.revision ?? 0);
+            const candidate = parseMapDomain(payload.map);
+            await map.replaceCurrent(candidate, { expectedRevision });
+            assertSameActivation(current, payload);
+            return emitState(current);
         }
-        if (message.type === 'map/rebuild') {
-            return startMaintenance('rebuild');
+        if (message.type === 'map/maintain-once' || message.type === 'map/rebuild') {
+            throw new Error('地点与人物位置已由统一后厨队列（simulation）自动维护，或请在下方直接手工增删改。');
         }
         throw new Error('未知的地图操作');
     }

@@ -1,9 +1,4 @@
-import { normalizeAgentSettings } from '../../../agent-core/config.js';
-import { resolveActiveProviderConfig } from '../../../agent-core/provider-resolution.js';
-import { createAppRuntimeGroup } from '../../kernel/runtime-group.js';
 import { createWorldModule } from './module.js';
-import { WORLD_PROMPTS } from './prompt-registration.js';
-import { currentInvolvement } from '../../../story-state/situation-links.js';
 import { registerEvolutionReader } from './evolution-view.js';
 import { createWorldManagement } from './management/participant.js';
 import { createWorldService } from './application/service.js';
@@ -12,33 +7,26 @@ import type { WorldDomain } from '../../domains/world/types.js';
 import type { XiaobaiOsAppModule } from '../../kernel/app-registry.js';
 import { MANAGEMENT_CAPABILITY } from '../../capabilities/management/index.js';
 import { createWorldController } from './host/controller.js';
-import { createWorldMaintenanceParticipant } from './host/maintenance-participant.js';
-import { createWorldPromptRuntime, type WorldPromptEventHandlers } from './host/prompt-runtime.js';
+import type { WorldPromptEventHandlers } from './host/prompt-runtime.js';
 import type { XiaobaiOsSettingsRepository } from '../../host/settings-repository.js';
 
 export function createProductionWorldModule(dependencies: {
     settings: XiaobaiOsSettingsRepository;
     getChatIdentity(): string;
-    subscribePrompt(handlers: WorldPromptEventHandlers): () => void;
+    subscribePrompt?: (handlers: WorldPromptEventHandlers) => () => void;
 }): XiaobaiOsAppModule {
     const module = createWorldModule({
         settings: dependencies.settings,
         getChatIdentity: dependencies.getChatIdentity,
-        install({ world, maintenance, agent, prompts, execution }) {
-            const injection = prompts.register(WORLD_PROMPTS);
-            execution.addCleanup(injection.dispose);
-            const unregister = maintenance.registerParticipant(createWorldMaintenanceParticipant(world, () => dependencies.settings.read()!.apps.world, currentInvolvement));
-            execution.addCleanup(unregister);
-            const controller = createWorldController({ world, settings: dependencies.settings, maintenance: maintenance.runner,
+        // WHY: 3A retires duplicate world MaintenanceRunner loop and WORLD_PROMPTS injection;
+        // simulation Agent + world-records drive all world evolution and authority injection.
+        install({ world, maintenance }) {
+            return createWorldController({
+                world,
+                settings: dependencies.settings,
+                maintenance: maintenance.runner,
                 getChatIdentity: dependencies.getChatIdentity,
-                async checkAgent() {
-                    const config = resolveActiveProviderConfig(normalizeAgentSettings(await agent.loadConfig()));
-                    return !!String(config.model || '').trim();
-                },
             });
-            const prompt = createWorldPromptRuntime({ world, settings: dependencies.settings, getChatIdentity: dependencies.getChatIdentity,
-                setPrompt: value => injection.set('context', value), subscribe: dependencies.subscribePrompt });
-            return createAppRuntimeGroup(controller, [prompt]);
         },
     });
     return { ...module, register(context) {

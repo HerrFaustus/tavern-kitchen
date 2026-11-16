@@ -1,10 +1,12 @@
 import { fetchWithExtras } from '../../../shared/common/request-extras.js';
+import { composeAuthorizedFetch } from '../provider-auth.js';
 import { resolveApiBaseUrl, joinApiUrl } from '../../../shared/common/openai-url-utils.js';
 import Anthropic from '@anthropic-ai/sdk';
 import { buildSamplingParameters } from '../sampling.js';
 import { resolveModelFamily } from '../../../shared/host-llm/model-family.js';
 import { resolveAgentAuth } from '../provider-auth.js';
 import { attachRequestInspection, readResponseCompletion } from '../runtime/response-completion.js';
+import { runWithRetry, sanitizeErrorSecrets } from '../runtime/retry-policy.js';
 import {
     buildEffectiveReasoningConfig,
     buildSdkRequestInspection,
@@ -286,7 +288,7 @@ export class AnthropicAdapter {
         this.auth = resolveAgentAuth('anthropic', config.apiKey);
         this.client = new Anthropic({
             ...this.auth.sdkOptions,
-            ...(config.requestExtras && {fetch: fetchWithExtras(config)}),
+            ...(config.requestExtras && { fetch: composeAuthorizedFetch(this.auth, fetchWithExtras(config)) }),
             baseURL: normalizeAnthropicSdkBaseUrl(config.baseUrl),
             timeout: Number(config.timeoutMs) || 15 * 60 * 1000,
             maxRetries: 0,
@@ -378,10 +380,25 @@ export class AnthropicAdapter {
 
     async chat(task) {
         const sent = {};
+        let streamStarted = false;
+        const trackedTask = typeof task.onStreamProgress === 'function'
+            ? {
+                ...task,
+                onStreamProgress: (progress) => {
+                    streamStarted = true;
+                    task.onStreamProgress(progress);
+                },
+            }
+            : task;
         try {
-            return await this.runChat(task, sent);
+            return await runWithRetry(() => this.runChat(trackedTask, sent), {
+                signal: task.signal,
+                timeoutMs: Number(this.config.timeoutMs) || 0,
+                maxRetries: task.retryTransient === false ? 0 : 2,
+                canRetry: () => !streamStarted,
+            });
         } catch (error) {
-            throw attachRequestInspection(error, sent.requestInspection);
+            throw attachRequestInspection(sanitizeErrorSecrets(error, this.auth?.apiKey), sent.requestInspection);
         }
     }
 

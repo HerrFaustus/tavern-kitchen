@@ -29,9 +29,20 @@ async function repairMissingChunksInner({ chatId, chat, vectorConfig, signal, sh
         }
         const [stored, vectors] = await Promise.all([getAllChunks(chatId), getChunkVectorDescriptors(chatId)]);
         if (isCancelled()) return cancelled();
+        const explicitDims = Number(vectorConfig?.embeddingApi?.dims || vectorConfig?.embeddingApi?.dimensions || vectorConfig?.vectorDims || 0) || null;
+        let currentDims = explicitDims || (Number(meta.dims) > 0 ? Number(meta.dims) : null);
+        let recordedDims = Number(meta.dims) > 0 ? Number(meta.dims) : null;
+        let currentLastFloor = Number.isInteger(meta.lastChunkFloor) ? meta.lastChunkFloor : -1;
+        const matchingDims = [...new Set(vectors
+            .filter(item => item.valid && item.fingerprint === fingerprint && Number.isInteger(item.dims) && item.dims > 0)
+            .map(item => item.dims))];
+        if (matchingDims.length > 1 || (currentDims != null && matchingDims.some(dims => dims !== currentDims))) {
+            return { success: false, repaired, chunks, code: 'dims_mismatch' };
+        }
+        if (!currentDims && matchingDims.length === 1) currentDims = matchingDims[0];
         const verifySource = vectorConfig.retrievalMode === 'raw';
         const materials = verifySource ? collectRawChunkMaterials(chat) : collectChunkMaterials(chat, stored, vectors);
-        const missing = selectChunksForRepair(materials, stored, vectors, fingerprint, { verifySource });
+        const missing = selectChunksForRepair(materials, stored, vectors, fingerprint, { verifySource, expectedDims: currentDims });
         activity.update({ total: missing.length });
         const storedIds = new Set(stored.map(chunk => chunk.chunkId));
         const storedTexts = new Map(stored.map(chunk => [chunk.chunkId, chunk.text]));
@@ -50,19 +61,51 @@ async function repairMissingChunksInner({ chatId, chat, vectorConfig, signal, sh
             activity.update({ state: 'embedding', activeUnits: batch.length });
             const embeddings = await embed(batch.map(chunk => chunk.text), vectorConfig, { signal });
             if (isCancelled()) return cancelled();
+            const batchDims = embeddings[0]?.length || null;
+            if (currentDims && batchDims && currentDims !== batchDims) {
+                return {
+                    success: false,
+                    repaired,
+                    chunks,
+                    code: 'dims_mismatch',
+                    error: new Error(`Embedding 维度变化：期望 ${currentDims}，实际 ${batchDims}`),
+                };
+            }
             phase = 'write';
             activity.update({ state: 'saving', activeUnits: 0 });
             await commit(() => saveChunkVectors(chatId, batch.map((chunk, index) => ({
                 chunkId: chunk.chunkId, vector: embeddings[index], sourceHash: inputDigest('chunk', chunk.text),
             })), fingerprint));
             repaired += batch.length;
+            currentDims ??= batchDims;
+            // WHY: 每完成一个批次立即推进已验证连续楼层水位线 lastChunkFloor 与实测维度 dims，
+            // 防止修复中途取消或单批超时导致已提交批次重复回退到旧水位。
+            const remaining = missing.slice(i + batch.length);
+            const remainingMinFloor = remaining.length
+                ? Math.min(...remaining.map(chunk => Number(chunk.floor ?? chat.length)))
+                : chat.length;
+            const nextFloor = Math.max(currentLastFloor, Math.min(chat.length - 1, remainingMinFloor - 1));
+            if (nextFloor > currentLastFloor || (currentDims && recordedDims !== currentDims) || meta.fingerprint !== fingerprint) {
+                phase = 'metadata';
+                await commit(() => updateMeta(chatId, {
+                    ...(nextFloor > currentLastFloor ? { lastChunkFloor: nextFloor } : {}),
+                    ...(currentDims ? { dims: currentDims } : {}),
+                    fingerprint,
+                }));
+                currentLastFloor = nextFloor;
+                if (currentDims) recordedDims = currentDims;
+            }
             activity.update({ completed: repaired });
             onProgress?.(repaired, missing.length);
         }
         if (isCancelled()) return cancelled();
         phase = 'metadata';
-        if (meta.lastChunkFloor !== chat.length - 1 || meta.fingerprint !== fingerprint) {
-            await commit(() => updateMeta(chatId, { lastChunkFloor: chat.length - 1, fingerprint }));
+        if (currentLastFloor !== chat.length - 1 || meta.fingerprint !== fingerprint || (repaired > 0 && currentDims && recordedDims !== currentDims)) {
+            await commit(() => updateMeta(chatId, {
+                lastChunkFloor: chat.length - 1,
+                ...(repaired > 0 && currentDims ? { dims: currentDims } : {}),
+                fingerprint,
+            }));
         }
         return { success: true, repaired, chunks };
     } catch (error) {

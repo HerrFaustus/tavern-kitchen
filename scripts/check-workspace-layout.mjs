@@ -11,6 +11,10 @@ const bundle = await build({
     absWorkingDir: root, entryPoints: ['core/kitchen-workspace.js'],
     bundle: true, write: false, format: 'esm', platform: 'browser',
 });
+const drawerBundle = await build({
+    absWorkingDir: root, entryPoints: ['core/extension-drawer.js'],
+    bundle: true, write: false, format: 'esm', platform: 'browser',
+});
 const css = await fs.readFile(path.join(root, 'style.css'), 'utf8');
 const embeddedCss = await fs.readFile(path.join(root, 'core/kitchen-embedded.css'), 'utf8');
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_BIN });
@@ -23,13 +27,17 @@ try {
             await route.fulfill({ contentType: 'text/javascript', body: bundle.outputFiles[0].text });
             return;
         }
+        if (new URL(route.request().url()).pathname === '/drawer.js') {
+            await route.fulfill({ contentType: 'text/javascript', body: drawerBundle.outputFiles[0].text });
+            return;
+        }
         if (new URL(route.request().url()).pathname === '/embedded.css') {
             await route.fulfill({ contentType: 'text/css', body: embeddedCss });
             return;
         }
         await route.fulfill({ contentType: 'text/html', body:
             '<style>body{margin:0;background:#202024;color:#ddd;font:15px sans-serif}' + css +
-            '#tk-workspace{position:fixed;inset:0;width:100%;height:100%;background:#202024}iframe{width:100%;height:100%;border:0}.drawer-icon{display:inline-block;width:1em;height:1em}</style><div id="top-settings-holder"></div>' });
+            '#tk-workspace{position:fixed;inset:0;width:100%;height:100%;background:#202024}iframe{width:100%;height:100%;border:0}.drawer-icon{display:inline-block;width:1em;height:1em}</style><div id="top-settings-holder"></div><div id="extensions_settings"></div>' });
     });
     await page.goto('http://kitchen.test');
     await page.evaluate(async () => {
@@ -106,8 +114,33 @@ try {
     await page.getByRole('button',{name:'收起酒馆后厨'}).click();
     await page.getByRole('button',{name:'酒馆后厨',exact:true}).click();
     assert.ok(await page.locator('#tk-tab-planner').evaluate(el => el.classList.contains('is-active')));
+    await page.getByRole('button',{name:'收起酒馆后厨'}).click();
+    await page.setViewportSize({width:360,height:780});
+    await page.evaluate(async () => {
+        const { createExtensionDrawer } = await import('/drawer.js');
+        const holder = globalThis.document.querySelector('#extensions_settings');
+        holder.append(createExtensionDrawer({ doc: globalThis.document, onOpen: () => globalThis.workspace.open('world') }));
+    });
+    const tutorialBtn = page.getByRole('button', { name: '后厨教程', exact: true });
+    assert.ok(await tutorialBtn.isVisible());
+    await tutorialBtn.click();
+    const dialog = page.locator('#tk-tutorial-dialog');
+    await dialog.waitFor({ state: 'visible' });
+    const tutorialLayout = await dialog.evaluate(el => ({
+        fits: el.scrollWidth <= el.clientWidth,
+        docFits: globalThis.document.documentElement.scrollWidth <= globalThis.document.documentElement.clientWidth,
+        links: el.querySelectorAll('a[href]').length,
+        hasPlaceholder: (el.textContent || '').includes('待做'),
+    }));
+    assert.ok(tutorialLayout.fits && tutorialLayout.docFits, 'tutorial dialog must fit cleanly at 360px');
+    assert.equal(tutorialLayout.links, 0);
+    assert.equal(tutorialLayout.hasPlaceholder, false);
+    await dialog.getByRole('button', { name: '下一节' }).click();
+    assert.match(await dialog.locator('.tk-tutorial-step').innerText(), /^2 \//);
+    await dialog.getByRole('button', { name: '我知道了' }).click();
+    assert.equal(await dialog.evaluate(el => el.open), false);
     assert.deepEqual(errors, []);
-    console.log('Verified host disclosures, reading height, scroll restoration, keyboard focus and last route.');
+    console.log('Verified host disclosures, reading height, scroll restoration, keyboard focus, last route, 360px fit and offline tutorial.');
 } finally {
     await browser.close();
 }

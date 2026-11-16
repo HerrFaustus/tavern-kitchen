@@ -3,6 +3,12 @@ import { getContext } from '../../../../../../../extensions.js';
 import { getRequestHeaders } from '../../../../../../../../script.js';
 import { createVectorPackage, restoreVectorPackage } from './package/service.js';
 import { packageError, PACKAGE_PROGRESS } from './package/messages.js';
+import {
+    base64ToUint8Array,
+    getLocalFileMirror,
+    isFileUploadUnsupportedStatus,
+    uint8ArrayToBase64,
+} from '../../../../shared/common/local-file-mirror.js';
 
 function downloadBlob(blob, filename) {
     const url = URL.createObjectURL(blob);
@@ -60,41 +66,83 @@ export async function importVectors(file, onProgress, options = {}) {
     return restoreVectorPackage(bytes, onProgress, target);
 }
 
-export async function backupToServer(onProgress) {
+export async function backupToServer(onProgress, options = {}) {
     const { bytes, chatId, ...counts } = await createVectorPackage(onProgress);
     const filename = getBackupFilename(chatId);
+    const mirror = options.localMirror === undefined ? getLocalFileMirror() : options.localMirror;
+    const base64 = uint8ArrayToBase64(bytes);
     onProgress?.(PACKAGE_PROGRESS.upload);
     const res = await fetch('/api/files/upload', {
         method: 'POST',
         headers: getRequestHeaders(),
-        body: JSON.stringify({ name: filename, data: uint8ToBase64(bytes) }),
+        body: JSON.stringify({ name: filename, data: base64 }),
     });
-    if (!res.ok) throw packageError('server_failed', { status: res.status });
-    const uploaded = await res.json();
+    let serverPath = null;
+    let mirroredLocally = false;
+    if (!res.ok) {
+        if (isFileUploadUnsupportedStatus(res.status) && mirror?.isAvailable()) {
+            await mirror.put(filename, base64, {
+                contentType: 'application/zip',
+                encoding: 'base64',
+                authoritativeFallback: true,
+            });
+            serverPath = `user/files/${filename}`;
+            mirroredLocally = true;
+            console.warn(`[TavernKitchen] 宿主不支持 /api/files/upload (${res.status})，向量备份 ${filename} 已保存至浏览器 IndexedDB 本地镜像。`);
+        } else if (isFileUploadUnsupportedStatus(res.status)) {
+            const error = packageError('server_failed', { status: res.status });
+            error.message = `当前宿主不支持 /api/files/upload（HTTP ${res.status}）且 IndexedDB 不可用，请改用“导出向量包（.zip）”本地下载`;
+            throw error;
+        } else {
+            throw packageError('server_failed', { status: res.status });
+        }
+    } else {
+        if (mirror?.isAvailable()) {
+            try { await mirror.delete(filename); }
+            catch (error) { console.debug({ source: import.meta.url, operation: 'cleanupMirror' }, error); }
+        }
+        const uploaded = await res.json();
+        serverPath = typeof uploaded?.path === 'string' ? uploaded.path : null;
+    }
     try {
         await upsertManifestEntry({
             filename,
-            serverPath: typeof uploaded?.path === 'string' ? uploaded.path : null,
+            serverPath,
             size: bytes.byteLength,
             chatId,
             backupTime: new Date().toISOString(),
-        });
+        }, { localMirror: mirror });
     } catch (cause) {
         throw packageError('backup_manifest_failed', { filename }, cause);
     }
-    return { filename, size: bytes.byteLength, ...counts };
+    return { filename, size: bytes.byteLength, mirroredLocally, ...counts };
 }
 
 export async function restoreFromServer(onProgress, options = {}) {
     const target = targetOptions(options);
+    const mirror = options.localMirror === undefined ? getLocalFileMirror() : options.localMirror;
+    const filename = getBackupFilename(target.targetChatId);
+    const mirrorEntry = mirror?.isAvailable() ? await mirror.get(filename) : null;
     onProgress?.(PACKAGE_PROGRESS.fetch);
-    const res = await fetch(`/user/files/${getBackupFilename(target.targetChatId)}`, {
+    const res = await fetch(`/user/files/${filename}`, {
         headers: getRequestHeaders(),
         cache: 'no-cache',
         signal: target.signal,
     });
-    if (!res.ok) throw packageError(res.status === 404 ? 'backup_missing' : 'server_failed', { status: res.status });
-    const bytes = new Uint8Array(await res.arrayBuffer());
+    let bytes;
+    if (isFileUploadUnsupportedStatus(res.status)) {
+        if (mirrorEntry && typeof mirrorEntry.content === 'string') {
+            bytes = base64ToUint8Array(mirrorEntry.content);
+        } else {
+            throw packageError(res.status === 404 ? 'backup_missing' : 'server_failed', { status: res.status });
+        }
+    } else if (!res.ok) {
+        throw packageError('server_failed', { status: res.status });
+    } else if (mirrorEntry?.authoritativeFallback && typeof mirrorEntry.content === 'string') {
+        bytes = base64ToUint8Array(mirrorEntry.content);
+    } else {
+        bytes = new Uint8Array(await res.arrayBuffer());
+    }
     if (!bytes.byteLength) throw packageError('backup_missing');
     return restoreVectorPackage(bytes, onProgress, target);
 }
@@ -107,16 +155,28 @@ const BACKUP_MANIFEST = 'LWB_BackupManifest.json';
 
 // Only a missing file is an empty manifest. A failed read must never become
 // the starting point for a write that would discard existing backup entries.
-async function fetchManifest() {
+async function fetchManifest(options = {}) {
+    const mirror = options.localMirror === undefined ? getLocalFileMirror() : options.localMirror;
     let raw;
     try {
+        const mirrorEntry = mirror?.isAvailable() ? await mirror.get(BACKUP_MANIFEST) : null;
         const res = await fetch(`/user/files/${BACKUP_MANIFEST}`, {
             headers: getRequestHeaders(),
             cache: 'no-cache',
         });
-        if (res.status === 404) return [];
-        if (!res.ok) throw packageError('server_failed', { status: res.status });
-        raw = await res.json();
+        if (isFileUploadUnsupportedStatus(res.status)) {
+            if (mirrorEntry && typeof mirrorEntry.content === 'string') {
+                raw = JSON.parse(mirrorEntry.content);
+            } else {
+                return [];
+            }
+        } else if (!res.ok) {
+            throw packageError('server_failed', { status: res.status });
+        } else if (mirrorEntry?.authoritativeFallback && typeof mirrorEntry.content === 'string') {
+            raw = JSON.parse(mirrorEntry.content);
+        } else {
+            raw = await res.json();
+        }
     } catch (cause) {
         throw packageError('backup_manifest_read_failed', {}, cause);
     }
@@ -153,12 +213,13 @@ function buildSafeServerPath(filename, serverPath) {
 }
 
 // 读-改(upsert by filename)-写回-验证，失败最多重试 2 次
-async function upsertManifestEntry({ filename, serverPath, size, chatId, backupTime }) {
+async function upsertManifestEntry({ filename, serverPath, size, chatId, backupTime }, options = {}) {
     if (typeof serverPath === 'string') serverPath = serverPath.replace(/^\/+/, '');
+    const mirror = options.localMirror === undefined ? getLocalFileMirror() : options.localMirror;
     const MAX_RETRIES = 3;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         // 读取现有清单
-        const existing = await fetchManifest();
+        const existing = await fetchManifest({ localMirror: mirror });
 
         // upsert by filename
         const idx = existing.findIndex(e => e.filename === filename);
@@ -177,10 +238,23 @@ async function upsertManifestEntry({ filename, serverPath, size, chatId, backupT
             headers: getRequestHeaders(),
             body: JSON.stringify({ name: BACKUP_MANIFEST, data: base64 }),
         });
-        if (!res.ok) throw new Error(`清单上传失败: ${res.status}`);
+        if (!res.ok) {
+            if (isFileUploadUnsupportedStatus(res.status) && mirror?.isAvailable()) {
+                await mirror.put(BACKUP_MANIFEST, json, {
+                    contentType: 'application/json',
+                    encoding: 'utf8',
+                    authoritativeFallback: true,
+                });
+            } else {
+                throw new Error(`清单上传失败: ${res.status}`);
+            }
+        } else if (mirror?.isAvailable()) {
+            try { await mirror.delete(BACKUP_MANIFEST); }
+            catch (error) { console.debug({ source: import.meta.url, operation: 'cleanupMirror' }, error); }
+        }
 
         // 写后立即重读验证
-        const verified = await fetchManifest();
+        const verified = await fetchManifest({ localMirror: mirror });
         if (verified.some(e => e.filename === filename)) return;
 
         // 最后一次仍失败才抛出
@@ -191,11 +265,12 @@ async function upsertManifestEntry({ filename, serverPath, size, chatId, backupT
 }
 
 // 删除前校验 + POST /api/files/delete + 更新清单
-async function deleteServerBackup(filename, serverPath) {
+async function deleteServerBackup(filename, serverPath, options = {}) {
     // 安全校验
     if (!/^LWB_VectorBackup_[a-z0-9]+\.zip$/.test(filename)) {
         throw new Error(`非法文件名: ${filename}`);
     }
+    const mirror = options.localMirror === undefined ? getLocalFileMirror() : options.localMirror;
     const safePath = buildSafeServerPath(filename, serverPath || null);
 
     // 物理删除
@@ -205,15 +280,29 @@ async function deleteServerBackup(filename, serverPath) {
         body: JSON.stringify({ path: safePath }),
     });
     if (!res.ok) {
-        const err = new Error(`删除失败: ${res.status}`);
-        err.status = res.status;
-        err.method = 'DELETE';
-        throw err;
+        if (isFileUploadUnsupportedStatus(res.status) && mirror?.isAvailable()) {
+            const existed = await mirror.delete(filename);
+            const currentManifest = await fetchManifest({ localMirror: mirror });
+            if (!existed && !currentManifest.some(e => e.filename === filename)) {
+                const err = new Error(`删除失败: ${res.status}`);
+                err.status = res.status;
+                err.method = 'DELETE';
+                throw err;
+            }
+        } else {
+            const err = new Error(`删除失败: ${res.status}`);
+            err.status = res.status;
+            err.method = 'DELETE';
+            throw err;
+        }
+    } else if (mirror?.isAvailable()) {
+        try { await mirror.delete(filename); }
+        catch (error) { console.debug({ source: import.meta.url, operation: 'cleanupMirror' }, error); }
     }
 
     // 更新清单（删除条目）
     try {
-        const existing = await fetchManifest();
+        const existing = await fetchManifest({ localMirror: mirror });
         const filtered = existing.filter(e => e.filename !== filename);
         const json = JSON.stringify(filtered, null, 2);
         const base64 = uint8ToBase64(new TextEncoder().encode(json));
@@ -223,7 +312,18 @@ async function deleteServerBackup(filename, serverPath) {
             body: JSON.stringify({ name: BACKUP_MANIFEST, data: base64 }),
         });
         if (!upRes.ok) {
-            throw new Error('zip 已删除，但清单更新失败，请手动刷新');
+            if (isFileUploadUnsupportedStatus(upRes.status) && mirror?.isAvailable()) {
+                await mirror.put(BACKUP_MANIFEST, json, {
+                    contentType: 'application/json',
+                    encoding: 'utf8',
+                    authoritativeFallback: true,
+                });
+            } else {
+                throw new Error('zip 已删除，但清单更新失败，请手动刷新');
+            }
+        } else if (mirror?.isAvailable()) {
+            try { await mirror.delete(BACKUP_MANIFEST); }
+            catch (error) { console.debug({ source: import.meta.url, operation: 'cleanupMirror' }, error); }
         }
     } catch (e) {
         // zip 删成功但清单更新失败 → 抛"部分成功"错误
@@ -233,11 +333,11 @@ async function deleteServerBackup(filename, serverPath) {
     }
 }
 
-// 集中判断 404/405/method not allowed/unsupported
+// 集中判断 404/405/501/method not allowed/unsupported
 function isDeleteUnsupportedError(err) {
     if (!err) return false;
     const status = err.status;
-    if (status === 404 || status === 405) return true;
+    if (status === 404 || status === 405 || status === 501) return true;
     const msg = String(err.message || '').toLowerCase();
     return msg.includes('method not allowed') || msg.includes('unsupported') || msg.includes('not found');
 }

@@ -2,6 +2,7 @@ import { countRemoteRequest } from './call-stats.js';
 import { fetchWithExtras } from '../../shared/common/request-extras.js';
 import { getModelListApiPrefix, pullModelsForProvider } from '../agent-core/model-list.js';
 import { resolveRuntimeReasoning } from '../agent-core/reasoning-capabilities.js';
+import { redactApiKeySecrets } from '../agent-core/runtime/retry-policy.js';
 import { getDefaultApiPrefix, resolveApiBaseUrl } from '../../shared/common/openai-url-utils.js';
 import { runWithAbortDeadline } from '../../shared/common/abort-utils.js';
 import { HOST_PROVIDER, assertPreset } from './model.js';
@@ -49,13 +50,13 @@ export async function listTextModels(preset, { signal, timeoutMs = 30000 } = {})
 export function connectionError(error, preset) {
     const key = String(preset?.apiKey || '').trim();
     const message = String(error?.message || COPY.requestFailed);
-    const safe = new Error(key ? message.split(key).join('[redacted]').split(encodeURIComponent(key)).join('[redacted]') : message);
+    const safe = new Error(redactApiKeySecrets(message, key));
     safe.name = error?.name || 'Error';
     if (error?.code) safe.code = error.code;
     return safe;
 }
 
-export async function generateText(preset, { messages, signal, onDelta, onDispatch, timeoutMs = 180000 } = {}, dependencies = {}) {
+export async function generateText(preset, { messages, signal, onDelta, onDispatch, retryTransient = true, timeoutMs = 180000 } = {}, dependencies = {}) {
     const snapshot = structuredClone(assertPreset(preset));
     const controller = new AbortController();
     const abort = () => controller.abort(signal.reason);
@@ -78,7 +79,7 @@ export async function generateText(preset, { messages, signal, onDelta, onDispat
             controller.signal.throwIfAborted();
             onDispatch?.(messages);
             const result = await adapter.chat({
-                messages, signal: controller.signal, reasoning: config.reasoning,
+                messages, signal: controller.signal, reasoning: config.reasoning, retryTransient,
                 ...(snapshot.maxTokens != null ? { maxTokens: snapshot.maxTokens } : {}),
                 ...(snapshot.temperature != null ? { temperature: snapshot.temperature } : {}),
                 ...(snapshot.stream ? { onStreamProgress: progress => {
@@ -131,7 +132,7 @@ async function probe(preset, options, dependencies) {
         finally { options.signal?.removeEventListener('abort', abort); }
     }
     const result = await generateText(preset, {
-        ...options, messages: [{ role: 'user', content: CONNECTION_TEST_PROMPT }],
+        ...options, retryTransient: false, messages: [{ role: 'user', content: CONNECTION_TEST_PROMPT }],
     }, dependencies);
     if (!String(result.text || '').trim()) throw new Error(COPY.emptyResponse);
     return { ok:true, ...(result.usage && {usage:result.usage}) };

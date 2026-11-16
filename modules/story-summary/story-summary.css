@@ -628,15 +628,15 @@ h1 span {
 .btn-group {
     display: flex;
     gap: 8px;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
 }
 
 .btn-group .btn {
-    flex: 1;
+    flex: 1 1 auto;
     min-width: 0;
     padding: 10px 14px;
     text-align: center;
-    white-space: nowrap;
+    white-space: normal;
 }
 
 .btn-group .btn-icon {

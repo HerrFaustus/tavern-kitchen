@@ -304,6 +304,8 @@ export function isSummaryConsumable(store, currentLength) {
 function discardFloorDrafts(store, fromFloor) {
     for (const floor of Object.keys(store.floorDrafts || {})) if (Number(floor) >= fromFloor) delete store.floorDrafts[floor];
     if (!Object.keys(store.floorDrafts || {}).length) delete store.floorDrafts;
+    for (const floor of Object.keys(store.floorWork || {})) if (Number(floor) >= fromFloor) delete store.floorWork[floor];
+    if (!Object.keys(store.floorWork || {}).length) delete store.floorWork;
 }
 
 // A batch is the smallest confirmed unit. An opaque import cannot be split at an edited floor.
@@ -852,6 +854,7 @@ export async function clearSummaryData(chatId) {
     store.lastSummarizedMesId = -1;
     store.summaryHistory = [];
     delete store.floorDrafts;
+    delete store.floorWork;
     delete store.pendingImportBoundary;
     delete store.summaryInvalid;
     delete store.sourceInvalidFromFloor;

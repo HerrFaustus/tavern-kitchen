@@ -158,11 +158,16 @@ export function createPlannerSettings(root, { retry, prepare, clipboard, enabled
     global.append(globalHeading, globalText);
     note.append(chapterHeading, chapter, global);
     const retryButton = doc.createElement('button');
-    retryButton.type = 'button';
+    retryButton.type = 'button'; retryButton.dataset.retryNote = '';
     retryButton.className = 'menu_button';
     retryButton.textContent = '重试更新札记';
     retryButton.hidden = true;
-    retryButton.onclick = retry;
+    retryButton.onclick = async () => {
+        retryButton.disabled = true;
+        try { await retry?.(); }
+        catch (error) { showFailure(error, '[data-retry-note]'); }
+        finally { retryButton.disabled = false; }
+    };
     const prepareButton = doc.createElement('button');
     prepareButton.type = 'button'; prepareButton.dataset.prepareNote = '';
     prepareButton.className = 'menu_button';

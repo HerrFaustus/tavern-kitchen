@@ -210,11 +210,17 @@ export async function saveChunkVectors(chatId, items, fingerprint) {
 // as removing new ones. Runtime invalidation must follow commit, not each write.
 export async function saveIncrementalChunks(chatId, chunks, items, fingerprint, lastChunkFloor, assertCurrent) {
     const chunkRecords = makeChunkRecords(chatId, chunks);
-    const updates = { lastChunkFloor, fingerprint };
+    let updates = { lastChunkFloor, fingerprint };
     let vectorRecords;
     let code = 'vector_write_failed';
     try {
         vectorRecords = makeChunkVectorRecords(chatId, items, fingerprint);
+        const batchDims = vectorRecords.find(record => Number.isInteger(record.dims) && record.dims > 0)?.dims || null;
+        updates = {
+            lastChunkFloor,
+            fingerprint,
+            ...(batchDims ? { dims: batchDims } : {}),
+        };
         await db.transaction('rw', chunksTable, chunkVectorsTable, metaTable, async () => {
             assertCurrent();
             code = 'chunk_write_failed';
@@ -245,7 +251,7 @@ export async function getChunkVectorDescriptors(chatId) {
             assertFiniteVector(bufferToFloat32(record.vector), 'stored chunk vector', record.dims);
             valid = true;
         } catch (caughtError) { console.warn({ source: import.meta.url, operation: "getChunkVectorDescriptors" }, caughtError); }
-        descriptors.push({ chunkId: record.chunkId, fingerprint: record.fingerprint, valid, sourceHash: record.sourceHash });
+        descriptors.push({ chunkId: record.chunkId, fingerprint: record.fingerprint, valid, sourceHash: record.sourceHash, dims: record.dims ?? null });
     });
     return descriptors;
 }
@@ -363,6 +369,97 @@ export async function getStorageStats(chatId) {
         chunkVectors: chunkVectorCount,
         eventVectors: eventCount,
     };
+}
+
+async function countRowsByChatId(tableName) {
+    const table = db.tables.find(item => item.name === tableName);
+    const counts = new Map();
+    if (!table) return counts;
+    const keys = typeof table.orderBy === 'function'
+        ? await table.orderBy('chatId').keys()
+        : (await table.toArray()).map(row => row?.chatId);
+    for (const key of keys) {
+        if (!key) continue;
+        const chatId = String(key);
+        counts.set(chatId, (counts.get(chatId) || 0) + 1);
+    }
+    return counts;
+}
+
+export async function listChatStorageStats() {
+    // WHY: 只扫描 chatId 索引键并读取轻量的 meta 表，避免扫描全库时把海量 Float32Array 向量载入内存。
+    const metaTable = db.tables.find(item => item.name === 'meta');
+    const [metaRows, chunkCounts, chunkVectorCounts, eventCounts, stateCounts] = await Promise.all([
+        metaTable ? metaTable.toArray() : Promise.resolve([]),
+        countRowsByChatId('chunks'),
+        countRowsByChatId('chunkVectors'),
+        countRowsByChatId('eventVectors'),
+        countRowsByChatId('stateVectors'),
+    ]);
+
+    const byChat = new Map();
+    const ensureEntry = (chatId) => {
+        if (!byChat.has(chatId)) {
+            byChat.set(chatId, {
+                chatId,
+                fingerprint: '',
+                lastChunkFloor: -1,
+                chunks: 0,
+                chunkVectors: 0,
+                eventVectors: 0,
+                stateVectors: 0,
+            });
+        }
+        return byChat.get(chatId);
+    };
+
+    for (const row of metaRows) {
+        const chatId = String(row?.chatId || '').trim();
+        if (!chatId) continue;
+        const entry = ensureEntry(chatId);
+        entry.fingerprint = String(row?.fingerprint || '');
+        entry.lastChunkFloor = Number.isInteger(row?.lastChunkFloor) ? row.lastChunkFloor : -1;
+    }
+    for (const [field, counts] of [
+        ['chunks', chunkCounts],
+        ['chunkVectors', chunkVectorCounts],
+        ['eventVectors', eventCounts],
+        ['stateVectors', stateCounts],
+    ]) {
+        for (const [chatId, count] of counts.entries()) {
+            ensureEntry(chatId)[field] = count;
+        }
+    }
+
+    return [...byChat.values()].sort((a, b) => a.chatId.localeCompare(b.chatId));
+}
+
+export async function exportChatMemoryRecords(chatIds = []) {
+    const targets = [...new Set((Array.isArray(chatIds) ? chatIds : [])
+        .map(id => String(id || '').trim())
+        .filter(Boolean))];
+    if (!targets.length) return [];
+
+    const metaTable = db.tables.find(item => item.name === 'meta');
+    const [metaRows, chunkRows] = await Promise.all([
+        metaTable ? metaTable.where('chatId').anyOf(targets).toArray() : Promise.resolve([]),
+        chunksTable.where('chatId').anyOf(targets).toArray(),
+    ]);
+
+    const byChat = new Map(targets.map(chatId => [chatId, { chatId, meta: null, chunks: [] }]));
+    for (const row of metaRows) {
+        const chatId = String(row?.chatId || '');
+        if (byChat.has(chatId)) {
+            byChat.get(chatId).meta = row;
+        }
+    }
+    for (const row of chunkRows) {
+        const chatId = String(row?.chatId || '');
+        if (byChat.has(chatId)) {
+            byChat.get(chatId).chunks.push(row);
+        }
+    }
+    return [...byChat.values()];
 }
 
 export async function clearChatData(chatId) {

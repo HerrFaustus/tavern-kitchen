@@ -5,6 +5,7 @@
 import { runWithAbortDeadline, throwIfSignalAborted, mergeAbortSignals } from '../shared/common/abort-utils.js';
 import { STORAGE_COPY } from './storage-copy.js';
 import { observeBackgroundTask } from '../shared/common/async-errors.js';
+import { getLocalFileMirror, isFileUploadUnsupportedStatus } from '../shared/common/local-file-mirror.js';
 
 
 const toBase64 = (text) => btoa(unescape(encodeURIComponent(text)));
@@ -58,6 +59,9 @@ export class StorageFile {
         this._maxRetries = Number.isFinite(opts.maxRetries) ? opts.maxRetries : 5;
         this._fetch = typeof opts.fetch === 'function' ? opts.fetch : (...args) => globalThis.fetch(...args);
         this._getRequestHeaders = typeof opts.getRequestHeaders === 'function' ? opts.getRequestHeaders : () => ({});
+        this._localMirror = opts.localMirror === undefined ? getLocalFileMirror() : opts.localMirror;
+        this._mirrorActive = false;
+        this._mirrorWarned = false;
         const debounce = typeof opts.debounce === 'function' ? opts.debounce : defaultDebounce;
         const debounceMs = Number.isFinite(opts.debounceMs) ? opts.debounceMs : 2000;
         this._saveDebounced = debounce(() => this.saveNow({ silent: true }), debounceMs);
@@ -68,17 +72,35 @@ export class StorageFile {
 
         if (!this._loading) {
             const read = async (signal) => {
+                const mirrorEntry = this._localMirror?.isAvailable()
+                    ? await this._localMirror.get(this.filename)
+                    : null;
+                throwIfSignalAborted(signal);
                 const res = await this._fetch(`/user/files/${this.filename}`, {
                     headers: this._getRequestHeaders(),
                     cache: 'no-cache',
                     signal,
                 });
                 throwIfSignalAborted(signal);
-                if (res.status === 404) {
+                // WHY: Hosts like TauriTavern may omit /api/files/upload or return 404/405/501 on /user/files/*.
+                // Read the authoritative IndexedDB mirror if a prior save fell back locally; do not silence 5xx/network errors.
+                if (isFileUploadUnsupportedStatus(res.status)) {
+                    if (mirrorEntry && typeof mirrorEntry.content === 'string') {
+                        const parsedMirror = mirrorEntry.content ? JSON.parse(mirrorEntry.content) : {};
+                        if (!isPlainRecord(parsedMirror)) throw new Error('本地镜像存储文件格式无效');
+                        this._mirrorActive = true;
+                        return canonicalizeRecord(parsedMirror).data;
+                    }
                     return Object.create(null);
                 }
                 if (!res.ok) {
                     throw new Error(`存储文件读取失败（HTTP ${res.status}）`);
+                }
+                if (mirrorEntry?.authoritativeFallback && typeof mirrorEntry.content === 'string') {
+                    const parsedMirror = mirrorEntry.content ? JSON.parse(mirrorEntry.content) : {};
+                    if (!isPlainRecord(parsedMirror)) throw new Error('本地镜像存储文件格式无效');
+                    this._mirrorActive = true;
+                    return canonicalizeRecord(parsedMirror).data;
                 }
                 const text = await res.text();
                 throwIfSignalAborted(signal);
@@ -319,11 +341,37 @@ export class StorageFile {
             });
             throwIfSignalAborted(requestSignal);
             if (!res.ok) {
+                if (isFileUploadUnsupportedStatus(res.status) && this._localMirror?.isAvailable()) {
+                    await this._localMirror.put(this.filename, json, {
+                        contentType: 'application/json',
+                        encoding: 'utf8',
+                        authoritativeFallback: true,
+                    });
+                    this._mirrorActive = true;
+                    if (!this._mirrorWarned) {
+                        this._mirrorWarned = true;
+                        console.warn(`[TavernKitchen] 宿主不支持 /api/files/upload (${res.status})，文件 ${this.filename} 已写入浏览器 IndexedDB 本地镜像。`);
+                    }
+                    return;
+                }
                 const error = new Error(`服务器返回 ${res.status}`);
                 error.code = 'STORAGE_HTTP_FAILURE';
+                error.status = res.status;
                 throw error;
             }
+            this._mirrorActive = false;
+            if (this._localMirror?.isAvailable()) {
+                try {
+                    await this._localMirror.delete(this.filename);
+                } catch (error) {
+                    console.debug({ source: import.meta.url, operation: 'cleanupMirror' }, error);
+                }
+            }
         }, { timeoutMs: STORAGE_UPLOAD_TIMEOUT_MS });
+    }
+
+    usingLocalMirror() {
+        return this._mirrorActive;
     }
 
     clearCache() {

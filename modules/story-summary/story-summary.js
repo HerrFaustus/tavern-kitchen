@@ -1,9 +1,9 @@
 import { getKitchenMount, openKitchenTab, closeKitchenWorkspace, bindKitchenFrame } from '../../core/kitchen-workspace.js';
+import { pruneOrphanFloorWork } from '../../core/upgrade-selfcheck.js';
 import { refreshFloorSummaries } from './floor-summary.js';
 import { createFloorSummaryController } from './inline/controller.js';
 import { extractGeneratedFloorPayload, floorSource, stripFloorProtocol } from './inline/protocol.js';
 import { floorCoverageEnd, isFloorEntryCurrent } from './inline/ledger.js';
-import { installFloorDisplayFilter } from './inline/host-regex.js';
 import { mergeNewData, executeRollback } from './data/store.js';
 import { getTextFilterRules } from './data/config.js';
 import { parseStoryUpdates } from '../story-state/records.js';
@@ -127,6 +127,7 @@ import { createSummaryGenerationCancelledError, generateFloorSummary, generateRe
 import { getEngineFingerprint } from "./vector/utils/embedder.js";
 
 import { testRerankService } from "./vector/llm/reranker.js";
+import { isVectorApiConfigured } from "./vector/llm/api-config-policy.js";
 
 import { buildVectorIntegrityIssues } from "./vector/integrity-policy.js";
 import { createEmbeddingConnection } from './vector/embedding-connection.js';
@@ -139,7 +140,16 @@ import { preload as preloadTokenizer, injectEntities, isReady as isTokenizerRead
 import { getRawEntityVocabulary } from './vector/retrieval/raw-vocabulary.js';
 import { inspectRawVectorStatus } from './vector/pipeline/raw-vector-status.js';
 
-import { getMeta, updateMeta, clearEventVectors, clearAllChunks, clearChatData, getStorageStats } from "./vector/storage/chunk-store.js";
+import {
+    getMeta,
+    updateMeta,
+    clearEventVectors,
+    clearAllChunks,
+    clearChatData,
+    getStorageStats,
+    listChatStorageStats,
+    exportChatMemoryRecords,
+} from "./vector/storage/chunk-store.js";
 
 import {
     getChunkBuildStatus,
@@ -400,7 +410,6 @@ let vectorIntegrityTimer = null;
 // 完整性检查连续失败时的退避间隔（纯内存态，切聊天/停用/卸载即清零）。
 let vectorIntegrityRetryDelayMs = 0;
 const pendingVectorMaintenanceByChat = new Map();
-const autoSummaryTimers = new Map();
 
 const CHAT_CHANGE_LEXICAL_WARMUP_MS = 3000;
 const AUTO_L0_BACKFILL_DELAY_MS = 5000;
@@ -807,8 +816,8 @@ async function handleTestOnlineService(config, target = "embedding") {
 async function generateVectorsNow(vectorCfg, targetChatId, writeSession) {
     const isCancelled = () => getContext()?.chatId !== targetChatId || !isVectorWriteSessionCurrent(writeSession);
     if (isCancelled() || !vectorCfg?.enabled) return;
-    if (!vectorCfg.embeddingApi?.key) {
-        postToFrame({ type: 'VECTOR_ONLINE_STATUS', status: 'error', message: '请配置 Embedding API Key；关键词检索仍可使用。' });
+    if (!isVectorApiConfigured(vectorCfg.embeddingApi)) {
+        postToFrame({ type: 'VECTOR_ONLINE_STATUS', status: 'error', message: '请配置 Embedding API Key 或无 Key 本地接口；关键词检索仍可使用。' });
         return;
     }
     const chatSnapshot = [...(getContext()?.chat || [])];
@@ -816,7 +825,7 @@ async function generateVectorsNow(vectorCfg, targetChatId, writeSession) {
     await writeSession.commit(async () => {
         await clearAllChunks(targetChatId);
         clearChunkDocuments(targetChatId);
-        await updateMeta(targetChatId, { lastChunkFloor: -1, fingerprint: getEngineFingerprint(vectorCfg) });
+        await updateMeta(targetChatId, { lastChunkFloor: -1, dims: null, fingerprint: getEngineFingerprint(vectorCfg) });
     });
     if (isCancelled()) return;
     const result = await maintainChunks({
@@ -833,7 +842,7 @@ async function generateVectorsNow(vectorCfg, targetChatId, writeSession) {
 async function repairVectorsNow(vectorCfg, targetChatId, writeSession) {
     const isCancelled = () => getContext()?.chatId !== targetChatId || !isVectorWriteSessionCurrent(writeSession);
     if (isCancelled() || !vectorCfg?.enabled) return;
-    if (!vectorCfg.embeddingApi?.key) {
+    if (!isVectorApiConfigured(vectorCfg.embeddingApi)) {
         await executeSlashCommand('/echo severity=info 当前使用关键词检索；配置向量模型后可补齐原文向量。');
         return;
     }
@@ -937,14 +946,14 @@ async function maybeRunDelayedVectorMaintenance(scheduledChatId = null) {
         scheduleAutoL0Backfill(AUTO_L0_BACKFILL_DELAY_MS, chatId);
         return;
     }
-    if (!getVectorConfig()?.enabled || !getVectorConfig()?.embeddingApi?.key) { clearVectorMaintenance(chatId); return; }
+    if (!getVectorConfig()?.enabled || !isVectorApiConfigured(getVectorConfig()?.embeddingApi)) { clearVectorMaintenance(chatId); return; }
     const release = guard.acquire('vector');
     if (!release) { scheduleAutoL0Backfill(AUTO_L0_BACKFILL_DELAY_MS, chatId); return; }
     try {
         await ensureCurrentSources(null, { requireSummary: false, recover: false });
         if (isChatStale(chatId)) return;
         const result = await runVectorGenerationTask({ chatId, kind: 'delayed-maintenance', scope: VECTOR_WRITE_SCOPES.EMBEDDING }, async writeSession => {
-            if (!getVectorConfig()?.enabled || !getVectorConfig()?.embeddingApi?.key) return { disabled: true };
+            if (!getVectorConfig()?.enabled || !isVectorApiConfigured(getVectorConfig()?.embeddingApi)) return { disabled: true };
             const isCancelled = () => isChatStale(chatId) || !isVectorWriteSessionCurrent(writeSession);
             if (isCancelled()) return { cancelled: true };
             if (isHostGenerating() || isL0FloorDeferred(getContext()?.chat)) return { deferred: true };
@@ -1146,7 +1155,7 @@ async function checkVectorIntegrity({ allowChunkRepair = true, readOnly = false,
     const vectorCfg = getVectorConfig();
     const { chat, chatId } = getContext();
     if (!vectorCfg?.enabled || !chatId || !chat?.length) { publishVectorIntegrity('idle'); return; }
-    if (!vectorCfg.embeddingApi?.key) { publishVectorIntegrity('keyword'); return; }
+    if (!isVectorApiConfigured(vectorCfg.embeddingApi)) { publishVectorIntegrity('keyword'); return; }
     const reschedule = () => {
         if (!requestCurrent() || isChatStale(chatId)) return;
         publishVectorIntegrity('pending');
@@ -1165,14 +1174,14 @@ async function checkVectorIntegrity({ allowChunkRepair = true, readOnly = false,
     publishVectorIntegrity('checking');
     const status = await inspectRawVectorStatus(chatId, [...chat], vectorCfg);
     if (!isCurrent()) { reschedule(); return; }
-    if (!readOnly && allowChunkRepair && !status.fingerprintMismatch && status.missing > 0 && vectorCfg.embeddingApi?.key) {
+    if (!readOnly && allowChunkRepair && !status.fingerprintMismatch && !status.dimsMismatch && status.missing > 0 && isVectorApiConfigured(vectorCfg.embeddingApi)) {
         const result = await repairMissingChunksForCurrentChat(chatId);
         if (isChatStale(chatId)) return;
         if (result.cancelled) { reschedule(); return; }
         await checkVectorIntegrity({ allowChunkRepair: false });
         return;
     }
-    const issues = buildVectorIntegrityIssues({ fingerprintMismatch: status.fingerprintMismatch, chunkFloorGap: status.missingFloors });
+    const issues = buildVectorIntegrityIssues({ fingerprintMismatch: status.fingerprintMismatch || status.dimsMismatch, chunkFloorGap: status.missingFloors });
     if (isCurrent()) publishVectorIntegrity(issues.length ? 'issues' : 'ready', issues);
 }
 
@@ -1349,7 +1358,6 @@ function getHideUiSettings() {
     return {
         hideSummarized: !!ui.hideSummarized,
         keepVisibleCount,
-        useVectorBoundary: ui.useVectorBoundary === true,
     };
 }
 
@@ -1367,9 +1375,6 @@ function setHideUiSettings(patch = {}) {
                     return Number.isFinite(parsedKeep) ? Math.max(0, Math.min(50, parsedKeep)) : 5;
                 })()
                 : current.keepVisibleCount,
-            useVectorBoundary: patch.useVectorBoundary !== undefined
-                ? !!patch.useVectorBoundary
-                : current.useVectorBoundary,
         },
     };
     if (recallConfigKey(cfg) !== recallConfigKey(next)) cancelRecallAndClearPrompt('evidence-visibility-changed');
@@ -1393,7 +1398,6 @@ async function sendFrameBaseData(store, totalFloors) {
         },
         hideSummarized: ui.hideSummarized,
         keepVisibleCount: ui.keepVisibleCount,
-        useVectorBoundary: ui.useVectorBoundary,
         vectorEnabled: !!getVectorConfig()?.enabled,
     });
 }
@@ -1752,7 +1756,6 @@ const hideState = createHideStateController({
             managed: !!events && isStorySummaryEnabledForCurrentChat(),
             enabled: isSummarySourceValid(store, context.chat?.length || 0) && ui.hideSummarized,
             summaryBoundary: floorCoverageEnd(store),
-            useVectorBoundary: !store?.summaryHistory?.some(batch => batch.floorEntry) && !!getVectorConfig()?.enabled && ui.useVectorBoundary,
             keepVisibleTurns: ui.keepVisibleCount, stableEnd: getSummarySourceEnd(context.chat || [], (context.chat?.length || 0) - 1),
         };
     },
@@ -1837,8 +1840,6 @@ function clearDeferredBackgroundTasks() {
     vectorIntegrityTimer = null;
     vectorIntegrityRetryDelayMs = 0;
     clearVectorMaintenance();
-    for (const timer of autoSummaryTimers.values()) clearTimeout(timer);
-    autoSummaryTimers.clear();
 }
 
 function clearHideState(options) {
@@ -1924,6 +1925,49 @@ async function handleFrameMessage(event) {
                 postToFrame({ type: 'SUMMARY_STATUS', statusText: '' });
             }
             break;
+
+        case 'ARCHIVE_ORPHAN_SCAN':
+        case 'ARCHIVE_ORPHAN_EXPORT':
+        case 'ARCHIVE_ORPHAN_CLEANUP':
+            observeBackgroundTask((async () => {
+                try {
+                    if (!archiveCleanup) throw new Error('跨库清理模块尚未就绪，请重试');
+                    if (data.type === 'ARCHIVE_ORPHAN_SCAN') {
+                        const result = await archiveCleanup.scanOrphanArchives();
+                        postToFrame({ type: 'ARCHIVE_ORPHAN_SCAN_RESULT', success: true, result });
+                        return;
+                    }
+                    const items = Array.isArray(data.items) ? data.items : [];
+                    if (data.type === 'ARCHIVE_ORPHAN_EXPORT') {
+                        const backup = await archiveCleanup.exportArchiveBackup(items);
+                        const url = URL.createObjectURL(new Blob([JSON.stringify(backup)], { type: 'application/json' }));
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = `后厨孤儿数据备份-${new Date().toISOString().slice(0, 10)}.json`;
+                        link.click();
+                        setTimeout(() => URL.revokeObjectURL(url), 1000);
+                        postToFrame({ type: 'ARCHIVE_ORPHAN_EXPORT_RESULT', success: true, message: `已导出 ${items.length} 项备份` });
+                        return;
+                    }
+                    const cleaned = await archiveCleanup.cleanupSelectedArchives(items);
+                    const result = await archiveCleanup.scanOrphanArchives();
+                    postToFrame({
+                        type: 'ARCHIVE_ORPHAN_CLEANUP_RESULT',
+                        success: true,
+                        cleaned,
+                        result,
+                        message: `已清理 世界档案 ${cleaned.worldIdentities} 份、悬空分支 ${cleaned.danglingBranches} 条、编剧札记 ${cleaned.notes} 份、向量缓存 ${cleaned.memoryChats} 项`,
+                    });
+                } catch (error) {
+                    const actionType = data.type === 'ARCHIVE_ORPHAN_SCAN'
+                        ? 'ARCHIVE_ORPHAN_SCAN_RESULT'
+                        : data.type === 'ARCHIVE_ORPHAN_EXPORT'
+                            ? 'ARCHIVE_ORPHAN_EXPORT_RESULT'
+                            : 'ARCHIVE_ORPHAN_CLEANUP_RESULT';
+                    postToFrame({ type: actionType, success: false, message: error?.message || String(error) });
+                }
+            })(), { source: import.meta.url, operation: 'archive-cleanup' });
+            break;
         case 'WORLD_FIELD_SOURCE': {
             const ctx = getContext(), world = worldAuthorityForContext(ctx);
             postToFrame({type:'WORLD_FIELD_SOURCE_RESULT', payload:worldFieldSource(world, ctx, data)});
@@ -1971,6 +2015,7 @@ async function handleFrameMessage(event) {
         }
 
         case "REQUEST_CANCEL":
+            if (typeof floorRunner !== 'undefined' && floorRunner?.cancelManual) floorRunner.cancelManual();
             if (activeSummaryExecution?.identity === getChatIdentity(getContext()) && cancelActiveSummaryExecution()) {
                 postToFrame({ type: "SUMMARY_STATUS", statusText: "正在停止..." });
             }
@@ -2145,15 +2190,6 @@ async function handleFrameMessage(event) {
             break;
         }
 
-        case "TOGGLE_USE_VECTOR_BOUNDARY": {
-            setHideUiSettings({ useVectorBoundary: data.enabled !== false });
-
-            await applyHideState();
-            const { chat } = getContext();
-            await sendFrameBaseData(getPublishedSummaryStore(), Array.isArray(chat) ? chat.length : 0);
-            break;
-        }
-
         case "SAVE_PANEL_CONFIG":
             if (data.config) {
                 try {
@@ -2213,6 +2249,9 @@ async function handleFrameMessage(event) {
 // 手动总结
 // ═══════════════════════════════════════════════════════════════════════════
 
+let floorRunner = null;
+export function configureFloorRunner(runner) { floorRunner = runner || null; }
+
 async function handleManualGenerate(mesId, config, recovery) {
     if (isSummaryGenerating()) {
         postToFrame({ type: "SUMMARY_STATUS", statusText: "上一轮总结仍在进行中..." });
@@ -2229,44 +2268,71 @@ async function handleManualGenerate(mesId, config, recovery) {
     }
     notifySummaryState();
 
+    // Keep recovery & completion helpers scoped inside handleManualGenerate so
+    // VM entrypoint test harnesses extracting handleManualGenerate remain self-contained.
+    const recoverSummaryTailForExecution = async () => {
+        const source = messageSources.capture(getContext());
+        const validate = () => {
+            assertSummaryExecutionActive(execution);
+            if (!messageSources.isCurrent(source, getContext())) throw new Error('正文已变化，请重新核对恢复范围。');
+        };
+        execution.recoveryGuard = await prepareSummaryRecovery(recovery.scope);
+        validate();
+        if (!await waitForMemoryCommit(execution.controller.signal)) throw createAbortError();
+        cancelEmbeddingWriteTasks('Summary tail recovery');
+        await waitForVectorWrites();
+        validate();
+        const from = await runVectorWriteTask({ chatId: execution.chatId, kind: 'summary-recovery', scope: VECTOR_WRITE_SCOPES.CONSISTENCY },
+            () => recoverSummaryTail(execution.chatId, recovery.token, validate));
+        if (!Number.isSafeInteger(from)) throw createAbortError();
+        validate();
+        messageSources.resolveRollback(source, getContext());
+        removeDocumentsFromFloor(from, execution.chatId);
+        notifyStorySummaryChatState();
+    };
+
+    const completeManualGenerate = async (store) => {
+        assertSummaryExecutionActive(execution);
+        postToFrame({ type: "SUMMARY_FULL_DATA", payload: buildFramePayload(store) });
+
+        // Alias migration can also change existing participants.
+        // The corpus skips unchanged documents; no full rebuild.
+        refreshEntityLexiconAndWarmup();
+
+        applyHideStateDebounced();
+        await updateFrameStatsAfterSummary(store, execution);
+
+        await autoVectorizeMissingEvents(store, execution);
+        await rebuildActiveVectorCacheAfterSummary(execution);
+    };
+
     try {
         if (recovery) {
-            const source = messageSources.capture(getContext());
-            const validate = () => {
-                assertSummaryExecutionActive(execution);
-                if (!messageSources.isCurrent(source, getContext())) throw new Error('正文已变化，请重新核对恢复范围。');
-            };
-            execution.recoveryGuard = await prepareSummaryRecovery(recovery.scope);
-            validate();
+            await recoverSummaryTailForExecution();
+        }
+        // WHY: In production (floorRunner installed by kitchen-runtime), REQUEST_GENERATE routes
+        // through unified sequential floor-host queue so summary, simulation, and planner never diverge.
+        // DO NOT bypass floorRunner back to legacy generator.js in production; else branch stays for unit-test harnesses only.
+        const runner = typeof floorRunner !== 'undefined' ? floorRunner : null;
+        if (runner) {
             if (!await waitForMemoryCommit(execution.controller.signal)) throw createAbortError();
-            cancelEmbeddingWriteTasks('Summary tail recovery');
-            await waitForVectorWrites();
-            validate();
-            const from = await runVectorWriteTask({ chatId: execution.chatId, kind: 'summary-recovery', scope: VECTOR_WRITE_SCOPES.CONSISTENCY },
-                () => recoverSummaryTail(execution.chatId, recovery.token, validate));
-            if (!Number.isSafeInteger(from)) throw createAbortError();
-            validate();
-            messageSources.resolveRollback(source, getContext());
-            removeDocumentsFromFloor(from, execution.chatId);
-            notifyStorySummaryChatState();
+            assertSummaryExecutionActive(execution);
+            postSummaryExecution(execution, { type: 'SUMMARY_STATUS', statusText: '正在通过统一后厨队列逐楼补齐…' });
+            await runner.settleManual();
+            assertSummaryExecutionActive(execution);
+            const store = getPublishedSummaryStore();
+            if (store) await completeManualGenerate(store);
+            if (isStorySummaryConsumableForCurrentChat()) {
+                scheduleVectorIntegrityCheck();
+            }
+            refreshFloorSummaries();
+            postSummaryExecution(execution, { type: 'SUMMARY_STATUS', statusText: '全部未处理楼层已补齐' });
+            return;
         }
         const result = await runSummaryAttempt(execution, mesId, config, {
             onStatus: (text) => postSummaryExecution(execution, { type: 'SUMMARY_STATUS', statusText: text }),
             onError: (msg) => postSummaryExecution(execution, { type: 'SUMMARY_ERROR', message: msg }),
-            onComplete: async ({ store }) => {
-                assertSummaryExecutionActive(execution);
-                postToFrame({ type: "SUMMARY_FULL_DATA", payload: buildFramePayload(store) });
-
-                // Alias migration can also change existing participants.
-                // The corpus skips unchanged documents; no full rebuild.
-                refreshEntityLexiconAndWarmup();
-
-                applyHideStateDebounced();
-                await updateFrameStatsAfterSummary(store, execution);
-
-                await autoVectorizeMissingEvents(store, execution);
-                await rebuildActiveVectorCacheAfterSummary(execution);
-            },
+            onComplete: ({ store }) => completeManualGenerate(store),
         });
         if ((result.committed || result.noContent) && isStorySummaryConsumableForCurrentChat()) {
             scheduleVectorIntegrityCheck();
@@ -2350,6 +2416,24 @@ async function handleChatChanged(scheduledChatId = getContext()?.chatId || '', {
     }
 
     const store = getSummaryStore();
+
+    // WHY: Idempotently prune orphan/out-of-range floorWork rows after 0.2.32/0.2.34 upgrades
+    // without disturbing valid historical floors or generating commits on clean chats.
+    if (!reload && store?.floorWork && typeof store.floorWork === 'object') {
+        const currentChat = getContext().chat || [];
+        const previousSnapshot = readSummaryMemory();
+        const candidate = structuredClone(previousSnapshot);
+        const pruned = pruneOrphanFloorWork(candidate.storySummary, currentChat);
+        if (pruned.changed && !isChatStale(scheduledChatId)) {
+            xbLog.info(MODULE_ID, `升级自检已清理孤儿 floorWork 记录: ${pruned.prunedFloors.join(', ')}`);
+            try {
+                await commitSummaryMemory(scheduledChatId, candidate, { previous: previousSnapshot });
+            } catch (error) {
+                xbLog.warn(MODULE_ID, '升级自检清理 floorWork 保存失败（将在下次加载重试）', error);
+            }
+            if (isChatStale(scheduledChatId)) return;
+        }
+    }
 
     await applyHideState();
     // Waiting for a commit may outlive this chat or a same-ID metadata reload.
@@ -3228,7 +3312,7 @@ async function registerEvents() {
         GENERATE_INTERCEPTOR_ORDER.STORY_SUMMARY,
     );
     removeFloorDisplayFilter?.();
-    removeFloorDisplayFilter = installFloorDisplayFilter(getContext().extensionSettings);
+    removeFloorDisplayFilter = null;
     // Retire a previous main-reply interceptor when reinitializing without reload.
     unregisterGenerateInterceptor('story-floor-summary');
     delete extension_prompts[FLOOR_PROMPT_KEY];
@@ -3343,7 +3427,7 @@ async function deactivateCurrentChatStorySummary() {
 // 聊天删除时清理本地召回缓存
 // ═══════════════════════════════════════════════════════════════════════════
 
-async function handleChatDeleted(chatId) {
+async function handleChatDeleted(chatId, meta = {}) {
     // Host deletion events carry only a filename, not its character/group owner.
     // Keep page-lifetime diagnostic history; a filename cannot identify its records.
     logRecallRuntimeCheckpoint("chatDeleted:clear-runtime", `chat=${chatId || "-"}`);
@@ -3354,6 +3438,9 @@ async function handleChatDeleted(chatId) {
     await clearChatData(chatId);
     clearRecallHistory(chatId);
     messageSources.forget(chatId);
+    if (typeof archiveCleanup !== 'undefined' && archiveCleanup) {
+        await archiveCleanup.cascadeDeleteChat(chatId, { ...meta, skipMemory: true });
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -3455,9 +3542,43 @@ export function getFloorSummarySnapshot(readWorld = false) {
         keepVisibleTurns: getSummaryPanelConfig().ui?.keepVisibleCount ?? 5, inlineConfig: getSummaryPanelConfig().inlineSummary, getError: mainReplySummary.error };
 }
 export function updateFloorSummary(floor, change, source) { return mainReplySummary.update(floor, change, source); }
-export function extractMainReplySummary(floor) { return mainReplySummary.ingest(floor, { force: true }); }
+export function extractMainReplySummary(floor) {
+    // WHY: 2A retires main-reply <kitchen_summary> extraction and anchor bypasses in production.
+    if (floorRunner) return Promise.resolve({ status: 'retired', error: '主回复标签提取已退役，请使用统一楼层队列重跑或修订。' });
+    return mainReplySummary.ingest(floor, { force: true });
+}
+export async function resetFloorForRerun(floor) {
+    await waitForMemoryCommit();
+    const chatId = getContext().chatId;
+    const store = readSummaryMemory();
+    const batchAtOrAfter = (store?.storySummary?.summaryHistory || []).some(
+        entry => entry?.kind === 'batch' && entry.endMesId >= floor,
+    );
+    if (batchAtOrAfter) {
+        const previousEnd = [...(store.storySummary.summaryHistory || [])]
+            .reverse()
+            .find(entry => entry?.kind === 'batch' && entry.endMesId < floor)?.endMesId ?? -1;
+        const rollback = await executeRollback(chatId, getSummaryStore(), previousEnd);
+        if (rollback?.status !== 'rolled_back') {
+            throw new Error(rollback?.reason ? `回退本楼摘要失败：${rollback.reason}` : '回退本楼摘要失败。');
+        }
+        removeDocumentsFromFloor(floor, chatId);
+    }
+    const latest = readSummaryMemory();
+    const floorWork = latest?.storySummary?.floorWork;
+    if (floorWork && Object.keys(floorWork).some(key => Number(key) >= floor)) {
+        const next = structuredClone(latest);
+        for (const key of Object.keys(next.storySummary.floorWork || {})) {
+            if (Number(key) >= floor) delete next.storySummary.floorWork[key];
+        }
+        await commitSummaryMemory(chatId, next, { previous: latest });
+    }
+    notifyStorySummaryChatState();
+    sendFrameFullData(getPublishedSummaryStore(), getContext().chat?.length || 0);
+    refreshFloorSummaries();
+}
 
-/** One explicit model summary for a single AI floor; writes through the same floor transaction. */
+/** One explicit rerun or single-floor summary; routes through unified floor-host queue when installed. */
 export async function summarizeFloorOnDemand(floor) {
     if (!isStorySummaryEnabledForCurrentChat()) throw new Error('请先启用当前聊天的剧情记录。');
     if (!Number.isInteger(floor) || floor < 0) throw new Error('楼层无效。');
@@ -3466,6 +3587,33 @@ export async function summarizeFloorOnDemand(floor) {
     const chat = getContext().chat || [];
     const source = floorSource(chat, floor);
     if (!source) throw new Error('只能总结叙事 AI 回复。');
+    if (floorRunner) {
+        const release = guard.acquire('summary');
+        if (!release) throw new Error('已有总结任务在运行，请稍候。');
+        const execution = beginSummaryExecution();
+        if (!execution) { release(); throw new Error('无法启动总结任务。'); }
+        notifySummaryState();
+        floorSummaryRequest = floor;
+        try {
+            await floorRunner.rerunFloor(floor);
+            assertSummaryExecutionActive(execution);
+            const store = getPublishedSummaryStore();
+            if (store) {
+                sendFrameFullData(store, getContext().chat?.length || 0);
+                refreshEntityLexiconAndWarmup();
+                applyHideStateDebounced();
+                await updateFrameStatsAfterSummary(store, execution);
+                await autoVectorizeMissingEvents(store, execution);
+                await rebuildActiveVectorCacheAfterSummary(execution);
+            }
+            if (isStorySummaryConsumableForCurrentChat()) scheduleVectorIntegrityCheck();
+            refreshFloorSummaries();
+            return { committed: true };
+        } finally {
+            floorSummaryRequest = null;
+            finishSummaryExecution(execution, release);
+        }
+    }
     const text = chat.slice(source.start, floor + 1)
         .map(item => `${item.is_user ? '玩家' : item.name || '角色'}：${stripFloorProtocol(item.mes)}`)
         .join('\n\n');
@@ -3500,7 +3648,16 @@ export function invalidateWorldContext() {
 
 
 let kitchenCards;
+let archiveCleanup;
 export function configureKitchenCards(adapter) { kitchenCards = adapter; }
+export function configureArchiveCleanup(adapter) { archiveCleanup = adapter; }
+export function archiveMemoryStore() {
+    return {
+        listChatStorageStats,
+        exportChatMemoryRecords,
+        clearChatData,
+    };
+}
 export function kitchenCardMemory() {
     const source = () => {
         const chat = getContext().chat || [];
@@ -3564,6 +3721,14 @@ export function kitchenCardMemory() {
 
 export const floorReview = memoryMaintenance;
 export { getPublishedSummaryStore, generateReviewedLayer, summaryRecoveryPreview, recoverSummaryTail };
+export async function inspectCurrentVectorStatusForUpgrade() {
+    const { chat, chatId } = getContext();
+    const vectorCfg = getVectorConfig();
+    if (!vectorCfg?.enabled || !chatId || !Array.isArray(chat) || !chat.length) {
+        return { dimsMismatch: false, fingerprintMismatch: false };
+    }
+    return await inspectRawVectorStatus(chatId, [...chat], vectorCfg);
+}
 export async function saveFloorWork(source, check, update) {
     check(); await waitForMemoryCommit(); check();
     const chatId = getContext().chatId, previous = readSummaryMemory(), next = structuredClone(previous);

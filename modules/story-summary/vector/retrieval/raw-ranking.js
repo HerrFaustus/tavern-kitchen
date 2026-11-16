@@ -2,11 +2,15 @@ import { cosineSimilarity, toFloat32 } from '../runtime/scoring.js';
 import { inputDigest } from '../utils/vector-input-digest.js';
 
 const normalize = value => String(value || '').normalize('NFKC').toLowerCase();
+const isSearchableTerm = term => {
+    const clean = String(term || '').trim();
+    return clean.length >= 2 || /^[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af\u3400-\u4dbf]$/.test(clean);
+};
 
 // One source of candidates: current raw chunks. Tags only help locate a chunk;
 // they never become evidence or a second vector document.
 export function rankRawChunks(documents, records, { queryVector, queryTerms = [], fingerprint, limit = 40 } = {}) {
-    const terms = [...new Set(queryTerms.map(normalize).filter(term => term.trim().length >= 2))].slice(0, 48);
+    const terms = [...new Set(queryTerms.map(normalize).filter(isSearchableTerm))].slice(0, 48);
     const vectors = new Map(records.map(record => [record.chunkId, record]));
     const rows = documents.map(chunk => {
         const sourceHash = inputDigest('chunk', chunk.text);

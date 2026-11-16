@@ -1,7 +1,7 @@
 import { turnEffectConflicts, turnById } from './turn-ledger.js';
 
 // Recovery compares a read-only preview with the still-current chat before committing.
-export function createWorldRecoveryPanel({ service, getIdentity, getStamp, previewMemory = () => null, restoreMemory = async () => {}, readState = () => service.read() }) {
+export function createWorldRecoveryPanel({ service, getIdentity, getStamp, previewMemory = () => null, restoreMemory = async () => {}, onRestored = () => {}, readState = () => service.read() }) {
     let root, doc, epoch=0, request=0, editing=false, busy=false, loading=false, message='', viewed, statusNode;
     const el = (tag,text,className) => {
         const node=doc.createElement(tag);
@@ -111,17 +111,50 @@ export function createWorldRecoveryPanel({ service, getIdentity, getStamp, previ
                 if (!value.trim() || !Number.isSafeInteger(target) || target<0 || target>=state.version) {
                     status.setAttribute('role','alert');status.textContent='请输入当前版本之前的有效版本号。';return;
                 }
+                const entityLabel = id => {
+                    const live = state.entities.find(e => e.id === id)?.name;
+                    if (live) return live;
+                    for (let i = state.events.length - 1; i >= 0; i--) {
+                        const hit = state.events[i].effects.find(ef => ef.type === 'entity' && ef.id === id && (ef.after?.name || ef.before?.name));
+                        if (hit) return hit.after?.name || hit.before?.name;
+                    }
+                    return id;
+                };
                 const affected=state.events.slice(target).flatMap(event=>{
                     const turn=event.origin && turnById(state,event.origin.sourceId);
                     const changes=event.effects.filter(effect=>['entity','claim','module'].includes(effect.type));
                     if (!changes.length) return [];
                     const location=turn ? `第 ${turn.source.start+1}–${turn.source.end+1} 楼` : '无对应楼层';
-                    return [location+' · '+changes.map(c=>c.type==='entity' ? (c.after?.name || c.before?.name)+' '+Object.keys(c.after?.fields || {}).filter(k=>c.after.fields[k].eventId===event.id).join('、') : c.id).join('、')];
+                    return [location+' · '+changes.map(c => {
+                        if (c.type !== 'entity') return c.id;
+                        const name = c.after?.name || c.before?.name || entityLabel(c.id);
+                        if (c.after === null) return `${name} 删除对象`;
+                        const fields = Object.entries(c.after?.fields || {})
+                            .filter(([k, v]) => v ? v.eventId === event.id : c.before?.fields?.[k] != null)
+                            .map(([k, v]) => v ? k : `清除${k}`);
+                        return fields.length ? `${name} ${fields.join('、')}` : name;
+                    }).join('、')];
                 });
                 const restart=memoryPlan ? `保留前 ${memoryPlan.fromFloor} 楼，从第 ${memoryPlan.fromFloor+1} 楼重记相关摘要、章节和札记。` : '没有失效的摘要来源。';
                 confirm('rewind',`在当前世界恢复第 ${target} 版。${restart} ${affected.join('；')}`,async()=>{
+                    // WHY: Two-phase compensation ensures memory rollback failure never leaves World DB rewound and split-brained.
+                    const beforeRewind=structuredClone(state);
                     const next=await service.rewind(state,target,{guard});
-                    if (memoryPlan) await restoreMemory(memoryPlan);
+                    if (memoryPlan) {
+                        try {
+                            await restoreMemory(memoryPlan);
+                        } catch (memoryError) {
+                            if (typeof service.restore === 'function') {
+                                try {
+                                    await service.restore(beforeRewind,next);
+                                } catch (rollbackError) {
+                                    throw new Error(`${memoryError.message}（世界回滚恢复失败：${rollbackError.message}）`);
+                                }
+                            }
+                            throw memoryError;
+                        }
+                    }
+                    await onRestored(next);
                     return next;
                 });
             });

@@ -4,6 +4,8 @@ const explanations = {
     invalid_arguments: 'The argument has an invalid type, value or range.',
     invalid_field: 'This field is not editable.',
     unknown_tool: 'This tool is not available.',
+    invalid_evidence: 'Memory edits require a verified non-empty verbatim quote from the filtered story text of a dialogue floor within 1..cutoff.',
+    world_owned: 'This record or structured field is managed by worldArchive (world-records). Direct the user to update it via world-records panels instead of EditMemory.',
     source_marker_missing: 'The event summary needs a source-floor marker (#X-Y).',
     record_missing: 'The selected memory record does not exist.',
     invalid_record: 'The edited record has invalid or missing business fields.',

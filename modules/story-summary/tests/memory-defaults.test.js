@@ -80,7 +80,7 @@ test('five-turn defaults and explicit overrides survive normalized storage', asy
     const defaults = mod.applySummaryPanelConfigSnapshot({});
     assert.equal(defaults.ui.keepVisibleCount, 5);
     assert.equal(defaults.ui.recallEarlyOriginal, false);
-    assert.equal(defaults.ui.useVectorBoundary, false);
+    assert.equal(defaults.ui.useVectorBoundary, undefined);
     assert.equal(defaults.memoryMaintenanceEnabled, true);
     assert.equal(defaults.proofreadingInterval, 5);
     const legacy = mod.applySummaryPanelConfigSnapshot({ ui: { keepVisibleCount: 8 } });

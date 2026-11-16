@@ -192,7 +192,7 @@ for (const section of ['facts', 'aliases']) for (const phase of ['request', 'res
         try {
             if (phase === 'response') {
                 const maintenance = mod.createMemorySession(readMaintenanceState()); maintenance.initial();
-                maintenance.runTool('EditMemory', { edits: [fixFact] });
+                maintenance.runTool('EditMemory', { edits: [fixFact], evidence: ev2 });
                 host.afterSave = () => new Promise(resolve => { finishSave = resolve; });
                 saving = saveMaintenanceSession(maintenance);
                 while (!finishSave) await Promise.resolve();
@@ -319,7 +319,7 @@ for (const order of ['agent-first', 'user-first']) test(`manual edit coexists wi
     const edited = structuredClone(previous);
     edited.find(fact => fact.p === '物品').o = '代为保管药箱';
     const session = mod.createMemorySession(readMaintenanceState()); session.initial();
-    session.runTool('EditMemory', { edits: [fixFact] });
+    session.runTool('EditMemory', { edits: [fixFact], evidence: ev2 });
     const errors = [], panel = manualPanelEntry(errors);
     if (order === 'agent-first') await saveMaintenanceSession(session);
     await editSection(panel, 'facts', edited, previous);
@@ -334,7 +334,7 @@ for (const order of ['agent-first', 'user-first']) test(`manual edit coexists wi
 test('maintenance can reread a manually changed target and continue', async () => {
     await importFixture();
     const session = mod.createMemorySession(readMaintenanceState()); session.initial();
-    session.runTool('EditMemory', { edits: [fixFact] });
+    session.runTool('EditMemory', { edits: [fixFact], evidence: ev2 });
     const edited = structuredClone(ext().storySummary.json.facts);
     edited[0].o = '用户补充的信息';
     const errors = [];
@@ -344,7 +344,7 @@ test('maintenance can reread a manually changed target and continue', async () =
     session.discard();
     const latest = session.runTool('ReadMemory', { collection: 'facts', key: fixFact.key }, readMaintenanceState());
     assert.equal(latest.items[0].value.o, '用户补充的信息');
-    session.runTool('EditMemory', { edits: [fixFact] });
+    session.runTool('EditMemory', { edits: [fixFact], evidence: ev2 });
     const saved = await saveMaintenanceSession(session);
     assert.equal(saved.receipt.operations.length, 1);
     assert.equal(disk().storySummary.json.facts[0].o, fixFact.patch.o);
@@ -500,6 +500,7 @@ async function maintain(commands) {
     await mod.commitSummaryMemory(host.context.chatId, next);
     return operations;
 }
+const ev2 = { floor: 2, quote: '看到了机密' };
 const fixFact = { kind: 'edit', collection: 'facts', key: 'f-1', patch: { o: '未经证实的传闻' } };
 const fixAnchor = { kind: 'edit', collection: 'anchors', key: 'atom-1-0', patch: { semantic: '夏实说听说可能如此，自己没有确证。' } };
 
@@ -1384,7 +1385,7 @@ for (const change of ['append', 'edit']) test(`content-sync entry keeps maintena
     assert.deepEqual(ext().storySummary.json, original);
     assert.equal(ext().storySummary.lastSummarizedMesId, 23);
     assert.equal(session.runTool('ReadSource', { floor: 2 }, readMaintenanceState()).items[0].text, host.context.chat[1].mes);
-    session.runTool('EditMemory', { edits: [fixFact] });
+    session.runTool('EditMemory', { edits: [fixFact], evidence: { floor: 2, quote: change === 'append' ? '看到了机密' : '原先只是传闻' } });
     const saved = await saveMaintenanceSession(session);
     assert.equal(saved.receipt.operations.length, 1);
     assert.equal(disk().storySummary.json.facts[0].o, fixFact.patch.o);
@@ -1449,7 +1450,7 @@ test('generation merges concurrent factual corrections and preserves their exact
             const edit = session.runTool('EditMemory', { edits: [
                 fixFact,
                 { kind: 'edit', collection: 'facts', key: 'f-3', patch: { o: '北京' } },
-            ] });
+            ], evidence: ev2 });
             assert.equal(edit.status, 'staged', JSON.stringify(edit));
             await saveMaintenanceSession(session);
             maintained = mod.readSummaryMemory();
@@ -1491,7 +1492,7 @@ for (const action of ['completion', 'outcome', 'anchor', 'summary']) {
         await started;
         if (action === 'completion') session.runTool('CompleteMaintenance', { from: 1, to: 24 });
         else if (action === 'outcome') session.conclude({ status: 'partial', summary: '下次继续' });
-        else session.runTool('EditMemory', { edits: [action === 'anchor' ? fixAnchor : fixFact] });
+        else session.runTool('EditMemory', { edits: [action === 'anchor' ? fixAnchor : fixFact], evidence: ev2 });
         let saved;
         try { saved = await saveMaintenanceSession(session); }
         finally { release(JSON.stringify({ events: [], factUpdates: [{ s: '旅人', p: '行程', o: '共同出发', isState: false }] })); }
@@ -1521,7 +1522,7 @@ for (const scenario of ['completion', 'outcome', 'anchor', 'summary', 'source-ed
         await started;
         if (scenario === 'outcome') session.conclude({ status: 'partial', summary: '下次继续' });
         else if (scenario === 'anchor' || scenario === 'summary') {
-            session.runTool('EditMemory', { edits: [scenario === 'anchor' ? fixAnchor : fixFact] });
+            session.runTool('EditMemory', { edits: [scenario === 'anchor' ? fixAnchor : fixFact], evidence: ev2 });
         } else session.runTool('CompleteMaintenance', { from: 1, to: 24 });
         let finishSave, saveEntered;
         const saveStarted = new Promise(resolve => { saveEntered = resolve; });
@@ -1584,7 +1585,7 @@ test('an old event edit cannot add a card to a migrated chat', async () => {
     await importFixture();
     const session = mod.createMemorySession(readMaintenanceState());
     const before = mod.readSummaryMemory();
-    const rejected = session.runTool('EditMemory', { edits: [{ kind: 'edit', collection: 'events', key: 'evt-1', patch: { title: '旧事件' } }] });
+    const rejected = session.runTool('EditMemory', { edits: [{ kind: 'edit', collection: 'events', key: 'evt-1', patch: { title: '旧事件' } }], evidence: ev2 });
     assert.equal(rejected.status, 'needs_fix');
     assert.deepEqual(mod.readSummaryMemory(), before);
 });
@@ -1842,8 +1843,10 @@ test('ordinary source edit with failed vector cleanup blocks old anchors without
     await host.context.saveMetadata();
     assert.deepEqual(disk(), ext());
     cacheFailure.mock.restore();
+    ext().storySummary = { ...(ext().storySummary || {}), floorWork: { 1: { done: ['memory'] } } };
     await mod.clearSummaryData(host.context.chatId);
     assert.equal(ext().stateAtoms.length, 0);
+    assert.equal(ext().storySummary?.floorWork, undefined);
     assert.equal(mod.getMemoryCommitState(), 'ready');
 });
 
@@ -1907,7 +1910,10 @@ for (const crossedBaseline of [false, true]) test(`confirmed tail recovery keeps
     const tracker = mod.createMessageSourceTracker(); tracker.reset(host.context);
     const edit = mod.readSummaryMemory(), store = edit.storySummary;
     store.dataBranch = 'branch-a';
+    const fw2 = { source: captureRangeSource(chat, 1, 2), done: ['memory'] };
+    const fw25 = { source: captureRangeSource(chat, 24, 25), done: ['memory'] };
     store.floorDrafts = { 2: { text: '前段草稿' }, 25: { text: '失效草稿' } };
+    store.floorWork = { 2: fw2, 25: fw25 };
     store.summaryHistory.at(-1).compressionNodes = [{ start: 24, end: 25, text: '旧尾段' }];
     store.json.facts.find(fact => fact.p === '行程').o = '与旧撤销记录冲突';
     await mod.commitSummaryMemory(chatId, edit);
@@ -1931,6 +1937,7 @@ for (const crossedBaseline of [false, true]) test(`confirmed tail recovery keeps
             assert.equal(saved.lastSummarizedMesId, from - 1);
             assert.deepEqual(saved.json, crossedBaseline ? null : base);
             assert.deepEqual(saved.floorDrafts, crossedBaseline ? undefined : { 2: { text: '前段草稿' } });
+            assert.deepEqual(saved.floorWork, crossedBaseline ? undefined : { 2: fw2 });
             assert.equal(saved.summaryHistory.some(batch => batch.compressionNodes), false);
             assert.equal(saved.sourceInvalidFromFloor, undefined);
             assert.equal(saved.sourceRollbackFromFloor, undefined);
@@ -2482,7 +2489,7 @@ test('an entirely superseded manual extraction is not reported as saved', async 
 for (const mixed of [false, true]) test(`Agent reports the post-swipe receipt, preserving unrelated edits: ${mixed}`, async () => {
     await importFixture(); await seedAnchors();
     const session = mod.createMemorySession(readMaintenanceState()); session.initial();
-    session.runTool('EditMemory', { edits: mixed ? [fixAnchor, fixFact] : [fixAnchor] });
+    session.runTool('EditMemory', { edits: mixed ? [fixAnchor, fixFact] : [fixAnchor], evidence: ev2 });
     session.conclude({ status: 'completed' });
     let release;
     host.afterSave = () => new Promise(resolve => { release = resolve; });
@@ -2964,7 +2971,7 @@ test('historical anchor replay preserves later manual corrections and explicit e
     const key = ext().stateAtoms.find(row => row.floor === floor).atomId;
     const session = mod.createMemorySession(readMaintenanceState()); session.initial();
     session.runTool('ReadMemory', { collection: 'anchors', key }, readMaintenanceState());
-    const edit = session.runTool('EditMemory', { edits: [{ kind: 'edit', collection: 'anchors', key, patch: { where: '守卫岗亭' } }] });
+    const edit = session.runTool('EditMemory', { edits: [{ kind: 'edit', collection: 'anchors', key, patch: { where: '守卫岗亭' } }], evidence: { floor, quote: '还给守卫' } });
     assert.equal(edit.status, 'staged', JSON.stringify(edit)); await saveMaintenanceSession(session);
     await controller.update(floor, { payload: { ...payload, summary: '修正摘要但保留本楼场景卡' } });
     assert.equal(ext().stateAtoms.find(row => row.atomId === key).where, '守卫岗亭');

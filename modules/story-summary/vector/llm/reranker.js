@@ -10,6 +10,7 @@ import { getVectorConfig } from '../../data/config.js';
 import { getDefaultApiPrefix, resolveApiBaseUrl } from '../../../../shared/common/openai-url-utils.js';
 import { mergeAbortSignals } from '../../../../shared/common/abort-utils.js';
 import { buildBoundedRerankQuery, RERANK_QUERY_MAX_CHARS } from '../retrieval/rerank-query.js';
+import { isVectorApiConfigured } from './api-config-policy.js';
 
 const MODULE_ID = 'reranker';
 const DEFAULT_RERANK_URL = 'https://api.siliconflow.cn/v1';
@@ -98,15 +99,15 @@ export async function rerank(query, documents, options = {}) {
     }
 
     const apiCfg = getRerankApiConfig();
-    const key = getNextRerankKey(apiCfg.key);
-    if (!key) {
-        xbLog.warn(MODULE_ID, '未配置 API Key，跳过 rerank');
+    if (!isVectorApiConfigured(apiCfg)) {
+        xbLog.warn(MODULE_ID, '未配置 Rerank API Key 或无 Key 本地接口，跳过 rerank');
         return {
             results: documents.map((_, i) => ({ index: i, relevance_score: 0 })),
             failed: true,
             diagnostic: { kind: 'missing-key', status: null, elapsedMs: 0 },
         };
     }
+    const key = getNextRerankKey(apiCfg.key);
 
     // 截断超长文档列表
     const truncatedDocs = documents.slice(0, MAX_DOCUMENTS);
@@ -158,7 +159,7 @@ export async function rerank(query, documents, options = {}) {
         const response = await send(`${baseUrl}/rerank`, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${key}`,
+                ...(key ? { 'Authorization': `Bearer ${key}` } : {}),
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
@@ -378,8 +379,8 @@ export async function testRerankService(apiConfig = {}, { signal } = {}) {
         key: String(apiConfig.key || '').trim(),
         model: String(apiConfig.model || RERANK_MODEL).trim(),
     };
-    if (!next.key) {
-        throw new Error('请配置 Rerank API Key');
+    if (!isVectorApiConfigured(next)) {
+        throw new Error('请配置 Rerank API Key 或无 Key 本地接口');
     }
 
     const key = getNextRerankKey(next.key);
@@ -400,7 +401,7 @@ export async function testRerankService(apiConfig = {}, { signal } = {}) {
         const response = await send(`${baseUrl}/rerank`, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${key}`,
+                ...(key ? { 'Authorization': `Bearer ${key}` } : {}),
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({

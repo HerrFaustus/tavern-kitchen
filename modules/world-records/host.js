@@ -53,8 +53,8 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
         publishWorldBridgeState(sourceIdentity(), owner, state);
     } });
     proposalPanel = createProposalPanel({ service, getIdentity:identity });
-    peopleEditor = createWorldEditorPanel({ service, getIdentity: identity, section: 'people' });
-    situationEditor = createWorldEditorPanel({ service, getIdentity: identity, section: 'situation' });
+    peopleEditor = createWorldEditorPanel({ service, getIdentity: identity, section: 'people', getPlayerName: () => getContext().name1, getMemorySnapshot });
+    situationEditor = createWorldEditorPanel({ service, getIdentity: identity, section: 'situation', getPlayerName: () => getContext().name1, getMemorySnapshot });
     const recoveryStamp=()=>{
         const chat=getContext().chat || [], memory=getMemorySnapshot();
         return memoryDigest({chat:chat.length ? captureRangeSource(chat,0,chat.length-1) : null,
@@ -64,7 +64,8 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
     recoveryPanel = createWorldRecoveryPanel({service,getIdentity:identity,getStamp:recoveryStamp,
         previewMemory:()=>recoverMemory?.()?.summaryRecoveryPreview(),
         restoreMemory:async plan=>{const owner=identity(); await recoverMemory().recoverSummaryTail(getContext().chatId,plan.token,()=>{if(owner!==identity()) throw new Error('聊天已切换');});
-            globalThis.window?.dispatchEvent?.(new Event('tavernKitchen:floor-settings'));},readState:async()=>{
+            globalThis.window?.dispatchEvent?.(new Event('tavernKitchen:floor-settings'));},
+        onRestored:()=>{ globalThis.window?.dispatchEvent?.(new Event('tavernKitchen:floor-settings')); },readState:async()=>{
         const owner=identity(),token=epoch,scope=service.scopeVersion(),stamp=recoveryStamp(),input=observation();
         const current=()=>!disposed && token===epoch && owner===identity() && scope===service.scopeVersion() && stamp===recoveryStamp();
         const existing=await service.read();
@@ -271,6 +272,8 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
     const noteStore = createNoteStore();
     return {
         service,
+        storage,
+        noteStore,
         cardData: createWorldCardData({ identity, storage, service, noteStore }),
         showProposals,
         showEditor,

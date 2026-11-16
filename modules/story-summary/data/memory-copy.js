@@ -9,7 +9,7 @@ export const MEMORY_DATA_COPY = Object.freeze({
     sourceChanged: '原文已变化，本次锚点结果不再适用；请针对当前正文重新补齐。',
     conflict: '记忆内容已发生变化，本次修改未保存；请重新打开面板，核对后再修改。',
     cacheFailed: '原文对应的旧锚点已停用，但本地检索缓存未清理完成；请重试“补齐缺漏”。',
-    anchorsFailed: '本次锚点补齐未能保存，请在“记忆锚点”中重试；详情见日志。',
+    anchorsFailed: '本次索引补齐未能保存，请在「记忆检索」中重试；详情见日志。',
 });
 
 export function memorySaveError(error, operation = 'memory') {

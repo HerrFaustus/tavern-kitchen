@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { StorageFile } from '../../../core/storage-file.js';
 import { createTextApiRepository } from '../repository.js';
 import { migrateLegacySettings } from '../migration.js';
-import { applyPresetAction, resolveFeaturePreset, TEXT_API_SETTINGS_KEY as KEY } from '../model.js';
+import { applyPresetAction, HOST_PROVIDER, resolveFeaturePreset, TEXT_API_SETTINGS_KEY as KEY } from '../model.js';
 import { assertPlannerPresetReady } from '../../story-planner/preset.js';
 import { legacy, emptyPlanner } from './legacy-fixtures.js';
 
@@ -134,13 +134,16 @@ test('selection saves only the binding; failed mutations do not publish, simulta
     assert.equal(saved.bindings.summary, 'planner-default');
 });
 
-test('planning alone rejects empty key, including after a valid neighbor replacement', () => {
+test('planning allows key-less local endpoints with baseUrl and model, while rejecting host or missing address/model', () => {
     const settings = migrateLegacySettings(legacy);
     const next = applyPresetAction(settings, 'summary', { type: 'delete', id: 'planner-default' });
     const snapshot = resolveFeaturePreset(next, 'planner');
     assert.equal(snapshot.id, 'summary-default');
     snapshot.apiKey = '';
-    assert.throws(() => assertPlannerPresetReady(snapshot));
+    assert.doesNotThrow(() => assertPlannerPresetReady(snapshot));
     assert.doesNotThrow(() => assertPlannerPresetReady({ ...snapshot, apiKey: ' key ' }));
+    assert.throws(() => assertPlannerPresetReady({ ...snapshot, baseUrl: '' }));
+    assert.throws(() => assertPlannerPresetReady({ ...snapshot, model: ' ' }));
+    assert.throws(() => assertPlannerPresetReady({ ...snapshot, provider: HOST_PROVIDER }));
     assert.equal(resolveFeaturePreset(next, 'summary').id, 'summary-default');
 });

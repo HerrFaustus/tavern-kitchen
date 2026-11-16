@@ -225,6 +225,9 @@ function detectAsianLanguage(text) {
 // 分词：亚洲文字（结巴 / 降级）
 // ═══════════════════════════════════════════════════════════════════════════
 
+const SINGLE_CJK_TOKEN_RE = /^[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af\u3400-\u4dbf]$/;
+const isValidAsianToken = token => token.length >= 2 || SINGLE_CJK_TOKEN_RE.test(token);
+
 /**
  * 用结巴分词处理亚洲文字段
  * @param {string} text
@@ -237,7 +240,7 @@ function tokenizeAsianJieba(text, cut = jiebaCut) {
         const words = cut(text, true); // hmm=true
         return Array.from(words)
             .map(w => String(w || '').trim())
-            .filter(w => w.length >= 2);
+            .filter(isValidAsianToken);
     } catch (e) {
         xbLog.warn(MODULE_ID, '结巴分词异常，降级处理', e);
         return tokenizeAsianFallback(text);
@@ -245,7 +248,7 @@ function tokenizeAsianJieba(text, cut = jiebaCut) {
 }
 
 /**
- * 降级分词：标点/空格分割 + 保留 2-6 字 CJK 片段
+ * 降级分词：标点/空格分割 + 保留 2-6 字 CJK 片段与单字实体词
  * 不使用 bigram，避免索引膨胀
  *
  * @param {string} text
@@ -263,7 +266,7 @@ function tokenizeAsianFallback(text) {
         const trimmed = part.trim();
         if (!trimmed) continue;
 
-        if (trimmed.length >= 2 && trimmed.length <= 6) {
+        if ((trimmed.length >= 2 && trimmed.length <= 6) || SINGLE_CJK_TOKEN_RE.test(trimmed)) {
             tokens.push(trimmed);
         } else if (trimmed.length > 6) {
             // 长片段按 4 字滑窗切分（比 bigram 稀疏得多）
@@ -289,7 +292,7 @@ function tokenizeJapanese(text, segmenter = tinySegmenter) {
             const words = segmenter.segment(text);
             return words
                 .map(w => String(w || '').trim())
-                .filter(w => w.length >= 2);
+                .filter(isValidAsianToken);
         } catch (e) {
             xbLog.warn(MODULE_ID, 'TinySegmenter 分词异常，降级处理', e);
             return tokenizeAsianFallback(text);
@@ -437,7 +440,7 @@ export function injectEntities(lexicon, displayMap, blockedTerms = []) {
     const terms = new Map();
     for (const raw of lexicon || []) {
         const term = normalizeEntityTerm(raw);
-        if (term.length >= 2 && !terms.has(term)) terms.set(term, displayMap?.get(term) || String(raw));
+        if (isValidAsianToken(term) && !terms.has(term)) terms.set(term, displayMap?.get(term) || String(raw));
     }
     const blocked = [...new Set(blockedTerms.map(normalizeEntityTerm).filter(Boolean))].sort();
     const sameTerms = terms.size === entityMatcher.terms.size
@@ -446,7 +449,7 @@ export function injectEntities(lexicon, displayMap, blockedTerms = []) {
         && blocked.every((term, i) => term === entityMatcher.blockedTerms[i])) return false;
     // Build/sort matching candidates only when the vocabulary actually changes.
     entityMatcher = createEntityMatcher(
-        new Set([...(lexicon || [])].filter(term => normalizeEntityTerm(term).length >= 2)), displayMap, blocked,
+        new Set([...(lexicon || [])].filter(term => isValidAsianToken(normalizeEntityTerm(term)))), displayMap, blocked,
     );
     tokenizerSnapshot = null;
     return true;
@@ -494,7 +497,7 @@ export function getTokenizerSnapshot() {
         tokens.push(...tokenizePlain(text.slice(cursor), cut, segmenter));
         return tokens.filter(token => {
             const normalized = normalizeEntityTerm(token);
-            return normalized.length >= 2
+            return isValidAsianToken(normalized)
                 && (!EFFECTIVE_STOP_WORDS.has(normalized) || STATIC_KEEP_WORDS.has(normalized) || keep.has(normalized))
                 && !/^[\s\x00-\x1F\p{P}\p{S}]+$/u.test(normalized);
         });

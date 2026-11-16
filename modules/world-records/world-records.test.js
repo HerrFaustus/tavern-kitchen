@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
-import { applyCommand, emptyWorld, fieldValue, forkWorld, canonical } from './domain.js';
+import { CHECKPOINT_INTERVAL, MAX_RECENT_CHECKPOINTS, SCHEMA, applyCommand, emptyWorld, fieldValue, forkWorld, canonical } from './domain.js';
 import { createWorldStorage } from './storage.js';
+import { createNoteStore } from '../story-planner/storage.js';
 import { createWorldService } from './service.js';
 import { memoryRecords, mapRecords, prepareSourceOperations } from './imports.js';
 
@@ -178,4 +180,83 @@ test('same-name distinct source keys and ambiguous aliases are not silently merg
     assert.equal(state.entities.length, 2);
     state = applyCommand(state, command(state, prepareSourceOperations(state, [{ module: 'memory', label: '剧情', records: [records[0]] }], () => `e${++seq}`))).state;
     assert.equal(state.entities.length, 3);
+});
+
+test('Schema 4 stores sparse deltas + periodic checkpoints with sub-linear growth and full forkWorld replay', () => {
+    let state = emptyWorld('w4', 'main', '清河县');
+    state = applyCommand(state, command(state, [create('旅人'), set('旅人', 'coins', 0)], 'init')).state;
+    assert.equal(state.schema, SCHEMA);
+
+    // 运行 60 轮修改，跨越多个 CHECKPOINT_INTERVAL (25)
+    for (let step = 1; step <= 60; step++) {
+        state = applyCommand(state, command(state, [set('旅人', 'coins', step), set('旅人', `tag-${step}`, `v-${step}`)], `step-${step}`)).state;
+    }
+
+    assert.equal(state.version, 61);
+    assert.equal(value(state, '旅人', 'coins'), 60);
+    assert.ok((state.checkpoints || []).length >= 2 && state.checkpoints.length <= MAX_RECENT_CHECKPOINTS);
+    assert.equal(state.events[5].effects[0].delta, true);
+    assert.equal(state.events[5].effects[0].after?.fields?.coins?.value, 5);
+    assert.equal(state.events[5].effects[0].after?.fields?.['tag-1'], undefined);
+    assert.equal(state.events[5].effects[0].after?.name, undefined);
+    assert.equal(typeof state.receipts.at(-1).fingerprint, 'string');
+    assert.equal(state.receipts.at(-1).fingerprint.length, 64);
+
+    // 从检查点附近回溯到第 28 版、第 10 版，再开启完整历史校验
+    const fork28 = forkWorld(state, 28, 'branch-28');
+    assert.equal(fork28.version, 28);
+    assert.equal(value(fork28, '旅人', 'coins'), 27);
+    const fork10 = forkWorld(state, 10, 'branch-10', { verifyFullHistory: true });
+    assert.equal(fork10.version, 10);
+    assert.equal(value(fork10, '旅人', 'coins'), 9);
+
+    // 篡改历史事件必须被检测并拒绝
+    const tampered = structuredClone(state);
+    tampered.events[5].effects[0].after.fields.coins.value = 9999;
+    assert.throws(() => forkWorld(tampered, CHECKPOINT_INTERVAL + 5, 'bad', { verifyFullHistory: true }), /历史/);
+});
+
+test('Schema 3 fixture chat-0.2.32 loads, verifies forkWorld, and seamlessly upgrades to Schema 4', () => {
+    const fixture = JSON.parse(readFileSync(new URL('../../scripts/fixtures/chat-0.2.32.json', import.meta.url), 'utf8'));
+    const cardWorld = fixture.card.data.world;
+    assert.equal(cardWorld.schema, 3);
+    const forked = forkWorld(cardWorld, cardWorld.version, 'compat-branch', { verifyFullHistory: true });
+    assert.equal(forked.version, cardWorld.version);
+
+    const upgraded = applyCommand(cardWorld, command(cardWorld, [create('新人物')], 'upgrade-v4')).state;
+    assert.equal(upgraded.schema, SCHEMA);
+    assert.equal(upgraded.version, cardWorld.version + 1);
+});
+
+test('WorldArchive and StoryPlanner surface friendly QuotaExceededError messages', async () => {
+    const indexedDB = new IDBFactory();
+    const storage = createWorldStorage({ indexedDB });
+    try {
+        const quotaErr = new DOMException('Quota exceeded', 'QuotaExceededError');
+        const origPut = IDBObjectStore.prototype.put;
+        const origAdd = IDBObjectStore.prototype.add;
+        const mockQuota = function (...args) {
+            void args;
+            throw quotaErr;
+        };
+        IDBObjectStore.prototype.put = mockQuota;
+        IDBObjectStore.prototype.add = mockQuota;
+        try {
+            const world = emptyWorld('w-quota', 'b-quota', '配额');
+            await assert.rejects(() => storage.update('quota-id', () => ({ state: world, result: world })), /浏览器本地存储空间已满/);
+            const previousIDB = globalThis.indexedDB;
+            globalThis.indexedDB = indexedDB;
+            try {
+                const notes = createNoteStore();
+                await assert.rejects(() => notes.put({ id: 'n1', owner: 'owner', scope: 'chapter', body: 'hi', floor: 1 }), /浏览器本地存储空间已满/);
+            } finally {
+                globalThis.indexedDB = previousIDB;
+            }
+        } finally {
+            IDBObjectStore.prototype.put = origPut;
+            IDBObjectStore.prototype.add = origAdd;
+        }
+    } finally {
+        await storage.close();
+    }
 });

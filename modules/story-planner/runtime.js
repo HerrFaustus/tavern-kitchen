@@ -41,19 +41,20 @@ export function createPlanner({snapshot, store, write, status}) {
                 throw error;
             }
         },
-        prepare(signal, end) {
+        prepare(signal, end, { force = false, throwOnError = false } = {}) {
             const read = () => snapshot(end);
             const snap = read();
             if (!snap || signal?.aborted) return Promise.resolve('');
+            if (force) failed = null;
             const key = JSON.stringify([snap.owner,snap.world.version,snap.boundary,snap.lineState,prefix(snap.chat,snap.chat.length-1)]);
-            if (pending?.key === key) return pending.promise;
+            if (!force && !throwOnError && pending?.key === key) return pending.promise;
             cancel();
             const job = {key}; pending = job;
-            job.promise = run(signal, read).finally(() => { if(pending === job) pending = null; });
+            job.promise = run(signal, read, { throwOnError }).finally(() => { if(pending === job) pending = null; });
             return job.promise;
         },
     };
-    async function run(signal, read) {
+    async function run(signal, read, { throwOnError = false } = {}) {
             const controller = new AbortController();
             current = controller;
             const stop = () => controller.abort();
@@ -68,23 +69,46 @@ export function createPlanner({snapshot, store, write, status}) {
                 const reason = reviewReason(previous,snap);
                 if (!reason) { status('当前章节札记已就绪'); return previous.chapter.text; }
                 const stale = staleTargetsForNote(previous, snap, reason);
-                const ticket = JSON.stringify([snap.owner,snap.boundary,previous?.id,reason,snap.plotLines,stale]);
+                const source = prefix(snap.chat, snap.chat.length - 1);
+                const ticket = JSON.stringify([snap.owner, snap.world.version, snap.boundary, snap.lineState, source, previous?.id, reason, snap.plotLines, stale]);
                 if (failed === ticket) return '';
                 status('后台作家正在整理札记');
                 try {
-                    const request = prepareWriterRequest(snap, previous, reason, stale);
-                    const raw = await write(request.messages, controller.signal);
-                    if (!fresh()) return '';
-                    const saved = await store.put(publishNotes(raw, previous, snap, reason, {
-                        mode: request.mode,
-                        staleTargets: request.staleTargets,
-                    }),fresh);
+                    let request = prepareWriterRequest(snap, previous, reason, stale);
+                    let raw, published;
+                    try {
+                        raw = await write(request.messages, controller.signal);
+                        if (!fresh()) return '';
+                        published = publishNotes(raw, previous, snap, reason, {
+                            mode: request.mode,
+                            staleTargets: request.staleTargets,
+                        });
+                    } catch (firstError) {
+                        if (request.mode !== 'partial' || !fresh() || controller.signal.aborted
+                            || firstError?.name === 'AbortError' || firstError?.secretLeak) {
+                            throw firstError;
+                        }
+                        // WHY: Fall back once to a full chapter rewrite when partial diffs miss targets, overflow
+                        // scoped dependencies, or produce malformed JSON so chapter notes do not get stuck.
+                        request = prepareWriterRequest(snap, previous, reason, stale, { forceFull: true });
+                        raw = await write(request.messages, controller.signal);
+                        if (!fresh()) return '';
+                        published = publishNotes(raw, previous, snap, reason, {
+                            mode: 'full',
+                            staleTargets: null,
+                        });
+                    }
+                    const saved = await store.put(published, fresh);
                     if (!fresh()) return '';
                     failed = null;
                     status('当前章节札记已就绪');
                     return saved.chapter.text;
                 } catch (error) {
-                    if (fresh()) { failed = ticket; status('札记未能发布，可检查模型设置并重试', true); }
+                    if (fresh()) {
+                        failed = ticket;
+                        status('札记未能发布，可检查模型设置并重试', true);
+                        if (throwOnError && error?.name !== 'AbortError') throw error;
+                    }
                     return '';
                 }
             } finally {

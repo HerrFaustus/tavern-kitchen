@@ -46,16 +46,16 @@ export function createFloorPanel({ doc, floor, updateFloor, extractFloor, summar
         await updateFloor(floor, { payload, omitted: !model.entry?.omitted, deleted: empty, empty }, model.source.digest);
     }), 'tk-fp-more-action', '标为番外：不计入剧情记忆');
     omit.setAttribute('aria-label', omit.title);
-    const doExtract = async () => {
+    const doExtract = extractFloor ? async () => {
         const result = await extractFloor(floor);
         if (!result?.committed && !result?.unchanged) throw new Error(result?.error || '主回复未附带总结，请在下方补写或用酒馆重新生成本楼。');
-    };
-    const extract = button('重新提取', () => {
+    } : null;
+    const extract = extractFloor ? button('重新提取', () => {
         if (model.entry && !model.entry.deleted || model.staged || editKey) {
             confirmingExtract = true; confirmingDelete = false; expanded = true; renderExtractConfirmation(); updateExpanded();
         } else run(doExtract);
-    }, 'tk-fp-more-action', '重新提取主回复附带的总结（不调用 API）');
-    extract.setAttribute('aria-label', extract.title);
+    }, 'tk-fp-more-action', '重新提取主回复附带的总结（不调用 API）') : null;
+    extract?.setAttribute('aria-label', extract.title);
     const drawer = element('div', 'tk-fp-drawer'); const inner = element('div', 'tk-fp-drawer-inner');
     const body = element('div', 'tk-fp-body'); const notice = element('p', 'tk-fp-notice'); notice.setAttribute('role', 'status');
     const extractConfirmation = element('div', 'tk-fp-extract-confirm');
@@ -217,7 +217,7 @@ export function createFloorPanel({ doc, floor, updateFloor, extractFloor, summar
             button('确认删除', () => run(() => updateFloor(floor, { deleted: true }, model.source.digest)), 'menu_button'));
         const more = element('details', 'tk-fp-more');
         const moreBody = element('div', 'tk-fp-more-body');
-        moreBody.append(omit, extract, button('查看剧情', () => openMemory(floor), 'tk-fp-more-action'));
+        moreBody.append(omit, ...(extract ? [extract] : []), button('查看剧情', () => openMemory(floor), 'tk-fp-more-action'));
         if (model.entry && !disabled && !model.entry.deleted && !confirmingDelete) moreBody.append(button('删除摘要', () => { confirmingDelete = true; renderContent(); }, 'tk-fp-more-action tk-fp-remove'));
         more.append(element('summary', '', '更多'), moreBody);
         footer.append(element('span', 'tk-fp-spacer'), more);
@@ -239,11 +239,13 @@ export function createFloorPanel({ doc, floor, updateFloor, extractFloor, summar
         omit.textContent = omitted ? '取消番外' : '标为番外';
         omit.classList.toggle('is-active', omitted); omit.disabled = busy || !!model.legacy;
         omit.title = omitted ? '取消番外：恢复参与剧情记忆' : '标为番外：不计入剧情记忆'; omit.setAttribute('aria-label', omit.title);
-        extract.disabled = busy || !!model.legacy || omitted;
-        extract.hidden = snapshot.inlineConfig?.enabled === false;
+        if (extract) {
+            extract.disabled = busy || !!model.legacy || omitted;
+            extract.hidden = snapshot.inlineConfig?.enabled === false;
+        }
         if (summarize) {
             const hasEntry = !!model.entry && !model.entry.deleted;
-            const hasDraftSummary = !model.entry && !!model.payload.summary;
+            const hasDraftSummary = snapshot.inlineConfig?.enabled === true && !model.entry && !!model.payload.summary;
             summarize.hidden = !!model.legacy || omitted || (!hasEntry && hasDraftSummary);
             summarize.textContent = hasEntry ? '重新总结' : '总结本楼';
             summarize.title = hasEntry ? '重新总结本楼' : '总结本楼';

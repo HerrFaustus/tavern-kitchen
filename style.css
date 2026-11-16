@@ -285,3 +285,22 @@
     #tk-workspace .tk-planner-entity-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
     #tk-workspace .tk-planner-tag { justify-self: start; }
 }
+.tk-tutorial-dialog { width: min(640px, calc(100vw - 20px)); max-width: calc(100vw - 20px); max-height: min(84dvh, 720px); margin: auto; padding: 0; border: 1px solid var(--SmartThemeBorderColor); border-radius: 10px; background: var(--SmartThemeBlurTintColor); color: var(--SmartThemeBodyColor); box-shadow: 0 10px 30px var(--SmartThemeShadowColor); display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; overflow: hidden; }
+.tk-tutorial-dialog:not([open]) { display: none; }
+.tk-tutorial-dialog::backdrop { background: rgb(0 0 0 / .45); }
+.tk-tutorial-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--SmartThemeBorderColor); }
+.tk-tutorial-header h3 { margin: 0; font-size: 1.05em; line-height: 1.4; min-width: 0; overflow-wrap: anywhere; }
+.tk-tutorial-close { flex: 0 0 auto; min-width: 34px; min-height: 34px; padding: 4px 10px; }
+.tk-tutorial-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 16px; border-bottom: 1px solid var(--SmartThemeBorderColor); background: var(--SmartThemeChatTintColor, transparent); }
+.tk-tutorial-tab { flex: 1 1 auto; min-width: 0; padding: 6px 10px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 6px; background: transparent; color: var(--SmartThemeBodyColor); font: inherit; font-size: .88em; cursor: pointer; text-align: center; white-space: normal; }
+.tk-tutorial-tab[aria-selected="true"] { border-color: var(--SmartThemeQuoteColor, var(--SmartThemeBodyColor)); color: var(--SmartThemeQuoteColor, var(--SmartThemeBodyColor)); font-weight: 600; }
+.tk-tutorial-body { overflow-y: auto; overflow-x: hidden; padding: 14px 16px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.tk-tutorial-section-title { margin: 0; font-size: 1.02em; line-height: 1.45; overflow-wrap: anywhere; }
+.tk-tutorial-lead { margin: 0; font-size: .92em; color: var(--SmartThemeEmColor); line-height: 1.6; overflow-wrap: anywhere; }
+.tk-tutorial-card { padding: 10px 12px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 8px; display: grid; gap: 6px; min-width: 0; }
+.tk-tutorial-card h5 { margin: 0; font-size: .94em; color: var(--SmartThemeQuoteColor, var(--SmartThemeBodyColor)); }
+.tk-tutorial-card ul { margin: 0; padding-inline-start: 18px; display: grid; gap: 5px; font-size: .9em; line-height: 1.6; }
+.tk-tutorial-card li { overflow-wrap: anywhere; }
+.tk-tutorial-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--SmartThemeBorderColor); }
+.tk-tutorial-step { font-size: .85em; color: var(--SmartThemeEmColor); }
+.tk-tutorial-footer-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }

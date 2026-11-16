@@ -77,7 +77,7 @@ for (const action of ['edit', 'completion']) test(`source edits after reads do n
     current.chat[1].mes += ' 后来修改的原文。';
     current.chat[20].mes += ' 尚未读取的原文也有修改。';
     current.chat.push({ mes: '新的尾楼', is_user: false });
-    if (action === 'edit') session.runTool('EditMemory', { edits: [edit] });
+    if (action === 'edit') session.runTool('EditMemory', { edits: [edit], evidence: { floor: 2, quote: '看到了机密' } });
     else session.runTool('CompleteMaintenance', { from: 1, to: 24 });
     const result = session.assertCurrent(current);
     assert.equal(result.json.facts[0].o, action === 'edit' ? edit.patch.o : current.json.facts[0].o);
@@ -88,7 +88,7 @@ for (const action of ['edit', 'completion']) test(`actual target memory removal 
     const { session, current } = fixture();
     current.json = structuredClone(current.json);
     current.json.facts = current.json.facts.filter(fact => fact.id !== edit.key);
-    if (action === 'edit') session.runTool('EditMemory', { edits: [edit] });
+    if (action === 'edit') session.runTool('EditMemory', { edits: [edit], evidence: { floor: 2, quote: '看到了机密' } });
     else session.runTool('CompleteMaintenance', { from: 1, to: 24 });
     assert.throws(() => session.assertCurrent(current), error => {
         assert.equal(error.code, 'memory_updated');

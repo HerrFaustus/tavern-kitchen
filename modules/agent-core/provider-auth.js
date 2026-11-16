@@ -47,3 +47,15 @@ export function resolveAgentAuth(provider, value) {
         },
     };
 }
+
+/** Composes SDK header isolation with an outer transport wrapper (`fetchWithExtras`) without restoring ambient SDK headers. */
+export function composeAuthorizedFetch(auth, extraFetch) {
+    if (typeof extraFetch !== 'function') return auth?.sdkOptions?.fetch;
+    if (auth?.requestHeaders) {
+        return (input, options = {}) => extraFetch(input, { ...options, headers: auth.requestHeaders });
+    }
+    if (typeof auth?.sdkOptions?.fetch === 'function') {
+        return (input, options = {}) => auth.sdkOptions.fetch(input, options, extraFetch);
+    }
+    return extraFetch;
+}

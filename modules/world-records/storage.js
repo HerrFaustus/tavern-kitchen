@@ -1,5 +1,25 @@
 import { invariant } from './domain.js';
 
+export function normalizeArchiveStorageError(error, fallbackMessage) {
+    if (error?.name === 'QuotaExceededError' || error?.code === 22 || error?.cause?.name === 'QuotaExceededError') {
+        return Object.assign(new Error('浏览器本地存储空间已满，无法保存档案。请先在「数据」中清理无用聊天或导出备份。', { cause: error }), { code: 'quota_exceeded' });
+    }
+    return error || new Error(fallbackMessage);
+}
+
+export function parseWorldArchiveIdentity(identity) {
+    if (typeof identity !== 'string' || !identity) return null;
+    try {
+        const pair = JSON.parse(identity);
+        if (!Array.isArray(pair) || pair.length < 2) return null;
+        const ref = JSON.parse(pair[1]);
+        if (!Array.isArray(ref) || ref.length < 3) return null;
+        return { user: pair[0], kind: ref[0], ownerId: ref[1], chatId: ref[2] };
+    } catch {
+        return null;
+    }
+}
+
 // One read/write transaction owns bindings and the complete branch commit. Browser
 // tabs share the same IDB transaction queue; no optimistic local cache is authoritative.
 export function createWorldStorage({ indexedDB = globalThis.indexedDB, name = 'TavernKitchen_WorldArchive' } = {}) {
@@ -26,7 +46,7 @@ export function createWorldStorage({ indexedDB = globalThis.indexedDB, name = 'T
             const bindings = transaction.objectStore('bindings'), branches = transaction.objectStore('branches');
             let result, failure;
             const abort = error => { failure = error; transaction.abort(); };
-            transaction.onabort = () => reject(failure || transaction.error || new Error('世界档案未保存，请重试'));
+            transaction.onabort = () => reject(normalizeArchiveStorageError(failure || transaction.error, '世界档案未保存，请重试'));
             transaction.onerror = () => { failure ||= transaction.error; };
             transaction.oncomplete = () => resolve(result);
             const found = bindings.get(identity);
@@ -74,7 +94,8 @@ export function createWorldStorage({ indexedDB = globalThis.indexedDB, name = 'T
                 const tx = db.transaction(['branches','owners','bindings'],'readwrite');
                 const bindings=tx.objectStore('bindings'), branches=tx.objectStore('branches'), owners=tx.objectStore('owners');
                 let state, failure;
-                tx.onabort=()=>reject(failure || tx.error); tx.oncomplete=()=>resolve(state);
+                tx.onabort=()=>reject(normalizeArchiveStorageError(failure || tx.error, '世界档案未保存，请重试')); tx.oncomplete=()=>resolve(state);
+                tx.onerror=()=>{failure ||= tx.error;};
                 const candidates=owners.index('identity').getAll(identity);
                 candidates.onsuccess=()=>{
                     const current=bindings.get(identity);
@@ -90,6 +111,86 @@ export function createWorldStorage({ indexedDB = globalThis.indexedDB, name = 'T
                         };
                     };
                 };
+            });
+        },
+        async listArchiveRecords() {
+            const db = await open();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(['branches', 'bindings', 'owners'], 'readonly');
+                const ownersReq = tx.objectStore('owners').getAll();
+                const branchKeysReq = tx.objectStore('branches').getAllKeys();
+                const bindingsReq = tx.objectStore('bindings').openCursor();
+                const bindings = [];
+                bindingsReq.onsuccess = () => {
+                    const cursor = bindingsReq.result;
+                    if (cursor) { bindings.push({ identity: cursor.key, branchId: cursor.value }); cursor.continue(); }
+                };
+                tx.oncomplete = () => resolve({
+                    owners: ownersReq.result || [],
+                    branchKeys: branchKeysReq.result || [],
+                    bindings,
+                });
+                tx.onerror = () => reject(tx.error);
+            });
+        },
+        async exportIdentities(identities = [], branchIds = []) {
+            const db = await open();
+            const wanted = new Set(identities);
+            const wantedBranches = new Set(branchIds);
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(['branches', 'owners'], 'readonly');
+                const ownersReq = tx.objectStore('owners').getAll();
+                const branchesStore = tx.objectStore('branches');
+                const exported = [];
+                tx.onerror = () => reject(tx.error);
+                ownersReq.onsuccess = () => {
+                    for (const row of ownersReq.result || []) {
+                        if (wanted.has(row.identity)) wantedBranches.add(row.branchId);
+                    }
+                    for (const id of wantedBranches) {
+                        const req = branchesStore.get(id);
+                        req.onsuccess = () => { if (req.result) exported.push(req.result); };
+                    }
+                };
+                tx.oncomplete = () => resolve(exported);
+            });
+        },
+        async deleteIdentities(identities = [], orphanBranchIds = []) {
+            const wanted = new Set(identities);
+            const extraBranches = new Set(orphanBranchIds);
+            if (!wanted.size && !extraBranches.size) return { deletedBranches: 0, deletedIdentities: 0 };
+            const db = await open();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(['branches', 'bindings', 'owners'], 'readwrite');
+                const branches = tx.objectStore('branches'), bindings = tx.objectStore('bindings'), owners = tx.objectStore('owners');
+                let deletedBranches = 0, deletedIdentities = 0;
+                const branchTargets = new Set(extraBranches);
+                for (const identity of wanted) {
+                    const bound = bindings.get(identity);
+                    bound.onsuccess = () => {
+                        if (bound.result) { branchTargets.add(bound.result); bindings.delete(identity); }
+                    };
+                    const owned = owners.index('identity').getAll(identity);
+                    owned.onsuccess = () => {
+                        for (const row of owned.result || []) {
+                            branchTargets.add(row.branchId);
+                            owners.delete(row.branchId);
+                        }
+                    };
+                    deletedIdentities++;
+                }
+                const finishDeleteBranches = () => {
+                    for (const branchId of branchTargets) {
+                        branches.delete(branchId);
+                        owners.delete(branchId);
+                        deletedBranches++;
+                    }
+                };
+                if (!wanted.size) finishDeleteBranches();
+                else tx.objectStore('owners').getAll().onsuccess = finishDeleteBranches;
+                tx.onabort = () => reject(normalizeArchiveStorageError(tx.error, '世界档案清理失败'));
+                tx.onerror = () => reject(normalizeArchiveStorageError(tx.error, '世界档案清理失败'));
+                tx.oncomplete = () => resolve({ deletedBranches, deletedIdentities });
             });
         },
         async close() { if (opening) (await opening).close(); opening = null; },

@@ -225,11 +225,10 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
                 id => ({ mutation: { type: 'bind-agent', agent: key, id } }), help);
             selector.dataset.agentBinding = key;
             if (!settings.presets.some(preset => usableAgentConnection(preset, key))) {
-                selector.parentElement.append(element('small', key === 'planner' ? '在「编辑连接」填写地址、模型和密钥。' : '在「编辑连接」填写地址和模型。'));
+                selector.parentElement.append(element('small', '在「编辑连接」填写地址和模型。'));
             }
         }
-        for (const key of ['embedding', 'rerank', 'l0']) {
-            if (key === 'l0' && !settings.bindings.l0) continue;
+        for (const key of ['embedding', 'rerank']) {
             bindingRow(recall, PROFILE_FEATURES[key], settings.bindings[key] || '', profileChoices(settings, key),
                 id => ({ feature: key, mutation: id ? {type:'select', id} : {type:'clear'} }));
         }
@@ -257,7 +256,7 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
             control(PROFILE_FEATURES[feature] + '使用的配置', selector);
             const current = settings.presets.find(p => p.id === settings.bindings[feature]);
             if (current) configuration.append(element('p', current.model || '此配置尚未选择模型', 'text-api-status'));
-            configuration.append(element('p', '在「API」中创建、命名和编辑配置。', 'text-api-status'));
+            configuration.append(element('p', '请在「API」标签页的「编辑连接」中创建、命名和编辑配置。', 'text-api-status'));
             return;
         }
         const previousFocus = doc.activeElement;
@@ -272,9 +271,8 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
         libraryDrawer.append(element('summary', '编辑连接'));
         const toolbar = element('fieldset', null, 'text-api-presets');
         toolbar.disabled = busy;
-        const choices = [{ value: HOST_BINDING, label: '跟随酒馆主 API' },
-            ...settings.presets.map(preset => ({ value: preset.id, label: preset.name }))];
-        const selector = select(choices, selected || HOST_BINDING, value => {
+        const choices = settings.presets.map(preset => ({ value: preset.id, label: preset.name }));
+        const selector = select(choices, selected, value => {
             choose(value);
         });
         control('选择连接', selector, toolbar);
@@ -284,13 +282,13 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
         const actions = element('div', null, 'text-api-tools');
         actions.dataset.settingSection = 'function';
         actions.append(button('新建', add));
-        if (draft && selected !== HOST_BINDING) {
+        if (draft) {
             const saveButton = button('保存', save); saveButton.dataset.save = ''; actions.append(saveButton);
         }
         const imports = element('details'); imports.append(element('summary','从酒馆导入'),
             button('复制完整配置', () => importTavern(false)), button('只复制连接', () => importTavern(true)));
         actions.append(imports);
-        if (draft && selected !== HOST_BINDING) {
+        if (draft) {
             const more = element('details'), removeButton = button(COPY.remove, remove);
             removeButton.disabled = settings.presets.length === 1 || usage.length > 0;
             more.append(element('summary','更多'),button(COPY.rename,rename),removeButton);
@@ -302,19 +300,6 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
         syncSaveButton();
         if (focusLabel) [...fields.querySelectorAll('[aria-label]')].find(node => node.getAttribute('aria-label') === focusLabel)?.focus({ preventScroll: true });
         if (!draft) return;
-        if (selected === HOST_BINDING) {
-            configuration.append(element('p', '目前总结支持跟随酒馆主 API；其他功能需要选择适用的独立连接。', 'text-api-status'));
-            const test = button('测试生成', async () => {
-                if (networkBusy) return;
-                networkBusy = true; root.insertBefore(status, fields); const stamp = revision; feedback(COPY.testing);
-                try { await request('test', { preset: structuredClone(draft) }); if (stamp === revision) feedback(COPY.testOk); }
-                catch (error) { if (stamp === revision) feedback(error.message, true); }
-                finally { networkBusy = false; }
-            });
-            test.dataset.settingSection = 'function'; configuration.append(test);
-            if (feature === 'planner') configuration.append(element('p', COPY.plannerKey, 'text-api-status'));
-            return;
-        }
         control('接口用途', select([{ value: 'text', label: '文本生成' }, { value: 'embedding', label: '向量嵌入' }, { value: 'rerank', label: '重排' }], draft.kind || 'text', value => {
             draft.kind = value; if (value !== 'text') draft.provider = 'openai-compatible'; render();
         }));
@@ -400,7 +385,6 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
             if (existing) existing.replaceWith(details); else configuration.append(details);
         }
         if ((draft.kind || 'text') === 'text') renderParameters();
-        if (feature === 'planner' && !draft.apiKey.trim()) configuration.append(element('p', COPY.plannerKey, 'text-api-status'));
     }
     let refreshId = 0;
     async function refresh() {
@@ -412,8 +396,8 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
             const loaded = await request('load');
             if (destroyed || id !== refreshId) return;
             settings = loaded;
-            const previous = selected === HOST_BINDING || loaded.presets.some(p => p.id === selected) ? selected : loaded.presets[0]?.id;
-            choose(library ? previous || HOST_BINDING : loaded.bindings[feature]);
+            const previous = loaded.presets.some(p => p.id === selected) ? selected : loaded.presets[0]?.id;
+            choose(library ? previous : loaded.bindings[feature]);
             feedback('');
         }
         catch (error) { feedback(error.message, true); retry.hidden = false; }

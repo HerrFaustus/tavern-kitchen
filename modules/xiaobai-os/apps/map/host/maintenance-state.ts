@@ -7,10 +7,10 @@ function failureReason(reason: string): string {
     const providerMessage = providerFailureMessage(reason);
     if (providerMessage) { return providerMessage; }
     switch (reason) {
-        case 'agent-not-configured': return '请先在 API 应用中设置模型和密钥。';
-        case 'config-load-failed': return '模型设置加载失败，请到 API 应用中检查。';
-        case 'agent-session-failed': return '连不上模型，请检查「API」中的连接后重试。';
-        case 'empty-provider-response': return '模型返回了空内容，请稍后重试，或在 API 应用中更换模型。';
+        case 'agent-not-configured': return '请先在「API」标签页中设置模型和地址。';
+        case 'config-load-failed': return '模型设置加载失败，请到「API」标签页中检查。';
+        case 'agent-session-failed': return '连不上模型，请检查「API」标签页中的连接后重试。';
+        case 'empty-provider-response': return '模型返回了空内容，请稍后重试，或在「API」标签页中更换模型。';
         case 'tool-errors-unresolved': return '这次生成的地图有误，请重试；如果反复出现，可以更换模型。';
         case 'round-limit': return '这次还没画完，可以稍后继续更新。';
         case 'background-capture-failed': return '没有读到角色或故事背景，请先打开聊天再试。';

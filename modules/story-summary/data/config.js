@@ -57,7 +57,6 @@ export const getSummaryPrompts = () => ({
 const DEFAULT_VECTOR_PROVIDER = "siliconflow";
 const DEFAULT_L0_URL = "https://api.siliconflow.cn/v1";
 const DEFAULT_OPENROUTER_URL = "https://openrouter.ai/api/v1";
-const DEFAULT_L0_MODEL = "Qwen/Qwen3-8B";
 const DEFAULT_EMBEDDING_MODEL = "BAAI/bge-m3";
 const DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3";
 
@@ -132,8 +131,6 @@ function normalizeOpenAiCompatApiConfig(src, defaults = {}) {
 
 function normalizeVectorConfig(rawVector = null) {
     const legacyOnline = rawVector?.online || {};
-    const sharedProvider = String(legacyOnline.provider || DEFAULT_VECTOR_PROVIDER).toLowerCase();
-    const sharedUrl = String(legacyOnline.url || (sharedProvider === "openrouter" ? DEFAULT_OPENROUTER_URL : DEFAULT_L0_URL)).trim();
     const sharedKey = String(legacyOnline.key || "").trim();
 
     return {
@@ -142,13 +139,6 @@ function normalizeVectorConfig(rawVector = null) {
         engine: "online",
         l0Concurrency: Math.max(1, Math.min(50, Number(rawVector?.l0Concurrency) || 10)),
         recallTimeoutSec: normalizeRecallTimeoutSec(rawVector?.recallTimeoutSec),
-        l0Api: normalizeOpenAiCompatApiConfig(rawVector?.l0Api, {
-            provider: sharedProvider,
-            url: sharedUrl,
-            key: sharedKey,
-            model: DEFAULT_L0_MODEL,
-            supportedProviders: ["siliconflow", "openrouter", "custom"],
-        }),
         embeddingApi: normalizeOpenAiCompatApiConfig(rawVector?.embeddingApi, {
             provider: DEFAULT_VECTOR_PROVIDER,
             url: DEFAULT_L0_URL,
@@ -184,9 +174,7 @@ function createDefaultSummaryPanelConfig() {
         ui: {
             hideSummarized: true,
             keepVisibleCount: 5, windowUnit: "turn", recallEarlyOriginal: false,
-            useVectorBoundary: false,
         },
-        textFilterRules: [...DEFAULT_FILTER_RULES],
         vector: normalizeVectorConfig(),
     };
     return defaults;
@@ -221,12 +209,6 @@ function normalizeSummaryPanelConfig(rawConfig = null) {
         return defaults;
     }
 
-    const textFilterRules = Array.isArray(rawConfig.textFilterRules)
-        ? rawConfig.textFilterRules
-        : (Array.isArray(rawConfig.vector?.textFilterRules)
-            ? rawConfig.vector.textFilterRules
-            : defaults.textFilterRules);
-
     const workflow = normalizeSummaryWorkflow(rawConfig);
     const result = {
         summaryWorkflowVersion: workflow.summaryWorkflowVersion,
@@ -235,15 +217,11 @@ function normalizeSummaryPanelConfig(rawConfig = null) {
         trigger: { ...defaults.trigger, ...workflow.trigger },
         inlineSummary: workflow.inlineSummary,
         ui: { ...defaults.ui, ...(rawConfig.ui || {}) },
-        textFilterRules,
         vector: normalizeVectorConfig(rawConfig.vector || null),
     };
 
 
-    if (result.trigger.timing === "manual") {
-        result.trigger.timing = defaults.trigger.timing;
-        result.trigger.enabled = false;
-    } else if (!VALID_TRIGGER_TIMINGS.has(result.trigger.timing)) {
+    if (!VALID_TRIGGER_TIMINGS.has(result.trigger.timing)) {
         result.trigger.timing = defaults.trigger.timing;
     }
     delete result.trigger.useStream;
@@ -255,7 +233,7 @@ function normalizeSummaryPanelConfig(rawConfig = null) {
     result.ui.keepVisibleCount = clampKeepVisibleCount(legacy ? (Number(previousCount) === 6 ? 5 : Math.ceil(Number(previousCount) / 2)) : result.ui.keepVisibleCount);
     result.ui.windowUnit = 'turn';
     result.ui.recallEarlyOriginal = rawConfig.ui?.recallEarlyOriginal === true;
-    result.ui.useVectorBoundary = result.ui.useVectorBoundary === true;
+    delete result.ui.useVectorBoundary;
 
     return result;
 }
@@ -309,10 +287,7 @@ export function getVectorConfig() {
 }
 
 export function getTextFilterRules() {
-    const cfg = getSummaryPanelConfig();
-    return Array.isArray(cfg?.textFilterRules)
-        ? cfg.textFilterRules
-        : DEFAULT_FILTER_RULES;
+    return DEFAULT_FILTER_RULES;
 }
 
 export function saveVectorConfig(vectorCfg) {

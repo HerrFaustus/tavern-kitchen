@@ -12,6 +12,12 @@ import {
     serializeXiaobaiOsEnvelope,
 } from '../kernel/envelope.js';
 import { JsonUserFileParseError, XiaobaiOsStorageError } from './storage-port.js';
+import {
+    getLocalFileMirror,
+    isFileUploadUnsupportedStatus,
+} from '../../../shared/common/local-file-mirror.js';
+
+export type LocalFileMirrorPort = ReturnType<typeof getLocalFileMirror>;
 
 // Native saves have no short client deadline. A slow VPS is not evidence of a failed write.
 const DEFAULT_TIMEOUT_MS = 0;
@@ -22,6 +28,7 @@ export interface SillyTavernFileStorageOptions {
     requestTimeoutMs?: number;
     readbackTimeoutMs?: number;
     nonce?: () => string;
+    localMirror?: LocalFileMirrorPort | null;
 }
 
 function filename(osId: string): string {
@@ -89,11 +96,13 @@ export function createSillyTavernUserJsonFilePort(
     const getRequestHeaders = options.getRequestHeaders ?? (() => ({}));
     const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS;
     const nonce = options.nonce ?? (() => `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const mirror = options.localMirror === undefined ? getLocalFileMirror() : options.localMirror;
 
     return Object.freeze({
         async read(name: string): Promise<unknown | null> {
             const timed = createTimedSignal(undefined, requestTimeoutMs);
             try {
+                const mirrorEntry = mirror?.isAvailable() ? await mirror.get(name) : null;
                 const query = new URLSearchParams({ v: nonce() });
                 const response = await request(`/user/files/${encodeURIComponent(name)}?${query}`, {
                     method: 'GET',
@@ -105,7 +114,13 @@ export function createSillyTavernUserJsonFilePort(
                     cache: 'no-store',
                     signal: timed.signal,
                 });
-                if (response.status === 404) { return null; }
+                if (isFileUploadUnsupportedStatus(response.status)) {
+                    if (mirrorEntry && typeof mirrorEntry.content === 'string') {
+                        try { return JSON.parse(mirrorEntry.content) as unknown; }
+                        catch { throw new JsonUserFileParseError(mirrorEntry.content); }
+                    }
+                    return null;
+                }
                 if (!response.ok) {
                     throw new XiaobaiOsStorageError(
                         'storage_read_http',
@@ -113,7 +128,9 @@ export function createSillyTavernUserJsonFilePort(
                         response.status >= 500,
                     );
                 }
-                const source = await response.text();
+                const source = mirrorEntry?.authoritativeFallback && typeof mirrorEntry.content === 'string'
+                    ? mirrorEntry.content
+                    : await response.text();
                 try { return JSON.parse(source) as unknown; }
                 catch { throw new JsonUserFileParseError(source); }
             } finally {
@@ -134,12 +151,25 @@ export function createSillyTavernUserJsonFilePort(
                     signal: timed.signal,
                 });
                 if (!response.ok) {
+                    if (isFileUploadUnsupportedStatus(response.status) && mirror?.isAvailable()) {
+                        await responseDetail(response);
+                        await mirror.put(name, serialized, {
+                            contentType: 'application/json',
+                            encoding: 'utf8',
+                            authoritativeFallback: true,
+                        });
+                        return;
+                    }
                     throw new XiaobaiOsStorageError(
                         'storage_write_http',
                         responseMessage('JSON file write', response.status, await responseDetail(response)),
                         response.status >= 500,
                         { httpStatus: response.status },
                     );
+                }
+                if (mirror?.isAvailable()) {
+                    try { await mirror.delete(name); }
+                    catch (error) { console.debug({ source: import.meta.url, operation: 'cleanupMirror' }, error); }
                 }
             } finally {
                 timed.cleanup();
@@ -156,12 +186,38 @@ export function createSillyTavernFileStorage(
     const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS;
     const readbackTimeoutMs = options.readbackTimeoutMs ?? requestTimeoutMs;
     const nonce = options.nonce ?? (() => `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const mirror = options.localMirror === undefined ? getLocalFileMirror() : options.localMirror;
+
+    function parseSidecarText(osId: string, source: string): XiaobaiOsSidecarV1 {
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(source);
+        } catch (cause) {
+            throw new XiaobaiOsStorageError('storage_invalid_json', 'Sidecar contains invalid JSON', false, { cause });
+        }
+        try {
+            const envelope = parseXiaobaiOsEnvelope(parsed);
+            if (envelope.osId !== osId) {
+                throw new XiaobaiOsStorageError(
+                    'storage_identity_mismatch',
+                    `Sidecar ${filename(osId)} contains osId ${envelope.osId}`,
+                    false,
+                );
+            }
+            return envelope;
+        } catch (cause) {
+            if (cause instanceof XiaobaiOsStorageError) { throw cause; }
+            throw new XiaobaiOsStorageError('storage_invalid_envelope', 'Sidecar envelope is invalid', false, { cause });
+        }
+    }
 
     async function readWithTimeout(osId: string, signal: AbortSignal | undefined, timeoutMs: number) {
         const timed = createTimedSignal(signal, timeoutMs);
         try {
+            const key = filename(osId);
+            const mirrorEntry = mirror?.isAvailable() ? await mirror.get(key) : null;
             const query = new URLSearchParams({ v: nonce() });
-            const response = await request(`/user/files/${encodeURIComponent(filename(osId))}?${query}`, {
+            const response = await request(`/user/files/${encodeURIComponent(key)}?${query}`, {
                 method: 'GET',
                 headers: {
                     ...getRequestHeaders(),
@@ -171,7 +227,12 @@ export function createSillyTavernFileStorage(
                 cache: 'no-store',
                 signal: timed.signal,
             });
-            if (response.status === 404) { return null; }
+            if (isFileUploadUnsupportedStatus(response.status)) {
+                if (mirrorEntry && typeof mirrorEntry.content === 'string') {
+                    return parseSidecarText(osId, mirrorEntry.content);
+                }
+                return null;
+            }
             if (!response.ok) {
                 const detail = await responseDetail(response);
                 throw new XiaobaiOsStorageError(
@@ -180,26 +241,10 @@ export function createSillyTavernFileStorage(
                     response.status >= 500 || response.status === 408 || response.status === 429,
                 );
             }
-            let parsed: unknown;
-            try {
-                parsed = JSON.parse(await response.text());
-            } catch (cause) {
-                throw new XiaobaiOsStorageError('storage_invalid_json', 'Sidecar contains invalid JSON', false, { cause });
-            }
-            try {
-                const envelope = parseXiaobaiOsEnvelope(parsed);
-                if (envelope.osId !== osId) {
-                    throw new XiaobaiOsStorageError(
-                        'storage_identity_mismatch',
-                        `Sidecar ${filename(osId)} contains osId ${envelope.osId}`,
-                        false,
-                    );
-                }
-                return envelope;
-            } catch (cause) {
-                if (cause instanceof XiaobaiOsStorageError) { throw cause; }
-                throw new XiaobaiOsStorageError('storage_invalid_envelope', 'Sidecar envelope is invalid', false, { cause });
-            }
+            const source = mirrorEntry?.authoritativeFallback && typeof mirrorEntry.content === 'string'
+                ? mirrorEntry.content
+                : await response.text();
+            return parseSidecarText(osId, source);
         } catch (cause) {
             if (cause instanceof XiaobaiOsStorageError) { throw cause; }
             const timedOut = timed.timedOut();
@@ -257,6 +302,33 @@ export function createSillyTavernFileStorage(
                 }),
                 signal: timed.signal,
             });
+            if (!response.ok && isFileUploadUnsupportedStatus(response.status) && mirror?.isAvailable()) {
+                await responseDetail(response);
+                const key = filename(input.candidate.osId);
+                let observed: XiaobaiOsSidecarV1 | null = null;
+                try {
+                    const existingEntry = await mirror.get(key);
+                    if (existingEntry && typeof existingEntry.content === 'string') {
+                        observed = parseSidecarText(input.candidate.osId, existingEntry.content);
+                    }
+                } catch {
+                    observed = null;
+                }
+                if (observed?.commitId === input.candidate.commitId) {
+                    return { status: 'confirmed' };
+                }
+                if (!sameSidecarRevision(input.expected, observed)) {
+                    return observed !== null
+                        ? { status: 'conflict', observed }
+                        : { status: 'unconfirmed', observed: null };
+                }
+                await mirror.put(key, serialized, {
+                    contentType: 'application/json',
+                    encoding: 'utf8',
+                    authoritativeFallback: true,
+                });
+                return { status: 'confirmed' };
+            }
             if (!response.ok && isDefiniteWriteRejection(response.status)) {
                 const detail = await responseDetail(response);
                 return {
@@ -272,6 +344,10 @@ export function createSillyTavernFileStorage(
                 // The request reached the server, but this response cannot prove that no file was replaced.
                 await responseDetail(response);
                 throw new Error('Sidecar write outcome is unknown');
+            }
+            if (mirror?.isAvailable()) {
+                try { await mirror.delete(filename(input.candidate.osId)); }
+                catch (error) { console.debug({ source: import.meta.url, operation: 'cleanupMirror' }, error); }
             }
             return { status: 'confirmed' };
         } catch (caughtError) {
@@ -313,7 +389,14 @@ export function createSillyTavernFileStorage(
                 body: JSON.stringify({ path: `user/files/${filename(osId)}` }),
                 signal: timed.signal,
             });
-            if (response.status === 404) { return 'missing'; }
+            if (isFileUploadUnsupportedStatus(response.status)) {
+                await responseDetail(response);
+                if (mirror?.isAvailable()) {
+                    const existed = await mirror.delete(filename(osId));
+                    return existed ? 'deleted' : 'missing';
+                }
+                if (response.status === 404) { return 'missing'; }
+            }
             if (!response.ok) {
                 const detail = await responseDetail(response);
                 throw new XiaobaiOsStorageError(
@@ -321,6 +404,10 @@ export function createSillyTavernFileStorage(
                     responseMessage('Sidecar delete', response.status, detail),
                     response.status >= 500 || response.status === 408 || response.status === 429,
                 );
+            }
+            if (mirror?.isAvailable()) {
+                try { await mirror.delete(filename(osId)); }
+                catch (error) { console.debug({ source: import.meta.url, operation: 'cleanupMirror' }, error); }
             }
             return 'deleted';
         } catch (cause) {

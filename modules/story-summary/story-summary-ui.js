@@ -63,13 +63,11 @@ const UNANNOTATED_LABEL = '未标注';
     };
 
     const VECTOR_API_SUPPORTED_PROVIDERS = {
-        l0: ['siliconflow', 'openrouter', 'custom'],
         embedding: ['siliconflow', 'custom'],
         rerank: ['siliconflow', 'custom'],
     };
 
     const VECTOR_API_DEFAULT_MODELS = {
-        l0: 'Qwen/Qwen3-8B',
         embedding: 'BAAI/bge-m3',
         rerank: 'BAAI/bge-reranker-v2-m3',
     };
@@ -139,11 +137,6 @@ const UNANNOTATED_LABEL = '未标注';
         '陌生': 'trend-stranger', '投缘': 'trend-click', '亲密': 'trend-close', '交融': 'trend-merge'
     };
 
-    const DEFAULT_FILTER_RULES = [
-        { start: '<think>', end: '</think>' },
-        { start: '<thinking>', end: '</thinking>' },
-        { start: '```', end: '```' },
-    ];
     const VALID_TRIGGER_TIMINGS = new Set(['after_ai', 'before_user']);
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -155,21 +148,11 @@ const UNANNOTATED_LABEL = '未标注';
         memoryMaintenanceEnabled: DEFAULT_MEMORY_MAINTENANCE_ENABLED,
         ...normalizeProofreading(),
         trigger: { enabled: true, interval: 1, delayFloors: DEFAULT_SUMMARY_DELAY_FLOORS, timing: 'after_ai', role: 'system', maxPerRun: 100, forceInsertAtEnd: false },
-        ui: { hideSummarized: true, keepVisibleCount: 5, windowUnit: "turn", recallEarlyOriginal: false, useVectorBoundary: false },
-        textFilterRules: [...DEFAULT_FILTER_RULES],
+        ui: { hideSummarized: true, keepVisibleCount: 5, windowUnit: "turn", recallEarlyOriginal: false },
         vector: {
             enabled: true,
             engine: 'online',
-            l0Concurrency: 10,
             recallTimeoutSec: DEFAULT_RECALL_TIMEOUT_SEC,
-            l0Api: {
-                provider: 'siliconflow', url: 'https://api.siliconflow.cn/v1', key: '', model: 'Qwen/Qwen3-8B', modelCache: [],
-                providers: {
-                    siliconflow: createDefaultProviderProfile('siliconflow', 'Qwen/Qwen3-8B'),
-                    openrouter: createDefaultProviderProfile('openrouter', 'Qwen/Qwen3-8B'),
-                    custom: createDefaultProviderProfile('custom', 'Qwen/Qwen3-8B'),
-                }
-            },
             embeddingApi: {
                 provider: 'siliconflow', url: 'https://api.siliconflow.cn/v1', key: '', model: 'BAAI/bge-m3', modelCache: [],
                 providers: {
@@ -211,6 +194,8 @@ const UNANNOTATED_LABEL = '未标注';
     let panelConfigLoad = { status: 'loading', error: '' };
     let settingsOpenedWithServerConfig = false;
     const pendingConfigSaveRequests = new Map();
+    let orphanScanResult = null;
+    const selectedOrphanIds = new Set();
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Messaging
@@ -266,16 +251,7 @@ const UNANNOTATED_LABEL = '未标注';
 
         if (raw) {
             base.engine = 'online';
-            base.l0Concurrency = Math.max(1, Math.min(50, Number(raw.l0Concurrency) || 10));
             base.recallTimeoutSec = normalizeRecallTimeoutSec(raw.recallTimeoutSec);
-            Object.assign(base.l0Api, {
-                provider: raw.l0Api?.provider || legacyOnline.provider || base.l0Api.provider,
-                url: raw.l0Api?.url || sharedUrl || base.l0Api.url,
-                key: raw.l0Api?.key || sharedKey || base.l0Api.key,
-                model: raw.l0Api?.model || base.l0Api.model,
-                modelCache: Array.isArray(raw.l0Api?.modelCache) ? raw.l0Api.modelCache : [],
-                providers: normalizeProviderProfiles('l0', raw.l0Api || {}),
-            });
             Object.assign(base.embeddingApi, {
                 provider: raw.embeddingApi?.provider || base.embeddingApi.provider,
                 url: raw.embeddingApi?.url || sharedUrl || base.embeddingApi.url,
@@ -307,12 +283,7 @@ const UNANNOTATED_LABEL = '未标注';
 
     function normalizeTriggerConfig() {
         config.inlineSummary = { enabled: false, review: config.inlineSummary?.review === true };
-        if (config.trigger.timing === 'manual') {
-            config.trigger.timing = 'after_ai';
-            config.trigger.enabled = false;
-        } else {
-            config.trigger.timing = normalizeTriggerTiming(config.trigger.timing);
-        }
+        config.trigger.timing = normalizeTriggerTiming(config.trigger.timing);
     }
 
     function canUseCurrentChatControls() {
@@ -384,10 +355,7 @@ const UNANNOTATED_LABEL = '未标注';
                 config.memoryMaintenanceEnabled = true;
                 Object.assign(config.trigger, workflow.trigger);
                 Object.assign(config.ui, p.ui || {});
-                config.ui.useVectorBoundary = p.ui?.useVectorBoundary === true;
-                config.textFilterRules = Array.isArray(p.textFilterRules)
-                    ? p.textFilterRules
-                    : (Array.isArray(p.vector?.textFilterRules) ? p.vector.textFilterRules : [...DEFAULT_FILTER_RULES]);
+                delete config.ui.useVectorBoundary;
                 if (p.vector) config.vector = normalizeVectorConfigUI(p.vector);
                 normalizeTriggerConfig();
             }
@@ -404,12 +372,7 @@ const UNANNOTATED_LABEL = '未标注';
         if (!settingsDirty) memoryMaintenancePage?.setEnabled(true, config);
         Object.assign(config.trigger, workflow.trigger);
         Object.assign(config.ui, cfg.ui || {});
-        config.ui.useVectorBoundary = cfg.ui?.useVectorBoundary === true;
-        config.textFilterRules = Array.isArray(cfg.textFilterRules)
-            ? cfg.textFilterRules
-            : (Array.isArray(cfg.vector?.textFilterRules)
-                ? cfg.vector.textFilterRules
-                : (Array.isArray(config.textFilterRules) ? config.textFilterRules : [...DEFAULT_FILTER_RULES]));
+        delete config.ui.useVectorBoundary;
         if (cfg.vector) config.vector = normalizeVectorConfigUI(cfg.vector);
         normalizeTriggerConfig();
     }
@@ -426,8 +389,6 @@ const UNANNOTATED_LABEL = '未标注';
                 config.vector = {
                     enabled: true,
                     engine: 'online',
-                    l0Concurrency: 10,
-                    l0Api: { provider: 'siliconflow', url: 'https://api.siliconflow.cn/v1', key: '', model: 'Qwen/Qwen3-8B', modelCache: [] },
                     embeddingApi: { provider: 'siliconflow', url: 'https://api.siliconflow.cn/v1', key: '', model: 'BAAI/bge-m3', modelCache: [] },
                     rerankApi: { provider: 'siliconflow', url: 'https://api.siliconflow.cn/v1', key: '', model: 'BAAI/bge-reranker-v2-m3', modelCache: [] }
                 };
@@ -476,9 +437,7 @@ const UNANNOTATED_LABEL = '未标注';
         return {
             enabled: true,
             engine: 'online',
-            l0Concurrency: Math.max(1, Math.min(50, Number(config.vector?.l0Concurrency) || 10)),
             recallTimeoutSec: normalizeRecallTimeoutSec($('vector-recall-timeout')?.value),
-            l0Api: getVectorApiConfig('l0'),
             embeddingApi: getVectorApiConfig('embedding'),
             rerankApi: getVectorApiConfig('rerank'),
         };
@@ -494,7 +453,6 @@ const UNANNOTATED_LABEL = '未标注';
     }
 
     function updateVectorStats(stats) {
-        if ($('vector-atom-count')) $('vector-atom-count').textContent = stats.stateVectors || 0;
         if ($('vector-chunk-count')) $('vector-chunk-count').textContent = stats.chunkCount || 0;
     }
 
@@ -599,7 +557,7 @@ const UNANNOTATED_LABEL = '未标注';
         const parsedKeep = Number.parseInt($('keep-visible-count').value, 10);
         config.ui.keepVisibleCount = Number.isFinite(parsedKeep) ? Math.max(0, Math.min(50, parsedKeep)) : 5;
         config.ui.recallEarlyOriginal = $('recall-early-original').checked;
-        config.ui.useVectorBoundary = false;
+        delete config.ui.useVectorBoundary;
         Object.assign(config, memoryMaintenancePage.getPreferences());
         config.trigger = {
             enabled: true,
@@ -611,9 +569,6 @@ const UNANNOTATED_LABEL = '未标注';
             maxPerRun: SUMMARY_BATCH_FLOORS,
             forceInsertAtEnd: false,
         };
-        if (!Array.isArray(config.textFilterRules)) {
-            config.textFilterRules = [...DEFAULT_FILTER_RULES];
-        }
         config.vector = getVectorConfig();
     }
 
@@ -937,6 +892,7 @@ const UNANNOTATED_LABEL = '未标注';
         continue: '续写',
         regenerate: '重生成',
         swipe: '重新生成回复',
+        group: '群聊',
     };
 
     function setRecallLog(text) {
@@ -1010,7 +966,15 @@ const UNANNOTATED_LABEL = '未标注';
             makeRecallPill(`目标：${floorText} (${typeText})`),
             makeRecallPill(RECALL_STATUS_LABELS[selected.status] || selected.status, statusTone),
             makeRecallPill(`模式：${RECALL_MODE_LABELS[selected.mode] || selected.mode}`),
-            makeRecallPill(selected.reranked ? '重排：已开启' : '重排：未启用', selected.reranked ? 'good' : 'muted'),
+            (() => {
+                const rerankLabel = selected.rerankStatus === 'failed'
+                    ? '重排：失败已回退'
+                    : selected.reranked
+                        ? '重排：已开启'
+                        : '重排：未启用';
+                const rerankTone = selected.rerankStatus === 'failed' ? 'warn' : (selected.reranked ? 'good' : 'muted');
+                return makeRecallPill(rerankLabel, rerankTone);
+            })(),
             makeRecallPill(`耗时：${selected.elapsedMs || 0} ms`),
             makeRecallPill(`原文：入选 ${selected.includedCount || 0} · 截断 ${selected.trimmedCount || 0} · 预算 ${selected.rawBudgetUsed || 0}/${selected.rawBudgetMax || 3000} tok`),
             makeRecallPill(selected.hiddenThrough >= 0 ? `隐藏边界 ≤ #${selected.hiddenThrough + 1}` : '尚无隐藏边界'),
@@ -1317,6 +1281,96 @@ const UNANNOTATED_LABEL = '未标注';
         closeEditor();
     }
 
+    function setOrphanBusy(busy, message) {
+        if ($('btn-scan-orphans')) $('btn-scan-orphans').disabled = busy;
+        if ($('orphan-scan-status') && message != null) $('orphan-scan-status').textContent = message;
+        if (busy) {
+            if ($('btn-backup-orphans')) $('btn-backup-orphans').disabled = true;
+            if ($('btn-clean-orphans')) $('btn-clean-orphans').disabled = true;
+        } else {
+            syncOrphanActionButtons();
+        }
+    }
+
+    function getSelectedOrphanItems() {
+        if (!orphanScanResult?.items) return [];
+        return orphanScanResult.items.filter(item => item.status !== 'live' && selectedOrphanIds.has(item.id));
+    }
+
+    function syncOrphanActionButtons() {
+        const hasSelected = getSelectedOrphanItems().length > 0;
+        if ($('btn-backup-orphans')) $('btn-backup-orphans').disabled = !hasSelected;
+        if ($('btn-clean-orphans')) $('btn-clean-orphans').disabled = !hasSelected;
+    }
+
+    function renderOrphanList(result) {
+        const listEl = $('orphan-scan-list');
+        if (!listEl) return;
+        listEl.replaceChildren();
+        const actionable = (result?.items || []).filter(item => item.status !== 'live');
+        if (!actionable.length) {
+            listEl.hidden = true;
+            return;
+        }
+        listEl.hidden = false;
+        for (const item of actionable) {
+            const label = document.createElement('label');
+            label.className = 'orphan-scan-item';
+
+            const box = document.createElement('input');
+            box.type = 'checkbox';
+            box.checked = selectedOrphanIds.has(item.id);
+            box.onchange = () => {
+                if (box.checked) selectedOrphanIds.add(item.id);
+                else selectedOrphanIds.delete(item.id);
+                syncOrphanActionButtons();
+            };
+
+            const meta = document.createElement('div');
+            meta.className = 'orphan-scan-meta';
+
+            const titleLine = document.createElement('div');
+            titleLine.className = 'orphan-scan-title';
+            const badge = document.createElement('span');
+            badge.className = `orphan-badge ${item.status === 'orphan' ? 'is-orphan' : 'is-unknown'}`;
+            badge.textContent = item.status === 'orphan' ? '确定孤儿' : '未核验';
+            const titleText = document.createTextNode(item.title || item.id);
+            titleLine.append(badge, titleText);
+
+            const detailLine = document.createElement('div');
+            detailLine.className = 'orphan-scan-detail';
+            detailLine.textContent = item.detail || '';
+
+            meta.append(titleLine, detailLine);
+            label.append(box, meta);
+            listEl.append(label);
+        }
+    }
+
+    function handleOrphanMessage(d) {
+        if (d.type === 'ARCHIVE_ORPHAN_EXPORT_RESULT') {
+            setOrphanBusy(false, d.message || (d.success ? '备份已导出' : '备份导出失败'));
+            return;
+        }
+        if (!d.success) {
+            setOrphanBusy(false, `扫描或清理失败：${d.message || '未知错误'}`);
+            return;
+        }
+        orphanScanResult = d.result || { items: [], summary: { orphanCount: 0, unknownCount: 0, liveCount: 0 } };
+        selectedOrphanIds.clear();
+        for (const item of orphanScanResult.items || []) {
+            // DO NOT 默认勾选未核验或仍在使用的数据
+            if (item.status === 'orphan') selectedOrphanIds.add(item.id);
+        }
+        renderOrphanList(orphanScanResult);
+        const s = orphanScanResult.summary || { orphanCount: 0, unknownCount: 0, liveCount: 0 };
+        const summaryMsg = `扫描完成：确定孤儿 ${s.orphanCount} 项 · 未核验 ${s.unknownCount} 项 · 使用中 ${s.liveCount} 项`;
+        const finalMsg = d.type === 'ARCHIVE_ORPHAN_CLEANUP_RESULT' && d.message
+            ? `${d.message}（${summaryMsg}）`
+            : summaryMsg;
+        setOrphanBusy(false, finalMsg);
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // Message Handler
     // ═══════════════════════════════════════════════════════════════════════════
@@ -1335,6 +1389,11 @@ const UNANNOTATED_LABEL = '未标注';
                 $('kitchen-card-status').textContent = d.message;
                 $('btn-export-kitchen-card').disabled = $('btn-import-kitchen-card').disabled = false;
                 if (d.success) postMsg('KITCHEN_CARD_INFO');
+                break;
+            case 'ARCHIVE_ORPHAN_SCAN_RESULT':
+            case 'ARCHIVE_ORPHAN_EXPORT_RESULT':
+            case 'ARCHIVE_ORPHAN_CLEANUP_RESULT':
+                handleOrphanMessage(d);
                 break;
             case 'WORLD_EVOLUTION_RECORDS': {
                 const container = $(d.section === 'people' ? 'people-developments' : 'situation-developments');
@@ -1413,7 +1472,6 @@ const UNANNOTATED_LABEL = '未标注';
                     config.ui.keepVisibleCount = d.keepVisibleCount;
                     if (!settingsDirty) $('keep-visible-count').value = d.keepVisibleCount;
                 }
-                if (d.useVectorBoundary !== undefined) config.ui.useVectorBoundary = d.useVectorBoundary === true;
                 config.vector.enabled = true;
                 syncCurrentChatSummaryControls();
                 break;
@@ -1572,6 +1630,37 @@ const UNANNOTATED_LABEL = '未标注';
             } catch (error) { $('kitchen-card-status').textContent = error.message; }
             finally { event.target.value = ''; }
         };
+
+        if ($('btn-scan-orphans')) {
+            $('btn-scan-orphans').onclick = () => {
+                setOrphanBusy(true, '正在扫描本地数据库与 SillyTavern 聊天列表…');
+                postMsg('ARCHIVE_ORPHAN_SCAN');
+            };
+        }
+        if ($('btn-backup-orphans')) {
+            $('btn-backup-orphans').onclick = () => {
+                const items = getSelectedOrphanItems();
+                if (!items.length) return;
+                setOrphanBusy(true, `正在导出 ${items.length} 项备份…`);
+                postMsg('ARCHIVE_ORPHAN_EXPORT', { items });
+            };
+        }
+        if ($('btn-clean-orphans')) {
+            $('btn-clean-orphans').onclick = async () => {
+                const items = getSelectedOrphanItems();
+                if (!items.length) return;
+                const lines = items.map(item => `• [${item.status === 'orphan' ? '孤儿' : '未核验'}] ${item.title} (${item.detail})`);
+                const confirmed = await showConfirm(
+                    '确认清理选中数据库记录',
+                    `以下 ${items.length} 项将被永久清理（不可撤销，建议先点「导出所选备份」）：\n${lines.join('\n')}`,
+                    '确认清理',
+                    '取消'
+                );
+                if (!confirmed) return;
+                setOrphanBusy(true, `正在清理 ${items.length} 项本地数据…`);
+                postMsg('ARCHIVE_ORPHAN_CLEANUP', { items });
+            };
+        }
 
         // Section edit buttons
         $$('.sec-btn[data-section]').forEach(b => b.onclick = () => openEditor(b.dataset.section));

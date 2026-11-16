@@ -7,8 +7,8 @@ export function initChatDeletionLifecycle(onChatDeleted) {
     const deletionEvents = createModuleEvents(MODULE_ID);
     const register = () => {
         if (deletionEvents.count()) return;
-        deletionEvents.on(event_types.CHAT_DELETED, onChatDeleted);
-        deletionEvents.on(event_types.GROUP_CHAT_DELETED, onChatDeleted);
+        deletionEvents.on(event_types.CHAT_DELETED, chatId => onChatDeleted(chatId, { kind: 'character' }));
+        deletionEvents.on(event_types.GROUP_CHAT_DELETED, chatId => onChatDeleted(chatId, { kind: 'group' }));
         window.registerKitchenModuleCleanup?.(MODULE_ID, () => deletionEvents.cleanup());
     };
 

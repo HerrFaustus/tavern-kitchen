@@ -153,7 +153,7 @@ test('old schema archives remain readable and map adoption upgrades the archive 
     const f = await fixture(t); const state = await f.service.ensure();
     const legacy = { ...state, schema: 1 }; delete legacy.modules;
     await f.storage.update('account:chat-a', () => ({ state: legacy, result: legacy }));
-    await f.map.refreshCurrent(); assert.equal((await f.service.read()).schema, 3);
+    await f.map.refreshCurrent(); assert.equal((await f.service.read()).schema, 4);
 });
 
 test('moved or unmapped world actors retire stale scene drawings while unrelated saves retain hidden source records', async t => {

@@ -126,7 +126,7 @@ export function createWorldService({ storage, getIdentity, id = createIdentifier
         assertSourcesConsistent(state) { invariant(!turnEffectConflicts(state).length, '正文来源已变化，关联的世界效果需要核对；请先到数据页预览并原位恢复'); },
         async restore(backup, expected) {
             const parsed = validateWorld(structuredClone(backup));
-            const rebuilt = forkWorld(parsed, parsed.version, parsed.branchId);
+            const rebuilt = forkWorld(parsed, parsed.version, parsed.branchId, { verifyFullHistory: true });
             invariant(['entities','claims','sources','modules'].every(key => canonical(parsed[key] ?? null) === canonical(rebuilt[key] ?? null)), '备份状态与历史不一致');
             const bound = capture();
             return publish(bound, storage.update(bound.identity, state => {

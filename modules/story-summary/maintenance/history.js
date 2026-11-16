@@ -1,4 +1,4 @@
-import { MEMORY_COLLECTIONS, maintenanceImpact } from './domain.js';
+import { LEGACY_MEMORY_COLLECTIONS, maintenanceImpact } from './domain.js';
 import { requireMemory } from './errors.js';
 import { isMemoryPolicy } from '../data/memory-policy.js';
 import { projectMaintenanceResult } from './result.js';
@@ -20,7 +20,7 @@ export function validateMaintenanceReceipt(receipt) {
     for (const operation of receipt.operations) {
         requireMemory(['edit', 'delete', 'merge'].includes(operation.kind) && Array.isArray(operation.changes), 'invalid_history');
         for (const change of operation.changes) {
-            requireMemory(MEMORY_COLLECTIONS.includes(change.collection) && typeof change.key === 'string'
+            requireMemory(LEGACY_MEMORY_COLLECTIONS.includes(change.collection) && typeof change.key === 'string'
                 && Number.isInteger(change.index) && Object.hasOwn(change, 'before') && Object.hasOwn(change, 'after'), 'invalid_history');
             if (change.retired) requireMemory(change.collection === 'anchors'
                 && ['source_changed', 'anchors_cleared'].includes(change.retired.reason) && Number.isFinite(change.retired.at), 'invalid_history');

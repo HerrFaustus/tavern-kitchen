@@ -22,15 +22,16 @@ function fixture() {
     return { current, session, ports, get writes() { return writes; } };
 }
 const edit = (key, o) => ({ kind: 'edit', collection: 'facts', key, patch: { o } });
+const ev = { floor: 2, quote: '看到了机密' };
 const readFact = (session, key, current) => session.runTool('ReadMemory', { collection: 'facts', key }, current).items[0].value;
 const save = h => commitMemorySession(h.session, { runId: 'staged-task', calls: [], mode: 'auto' }, h.ports);
 
 test('a task stages multiple edits and completions, reads its draft, then commits once with reversible receipts', async () => {
     const h = fixture(), before = structuredClone({ json: h.current.json, atoms: h.current.atoms });
     h.session.initial();
-    assert.equal(h.session.runTool('EditMemory', { edits: [edit('f-1', 'first revision')] }, h.current).status, 'staged');
+    assert.equal(h.session.runTool('EditMemory', { edits: [edit('f-1', 'first revision')], evidence: ev }, h.current).status, 'staged');
     assert.equal(readFact(h.session, 'f-1', h.current).o, 'first revision');
-    h.session.runTool('EditMemory', { edits: [edit('f-1', 'final revision'), edit('f-2', 'independent edit')] }, h.current);
+    h.session.runTool('EditMemory', { edits: [edit('f-1', 'final revision'), edit('f-2', 'independent edit')], evidence: ev }, h.current);
     const completion = h.session.runTool('CompleteMaintenance', { from: 1, to: 12 }, h.current);
     assert.deepEqual(completion.task.completed, [{ from: 1, to: 12 }]);
     h.session.runTool('CompleteMaintenance', { from: 13, to: 24 }, h.current);
@@ -56,8 +57,8 @@ test('a task stages multiple edits and completions, reads its draft, then commit
 
 test('an invalid later edit batch cannot mutate published memory or erase earlier staged work', () => {
     const h = fixture(), before = structuredClone(h.current.json);
-    h.session.runTool('EditMemory', { edits: [edit('f-1', 'retained')] }, h.current);
-    const result = h.session.runTool('EditMemory', { edits: [edit('f-2', 'must not survive'), edit('missing', 'invalid')] }, h.current);
+    h.session.runTool('EditMemory', { edits: [edit('f-1', 'retained')], evidence: ev }, h.current);
+    const result = h.session.runTool('EditMemory', { edits: [edit('f-2', 'must not survive'), edit('missing', 'invalid')], evidence: ev }, h.current);
     assert.equal(result.status, 'needs_fix');
     assert.equal(readFact(h.session, 'f-1').o, 'retained');
     assert.equal(readFact(h.session, 'f-2').o, before.facts[1].o);
@@ -67,7 +68,7 @@ test('an invalid later edit batch cannot mutate published memory or erase earlie
 
 test('the final commit rebases unrelated current changes and preserves later anchors', async () => {
     const h = fixture();
-    h.session.runTool('EditMemory', { edits: [edit('f-1', 'draft')] }, h.current);
+    h.session.runTool('EditMemory', { edits: [edit('f-1', 'draft')], evidence: ev }, h.current);
     h.current.json = { ...h.current.json, facts: h.current.json.facts.map(fact => fact.id === 'f-2' ? { ...fact, o: 'external' } : fact) };
     h.current.store = { ...h.current.store, json: h.current.json };
     h.current.atoms = [...h.current.atoms, { ...h.current.atoms[0], atomId: 'later-anchor', floor: h.current.cutoff + 1 }];
@@ -79,7 +80,7 @@ test('the final commit rebases unrelated current changes and preserves later anc
 
 for (const inPlace of [false, true]) test(`target conflict repair preserves independent edits after preceding no-ops (in-place: ${inPlace})`, async () => {
     const h = fixture(); h.session.initial();
-    h.session.runTool('EditMemory', { edits: [edit('f-3', h.current.json.facts[2].o), edit('f-1', 'old proposal'), edit('f-2', 'keep')] }, h.current);
+    h.session.runTool('EditMemory', { edits: [edit('f-3', h.current.json.facts[2].o), edit('f-1', 'old proposal'), edit('f-2', 'keep')], evidence: ev }, h.current);
     const facts = h.current.json.facts.map(fact => fact.id === 'f-1' ? { ...fact, o: 'external' } : fact);
     if (inPlace) h.current.json.facts.splice(0, h.current.json.facts.length, ...facts);
     else h.current.json = { ...h.current.json, facts };
@@ -88,7 +89,7 @@ for (const inPlace of [false, true]) test(`target conflict repair preserves inde
     assert.equal(h.writes, 0);
     assert.equal(readFact(h.session, 'f-1', h.current).o, 'external');
     assert.throws(() => h.session.assertCurrent(h.current), { code: 'memory_updated' });
-    assert.equal(h.session.runTool('EditMemory', { edits: [edit('f-1', 'reviewed correction')] }, h.current).status, 'staged');
+    assert.equal(h.session.runTool('EditMemory', { edits: [edit('f-1', 'reviewed correction')], evidence: ev }, h.current).status, 'staged');
     const saved = await save(h);
     assert.equal(saved.current.json.facts[0].o, 'reviewed correction');
     assert.equal(saved.current.json.facts[1].o, 'keep');
@@ -98,13 +99,13 @@ test('conflict repair removes dependent rename edits but retains independent cha
     const h = fixture();
     const original = typeof h.current.json.characters.main[0] === 'string' ? h.current.json.characters.main[0] : h.current.json.characters.main[0].name;
     h.session.runTool('ReadMemory', { collection: 'characters', key: original }, h.current);
-    h.session.runTool('EditMemory', { edits: [{ kind: 'edit', collection: 'characters', key: original, patch: { name: 'draft-name' } }, edit('f-1', 'keep')] }, h.current);
-    h.session.runTool('EditMemory', { edits: [{ kind: 'edit', collection: 'characters', key: 'draft-name', patch: { name: 'second-draft-name' } }] }, h.current);
+    h.session.runTool('EditMemory', { edits: [{ kind: 'edit', collection: 'characters', key: original, patch: { name: 'draft-name' } }, edit('f-1', 'keep')], evidence: ev }, h.current);
+    h.session.runTool('EditMemory', { edits: [{ kind: 'edit', collection: 'characters', key: 'draft-name', patch: { name: 'second-draft-name' } }], evidence: ev }, h.current);
     h.current.json = { ...h.current.json, characters: { ...h.current.json.characters, main: h.current.json.characters.main.slice(1) } };
     h.current.store = { ...h.current.store, json: h.current.json };
     await assert.rejects(save(h), { code: 'memory_updated' });
     assert.throws(() => h.session.runTool('ReadMemory', { collection: 'characters', key: original }, h.current), { code: 'record_missing' });
-    const removed = h.session.runTool('EditMemory', { edits: [{ kind: 'delete', collection: 'characters', key: original }] }, h.current);
+    const removed = h.session.runTool('EditMemory', { edits: [{ kind: 'delete', collection: 'characters', key: original }], evidence: ev }, h.current);
     assert.equal(removed.status, 'unchanged');
     const saved = await save(h);
     assert.equal(saved.current.json.facts[0].o, 'keep');
@@ -113,7 +114,7 @@ test('conflict repair removes dependent rename edits but retains independent cha
 
 test('uncertain persistence retains one prepared result and its receipts for confirmation without another write', async () => {
     const h = fixture();
-    h.session.runTool('EditMemory', { edits: [edit('f-1', 'saved but receipt delayed')] }, h.current);
+    h.session.runTool('EditMemory', { edits: [edit('f-1', 'saved but receipt delayed')], evidence: ev }, h.current);
     const commit = h.ports.commit;
     h.ports.commit = async (...args) => { await commit(...args); throw Object.assign(new Error('offline'), { uncertain: true }); };
     let failure;
@@ -231,7 +232,7 @@ test('read-only calls stay clean and their returned values cannot mutate publish
 for (const name of ['EditMemory', 'CompleteMaintenance']) test(`${name} rejects replaced generation history before staging`, () => {
     const h = fixture();
     h.current.store = { ...h.current.store, summaryHistory: [createSummaryBatch(-1, h.current.cutoff, { version: 1 })] };
-    assert.throws(() => h.session.runTool(name, name === 'EditMemory' ? { edits: [edit('f-1', 'invalid owner')] } : { from: 1, to: 24 }, h.current), { code: 'conflict' });
+    assert.throws(() => h.session.runTool(name, name === 'EditMemory' ? { edits: [edit('f-1', 'invalid owner')], evidence: ev } : { from: 1, to: 24 }, h.current), { code: 'conflict' });
     assert.equal(h.session.hasPending, false);
 });
 
@@ -261,13 +262,13 @@ test('completion detects a new record within its claimed range without copying i
 
 test('editing a reread conflict also refreshes its staged completion witness', async () => {
     const h = fixture();
-    h.session.runTool('EditMemory', { edits: [edit('f-1', 'draft')] }, h.current);
+    h.session.runTool('EditMemory', { edits: [edit('f-1', 'draft')], evidence: ev }, h.current);
     h.session.runTool('CompleteMaintenance', { from: 1, to: 24 }, h.current);
     h.current.json = { ...h.current.json, facts: h.current.json.facts.map(fact => fact.id === 'f-1' ? { ...fact, o: 'external' } : fact) };
     h.current.store = { ...h.current.store, json: h.current.json };
     await assert.rejects(save(h), { code: 'memory_updated' });
     readFact(h.session, 'f-1', h.current);
-    h.session.runTool('EditMemory', { edits: [edit('f-1', 'reviewed')] }, h.current);
+    h.session.runTool('EditMemory', { edits: [edit('f-1', 'reviewed')], evidence: ev }, h.current);
     const saved = await save(h);
     assert.equal(saved.current.json.facts[0].o, 'reviewed');
     assert.deepEqual(saved.ranges.pending, []);

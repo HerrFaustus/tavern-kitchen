@@ -51,11 +51,13 @@ function involvesHero(source, hero, playerName) {
             || ['卖给','买自','交给','交付给','递给','付给','交到'].some(verb => message.text.includes(verb+name)));
     });
 }
-function evidence(change, source) {
+function evidence(change, source, { reviewed = false } = {}) {
     const text = source.messages.find(row => row.floor === change.floor)?.text;
     const quote = resolveSourceQuote(text, change?.quote, { maxLength: 1200 });
-    invariant(Boolean(quote), '引文无法在本轮核对');
-    return quote;
+    if (quote) return quote;
+    const raw = typeof change?.quote === 'string' ? change.quote.trim() : '';
+    invariant(reviewed && Boolean(raw) && raw.length <= 1200, '引文无法在本轮核对');
+    return raw;
 }
 export function turnActionGroups(changes, keys) {
     invariant(Array.isArray(changes) && changes.length <= 200, '本轮变化清单无效');
@@ -68,48 +70,101 @@ export function turnActionGroups(changes, keys) {
     }
     return [...groups.entries()].map(([id, rows]) => ({ id, rows }));
 }
-export function turnOperations(state, rows, { source, playerName, effectId, commandId, reviewed = false, omitted = [] }) {
+export function turnOperations(state, rows, { source, playerName, effectId, commandId, reviewed = false, omitted = [], resolvedRefs = {} }) {
     const entities = [...state.entities], operations = [], refs = new Map();
     const { hero } = protagonistIdentity(entities, playerName);
-    const resolve = ref => {
-        const candidates = entities.filter(e => e.id === (refs.get(ref) || ref) || [e.name, ...(e.aliases || [])].includes(ref));
-        invariant(candidates.length === 1 && !omitted.includes(candidates[0].id), '对象不唯一或字段未提供，请核对身份');
-        return candidates[0];
+    const resolve = (ref, allowedKinds = null) => {
+        const mappedId = refs.get(ref) || resolvedRefs?.[ref];
+        let candidates = mappedId
+            ? entities.filter(e => e.id === mappedId)
+            : entities.filter(e => e.id === ref || [e.name, ...(e.aliases || [])].includes(ref));
+        if (allowedKinds?.length) {
+            const narrowed = candidates.filter(e => allowedKinds.includes(e.kind));
+            if (narrowed.length) candidates = narrowed;
+        }
+        const selectable = candidates.filter(e => !omitted.includes(e.id));
+        if (candidates.length === 1 && (!omitted.includes(candidates[0].id) || Boolean(resolvedRefs?.[ref]))) {
+            return candidates[0];
+        }
+        const error = new Error('对象不唯一或字段未提供，请核对身份');
+        if (selectable.length > 1) {
+            error.ambiguity = {
+                ref: String(ref),
+                candidates: selectable.map(e => ({ id: e.id, name: e.name, kind: e.kind })),
+            };
+        }
+        throw error;
     };
     let storyTouched = false;
     const story = { ...state, modules: { ...state.modules } };
     for (const row of [...rows].sort((a, b) => Number(b.type === 'create') - Number(a.type === 'create'))) {
-        const quote = evidence(row, source), sim = simulation.has(row.task);
+        const quote = evidence(row, source, { reviewed }), sim = simulation.has(row.task);
         invariant(reviewed || !row.uncertain, '依据尚不明确，请核对');
         const label = sim ? String(row.result || '').trim() : quote;
-        invariant(!sim || label && label.length <= 1600 && Array.isArray(row.knownBy) && row.knownBy.every(ref => resolve(ref).kind === 'person'), '推演须说明结果和知情范围');
+        invariant(!sim || label && label.length <= 1600 && Array.isArray(row.knownBy) && row.knownBy.every(ref => resolve(ref, ['person']).kind === 'person'), '推演须说明结果和知情范围');
         const provenance = { module: sim ? 'simulation' : 'turn-update', key: effectId, label: '第 ' + (row.floor + 1) + ' 楼 · ' + label,
-            task:row.task, proof:{floor:row.floor,quote}, ...(sim && { knownBy: row.knownBy.map(ref => resolve(ref).id) }) };
+            task:row.task, proof:{floor:row.floor,quote}, ...(sim && { knownBy: row.knownBy.map(ref => resolve(ref, ['person']).id) }) };
         const allowed = fieldTasks[row.task] || [];
         if (row.type === 'create') {
             invariant(allowed.includes(row.kind) && row.ref && !refs.has(row.ref) && typeof row.name === 'string' && row.name.trim(), '新对象的类型或临时引用无效');
-            invariant(sim || Boolean(resolveSourceQuote(quote, row.name)), '原文未确认新对象称呼');
-            const importance = typeof row.importance === 'string' ? source.messages.map(m => resolveSourceQuote(m.text, row.importance)).find(Boolean) : null;
-            if (row.kind === 'item' && row.task !== 'overview') invariant(Boolean(importance), '请核对物品的剧情意义');
+            invariant(reviewed || sim || Boolean(resolveSourceQuote(quote, row.name)), '原文未确认新对象称呼');
+            const rawImportance = typeof row.importance === 'string' ? row.importance.trim() : '';
+            const importance = rawImportance
+                ? (source.messages.map(m => resolveSourceQuote(m.text, rawImportance)).find(Boolean)
+                    || (reviewed && rawImportance.length <= 1200 ? rawImportance : null))
+                : null;
+            if (row.kind === 'item' && row.task !== 'overview') invariant(reviewed || Boolean(importance), '请核对物品的剧情意义');
             const matching = entities.filter(e => e.kind === row.kind && [e.name, ...(e.aliases || [])].includes(row.name));
-            invariant(matching.length <= 1, '有多个同称对象，请核对');
-            const id = matching[0]?.id || 'object:' + memoryDigest([state.worldId, effectId, row.ref]);
+            const chosenId = resolvedRefs?.[row.ref];
+            let id;
+            let shouldCreate = false;
+            if (chosenId === '__create_new__') {
+                id = 'object:' + memoryDigest([state.worldId, effectId, row.ref]);
+                shouldCreate = !entities.some(e => e.id === id);
+            } else if (chosenId) {
+                const picked = entities.find(e => e.id === chosenId && e.kind === row.kind);
+                invariant(picked, '对象不唯一或字段未提供，请核对身份');
+                id = picked.id;
+            } else {
+                if (matching.length > 1) {
+                    const error = new Error('有多个同称对象，请核对');
+                    error.ambiguity = {
+                        ref: String(row.ref),
+                        candidates: [
+                            ...matching.map(e => ({ id: e.id, name: e.name, kind: e.kind })),
+                            { id: '__create_new__', name: `新建「${row.name}」`, kind: row.kind },
+                        ],
+                    };
+                    throw error;
+                }
+                id = matching[0]?.id || 'object:' + memoryDigest([state.worldId, effectId, row.ref]);
+                shouldCreate = !matching.length;
+            }
             refs.set(row.ref, id);
-            if (!matching.length) {
+            if (shouldCreate) {
                 entities.push({ id, kind: row.kind, name: row.name, aliases: [], fields: {} });
                 operations.push({ type: 'create', id, kind: row.kind, name: row.name, source: provenance });
-                if (row.kind === 'item' && importance) operations.push({type:'set',entityId:id,field:'剧情意义',value:importance,source:provenance});
+                const createNature = row.nature || 'established_fact';
+                if (createNature !== 'established_fact') {
+                    operations.push({ type: 'claim', id: 'claim:' + memoryDigest([effectId, id, '存在']), entityId: id, field: '存在', value: true, nature: createNature, source: provenance });
+                }
+                if (row.kind === 'item' && importance) {
+                    operations.push(createNature === 'established_fact'
+                        ? { type: 'set', entityId: id, field: '剧情意义', value: importance, source: provenance }
+                        : { type: 'claim', id: 'claim:' + memoryDigest([effectId, id, '剧情意义']), entityId: id, field: '剧情意义', value: importance, nature: createNature, source: provenance });
+                }
             }
         } else if (row.type === 'trade') {
             const paymentQuote = typeof row.paymentQuote === 'string' ? source.messages.map(m => resolveSourceQuote(m.text, row.paymentQuote)).find(Boolean) : null;
             const amount = paymentQuote ? paidPrice(paymentQuote) : null;
-            const price = reviewed && amount !== null ? amount : row.price;
-            const item = resolve(row.item), peer = resolve(row.counterparty);
+            const price = row.priceEdited ? row.price : (reviewed && amount !== null ? amount : row.price);
+            const item = resolve(row.item, ['item']), peer = resolve(row.counterparty, ['person', 'organization']);
             invariant(row.task === 'overview' && hero && ['buy', 'sell'].includes(row.direction) && peer.id !== hero.id, '请核对主角和交易方向');
-            invariant(involvesHero(source,hero,playerName),'引文未确认主角参加本次买卖，请核对交易双方');
-            invariant(Boolean(paymentQuote) && amount !== null && amount === price, '成交价与实付或实收依据不一致');
+            invariant(reviewed || involvesHero(source,hero,playerName),'引文未确认主角参加本次买卖，请核对交易双方');
+            if (reviewed) invariant(Number.isSafeInteger(price) && price > 0, '成交价与实付或实收依据不一致');
+            else invariant(Boolean(paymentQuote) && amount !== null && amount === price, '成交价与实付或实收依据不一致');
             invariant(reviewed || !/才卖|开价|考虑|报价|想要|愿意|打算|尚未|如果|要价/.test(quote) || /收下|交给|交付|成交|买下|卖出|交铃|实付|实收/.test(quote), '仅有报价，请核对成交');
-            invariant(source.messages.some(m => m.role === 'assistant' && /交给|交付|递给|收[下到]|成交|买下|卖出|交[出铃货]|售出|实付|实收/.test(m.text)), '角色回复未确认成交');
+            invariant(reviewed || source.messages.some(m => m.role === 'assistant' && /交给|交付|递给|收[下到]|成交|买下|卖出|交[出铃货]|售出|实付|实收/.test(m.text)), '角色回复未确认成交');
             if (!reviewed && row.quantity > 1) {
                 const amounts = [...quote.matchAll(/([0-9零一二两三四五六七八九十百千]+)\s*(?:枚|件|把|个|只|份|袋|组|箱|本|支|瓶|块|根|套)/gu)];
                 invariant(amounts.some(match => numeral(match[1]) === row.quantity && !/^(金币|银币|铜币|钱)/.test(quote.slice(match.index+match[0].length))),
@@ -121,23 +176,26 @@ export function turnOperations(state, rows, { source, playerName, effectId, comm
             invariant(storyTasks[row.task]?.includes(row.record?.kind), '该功能不能改写这类剧情记录');
             const record = parseStoryUpdates([row.record], { requireHolders: true })[0];
             if (sim && record.kind === 'knowledge') invariant(row.knownBy.some(ref => {
-                const person = resolve(ref); return [person.name,...(person.aliases || [])].includes(record.person);
+                const person = resolve(ref, ['person']); return [person.name,...(person.aliases || [])].includes(record.person);
             }), '认知记录的持有人不在本次推演的知情范围');
             const change = applyWorldStoryProposal(story, { record, nature: row.nature || 'established_fact' }, provenance, state.version + 1, 'event:' + commandId, effectId + '/' + record.id, source);
             story.modules.story = change.value;
             storyTouched = true;
         } else {
             invariant(row.type === 'set' && typeof row.field === 'string', '不支持的变化类型');
-            const entity = resolve(row.target), field = row.field;
+            const entity = resolve(row.target, allowed), field = row.field;
             invariant(allowed.includes(entity.kind) && !['coins', '金币','余额','钱包'].includes(field), '钱包变动须通过主角交易核算');
             invariant(row.task !== 'overview' || entity.kind === 'item' || entity.id === hero?.id, '物品栏只维护主角的收支');
-            const value = row.value?.entityId ? { entityId: resolve(row.value.entityId).id } : row.value;
+            const valueKinds = ['location', 'parent', '所在地', '上级地点'].includes(field) ? ['place']
+                : ['owner', '归属', '保管人', '使用人'].includes(field) || field.startsWith('关系:') ? ['person', 'organization']
+                    : null;
+            const value = row.value?.entityId ? { entityId: resolve(row.value.entityId, valueKinds).id } : row.value;
             if (row.task === 'overview' && ['owner','归属','保管人','使用人'].includes(field)) invariant(hero && [value?.entityId, entity.fields[field]?.value?.entityId, entity.fields.owner?.value?.entityId].includes(hero.id), '该项交接与主角无关');
             if (entity.kind === 'item' && ['people','peopleEvolution'].includes(row.task)) {
                 const important = ['剧情意义','importance','归还条件','归还约定','保管人','使用人','物证','重要性'].some(key=>entity.fields[key]?.value)
                     || rows.some(action=>action.type==='create' && action.importance && refs.get(action.ref)===entity.id)
                     || rows.some(action=>action.target===row.target && ['保管人','使用人','归还条件','剧情意义','物证'].includes(action.field));
-                invariant(important,'请核对该物品的剧情意义');
+                invariant(reviewed || important,'请核对该物品的剧情意义');
             }
             const nature = row.nature || 'established_fact';
             operations.push(nature === 'established_fact' ? { type: 'set', field, value, entityId: entity.id, source: provenance }

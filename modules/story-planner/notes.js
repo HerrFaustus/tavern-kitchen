@@ -21,7 +21,7 @@ export const WRITER = `你是后台唯一的编剧。你的创作札记必须完
 章节稿（chapter）是直接供给正文写手的当章简报，只写当前已成立的核心事实、各方认知、约束与代价、各实体当前点评、短期走向预测（写成基于动机与条件的多向推演与观察迹象，不替玩家拍板、不冒充已发生事实）与具体执行建议（如何呈现压力、氛围与信息边界）。不得包含未向当前视角公开的谜底、后台秘密、弃案或必须发生的主线安排；不得把原有线索随玩家离开而强行挪场，也不得补造障碍迫使回头。容量参考 2000–5000 中文字，材料少时可以精炼。
 返回一个 JSON 对象，包含 global 和 chapter，每层含 entities、dependencies，并可附汇总 text（省略时系统自动按 entities 排版）：
 - entities 为 {"characters":[...],"plotLines":[...],"situations":[...]}，每项为 {"target":"实体名或标题","commentary":"点评","prediction":"走向预测","suggestion":"建议"}。无相关实体可留空数组，但每层至少需针对已出现的重点人物、剧情线或局势给出实质条目或 text。
-- 只在首次或全局前提失效时提交 global，其余仅提交 chapter。
+- 在 opening、global-change 与 chapter（章节推进）时须同时提交 global 与 chapter，以最新章节总结同步更新全局推演；仅在 chapter-change 时只提交 chapter。
 - dependencies 是少量决定本稿能否成立的前提，支持单实体字段级引用：人物/世界实体 {entityId,field}（field 可取实体字段名或 name/aliases/presence/knowledge/agendas）、局势/记录 {recordId,field?}（可指定 status/description/releaseCondition/due/presence/note 等字段或省略整条）、剧情线 {lineTitle,field?}（可指定 status/summary/nextFocus/characters 或省略整线版本摘要）。plotLines 是已汇总的剧情线总结；potential 仅代表未证实联系，不得在章节稿写成谜底或必经事件；closed 只能作背景依据。严禁虚构引用。
 - 当输入包含 mode:"partial" 及 staleTargets（与 previousChapterEntities）时，仅需在 chapter.entities 中输出受影响的变更目标或新增目标及其对应 dependencies；每个请求目标必须作答；明确移除须在 chapter.removed 的对应分类列出目标，不能借缺项删除。不得改动其他目标及依赖。`;
 
@@ -486,19 +486,94 @@ function mergePartialChapter(rawChapter, previous, snap, staleTargets) {
     return { text, entities: mergedEntities, dependencies: mergedDeps };
 }
 
+function normalizeSecretText(text) {
+    return String(text || '')
+        .normalize('NFKC')
+        .replace(/[\s\u200B-\u200D\uFEFF·•・\-—–_「」『』“”"'()（）[\]【】,.，。、；：;:!?！？]/g, '')
+        .toLowerCase();
+}
+
+function addSecretTerm(out, raw) {
+    const term = String(raw || '').trim();
+    if (!term) return;
+    const norm = normalizeSecretText(term);
+    if (!norm) return;
+    const hasCjk = /[\u4e00-\u9fff]/.test(norm);
+    if (hasCjk ? norm.length >= 2 : norm.length >= 3) out.add(term);
+}
+
+function collectSecretTerms(value, out = new Set(), depth = 0) {
+    if (value == null || depth > 6) return out;
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        addSecretTerm(out, trimmed);
+        for (const clause of trimmed.split(/[，。、；;\n\r|/()（）【】]+/)) {
+            const part = clause.trim();
+            if (part.length >= 3) addSecretTerm(out, part);
+            const kvMatch = part.match(/^(?:真实身份|真相|身份|真名|代号|别名|又名|同义(?:词)?|暗号|组织|真凶)\s*[：:=]\s*(.+)$/);
+            if (kvMatch?.[1]) addSecretTerm(out, kvMatch[1]);
+        }
+        return out;
+    }
+    if (typeof value === 'number') {
+        if (Number.isFinite(value) && String(Math.trunc(Math.abs(value))).length >= 4) addSecretTerm(out, String(value));
+        return out;
+    }
+    if (Array.isArray(value)) {
+        for (const item of value) collectSecretTerms(item, out, depth + 1);
+        return out;
+    }
+    if (typeof value === 'object') {
+        for (const [k, v] of Object.entries(value)) {
+            if (['id', 'type', 'kind', 'nature', 'version', '_version'].includes(k)) continue;
+            collectSecretTerms(v, out, depth + 1);
+        }
+    }
+    return out;
+}
+
+function collectSnapshotSecretTerms(snap) {
+    const terms = new Set();
+    for (const entity of snap.world?.entities || []) {
+        for (const [key, record] of Object.entries(entity.fields || {})) {
+            if (!isPrivateStoryField(key) && !record?.hidden) continue;
+            collectSecretTerms(record?.value !== undefined ? record.value : record, terms);
+        }
+        if (entity.privateFields && typeof entity.privateFields === 'object') {
+            for (const value of Object.values(entity.privateFields)) collectSecretTerms(value, terms);
+        }
+    }
+    for (const record of snap.records || []) {
+        for (const [key, value] of Object.entries(record || {})) {
+            if (isPrivateStoryField(key)) collectSecretTerms(value, terms);
+        }
+    }
+    return [...terms];
+}
+
+function containsSecretTerm(chapterTexts, normalizedChapterTexts, secret) {
+    if (chapterTexts.some(item => item.includes(secret))) return true;
+    const normSecret = normalizeSecretText(secret);
+    return normSecret.length >= 2 && normalizedChapterTexts.some(item => item.includes(normSecret));
+}
+
 export function publishNotes(raw, previous, snap, reason, options = {}) {
     const data = JSON.parse(raw.trim().replace(/^\x60\x60\x60(?:json)?\s*|\s*\x60\x60\x60$/gi, ''));
-    const global = !previous || reason === 'global-change' ? readNote(data.global, snap, 16000) : previous.global;
+    // WHY: Chapter boundary progression (reason === 'chapter') must refresh the global essay alongside
+    // the new chapter brief so long-horizon planning stays aligned even when dependency hashes didn't change.
+    const global = !previous || reason === 'global-change' || reason === 'chapter' ? readNote(data.global, snap, 16000) : previous.global;
     const staleTargets = options.staleTargets ?? (reason === 'chapter-change' ? staleTargetsForNote(previous, snap, reason) : null);
     const isPartial = options.mode === 'partial' && canPartialRewrite(previous, snap, reason, staleTargets);
     const chapter = isPartial
         ? mergePartialChapter(data.chapter, previous, snap, staleTargets)
         : readNote(data.chapter, snap, 24000);
     const chapterTexts = [chapter.text, ...collectEntityTexts(chapter.entities)];
-    if (chapterTexts.some(item => item.includes('{{'))) throw new Error('章节稿含宿主宏');
-    for (const entity of snap.world.entities) for (const [key, record] of Object.entries(entity.fields || {})) {
-        const secret = isPrivateStoryField(key) && typeof record.value === 'string' ? record.value.trim() : '';
-        if (secret && chapterTexts.some(item => item.includes(secret))) throw new Error('章节稿含管理员私有资料');
+    if (chapterTexts.some(item => item.includes('{{'))) throw Object.assign(new Error('章节稿含宿主宏'), { secretLeak: true });
+    const normalizedChapterTexts = chapterTexts.map(normalizeSecretText);
+    for (const secret of collectSnapshotSecretTerms(snap)) {
+        if (containsSecretTerm(chapterTexts, normalizedChapterTexts, secret)) {
+            throw Object.assign(new Error('章节稿含管理员私有资料'), { secretLeak: true });
+        }
     }
     const end = snap.chat.length - 1, source = prefix(snap.chat, end);
     const lineDigests = Object.fromEntries((snap.plotLines || []).map(line => [line.title, memoryDigest(plotLineStateDigest([line]))]));
@@ -589,6 +664,82 @@ function plannerWorldEntities(snap) {
     });
 }
 
+function truncateText(value, maxChars) {
+    if (typeof value !== 'string' || value.length <= maxChars) return value;
+    return value.slice(0, Math.max(0, maxChars - 1)) + '…';
+}
+
+function compactRecordFields(fields, maxChars) {
+    if (!fields || typeof fields !== 'object') return fields;
+    const out = {};
+    for (const [k, v] of Object.entries(fields)) {
+        if (typeof v === 'string') out[k] = truncateText(v, maxChars);
+        else if (Array.isArray(v)) out[k] = v.slice(-6).map(item => (typeof item === 'string' ? truncateText(item, maxChars) : item));
+        else out[k] = v;
+    }
+    return out;
+}
+
+function compactPlotLines(plotLines, { fieldMax = 280, maxCharsPerArr = 12 } = {}) {
+    return (plotLines || []).map(line => {
+        if (!line || typeof line !== 'object') return line;
+        const next = {
+            title: line.title,
+            status: line.status,
+            ...(line.floor !== undefined && { floor: line.floor }),
+            ...(line.roundCount !== undefined && { roundCount: line.roundCount }),
+            ...(line.summary && { summary: truncateText(line.summary, fieldMax) }),
+            ...(line.reading && { reading: truncateText(line.reading, fieldMax) }),
+            ...(line.nextFocus && { nextFocus: truncateText(line.nextFocus, fieldMax) }),
+            ...(Array.isArray(line.characters) && { characters: line.characters.slice(0, maxCharsPerArr) }),
+            ...(Array.isArray(line.situationIds) && { situationIds: line.situationIds.slice(0, maxCharsPerArr) }),
+        };
+        return next;
+    });
+}
+
+function compactPlanningTargets(targets, { textMax = 240, fieldMax = 400, listMax = 4 } = {}) {
+    return {
+        characters: (targets?.characters || []).map(char => ({
+            id: char.id,
+            name: char.name,
+            ...(char.aliases?.length && { aliases: char.aliases.slice(0, listMax) }),
+            ...(char.publicFields && { publicFields: compactRecordFields(char.publicFields, fieldMax) }),
+            ...(char.privateFields && { privateFields: compactRecordFields(char.privateFields, fieldMax) }),
+            ...(char.presence && { presence: char.presence }),
+            ...(char.presenceNote && { presenceNote: truncateText(char.presenceNote, textMax) }),
+            ...(char.knowledge?.length && {
+                knowledge: char.knowledge.slice(-listMax).map(item => ({
+                    ...item,
+                    content: truncateText(item.content, textMax),
+                    evidence: truncateText(item.evidence, textMax),
+                })),
+            }),
+            ...(char.agendas?.length && {
+                agendas: char.agendas.slice(-listMax).map(item => ({
+                    id: item.id,
+                    kind: item.kind,
+                    title: item.title,
+                    status: item.status,
+                    description: truncateText(item.description, textMax),
+                })),
+            }),
+            ...(char.plotLines?.length && { plotLines: char.plotLines.slice(0, 8) }),
+        })),
+        situations: (targets?.situations || []).map(item => ({
+            id: item.id,
+            kind: item.kind,
+            title: item.title,
+            status: item.status,
+            description: truncateText(item.description, textMax),
+            ...(item.parties && { parties: truncateText(String(item.parties), 120) }),
+            ...(item.impact && { impact: truncateText(item.impact, 180) }),
+            ...(item.releaseCondition && { releaseCondition: truncateText(item.releaseCondition, 180) }),
+            ...(item.reason && { reason: truncateText(item.reason, 180) }),
+        })),
+    };
+}
+
 function serializeFullPayload(snap, previous, reason) {
     const planningTargets = buildPlanningTargets(snap);
     const payload = {
@@ -620,14 +771,54 @@ function serializeFullPayload(snap, previous, reason) {
         delete payload.records;
         body = JSON.stringify(payload);
     }
+    if (body.length > WRITER_BUDGET_CHARS) {
+        // Deep-trim nested planningTargets, plotLines, and history slices without mutating snap.
+        payload.planningTargets = compactPlanningTargets(payload.planningTargets, { textMax: 240, fieldMax: 400, listMax: 4 });
+        payload.plotLines = compactPlotLines(payload.plotLines, { fieldMax: 280 });
+        if (payload.previousGlobal) payload.previousGlobal = truncateText(payload.previousGlobal, 12000);
+        if (payload.previousChapter) payload.previousChapter = truncateText(payload.previousChapter, 12000);
+        body = JSON.stringify(payload);
+    }
+    if (body.length > WRITER_BUDGET_CHARS) {
+        payload.recent = payload.recent.slice(-2).map(msg => ({ ...msg, text: truncateText(msg?.text, 800) }));
+        payload.recentSummaries = payload.recentSummaries.slice(-2).map(text => truncateText(text, 500));
+        payload.chapterHistory = payload.chapterHistory.slice(-2).map(text => truncateText(text, 600));
+        body = JSON.stringify(payload);
+    }
+    if (body.length > WRITER_BUDGET_CHARS) {
+        delete payload.recent;
+        delete payload.recentSummaries;
+        delete payload.chapterHistory;
+        payload.planningTargets = compactPlanningTargets(payload.planningTargets, { textMax: 120, fieldMax: 140, listMax: 2 });
+        payload.plotLines = compactPlotLines(payload.plotLines, { fieldMax: 140, maxCharsPerArr: 6 });
+        if (payload.previousGlobal) payload.previousGlobal = truncateText(payload.previousGlobal, 4000);
+        if (payload.previousChapter) payload.previousChapter = truncateText(payload.previousChapter, 4000);
+        body = JSON.stringify(payload);
+    }
+    while (body.length > WRITER_BUDGET_CHARS && (
+        (payload.plotLines?.length || 0) > 1
+        || (payload.planningTargets?.situations?.length || 0) > 1
+        || (payload.planningTargets?.characters?.length || 0) > 1
+    )) {
+        if ((payload.planningTargets?.characters?.length || 0) > 1) {
+            payload.planningTargets.characters = payload.planningTargets.characters.slice(-Math.max(1, Math.floor(payload.planningTargets.characters.length / 2)));
+        }
+        if ((payload.planningTargets?.situations?.length || 0) > 1) {
+            payload.planningTargets.situations = payload.planningTargets.situations.slice(-Math.max(1, Math.floor(payload.planningTargets.situations.length / 2)));
+        }
+        if ((payload.plotLines?.length || 0) > 1) {
+            payload.plotLines = payload.plotLines.slice(-Math.max(1, Math.floor(payload.plotLines.length / 2)));
+        }
+        body = JSON.stringify(payload);
+    }
     if (JSON.stringify([{role:'system',content:WRITER},{role:'user',content:body}]).length > 200000) throw new Error('作家材料超出单次预算');
     return body;
 }
 
 /** Builds writer LLM messages and mode, falling back to full chapter recomputation on chapter, branch, or 180k budget overflow. */
-export function prepareWriterRequest(snap, previous, reason, staleTargets = null) {
+export function prepareWriterRequest(snap, previous, reason, staleTargets = null, { forceFull = false } = {}) {
     const resolvedStale = staleTargets ?? (previous && reason === 'chapter-change' ? staleTargetsForNote(previous, snap, reason) : null);
-    if (canPartialRewrite(previous, snap, reason, resolvedStale)) {
+    if (!forceFull && canPartialRewrite(previous, snap, reason, resolvedStale)) {
         const partialBody = JSON.stringify(buildPartialPayload(snap, previous, reason, resolvedStale));
         if (partialBody.length <= WRITER_BUDGET_CHARS) {
             return {
@@ -645,6 +836,6 @@ export function prepareWriterRequest(snap, previous, reason, staleTargets = null
     };
 }
 
-export function writerInput(snap, previous, reason, staleTargets = null) {
-    return prepareWriterRequest(snap, previous, reason, staleTargets).messages;
+export function writerInput(snap, previous, reason, staleTargets = null, options = undefined) {
+    return prepareWriterRequest(snap, previous, reason, staleTargets, options).messages;
 }

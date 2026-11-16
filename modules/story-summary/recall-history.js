@@ -105,6 +105,7 @@ export function buildRecallHistoryEntry({
         status,
         mode,
         reranked: Boolean(trace?.reranked),
+        rerankStatus: String(trace?.rerankStatus || (trace?.reranked ? 'applied' : 'disabled')),
         reason: String(reason || error?.message || diagnostics?.reason || ''),
         elapsedMs,
         hiddenThrough: Number.isInteger(trace?.hiddenThrough) ? trace.hiddenThrough : -1,

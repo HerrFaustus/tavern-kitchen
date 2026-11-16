@@ -31,8 +31,8 @@ export function worldStatusMessage(write: XiaobaiOsFileState, status: Maintenanc
     if (status.message === 'skipped') { return worldSkippedMessage(status.reason); }
     if (status.state !== 'error' && status.message !== 'failed') { return ''; }
     const detail: Record<string, string> = {
-        'agent-not-configured': '请先在 API 应用中设置模型和密钥。',
-        'config-load-failed': '模型设置加载失败，请到 API 应用中检查。',
+        'agent-not-configured': '请先在「API」标签页中设置模型和地址。',
+        'config-load-failed': '模型设置加载失败，请到「API」标签页中检查。',
         'agent-session-failed': '未能连接模型，请检查 API 配置。',
         'empty-provider-response': '模型没有返回内容，可以稍后重试。',
         'tool-errors-unresolved': '这次生成的新闻有误，请重试。',

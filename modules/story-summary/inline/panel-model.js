@@ -48,24 +48,29 @@ export function floorEditItems(payload, store) {
 
 export function floorPanelModel(snapshot, floor) {
     const { store, chat } = snapshot;
+    const inlineEnabled = snapshot.inlineConfig?.enabled !== false;
     const source = floorSource(chat, floor);
     const history = snapshot.roundHistory || reviewedRounds(store?.summaryHistory);
     const batch = findFloorBatch({ summaryHistory: history }, floor);
     const current = isFloorEntryCurrent(batch?.floorEntry, chat) && !store?.summaryInvalid
         && !(snapshot.invalidFrom != null && batch.endMesId >= snapshot.invalidFrom);
     const entry = current ? batch.floorEntry : null;
-    const extracted = extractFloorPayload(chat[floor].mes);
+    // WHY: 2A retires main-reply <kitchen_summary> parsing and anchor synthesis when inline mode is disabled.
+    const extracted = inlineEnabled ? extractFloorPayload(chat[floor].mes) : { status: 'missing', payload: null, error: '' };
     const draft = store?.floorDrafts?.[floor];
+    const work = store?.floorWork?.[floor];
+    const hasPendingWork = Boolean(work?.pending && Object.keys(work.pending).some(id => !work.decisions?.[id]));
     const staged = draft?.source?.digest === source.digest;
     let payload = staged ? draft.payload : entry?.empty ? structuredClone(EMPTY_FLOOR_PAYLOAD) : entry?.payload || extracted.payload || structuredClone(EMPTY_FLOOR_PAYLOAD);
     if (entry && !staged && batch.summary) payload = { ...payload, summary: batch.summary };
-    if ((!entry || entry.anchorVersion) && payload.anchors === undefined) payload = { ...payload, anchors: inlineAnchorInputs(payload) };
+    if (inlineEnabled && (!entry || entry.anchorVersion) && payload.anchors === undefined) payload = { ...payload, anchors: inlineAnchorInputs(payload) };
     const legacy = !store?.summaryInvalid && snapshot.invalidFrom == null && !batch && history.find(item => item.kind === 'batch' && !item.floorEntry && floor > item.previousEndMesId && floor <= item.endMesId);
     const rangeSummary = typeof legacy?.summary === 'string' ? legacy.summary.trim() : '';
     if (rangeSummary && !staged && !entry) payload = { ...structuredClone(EMPTY_FLOOR_PAYLOAD), summary: rangeSummary };
     const status = entry?.omitted ? '番外' : entry?.deleted ? '已删除' : staged ? '待审查' : entry ? '已写入'
-        : rangeSummary ? '已写入' : extracted.status === 'ready' ? '待审查' : extracted.status === 'incomplete' ? '输出未完成' : extracted.status === 'invalid' ? '格式有误' : legacy ? '旧区间' : '待总结';
-    return { source, payload, entry, batch, legacy, status, staged, pending: staged || (!entry && !rangeSummary),
+        : rangeSummary ? '已写入' : hasPendingWork ? '待确认' : (work?.done?.length > 0 && !inlineEnabled) ? '处理中'
+            : extracted.status === 'ready' ? '待审查' : extracted.status === 'incomplete' ? '输出未完成' : extracted.status === 'invalid' ? '格式有误' : legacy ? '旧区间' : '待总结';
+    return { source, payload, entry, batch, legacy, work, status, staged, pending: staged || hasPendingWork || (!entry && !rangeSummary),
         error: snapshot.getError?.(floor) || (!staged && !entry ? extracted.error : '') || '',
         items: floorEditItems(payload, batch?.undo ? { json: { storyRecords: (batch.undo.storyRecordChanges || []).map(change => change.previous).filter(Boolean) } } : store) };
 }

@@ -406,7 +406,7 @@ for (const invalid of ['changed chat', 'damaged history', 'deleted memory', 'rep
             }
             return { text: '', toolCalls: [{ id: 'edit', name: 'EditMemory', arguments: JSON.stringify({ edits: [
                 { kind: 'edit', collection: 'facts', key: 'f-1', patch: { o: '不得保存的改动' } },
-            ] }) }] };
+            ], evidence: { floor: 2, quote: '看到了机密' } }) }] };
         };
         const finished = deferred();
         host.onRunFinished = finished.resolve;
@@ -460,7 +460,7 @@ test('manual edits keep the normal receipts and pending ranges; clearing chat do
     host.respond = async () => host.requests.length === 1
         ? { text: '', toolCalls: [{ id: 'edit', name: 'EditMemory', arguments: JSON.stringify({ edits: [
             { kind: 'edit', collection: 'facts', key: 'f-1', patch: { o: '人工指示修正' } },
-        ] }) }] }
+        ], evidence: { floor: 2, quote: '看到了机密' } }) }] }
         : { text: '已修正指定记忆。' };
     await host.maintenance.chat.send(chatRequest('修改这一条记忆'));
     assert.equal(store().json.facts[0].o, '人工指示修正');
@@ -562,7 +562,7 @@ test('regeneration uses a fresh memory session and never replays previous saved 
     host.respond = async () => {
         if (host.requests.length === 1) return { text: '', toolCalls: [{ id: 'edit', name: 'EditMemory', arguments: JSON.stringify({ edits: [
             { kind: 'edit', collection: 'facts', key: 'f-1', patch: { o: '已经保存的成果' } },
-        ] }) }] };
+        ], evidence: { floor: 2, quote: '看到了机密' } }) }] };
         return { text: '已完成。' };
     };
     await host.maintenance.chat.send(chatRequest('修正指定内容'));
@@ -663,7 +663,7 @@ test('disabling automatic work after a save records cancellation without losing 
     host.respond = async request => {
         if (host.requests.length === 1) return { text: '', toolCalls: [{ id: 'edit', name: 'EditMemory', arguments: JSON.stringify({ edits: [
             { kind: 'edit', collection: 'facts', key: 'f-1', patch: { o: '保留已确认的修改' } },
-        ] }) }] };
+        ], evidence: { floor: 2, quote: '看到了机密' } }) }] };
         waiting.resolve();
         return new Promise((resolve, reject) => request.signal.addEventListener('abort', () => reject(request.signal.reason), { once: true }));
     };
@@ -690,7 +690,7 @@ for (const kind of ['chat', 'character', 'reload']) {
                 await release.promise; // This provider deliberately ignores the abort signal.
                 return { text: '', toolCalls: [{ id: 'late-edit', name: 'EditMemory', arguments: JSON.stringify({ edits: [
                     { kind: 'edit', collection: 'facts', key: 'f-1', patch: { o: '不得执行的旧指令' } },
-                ] }) }] };
+                ], evidence: { floor: 2, quote: '看到了机密' } }) }] };
             }
             return { text: '新聊天回复' };
         };
@@ -740,10 +740,10 @@ for (const kind of ['chat', 'character', 'reload']) {
         host.respond = async () => host.requests.length > 1 ? { text: '两项修改已暂存。' } : ({ text: '', toolCalls: [
             { id: 'saved-edit', name: 'EditMemory', arguments: JSON.stringify({ edits: [
                 { kind: 'edit', collection: 'facts', key: 'f-1', patch: { o: '切换前已保存的修改' } },
-            ] }) },
+            ], evidence: { floor: 2, quote: '看到了机密' } }) },
             { id: 'second-edit', name: 'EditMemory', arguments: JSON.stringify({ edits: [
                 { kind: 'edit', collection: 'facts', key: 'f-2', patch: { o: '同轮的第二项修改' } },
-            ] }) },
+            ], evidence: { floor: 2, quote: '看到了机密' } }) },
         ] });
         const oldRun = host.maintenance.chat.send(chatRequest('修正两项记忆'));
         await confirming.promise;
@@ -797,7 +797,7 @@ for (const mode of ['auto', 'chat']) test(`${mode} task recovers its timed-out f
         const turn = host.requests.length;
         if (turn === 1) return { toolCalls: [{ id: 'edit', name: 'EditMemory', arguments: JSON.stringify({ edits: [
             { kind: 'edit', collection: 'facts', key: 'f-1', patch: { o: '等待核对的修改' } },
-        ] }) }] };
+        ], evidence: { floor: 2, quote: '看到了机密' } }) }] };
         if (turn === 2) return { text: '本轮修改已暂存。' };
         if (turn === 3) {
             assert.equal(host.writes, 1);
@@ -865,7 +865,7 @@ for (const alreadySettled of [false, true]) test(`task can retry a known-unsaved
         const turn = host.requests.length;
         if (turn === 1) return { toolCalls: [{ id: 'edit', name: 'EditMemory', arguments: JSON.stringify({ edits: [
             { kind: 'edit', collection: 'facts', key: 'f-1', patch: { o: '安全重试的修改' } },
-        ] }) }] };
+        ], evidence: { floor: 2, quote: '看到了机密' } }) }] };
         if (turn === 2) return { text: '本轮修改已暂存。' };
         if (turn === 3) {
             host.beforeReadback = () => { setImmediate(() => t.mock.timers.tick(10_000)); };
@@ -905,7 +905,7 @@ test('a post-commit phase callback failure retains confirmed saves and never ope
     host.respond = async () => host.requests.length === 1
         ? { toolCalls: [{ id: 'edit', name: 'EditMemory', arguments: JSON.stringify({ edits: [
             { kind: 'edit', collection: 'facts', key: 'f-1', patch: { o: '确认后的修改' } },
-        ] }) }] } : { text: '本轮处理结果。' };
+        ], evidence: { floor: 2, quote: '看到了机密' } }) }] } : { text: '本轮处理结果。' };
     submitted();
     const result = await finished.promise;
     host.listeners.delete(failPhase);
@@ -1013,7 +1013,7 @@ for (const version of ['1.14.0', '1.18.0']) for (const mode of ['auto', 'chat'])
     };
     host.respond = async () => host.requests.length === 1 ? { toolCalls: [{ id: 'edit-before-switch', name: 'EditMemory', arguments: JSON.stringify({ edits: [
         { kind: 'edit', collection: 'facts', key: 'f-1', patch: { o: 'original-chat-only' } },
-    ] }) }] } : { text: 'Review finished.' };
+    ], evidence: { floor: 2, quote: '看到了机密' } }) }] } : { text: 'Review finished.' };
     const manual = mode === 'chat' ? host.maintenance.chat.send(chatRequest('Original question')) : null;
     if (mode === 'auto') submitted();
     await entering.promise;

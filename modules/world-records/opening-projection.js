@@ -1,6 +1,7 @@
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
 import { parseStoryUpdates } from '../story-state/records.js';
 import { createEmptyMapDomain } from '../xiaobai-os/domains/map/state.js';
+import { isPrivateStoryField } from './authority.js';
 import { OPENING } from './opening.js';
 
 const idFor = (...parts) => 'opening-' + memoryDigest(parts).slice(0,32);
@@ -90,7 +91,8 @@ export function openingOperations(state, rows, {fingerprint,player,oldChat,allow
                 if (!features.some(f => f.name === row.name)) features.push({name:row.name,description:row.value.replace(/\s+/gu,' ')});
             }
         } else if (['person','lore','organization','item'].includes(row.kind)) {
-            if (row.kind === 'person' && ['coins','金币','余额','钱包'].includes(row.field) && norm(row.name) !== norm(player)) continue;
+            const isWalletField = row.kind === 'person' && ['coins','金币','余额','钱包'].includes(row.field);
+            if (isWalletField && norm(row.name) !== norm(player)) continue;
             if (row.kind === 'item' && !row.importance && (!row.owner || norm(row.owner) !== norm(player))) continue;
             const e = entity(row.kind === 'lore' ? 'subject' : row.kind,row.name,row);
             if (row.kind === 'item' && row.importance) field(e,'剧情意义',row.importance,row);
@@ -98,7 +100,20 @@ export function openingOperations(state, rows, {fingerprint,player,oldChat,allow
                 const owners=entities.filter(person=>['person','organization'].includes(person.kind) && [person.name,...person.aliases].includes(row.owner));
                 if(owners.length===1) field(e,'owner',{entityId:owners[0].id},row);
             }
-            field(e,personFields.has(row.field) ? row.field : 'description',row.value,row);
+            if (isWalletField) {
+                const parsedCoins = typeof row.value === 'number'
+                    ? (Number.isSafeInteger(row.value) && row.value >= 0 ? row.value : null)
+                    : (() => {
+                        const raw = String(row.value ?? '').trim();
+                        const matched = /^\d+$/.test(raw) ? raw : raw.match(/^(\d+)\s*(?:枚|个)?(?:金币|金|币)?$/)?.[1];
+                        const num = matched ? Number(matched) : NaN;
+                        return Number.isSafeInteger(num) && num >= 0 ? num : null;
+                    })();
+                if (parsedCoins !== null) field(e, 'coins', parsedCoins, row);
+                else field(e, 'description', row.value, row);
+            } else {
+                field(e,personFields.has(row.field) ? row.field : 'description',row.value,row);
+            }
         } else if (row.kind === 'position' && !oldChat && positions.get(norm(row.name)).size === 1) {
             const p = place(row.value,row), e = entity('person',row.name,row);
             if (!p || !e) continue;
@@ -118,6 +133,46 @@ export function openingOperations(state, rows, {fingerprint,player,oldChat,allow
             const source = sourceOf(row);
             const unchanged = previous && memoryDigest([previous.record,previous.source]) === memoryDigest([record,source]);
             story.records.push(unchanged ? previous : {key:id,record,version,eventId:'event:'+commandId,start:0,end:0,nature:'established_fact',source});
+        }
+    }
+    // Pass 2: project non-public secret/rumor/condition claims after core entities exist so secrets attach cleanly to named persons.
+    // WHY: Keeping private claims out of established fields prevents NPC public prompts from leaking secrets/untriggered conditions.
+    const desiredClaims = new Map();
+    for (const row of rows.filter(r => ['secret', 'rumor', 'condition'].includes(r.kind))) {
+        const hits = entities.filter(x => [x.name, ...(x.aliases || [])].some(n => norm(n) === norm(row.name)));
+        const e = hits.length === 1 ? hits[0] : entity('subject', row.name, row);
+        if (!e) continue;
+        const rawField = typeof row.field === 'string' ? row.field.trim() : '';
+        let claimField, nature;
+        if (row.kind === 'secret') {
+            claimField = isPrivateStoryField(rawField) ? rawField : rawField ? `秘密：${rawField}` : '秘密';
+            nature = 'unclassified';
+        } else if (row.kind === 'condition') {
+            claimField = isPrivateStoryField(rawField) ? rawField : rawField ? `管理员私有/${rawField}` : '管理员私有/触发条件';
+            nature = 'hypothesis';
+        } else {
+            claimField = rawField || '传闻';
+            nature = 'rumor';
+        }
+        const claimId = 'claim:' + idFor('opening-claim', e.id, row.kind, claimField, memoryDigest([row.value, row.key]));
+        desiredClaims.set(claimId, {
+            type: 'claim',
+            id: claimId,
+            entityId: e.id,
+            field: claimField,
+            value: row.value,
+            nature,
+            source: sourceOf(row),
+        });
+    }
+    for (const claimOp of desiredClaims.values()) {
+        if (!state.claims.some(c => c.id === claimOp.id)) operations.push(claimOp);
+    }
+    if (!oldChat) {
+        for (const existing of state.claims) {
+            if (existing.status === 'pending' && existing.source?.module === OPENING && !desiredClaims.has(existing.id)) {
+                operations.push({ type: 'resolve', claimId: existing.id, status: 'withdrawn' });
+            }
         }
     }
     const byId = new Map(entities.map(e => [e.id,e]));

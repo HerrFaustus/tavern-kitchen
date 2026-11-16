@@ -18,7 +18,7 @@ export function worldFieldSource(world, context, request) {
     if (receipt) {
         const turn = Object.values(world.sources || {}).find(row => row.id === receipt.origin.sourceId);
         const proof = world.events.find(e => e.id === receipt.eventId)?.effects.flatMap(e => [
-            e.after?.source, ...Object.values(e.after?.fields || {}).map(f => f.source),
+            e.after?.source, ...Object.values(e.after?.fields || {}).map(f => f?.source),
         ]).find(source => source?.key === request.key && source.proof)?.proof;
         if (proof && isRangeSourceCurrent(turn?.source,context.chat) && context.chat[proof.floor]?.mes.includes(proof.quote))
             return {...result,floor:proof.floor,text:context.chat[proof.floor].mes,quote:proof.quote};

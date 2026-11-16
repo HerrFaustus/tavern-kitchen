@@ -244,7 +244,7 @@ for (const mixed of [false, true]) test(`retired Agent results stay nonblocking 
     host.respond = async () => host.requests.length === 1 ? { toolCalls: [{ id: 'edit', name: 'EditMemory', arguments: JSON.stringify({ edits: [
         { kind: 'edit', collection: 'anchors', key: 'atom-1-0', patch: { semantic: '尚未证实' } },
         ...(mixed ? [{ kind: 'edit', collection: 'facts', key: 'f-1', patch: { o: '尚未证实' } }] : []),
-    ] }) }] } : { text: 'fixture-finished' };
+    ], evidence: { floor: 2, quote: '看到了机密' } }) }] } : { text: 'fixture-finished' };
     host.afterSave = async () => mod.retireSummaryMemorySources(host.context.chatId, { floors: [1] });
     const frame = h.mount();
     frame.send('fixture-edit-question');
@@ -280,7 +280,7 @@ for (const closeDuring of ['model request', 'metadata save']) {
             if (closeDuring === 'model request') { started.resolve(); await release.promise; }
             return { text: '', toolCalls: [{ id: 'edit', name: 'EditMemory', arguments: JSON.stringify({ edits: [
                 { kind: 'edit', collection: 'facts', key: 'f-1', patch: { o: 'fixture-background-edit' } },
-            ] }) }] };
+            ], evidence: { floor: 2, quote: '看到了机密' } }) }] };
         };
         if (closeDuring === 'metadata save') host.afterSave = async () => {
             host.afterSave = null;

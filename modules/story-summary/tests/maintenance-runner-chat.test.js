@@ -14,9 +14,10 @@ import { maintenanceFixture } from './fixtures/memory-maintenance.js';
 const config = { provider: 'openai', model: 'offline-test', maxTokens: 1000 };
 const countTokens = async () => ({ tokens: 100, source: 'test-counter' });
 const call = (id, name, args) => ({ id, name, arguments: JSON.stringify(args) });
+const ev = { floor: 2, quote: '看到了机密' };
 const edit = (id = 'write', key = 'f-1') => call(id, 'EditMemory', { edits: [
     { kind: 'edit', collection: 'facts', key, patch: { o: '尚未查证' } },
-] });
+], evidence: ev });
 function harness() {
     const current = maintenanceFixture();
     current.store = { json: current.json, lastSummarizedMesId: current.cutoff, summaryHistory: [createSummaryBaseline(current.cutoff)] };
@@ -51,7 +52,7 @@ for (const scenario of ['all', 'mixed', 'completion-retired', 'completion-valid'
         let requests = 0;
         const anchor = { kind: 'edit', collection: 'anchors', key: 'atom-1-0', patch: { semantic: '只是推测' } };
         const tool = scenario.startsWith('completion') ? call('complete', 'CompleteMaintenance', { from: 2, to: 2 })
-            : call('edit', 'EditMemory', { edits: [anchor, ...(scenario === 'mixed' ? [{ kind: 'edit', collection: 'facts', key: 'f-1', patch: { o: '未证实' } }] : [])] });
+            : call('edit', 'EditMemory', { edits: [anchor, ...(scenario === 'mixed' ? [{ kind: 'edit', collection: 'facts', key: 'f-1', patch: { o: '未证实' } }] : [])], evidence: ev });
         const result = await runMemoryAgent(h.session, { ...h.options, mode: 'chat', question: '处理这部分',
             adapter: { chat: async () => ++requests === 1 ? { toolCalls: [tool] } : { text: '已处理' } },
             onFinish: async payload => {
@@ -316,7 +317,7 @@ test('unchanged chat edits do not manufacture no-modification maintenance receip
     const result = await runMemoryAgent(h.session, { ...h.options, mode: 'chat', question: '保留这个值',
         adapter: { chat: async () => ++attempts === 1 ? { toolCalls: [call('same', 'EditMemory', { edits: [
             { kind: 'edit', collection: 'facts', key: 'f-1', patch: { o: h.current.json.facts[0].o } },
-        ] })] } : { text: '原值未变。' } },
+        ], evidence: ev })] } : { text: '原值未变。' } },
     });
     assert.equal(result.status, 'completed');
     assert.equal(h.commits.length, 0);

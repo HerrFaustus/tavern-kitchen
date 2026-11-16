@@ -42,7 +42,7 @@ export function createAgentApiController(
     }
 
     function assertActivation(): AgentApiActivation {
-        if (!activation) {throw new Error('Agent API APP 未激活');}
+        if (!activation) {throw new Error('「API」连接面板未激活');}
         return activation;
     }
 
@@ -139,7 +139,7 @@ export function createAgentApiController(
                 endNetworkOperation(operation);
             }
         }
-        throw new Error('未知的 Agent API 操作');
+        throw new Error('未知的「API」面板操作');
     }
 
     execution?.addCleanup(() => cancelForeground('execution-disposed'));

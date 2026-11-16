@@ -1,5 +1,6 @@
 import { floorTasks, installFloorHost } from './floor-host.js';
 import { createKitchenCards } from '../modules/kitchen-data/card.js';
+import { createArchiveCleanup } from '../modules/kitchen-data/archive-cleanup.js';
 // 酒馆后厨 0.1 — Based on LittleWhiteBox by biex.
 import { installFloorSummaries } from '../modules/story-summary/floor-summary.js';
 import { createModuleEvents, event_types } from './event-manager.js';
@@ -14,6 +15,7 @@ import { createExtensionDrawer } from './extension-drawer.js';
 import { createDefaultXiaobaiOsSettings, prepareXiaobaiOsSettings, initXiaobaiOs, cleanupXiaobaiOs, setXiaobaiOsEnabled, mountWorldEvolution, mountWorldSettings, openXiaobaiOs } from '../modules/xiaobai-os/index.js';
 import { createOpeningHost } from '../modules/world-records/opening-host.js';
 import { requireTurnRuntime } from '../modules/world-records/turn-runtime.js';
+import { runUpgradeSelfCheck } from './upgrade-selfcheck.js';
 const { saveSettings } = hostScript;
 
 const settings = extension_settings[EXT_ID] ??= {
@@ -30,6 +32,38 @@ settings.enaPlanner.onChapter = true;
 usePanelSettings(settings);
 window.isTavernKitchenEnabled = settings.enabled;
 let stopWorld, stopWorldSettings, floorHost;
+const notifiedUpgradeSelfChecks = new Set();
+async function runStartupUpgradeSelfCheck() {
+    const ctx = getContext();
+    const chatId = String(ctx?.chatId || '');
+    if (!chatId) return null;
+    try {
+        const worldState = worldArchive?.service?.read
+            ? await worldArchive.service.read().catch(() => null)
+            : null;
+        const vectorStatus = memory?.inspectCurrentVectorStatusForUpgrade
+            ? await memory.inspectCurrentVectorStatusForUpgrade().catch(() => null)
+            : null;
+        const report = await runUpgradeSelfCheck({
+            storySummary: null,
+            chat: Array.isArray(ctx?.chat) ? ctx.chat : [],
+            worldState,
+            vectorStatus,
+        });
+        if (!report.ok && report.notices.length) {
+            const noticeKey = `${chatId}::${report.notices.join('|')}`;
+            if (!notifiedUpgradeSelfChecks.has(noticeKey)) {
+                notifiedUpgradeSelfChecks.add(noticeKey);
+                console.warn('[TavernKitchen] 升级自检发现需要人工处理的项:', report.notices);
+                globalThis.toastr?.warning?.(report.notices.join('\n'), '酒馆后厨 · 升级自检提示');
+            }
+        }
+        return report;
+    } catch (error) {
+        console.warn('[TavernKitchen] 升级自检执行异常:', error);
+        return null;
+    }
+}
 async function syncPlanner() {
     if (!settings.enabled) { planner?.dispose(); planner = null; return; }
     if (planner || !worldArchive) return;
@@ -173,6 +207,7 @@ function installChatListener() {
         stopWorldSettings = null;
         kitchen.reset();
         worldArchive?.reset();
+        runStartupUpgradeSelfCheck().catch(() => null);
     });
 }
 
@@ -219,9 +254,18 @@ export async function startKitchen(workspace) {
     ]) await loadBridge(entry, id);
     if (settings.enabled) await startWorld();
     memory = await import('../modules/story-summary/story-summary.js');
+    memory.configureArchiveCleanup(createArchiveCleanup({
+        getContext,
+        getRequestHeaders: hostScript.getRequestHeaders,
+        getWorldStorage: () => worldArchive?.storage,
+        getNoteStore: () => worldArchive?.noteStore,
+        memoryStore: memory.archiveMemoryStore(),
+    }));
+    // WHY: 2A retires main-reply <kitchen_summary> extraction and bypass generation;
+    // panel summarizeFloor routes single-floor rerun through floorHost when installed.
     const panels = installFloorSummaries({ getSnapshot: memory.getFloorSummarySnapshot,
-        updateFloor: memory.updateFloorSummary, extractFloor: memory.extractMainReplySummary,
-        summarizeFloor: memory.summarizeFloorOnDemand,
+        updateFloor: memory.updateFloorSummary, extractFloor: null,
+        summarizeFloor: floor => (floorHost ? floorHost.rerunFloor(floor) : memory.summarizeFloorOnDemand(floor)),
         openMemory: floor => memory.openStoryMemory(floor) });
     const floorEvents = createModuleEvents('kitchen-floor-summaries');
     floorEvents.on(event_types.CHAT_CHANGED, panels.reset);
@@ -231,12 +275,19 @@ export async function startKitchen(workspace) {
     window.registerKitchenModuleCleanup('kitchen-floor-summaries', () => { panels.dispose(); floorEvents.cleanup(); });
     
     await syncPlanner();
-    if (worldArchive) floorHost = installFloorHost({ settings, getContext, memory, archive:() => worldArchive, planner:() => planner, workspace:kitchen });
-    window.registerKitchenModuleCleanup('ordered-floors', () => floorHost?.dispose());
+    if (worldArchive) {
+        floorHost = installFloorHost({ settings, getContext, memory, archive:() => worldArchive, planner:() => planner, workspace:kitchen });
+        memory.configureFloorRunner(floorHost);
+    }
+    window.registerKitchenModuleCleanup('ordered-floors', () => {
+        memory?.configureFloorRunner?.(null);
+        floorHost?.dispose();
+    });
     window.registerKitchenModuleCleanup('story-planner',() => planner?.dispose());
     window.registerKitchenModuleCleanup('world-settings', () => { stopWorldSettings?.(); stopWorldSettings = null; });
     window.registerKitchenModuleCleanup('xiaobai-os', cleanupXiaobaiOs);
     if (settings.enabled && settings.xiaobaiOs?.enabled) await initXiaobaiOs();
     configureWorkspace();
+    await runStartupUpgradeSelfCheck();
     } catch (error) { startupError = error; throw error; } finally { readyResolve(); }
 }

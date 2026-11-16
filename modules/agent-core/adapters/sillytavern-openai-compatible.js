@@ -1,4 +1,5 @@
 import { readResponseCompletion } from '../runtime/response-completion.js';
+import { runWithRetry } from '../runtime/retry-policy.js';
 import { buildSamplingParameters } from '../sampling.js';
 import {
     assertHostChatCompletionsClient,
@@ -258,18 +259,28 @@ export class SillyTavernOpenAICompatibleAdapter {
         const toolMode = this.config.toolMode || 'native';
         const isTaggedMode = toolMode === 'tagged-json' && Array.isArray(task.tools) && task.tools.length > 0;
         const hasTools = Array.isArray(task.tools) && task.tools.length > 0;
+        let streamStarted = false;
+        const trackedTask = typeof task.onStreamProgress === 'function'
+            ? {
+                ...task,
+                onStreamProgress: (progress) => {
+                    streamStarted = true;
+                    task.onStreamProgress(progress);
+                },
+            }
+            : task;
         const run = async (payload, options = {}) => {
             let requestInspection = null;
             const onRequest = (request) => {
-                requestInspection = this.buildRequestInspection(request, task, effectiveReasoning);
+                requestInspection = this.buildRequestInspection(request, trackedTask, effectiveReasoning);
             };
             try {
-                const result = typeof task.onStreamProgress === 'function'
-                    ? await this.streamChat(task, payload, effectiveReasoning, {
+                const result = typeof trackedTask.onStreamProgress === 'function'
+                    ? await this.streamChat(trackedTask, payload, effectiveReasoning, {
                         onRequest,
                         onResponseAccepted: options.onResponseAccepted,
                     })
-                    : await this.nonStreamingChat(task, payload, effectiveReasoning, { onRequest });
+                    : await this.nonStreamingChat(trackedTask, payload, effectiveReasoning, { onRequest });
                 return {
                     ...result,
                     requestInspection,
@@ -281,10 +292,15 @@ export class SillyTavernOpenAICompatibleAdapter {
                 throw error;
             }
         };
-        const payload = this.buildPayload(task, isTaggedMode, effectiveReasoning);
+        const payload = this.buildPayload(trackedTask, isTaggedMode, effectiveReasoning);
 
         try {
-            return await run(payload);
+            return await runWithRetry(() => run(payload), {
+                signal: task.signal,
+                timeoutMs: Number(this.config.timeoutMs) || 0,
+                maxRetries: task.retryTransient === false ? 0 : 2,
+                canRetry: () => !streamStarted,
+            });
         } catch (error) {
             if (task.allowToolProtocolFallback === false
                 || isTaggedMode

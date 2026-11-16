@@ -1,10 +1,11 @@
 /** 从统一的材料集合中挑出缺失或无效的配对。 */
 import { inputDigest } from '../utils/vector-input-digest.js';
 
-export function selectChunksForRepair(materials, storedChunks, vectorDescriptors, fingerprint, { verifySource = false } = {}) {
+export function selectChunksForRepair(materials, storedChunks, vectorDescriptors, fingerprint, { verifySource = false, expectedDims = null } = {}) {
     const stored = new Set(storedChunks.map(chunk => chunk.chunkId));
     const validIds = new Set(vectorDescriptors
-        .filter(item => item.valid && item.fingerprint === fingerprint)
+        .filter(item => item.valid && item.fingerprint === fingerprint
+            && (expectedDims == null || item.dims == null || item.dims === expectedDims))
         .map(item => item.chunkId));
     // 缺材料时，即使同 ID 留有向量，也需按补出的材料重新配对。
     const descriptors = new Map(vectorDescriptors.map(record => [record.chunkId, record]));
