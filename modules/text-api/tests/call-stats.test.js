@@ -2,25 +2,25 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import process from 'node:process';
 import { build } from 'esbuild';
-import { createCallStats, featureCalls } from '../call-stats.js';
-import { runMemoryAgent } from '../../story-summary/maintenance/runner.js';
+import { createCallStats, countRemoteRequest, featureCalls } from '../call-stats.js';
 import { testTextConnection } from '../runtime.js';
 import { createPreset } from '../model.js';
 import { createTestModuleUrl } from '../../story-summary/tests/helpers/bundle-module.js';
 
-test('one proofreading request and one failed connection test have two dispatches and only the supplied usage',async()=>{
+test('one counted request and one failed connection test have two dispatches and only the supplied usage',async()=>{
     featureCalls.clear();
-    const report=await runMemoryAgent(null,{mode:'chat',question:'查验最新的校对结果。',config:{provider:'openai-compatible',model:'proof'},
-        readMaintenance:async()=>({status:'idle'}),
-        adapter:{chat:async()=>({text:'已核对。',responseInfo:{usage:{prompt_tokens:7,completion_tokens:4}}})}});
-    assert.equal(report.status,'completed');
+    const report=await countRemoteRequest('world',async dispatch=>{
+        dispatch();
+        return {text:'已推演。',usage:{prompt_tokens:7,completion_tokens:4}};
+    });
+    assert.equal(report.text,'已推演。');
     const preset=createPreset('host','代理测试');
     const generateHost=async()=>{throw new Error('HTTP 503');};
     await assert.rejects(testTextConnection(preset,{signal:AbortSignal.abort()},{generateHost}));
     await assert.rejects(testTextConnection(preset,{},{generateHost}),/503/);
-    const stats=featureCalls.snapshot();assert.deepEqual(stats.tasks,{update:1});
-    assert.equal(stats.features.memory.calls,1);assert.equal(stats.features.memory.failures,0);
-    assert.deepEqual(stats.features.memory.usage,{inputTokens:7,outputTokens:4});
+    const stats=featureCalls.snapshot();assert.deepEqual(stats.tasks,{simulation:1});
+    assert.equal(stats.features.world.calls,1);assert.equal(stats.features.world.failures,0);
+    assert.deepEqual(stats.features.world.usage,{inputTokens:7,outputTokens:4});
     assert.equal(stats.features['test-text'].calls,1);assert.equal(stats.features['test-text'].failures,1);
     assert.equal(stats.features['test-text'].usage,undefined);assert.equal(stats.recent.length,2);
     featureCalls.clear();

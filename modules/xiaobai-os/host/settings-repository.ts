@@ -244,7 +244,7 @@ export function createSettingsRepository(adapter: XiaobaiOsSettingsAdapter): Xia
     }
 
     function setWorldPreference(key: Exclude<keyof WorldSettings, 'encounterFrequency'>, enabled: boolean): Promise<XiaobaiOsSettings> {
-        if (key !== 'subscribed' && key !== 'injectToStory' && key !== 'peopleEvolution' && key !== 'sceneryEvolution') { throw new TypeError('invalid World preference'); }
+        if (key !== 'subscribed' && key !== 'peopleEvolution' && key !== 'sceneryEvolution') { throw new TypeError('invalid World preference'); }
         if (typeof enabled !== 'boolean') { throw new TypeError('World preference must be a boolean'); }
         return mutate(next => {
             next.apps.world[key] = enabled;

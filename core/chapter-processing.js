@@ -3,18 +3,19 @@ import { runRecursiveCompressionCascade } from '../modules/story-summary/generat
 import { memoryDigest } from '../modules/story-summary/data/memory-policy.js';
 import { featureCalls } from '../modules/text-api/call-stats.js';
 
-export function createChapterProcessing({read, memory, requireUpdate, reviewEnabled, plannerEnabled, writeChapter}) {
+export function createChapterProcessing({read, memory, requireUpdate, reviewEnabled = () => true, plannerEnabled, writeChapter}) {
     const historyFor = (data, end) => (data.summaryHistory || []).filter(row => row.endMesId <= end);
     function chapterAt(source, data) {
         const history = historyFor(data, source.end);
         const batch = history.find(row => row.endMesId === source.end);
-        const chapter = batch?.pendingPlannerChapter && batch.reviewLayers?.findLast(n => n.level === 'chapter' && n.sourceId === batch.pendingPlannerChapter);
+        const nodes = [...(batch?.compressionNodes || []), ...(batch?.reviewLayers || [])];
+        const chapter = batch?.pendingPlannerChapter && nodes.findLast(n => n.level === 'chapter' && n.sourceId === batch.pendingPlannerChapter);
         return chapter && memoryDigest([chapter.start, chapter.end, chapter.sourceId, chapter.text]);
     }
     return {
         pending(source, data) {
             const node = chapterAt(source, data);
-            return reviewEnabled() && !!planNextCompression(historyFor(data, source.end), {chat:read().chat})
+            return (reviewEnabled() && !!planNextCompression(historyFor(data, source.end), {chat:read().chat}))
                 || !!(node && plannerEnabled() && data.floorWork?.[source.end]?.chapter !== node);
         },
         async run(source, signal, check) {
@@ -29,7 +30,11 @@ export function createChapterProcessing({read, memory, requireUpdate, reviewEnab
                 await memory.saveFloorWork(source,check,(_entry,store) => {
                     const current = historyFor(store,source.end), valid = summaryLayers(current,nodes,{chat:read().chat});
                     if (!nodes.every(n => valid.parents.includes(n))) throw new Error('章节来源已变化，请重试');
-                    (current.at(-1).compressionNodes ??= []).push(...nodes);
+                    const targetBatch = current.at(-1);
+                    (targetBatch.compressionNodes ??= []).push(...nodes);
+                    // WHY: Mark newly minted chapter node so planner.onChapter immediately triggers below without needing removed review stage.
+                    const chapter = nodes.findLast(n => n.level === 'chapter');
+                    if (chapter) targetBatch.pendingPlannerChapter = chapter.sourceId;
                 });
             }
             const fresh = memory.getPublishedSummaryStore();

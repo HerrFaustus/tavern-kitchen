@@ -1,5 +1,4 @@
 import { createWorldModule } from './module.js';
-import { registerEvolutionReader } from './evolution-view.js';
 import { createWorldManagement } from './management/participant.js';
 import { createWorldService } from './application/service.js';
 import type { PartitionStore } from '../../kernel/contracts.js';
@@ -34,8 +33,7 @@ export function createProductionWorldModule(dependencies: {
         const world = createWorldService(context.partition as PartitionStore<WorldDomain>, context.files, dependencies.getChatIdentity);
         try {
             const unregister = registry.register(createWorldManagement(world));
-            const disconnect = registerEvolutionReader(world);
-            return () => { disconnect(); unregister(); world.dispose(); };
+            return () => { unregister(); world.dispose(); };
         } catch (error) { world.dispose(); throw error; }
     } };
 }

@@ -1,5 +1,5 @@
 import { EXT_ID } from '../../../core/constants.js';
-import { sameMemory } from '../maintenance/domain.js';
+import { sameMemory } from './memory-json.js';
 import { runWithAbortDeadline, throwIfSignalAborted, waitForAbortableDelay } from '../../../shared/common/abort-utils.js';
 import { isFileUploadUnsupportedStatus } from '../../../shared/common/local-file-mirror.js';
 

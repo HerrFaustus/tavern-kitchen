@@ -10,15 +10,14 @@ test('the real settings page presents raw retrieval and drops legacy summary/anc
     assert.equal(document.querySelector('[data-workspace-page="tab-l0-api"]'), null);
     for (const removedId of ['legacy-anchor-card', 'vector-atom-count', 'vector-event-count', 'vector-empty-l0-warning',
         'trigger-enabled', 'trigger-interval', 'trigger-timing', 'trigger-notify-on-complete', 'use-vector-boundary',
-        'trigger-role', 'trigger-insert-at-end', 'filter-rules-collapse', 'tab-agent', 'recall-log-content']) {
+        'trigger-role', 'trigger-insert-at-end', 'filter-rules-collapse', 'tab-agent', 'recall-log-content',
+        'proofreading-settings-host', 'proofreading-page']) {
         assert.equal(document.getElementById(removedId), null, `${removedId} should be removed`);
     }
     assert.equal(document.getElementById('vector-chunk-count').closest('.vector-stat-col').classList.contains('hidden'), false);
-    assert.ok(document.getElementById('proofreading-settings-host'));
     assert.ok(document.getElementById('recall-page'));
     assert.ok(document.getElementById('recall-round-select'));
     assert.ok(document.getElementById('recall-detail'));
-    assert.ok(document.getElementById('proofreading-page'));
     assert.equal(document.querySelector('[data-workspace-page]'), null);
 });
 

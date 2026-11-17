@@ -4,11 +4,7 @@ import { createProductionBootstrap } from './host/production-composition.js';
 import { createSettingsRepository } from './host/settings-repository.js';
 import { createSillyTavernSettingsAdapter } from './host/sillytavern-context.js';
 
-import { mountEvolutionView, mountWorldSettings as mountWorldSettingsView } from './apps/world/evolution-view.js';
-
-export function mountWorldEvolution(parent: HTMLElement, section: 'people' | 'situation', frame?: HTMLIFrameElement, check?: () => Promise<void>, visit?: (selector: string) => void) {
-    return mountEvolutionView(parent, section, settingsRepository, frame, check, visit);
-}
+import { mountWorldSettings as mountWorldSettingsView } from './apps/world/evolution-view.js';
 
 export function mountWorldSettings(parent: HTMLElement) {
     return mountWorldSettingsView(parent, settingsRepository);

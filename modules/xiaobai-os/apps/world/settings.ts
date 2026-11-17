@@ -10,6 +10,6 @@ export function normalizeWorldSettings(value: unknown): WorldSettings {
             ? input.encounterFrequency
             : 'occasional',
         subscribed: true,
-        injectToStory: typeof input.injectToStory === 'boolean' ? input.injectToStory : true,
+        injectToStory: true,
     };
 }

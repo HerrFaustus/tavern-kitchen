@@ -5,24 +5,35 @@ import { resolveStateInjectionDepth } from './authority.js';
 
 export { resolveStateInjectionDepth };
 
-const ID = 'world-authority', KEY = 'tavernKitchenWorldAuthority';
+const ID = 'world-authority', KEY = 'tavernKitchenWorldAuthority', SIM_KEY = 'tavernKitchenSimulationExtension';
 
-export function installWorldAuthorityGeneration({ getContext, prepare, onError = error => console.error('[TavernKitchen] 世界状态读取失败', error) }) {
+export function installWorldAuthorityGeneration({ getContext, prepare, prepareSimulation = null, onError = error => console.error('[TavernKitchen] 世界状态读取失败', error) }) {
     let disposed = false;
-    const clear = () => { delete extension_prompts[KEY]; };
-    registerGenerateInterceptor(ID, async (_chat, _size, abort, type, run) => {
+    const clear = () => {
         delete extension_prompts[KEY];
+        delete extension_prompts[SIM_KEY];
+    };
+    registerGenerateInterceptor(ID, async (_chat, _size, abort, type, run) => {
+        clear();
         if (!usesStoryRecall(type)) return;
         const owner = getContext().chatId;
         const query = (getContext().chat || []).slice(-3).map(message => message.mes || '').join('\n');
         try {
             if (run?.signal.aborted) return;
             if (getContext().chatId !== owner) { abort(true); return; }
-            const prepared = await prepare(query, type);
+            const [prepared, simPrompt] = await Promise.all([
+                prepare(query, type),
+                prepareSimulation ? prepareSimulation(type) : '',
+            ]);
             if (disposed || run?.signal.aborted || getContext().chatId !== owner) return;
             const value = typeof prepared === 'string' ? prepared : (prepared?.value || '');
             const depth = typeof prepared === 'string' ? 1 : (prepared?.depth ?? 1);
             if (value) extension_prompts[KEY] = { value, position: extension_prompt_types.IN_CHAT, depth, role: extension_prompt_roles.SYSTEM };
+            const simValue = typeof simPrompt === 'string' ? simPrompt.trim() : '';
+            if (simValue) {
+                // WHY: Latest un-updated Simulation background prose extends the immediate floor at depth=1 below world state (depth>=2).
+                extension_prompts[SIM_KEY] = { value: simValue, position: extension_prompt_types.IN_CHAT, depth: 1, role: extension_prompt_roles.SYSTEM };
+            }
         } catch (error) { abort(true); onError(error); }
     }, GENERATE_INTERCEPTOR_ORDER.STORY_SUMMARY - 2);
     return Object.assign(() => { disposed = true; unregisterGenerateInterceptor(ID); clear(); }, { clear });

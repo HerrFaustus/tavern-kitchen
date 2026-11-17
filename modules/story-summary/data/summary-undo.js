@@ -1,5 +1,6 @@
 import { retireArcData } from './legacy-arcs.js';
-import { restoreMaintenance, sameMemory as sameJson } from '../maintenance/domain.js';
+import { sameMemory as sameJson } from './memory-json.js';
+import { restoreLegacyMaintenance as restoreMaintenance } from './legacy-maintenance.js';
 
 const UNDO_VERSION = 1;
 

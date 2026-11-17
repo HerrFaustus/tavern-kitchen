@@ -5,10 +5,6 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { createTestModuleUrl } from './helpers/bundle-module.js';
 import { buildSummaryAssistantDocPrompt, resolveSummaryStyle } from '../data/generation-rules.js';
-import { getMemoryChatPrompt, getMemoryMaintenancePrompt } from '../maintenance/prompt.js';
-import { runMemoryAgent } from '../maintenance/runner.js';
-import { createMemorySession } from '../maintenance/session.js';
-import { maintenanceFixture } from './fixtures/memory-maintenance.js';
 
 // Contracts: custom instructions survive save/reload and are used on the next
 // request; reset follows built-ins; failed saves do not publish unsaved settings.
@@ -66,22 +62,4 @@ test('built-in summary instructions and protocol stay active while legacy saved 
         ...baselinePrompts, summaryAssistantDocPrompt: buildSummaryAssistantDocPrompt(),
     });
     assert.equal(resolveSummaryStyle('  '), resolveSummaryStyle());
-});
-
-test('maintenance and interactive requests receive the selected style for that run', async () => {
-    for (const mode of ['auto', 'chat']) {
-        for (const summaryStyle of ['Write concise episode cards.', 'Conservez les noms originaux.', '']) {
-            const requests = [];
-            const session = mode === 'auto' ? createMemorySession(maintenanceFixture()) : null;
-            const result = await runMemoryAgent(session, {
-                mode, summaryStyle, question: 'Describe the available task.',
-                config: { provider: 'openai', model: 'offline-test', maxTokens: 1000 },
-                countTokens: async () => ({ tokens: 100, source: 'test' }),
-                adapter: { chat: async request => { requests.push(request); return { text: 'No changes.' }; } },
-            });
-            assert.equal(result.saved, 0);
-            const expected = mode === 'auto' ? getMemoryMaintenancePrompt(summaryStyle) : getMemoryChatPrompt(summaryStyle);
-            assert.equal(requests[0].systemPrompt.slice(0, expected.length), expected);
-        }
-    }
 });

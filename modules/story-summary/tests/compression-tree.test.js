@@ -6,14 +6,12 @@ import { build } from 'esbuild';
 import {
     DEFAULT_LEAF_KEEP_RECENT,
     layerSignature,
-    mergePlotLineSnapshots,
     planNextCompression,
     selectInjectionNodes,
     summaryLayers,
     thresholdForLevel,
 } from '../data/summary-layers.js';
 import { runRecursiveCompressionCascade } from '../generate/layer-cascade.js';
-import { plotBackgroundItems } from '../generate/plot-background.js';
 import { captureRangeSource } from '../data/turn-source.js';
 import { buildTimelineTree, selectTimelineTree } from '../timeline-tree.js';
 import { createTestModuleUrl } from './helpers/bundle-module.js';
@@ -127,8 +125,7 @@ test('thresholdForLevel and planNextCompression keep newest L0 leaves and cascad
     assert.equal(planNextCompression(underLimit.store.summaryHistory, { chat: underLimit.chat }), null);
 
     const atLimit = makeRoundsFixture(15);
-    assert.equal(planNextCompression(atLimit.store.summaryHistory, {chat:atLimit.chat}), null);
-    const plan = planNextCompression(atLimit.store.summaryHistory, { chat: atLimit.chat, minDepth:0 });
+    const plan = planNextCompression(atLimit.store.summaryHistory, { chat: atLimit.chat });
     assert.equal(plan.level, 'stage');
     assert.equal(plan.nodes.length, 12);
     assert.equal(plan.start, 0);
@@ -304,109 +301,42 @@ test('planSummaryBatches and buildIncrementalSlice respect character caps withou
     assert.equal(nextSlice.hasMoreBatches, false);
 });
 
-test('runRecursiveCompressionCascade propagates plotLineSnapshots through L1 and L2 and timeline search indexes them', async () => {
+test('runRecursiveCompressionCascade rolls L0 -> L1 -> L2 cleanly from minDepth=0 without plotLines and drops cleanly on swipe', async () => {
+    const mod = await loadPromptModule();
     const roundCount = thresholdForLevel(0) * thresholdForLevel(1) + DEFAULT_LEAF_KEEP_RECENT;
     const chat = Array.from({ length: roundCount * 2 }, (_, i) => ({ is_user: i % 2 === 0, mes: `正文${i}` }));
     const summaryHistory = Array.from({ length: roundCount }, (_, i) => ({
         endMesId: 2 * i + 1,
-        summary: i === 0 ? '轮0摘要，初现失踪线索' : i === thresholdForLevel(0) ? '追查到北仓换防记录' : `轮${i}摘要`,
-        plotLines: i === 0
-            ? [{ title: '银钥匙谜案', status: 'potential', characters: ['林疏'], reading: '初现失踪线索', quote: '初现失踪线索', nextFocus: '查验锁孔' }]
-            : i === thresholdForLevel(0)
-                ? [{ title: '银钥匙谜案', status: 'active', characters: ['守卫'], summary: '追查到北仓换防记录', reading: '北仓查证', quote: '北仓换防记录' }]
-                : [],
-        sourceReceipt: { id: `pl:${i}`, source: captureRangeSource(chat, 2 * i, 2 * i + 1) },
+        summary: `轮${i}摘要`,
+        sourceReceipt: { id: `c:${i}`, source: captureRangeSource(chat, 2 * i, 2 * i + 1) },
     }));
-    const seenCalls = [];
-    const staged = await runRecursiveCompressionCascade({ summaryHistory }, { minDepth:0,
+    const staged = await runRecursiveCompressionCascade({ summaryHistory }, {
+        minDepth: 0,
         chat,
-        summarizeLayer: async payload => {
-            seenCalls.push(payload);
-            return `${payload.level}:${payload.start}-${payload.end}`;
-        },
+        summarizeLayer: async ({ level, children }) => `${level}:${children[0].start}-${children.at(-1).end}`,
     });
-    const stageWithLine = staged.find(node => node.level === 'stage' && node.start === 0);
-    assert.ok(stageWithLine?.plotLineSnapshots?.length === 1);
-    assert.equal(stageWithLine.plotLineSnapshots[0].title, '银钥匙谜案');
-    const chapterNode = staged.find(node => node.level === 'chapter');
-    assert.ok(chapterNode, 'cascade should roll up to chapter');
-    assert.equal(chapterNode.plotLineSnapshots[0].title, '银钥匙谜案');
-    assert.equal(chapterNode.plotLineSnapshots[0].status, 'active');
-    assert.deepEqual(chapterNode.plotLineSnapshots[0].characters, ['林疏', '守卫']);
-    assert.equal(chapterNode.plotLineSnapshots[0].beatCount, 2);
-    assert.match(chapterNode.plotLineSnapshots[0].summary, /北仓/);
-    assert.ok(seenCalls.some(call => call.level === 'chapter' && call.plotLineSnapshots?.length === 1));
+    assert.equal(staged.filter(n => n.level === 'stage').length, 6);
+    assert.equal(staged.filter(n => n.level === 'chapter').length, 1);
 
-    const mergedManual = mergePlotLineSnapshots([
-        { start: 0, end: 0, text: '起', plotLines: [{ title: '支线A', status: 'potential', reading: '起', quote: '起' }] },
-        { start: 1, end: 1, plotLineSnapshots: [{ title: '支线A', status: 'closed', reading: '终' }] },
-    ]);
-    assert.equal(mergedManual[0].status, 'closed');
-    assert.equal(mergedManual[0].beatCount, 2);
-    assert.match(mergedManual[0].summary, /收束：终/);
-
-    const tree = buildTimelineTree([{ id: 'round-0', _addedAt: 0, origin: { start: 0, end: 1 }, summary: '摘要' }], [
-        { level: 'stage', start: 0, end: 1, text: '阶段正文', plotLineSnapshots: [{ title: '银钥匙谜案', status: 'active', summary: '追查北仓' }] },
-    ]);
-    const hits = selectTimelineTree(tree, { query: '北仓' });
-    assert.equal(hits.length, 1);
-    assert.equal(hits[0].plotLineSnapshots[0].title, '银钥匙谜案');
-});
-
-test('plotBackgroundItems carries compressed plotLineSnapshots into buildRawPrompt and drops cleanly on branch swipe', async () => {
-    const mod = await loadPromptModule();
-    const chat = Array.from({ length: 28 }, (_, i) => ({ is_user: i % 2 === 0, mes: `正文${i}` }));
-    const summaryHistory = Array.from({ length: 13 }, (_, i) => ({
-        endMesId: 2 * i + 1,
-        summary: i === 0 ? '轮0初现失踪线索。' : i === 5 ? '轮5北仓换防暗流涌动。' : `第${i + 1}轮摘要`,
-        timeEnd: `2026/11/${String(i + 1).padStart(2, '0')} 10:00`,
-        ...(i === 0 && { plotLines: [{ title: '银钥匙谜案', status: 'potential', reading: '发现银钥匙', quote: '失踪线索', characters: ['林疏'], nextFocus: '核查锁孔' }] }),
-        ...(i === 5 && { plotLines: [{ title: '银钥匙谜案', status: 'active', reading: '北仓换防有变', quote: '换防暗流', characters: ['守卫'], nextFocus: '追查东仓货单' }] }),
-        sourceReceipt: { id: `bg:${i}`, source: captureRangeSource(chat, 2 * i, 2 * i + 1) },
-    }));
-    const { leaves } = summaryLayers(summaryHistory, [], { chat });
-    const stageChildren = leaves.slice(0, 12);
-    const stageNode = {
-        id: 'stage-bg-1',
-        level: 'stage',
-        start: stageChildren[0].start,
-        end: stageChildren.at(-1).end,
-        text: '阶段一：暗查北仓失踪案',
-        sourceId: layerSignature(stageChildren),
-        childIds: stageChildren.map(c => c.id),
-        plotLineSnapshots: mergePlotLineSnapshots(stageChildren),
-    };
-    summaryHistory[11].reviewLayers = [stageNode];
-
-    const bg = plotBackgroundItems({ summaryHistory }, chat, 25);
-    assert.equal(bg.length, 2);
-    assert.equal(bg[0].id, 'stage-bg-1');
-    assert.equal(bg[0].plotLineSnapshots[0].title, '银钥匙谜案');
-
+    summaryHistory[71].compressionNodes = staged;
     const store = {
         summaryHistory,
-        lastSummarizedMesId: 25,
-        json: { facts: [], storyRecords: [{ id: 'clock', kind: 'clock', label: '2026年11月14日', date: '2026-11-14' }] },
+        lastSummarizedMesId: roundCount * 2 - 1,
+        json: { facts: [], storyRecords: [] },
     };
     globalThis.__compressionPromptCtx = { chat, name1: '主角', chatId: 'c-snap' };
     globalThis.__compressionPromptStore = store;
 
-    const prompt = mod.buildRawPrompt(store, { chunks: [], focusCharacters: [] }, 25);
-    assert.match(prompt.promptText, /阶段一：暗查北仓失踪案/);
-    assert.match(prompt.promptText, /剧情线「银钥匙谜案」\(进行中\).*林疏.*守卫/);
-    assert.match(prompt.promptText, /追查东仓货单/);
+    const prompt = mod.buildRawPrompt(store, { chunks: [], focusCharacters: [] }, roundCount * 2 - 1);
+    assert.match(prompt.promptText, /chapter:0-143/);
+    assert.equal('plotLineSnapshots' in staged.find(n => n.level === 'chapter'), false);
 
-    // Tight plotBudget: if snapshots push a single compressed item over budget, keep the summary line alone rather than failing early.
-    const hugeSnap = { title: '超长支线', status: 'active', summary: '超长摘要。'.repeat(700), reading: '推进' };
-    stageNode.plotLineSnapshots = [...stageNode.plotLineSnapshots, hugeSnap];
-    const squeezed = mod.buildRawPrompt(store, { chunks: [], focusCharacters: [] }, 25);
-    assert.match(squeezed.promptText, /阶段一：暗查北仓失踪案/);
-
-    // Swiping a floor inside stage-bg-1 invalidates the compressed parent and omits its snapshots from background.
-    const original = chat[3].mes;
     chat[3].mes = '切分支后的全新对话。';
-    const afterSwipe = mod.buildRawPrompt(store, { chunks: [], focusCharacters: [] }, 25);
-    assert.doesNotMatch(afterSwipe.promptText, /阶段一：暗查北仓失踪案/);
-    assert.doesNotMatch(afterSwipe.promptText, /剧情线「银钥匙谜案」/);
-    chat[3].mes = original;
+    const afterSwipe = mod.buildRawPrompt(store, { chunks: [], focusCharacters: [] }, roundCount * 2 - 1);
+    assert.doesNotMatch(afterSwipe.promptText, /chapter:0-143/);
+
+    const tree = buildTimelineTree([{ id: 'round-0', _addedAt: 0, origin: { start: 0, end: 1 }, summary: '追查北仓' }], [
+        { level: 'stage', start: 0, end: 1, text: '阶段正文' },
+    ]);
+    assert.equal(selectTimelineTree(tree, { query: '北仓' }).length, 1);
 });

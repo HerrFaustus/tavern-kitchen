@@ -1,4 +1,3 @@
-import { collectPlotLines } from './plot-lines.js';
 import { nameKey, protagonistIdentity } from './protagonist-identity.js';
 import { isPersonalAgenda, projectPersonalAgendas, availableStoryRecords, characterStoryState, PRESENCE, BELIEFS, THREAD_STATUS, SITUATION_FIELDS, STORY_KINDS, storyRecordText, relativeStoryTime } from './records.js';
 import { FIELD_LABELS } from '../world-records/domain.js';
@@ -10,6 +9,12 @@ function source(record) {
     if (!Number.isInteger(record?._addedAt)) return el('small', '导入记录', 'tk-record-note');
     const start = (record._sourceStart ?? record._addedAt) + 1, end = record._addedAt + 1;
     return el('small', start === end ? `来源：第 ${end} 楼` : `来源：第 ${start}–${end} 楼`, 'tk-record-note');
+}
+function sourceButton(floor, openSource) {
+    const button = el('button', '查看原楼', 'menu_button');
+    button.type = 'button';
+    button.onclick = () => openSource(floor);
+    return button;
 }
 function section(parent, title, className) { const node = el('section', undefined, className); node.append(el('h4', title, 'standoutHeader')); parent.append(node); return node; }
 function line(parent, label, value) { if (value) { const row = el('p'); row.append(el('strong', `${label}：`), document.createTextNode(value)); parent.append(row); } }
@@ -92,25 +97,7 @@ export function renderThreads(parent, records, kinds = ['plan', 'suspense', 'sit
         }
     }
 }
-const LINE_STATUS = { active: '进行中', potential: '潜在线索', closed: '已收束' };
-function plotMetaLabel(item) {
-    const parts = [];
-    if (Number.isInteger(item.floor)) {
-        const start = Number.isInteger(item.firstFloor) ? item.firstFloor + 1 : item.floor + 1;
-        const end = item.floor + 1;
-        parts.push(start === end ? `第 ${end} 楼` : `第 ${start}–${end} 楼`);
-    }
-    if (item.roundCount > 1) parts.push(`${item.roundCount} 轮推进`);
-    if (item.characters?.length) parts.push(item.characters.slice(0, 3).join('、'));
-    return parts.join(' · ');
-}
-function sourceButton(floor, openSource) {
-    const button = el('button', '查看原楼', 'menu_button'); button.type = 'button';
-    button.onclick = () => openSource(floor);
-    return button;
-}
-
-export function createSuspenseBook({ getSnapshot, clues = false, openSource }) {
+export function createSuspenseBook({ getSnapshot, openSource }) {
     let root, renderedWorld = '';
     return {
         mount(parent) {
@@ -129,56 +116,11 @@ export function createSuspenseBook({ getSnapshot, clues = false, openSource }) {
                 return;
             }
             const records = worldStoryRecords(world, availableStoryRecords(store));
-            if (clues) {
-                const lines = collectPlotLines(store.summaryHistory, records);
-                if (!lines.length) {
-                    root.append(el('p', '当前还没有可追踪的剧情线。', 'tk-record-note'));
-                } else {
-                    const counts = ['active', 'potential', 'closed'].map(key => `${LINE_STATUS[key]} ${lines.filter(item => item.status === key).length}`).join(' · ');
-                    root.append(el('p', `共 ${lines.length} 条剧情线（${counts}）· 摘要已同步供编剧规划`, 'tk-record-note tk-clues-overview'));
-                }
-                for (const [status, label] of [['active', '进行中'], ['potential', '潜在线'], ['closed', '已收束']]) {
-                    const items = lines.filter(item => item.status === status);
-                    if (!items.length) continue;
-                    const group = section(root, `${label}（${items.length}）`);
-                    for (const item of items) {
-                        const row = el('details', undefined, 'inline-drawer tk-plot-line');
-                        row.dataset.recordId = item.title;
-                        const summary = el('summary', undefined, 'inline-drawer-header tk-plot-line-head');
-                        summary.append(el('span', item.title, 'tk-plot-line-title'));
-                        const meta = plotMetaLabel(item);
-                        if (meta) summary.append(el('small', meta, 'tk-record-note tk-plot-line-meta'));
-                        row.append(summary);
-                        const body = el('div', undefined, 'inline-drawer-content tk-plot-line-body');
-                        if (item.summary && item.summary !== item.reading) line(body, '脉络总结', item.summary);
-                        line(body, '最新动态', item.reading);
-                        if (item.nextFocus) line(body, '当前焦点', item.nextFocus);
-                        if (item.characters?.length) line(body, '涉及人物', item.characters.join('、'));
-                        if (item.quote && item.quote !== item.reading) body.append(el('blockquote', item.quote));
-                        if (item.beats?.length > 1) {
-                            const history = el('details', undefined, 'tk-plot-history');
-                            history.dataset.historyId = `${item.title}::history`;
-                            history.append(el('summary', `推进轨迹（${item.beats.length} 轮）`));
-                            const list = el('ol', undefined, 'tk-plot-beats');
-                            for (const beat of item.beats) {
-                                const floorTag = Number.isInteger(beat.floor) ? `第 ${beat.floor + 1} 楼` : '早期记录';
-                                const step = el('li', `[${floorTag} · ${LINE_STATUS[beat.status] || beat.status}] ${beat.reading}`);
-                                list.append(step);
-                            }
-                            history.append(list);
-                            body.append(history);
-                        }
-                        if (openSource && Number.isInteger(item.floor)) body.append(sourceButton(item.floor, openSource));
-                        else body.append(source({ _addedAt: item.floor }));
-                        row.append(body);
-                        group.append(row);
-                    }
-                }
-            } else renderThreads(root, records, ['suspense'], Infinity, {openSource});
+            renderThreads(root, records, ['suspense'], Infinity, { openSource });
             for (const item of root.querySelectorAll('details')) if (stateKey(item)) item.open = expanded.has(stateKey(item));
         },
         isEditing: () => false,
-        empty() { root.replaceChildren(el('p', clues ? '选择一段对话后查看剧情线。' : '选择一段对话后查看悬念。', 'tk-record-note')); },
+        empty() { root.replaceChildren(el('p', '选择一段对话后查看悬念。', 'tk-record-note')); },
         reset() { renderedWorld = ''; root?.replaceChildren(); },
     };
 }
@@ -242,7 +184,7 @@ export function renderWorldAttributes(root, entities, person, aliases = [], show
     }
 }
 
-export function createProtagonistView({ getSnapshot, getPlayerName, getInvolvement, inventory }) {
+export function createProtagonistView({ getSnapshot, getPlayerName, getInvolvement }) {
     let root;
     return {
         mount(parent) {
@@ -260,12 +202,6 @@ export function createProtagonistView({ getSnapshot, getPlayerName, getInvolveme
             }
             if (hero) {
                 renderWorldAttributes(root, entities, hero);
-                if (inventory) {
-                    const target = el('section');
-                    root.append(target);
-                    inventory.mount(target);
-                    inventory.show(world);
-                }
             }
             const snapshot = getSnapshot();
             const records = worldStoryRecords(world, snapshot?.enabled ? availableStoryRecords(snapshot.store, snapshot.invalidFrom) : []);
@@ -288,7 +224,7 @@ export function createProtagonistView({ getSnapshot, getPlayerName, getInvolveme
             }
             if (root.childElementCount === 1) root.append(el('p', '尚无与主角明确相关的世界记录。', 'tk-record-note'));
         },
-        isEditing: () => inventory?.isEditing() || false,
+        isEditing: () => false,
         empty() { root.replaceChildren(el('p', '选择一段对话后查看主角状态。', 'tk-record-note')); },
         reset() { root?.replaceChildren(); },
     };

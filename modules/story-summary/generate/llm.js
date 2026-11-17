@@ -1,4 +1,3 @@
-import { plotLinePrompt } from '../../story-state/plot-lines.js';
 // LLM Service
 
 import {
@@ -195,7 +194,7 @@ export async function generateFloorSummary({ store, floorText, timeout = 180000,
     if (signal?.aborted) throw createSummaryGenerationCancelledError();
     if (!floorText?.trim()) throw new Error('本楼正文为空');
     const messages = [
-        { role: 'system', content: [FLOOR_SYSTEM, plotLinePrompt(store?.summaryHistory, store?.json?.storyRecords)].filter(Boolean).join('\n') },
+        { role: 'system', content: FLOOR_SYSTEM },
         { role: 'user', content: floorInput(buildFloorSummaryProtocol(store), floorText) },
     ];
     try {
@@ -207,7 +206,7 @@ export async function generateFloorSummary({ store, floorText, timeout = 180000,
     }
 }
 
-export async function generateReviewedLayer({ level, children, plotLineSnapshots, reason, signal, agentTask }) {
+export async function generateReviewedLayer({ level, children, reason, signal, agentTask }) {
     const prompt = LAYER_PROMPTS[level] || LAYER_PROMPTS.chapter;
     const messages = [
         { role: 'system', content: prompt + '\n' + LAYER_SUFFIX },
@@ -222,7 +221,6 @@ export async function generateReviewedLayer({ level, children, plotLineSnapshots
                     ...(n.timeEnd ? { timeEnd: n.timeEnd } : {}),
                     summary: n.text,
                 })),
-                ...(plotLineSnapshots?.length && { plotLineSnapshots }),
             }),
         },
     ];

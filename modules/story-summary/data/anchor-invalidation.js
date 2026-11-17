@@ -1,4 +1,4 @@
-import { invalidateReceiptCompletion } from '../maintenance/ranges.js';
+import { invalidateLegacyReceiptCompletion as invalidateReceiptCompletion } from './legacy-maintenance.js';
 
 function mapChanged(items, transform) {
     let next = items;

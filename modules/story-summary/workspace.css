@@ -128,18 +128,17 @@ html.tk-embedded:is([data-kitchen-view="people"],[data-kitchen-view="relations"]
 html.tk-embedded .archive { height: 100%; min-height: 0; overflow-y: auto; box-sizing: border-box; }
 html.tk-embedded:not([data-kitchen-view="memory"]) .summary-generate-bar { display: none; }
 html.tk-embedded[data-kitchen-view="settings"] body { height: 100dvh; margin: 0; overflow: hidden; }
-html.tk-embedded[data-kitchen-view="settings"] :is(.archive, #data-page, #recall-page, #proofreading-page) { display: none !important; }
+html.tk-embedded[data-kitchen-view="settings"] :is(.archive, #data-page, #recall-page) { display: none !important; }
 html.tk-embedded[data-kitchen-view="settings"] #settings-modal.active { position: static !important; height: 100%; overflow-y: auto; }
 html.tk-embedded[data-kitchen-view="settings"] #settings-modal :is(.workspace-shell,.workspace-layout,.modal-body) { min-height: 0; padding-block: 0; box-sizing: border-box; }
 html.tk-embedded[data-kitchen-view="settings"] .workspace-shell > .modal-foot { margin-left: 0; }
 .memory-record-view { min-height: 0; overflow-y: auto; box-sizing: border-box; }
 
 html.tk-embedded[data-kitchen-view="data"] body,
-html.tk-embedded[data-kitchen-view="recall"] body,
-html.tk-embedded[data-kitchen-view="proofreading"] body { height: 100dvh; margin: 0; overflow: hidden; }
-html.tk-embedded:is([data-kitchen-view="data"],[data-kitchen-view="recall"],[data-kitchen-view="proofreading"]) :is(.archive, #settings-modal) { display: none !important; }
-#data-page, #recall-page, #proofreading-page { height: 100%; box-sizing: border-box; overflow-y: auto; overflow-wrap: anywhere; padding: 8px 10px 24px; }
-#data-page[hidden], #recall-page[hidden], #proofreading-page[hidden] { display: none; }
+html.tk-embedded[data-kitchen-view="recall"] body { height: 100dvh; margin: 0; overflow: hidden; }
+html.tk-embedded:is([data-kitchen-view="data"],[data-kitchen-view="recall"]) :is(.archive, #settings-modal) { display: none !important; }
+#data-page, #recall-page { height: 100%; box-sizing: border-box; overflow-y: auto; overflow-wrap: anywhere; padding: 8px 10px 24px; }
+#data-page[hidden], #recall-page[hidden] { display: none; }
 .recall-page-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--bdr); }
 .recall-page-head h3 { margin: 0; font-size: 1rem; font-weight: 600; color: var(--txt); }
 .recall-round-picker { display: inline-flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--txt2); }

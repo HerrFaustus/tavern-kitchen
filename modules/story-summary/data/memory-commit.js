@@ -1,9 +1,8 @@
 import { getContext } from '../../../../../../extensions.js';
 import { chat_metadata, getRequestHeaders } from '../../../../../../../script.js';
 import { EXT_ID } from '../../../core/constants.js';
-import { sameMemory } from '../maintenance/domain.js';
+import { sameMemory } from './memory-json.js';
 import { createMetadataConfirmation, MetadataConfirmationError, METADATA_CONFIRMATION_TIMEOUT_MS } from './metadata-confirmation.js';
-import { invalidateChangedMaintenance } from '../maintenance/ranges.js';
 import { invalidateMemoryAnchors, invalidateMemoryAnchorsAtFloors } from './anchor-invalidation.js';
 import { createAbortError, throwIfSignalAborted, runWithAbortDeadline } from '../../../shared/common/abort-utils.js';
 
@@ -150,7 +149,6 @@ export function publishSummaryMemory(chatId, next, { previous = readSummaryMemor
     if (!sameMemory(project(owner), previous)) throw new MetadataConfirmationError('metadata_draft_conflict');
     if (!FIELDS.every(key => Object.hasOwn(next, key))) throw new MetadataConfirmationError('metadata_incomplete_draft');
     validate?.();
-    invalidateChangedMaintenance(previous, next);
     install(owner, next);
     const transaction = transactions.get(owner);
     if (transaction?.status === 'source_invalid') {
@@ -161,7 +159,7 @@ export function publishSummaryMemory(chatId, next, { previous = readSummaryMemor
 }
 
 /** The sole durable write for summary JSON, history, anchors and extraction status. */
-export async function commitSummaryMemory(chatId, next, { previous = readSummaryMemory(), invalidate, validate, resolvesSourceInvalidity = false, maintenanceWrite = false } = {}) {
+export async function commitSummaryMemory(chatId, next, { previous = readSummaryMemory(), invalidate, validate, resolvesSourceInvalidity = false } = {}) {
     // Atomic acquisition: the stretch from this check to transactions.set below stays
     // synchronous, so exactly one writer holds the transaction. A loser that wakes to
     // 'saving' keeps waiting here instead of being rejected as busy. No await may be
@@ -184,7 +182,6 @@ export async function commitSummaryMemory(chatId, next, { previous = readSummary
     const confirm = createMetadataConfirmation(context, getRequestHeaders);
     const expected = structuredClone(next);
     if (!FIELDS.every(key => Object.hasOwn(expected, key))) throw new MetadataConfirmationError('metadata_incomplete_draft');
-    invalidateChangedMaintenance(previous, expected, { maintenanceWrite });
     const assertBaseline = () => {
         if (getContext()?.chatId !== chatId || extension() !== owner || !sameMemory(project(owner), applyRetirements(baseline, transactions.get(owner)))) {
             throw new MetadataConfirmationError('metadata_draft_conflict');

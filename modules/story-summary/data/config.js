@@ -9,7 +9,6 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY, writeSummaryConfigLocalCache } from '
 import { normalizeSummaryDelayFloors } from './summary-delay.js';
 import { normalizeSummaryWorkflow } from './summary-workflow.js';
 import { normalizeRecallTimeoutSec } from './recall-settings.js';
-import { DEFAULT_MEMORY_MAINTENANCE_ENABLED, normalizeProofreading } from '../maintenance/settings.js';
 import {
     SUMMARY_ALIAS_RULES, SUMMARY_FACT_UPDATE_RULES, buildSummaryAssistantDocPrompt,
 } from './generation-rules.js';
@@ -159,8 +158,6 @@ function normalizeVectorConfig(rawVector = null) {
 function createDefaultSummaryPanelConfig() {
     const defaults = {
         ...normalizeSummaryWorkflow(),
-        memoryMaintenanceEnabled: DEFAULT_MEMORY_MAINTENANCE_ENABLED,
-        ...normalizeProofreading(),
         trigger: {
             enabled: true,
             notifyOnComplete: false,
@@ -173,7 +170,10 @@ function createDefaultSummaryPanelConfig() {
         },
         ui: {
             hideSummarized: true,
-            keepVisibleCount: 5, windowUnit: "turn", recallEarlyOriginal: false,
+            keepVisibleCount: 0,
+            keepVisibleMigratedV2: true,
+            windowUnit: "turn",
+            recallEarlyOriginal: false,
         },
         vector: normalizeVectorConfig(),
     };
@@ -191,9 +191,9 @@ function assertSummaryConfigPersisted(expected, actual) {
     if (!actual || typeof actual !== "object") {
         throw new Error("保存后读取配置失败");
     }
-    if (actual.memoryMaintenanceEnabled !== expected.memoryMaintenanceEnabled
-        || actual.proofreadingInterval !== expected.proofreadingInterval) {
-        throw new Error('memory_maintenance_setting_not_saved');
+    if (actual.ui?.hideSummarized !== expected.ui?.hideSummarized
+        || actual.ui?.keepVisibleCount !== expected.ui?.keepVisibleCount) {
+        throw new Error('summary_setting_not_saved');
     }
 }
 
@@ -201,7 +201,7 @@ function normalizeSummaryPanelConfig(rawConfig = null) {
     const defaults = createDefaultSummaryPanelConfig();
     const clampKeepVisibleCount = (value) => {
         const n = Number.parseInt(value, 10);
-        if (!Number.isFinite(n)) return 5;
+        if (!Number.isFinite(n)) return 0;
         return Math.max(0, Math.min(50, n));
     };
 
@@ -212,8 +212,6 @@ function normalizeSummaryPanelConfig(rawConfig = null) {
     const workflow = normalizeSummaryWorkflow(rawConfig);
     const result = {
         summaryWorkflowVersion: workflow.summaryWorkflowVersion,
-        memoryMaintenanceEnabled: true,
-        ...normalizeProofreading(rawConfig),
         trigger: { ...defaults.trigger, ...workflow.trigger },
         inlineSummary: workflow.inlineSummary,
         ui: { ...defaults.ui, ...(rawConfig.ui || {}) },
@@ -227,10 +225,15 @@ function normalizeSummaryPanelConfig(rawConfig = null) {
     delete result.trigger.useStream;
     result.trigger.notifyOnComplete = rawConfig?.trigger?.notifyOnComplete === true;
     result.trigger.delayFloors = normalizeSummaryDelayFloors(result.trigger.delayFloors);
-    result.ui.hideSummarized = !!result.ui.hideSummarized;
+    result.ui.hideSummarized = rawConfig.ui?.hideSummarized !== undefined ? !!rawConfig.ui.hideSummarized : true;
     const previousCount = rawConfig.ui?.keepVisibleCount;
     const legacy = rawConfig.ui?.windowUnit !== 'turn' && previousCount != null;
-    result.ui.keepVisibleCount = clampKeepVisibleCount(legacy ? (Number(previousCount) === 6 ? 5 : Math.ceil(Number(previousCount) / 2)) : result.ui.keepVisibleCount);
+    const clampedKeep = clampKeepVisibleCount(legacy ? (Number(previousCount) === 6 ? 5 : Math.ceil(Number(previousCount) / 2)) : result.ui.keepVisibleCount);
+    // WHY: 4A defaults to hiding all summarized floors (`keepVisibleCount = 0`). Legacy configs without
+    // keepVisibleMigratedV2 still carrying the old default of 5 are migrated cleanly to 0 on upgrade.
+    const migratedFromLegacyDefault = !rawConfig.ui?.keepVisibleMigratedV2 && clampedKeep === 5;
+    result.ui.keepVisibleCount = migratedFromLegacyDefault ? 0 : clampedKeep;
+    result.ui.keepVisibleMigratedV2 = true;
     result.ui.windowUnit = 'turn';
     result.ui.recallEarlyOriginal = rawConfig.ui?.recallEarlyOriginal === true;
     delete result.ui.useVectorBoundary;

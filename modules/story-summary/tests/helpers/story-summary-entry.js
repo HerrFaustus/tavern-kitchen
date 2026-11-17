@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { parse } from 'acorn';
 import { observeBackgroundTask } from '../../../../shared/common/async-errors.js';
-import { MEMORY_CHAT_MESSAGES } from '../../maintenance/chat-contract.js';
+import { getUpdateAndSimulationBounds } from '../../data/turn-bounds.js';
 import { refreshFloorSummaries } from '../../floor-summary.js';
 import { floorCoverageEnd } from '../../inline/ledger.js';
 import { firstInvalidMemorySource } from '../../data/turn-source.js';
@@ -25,7 +25,7 @@ const declarations = parse(source, { sourceType: 'module', ecmaVersion: 'latest'
 export function entry(names, dependencies) {
     // Existing entrypoint fixtures exercise the retained independent-summary path.
     // Main-reply behavior is tested through its controller and actual persistence separately.
-    const context = vm.createContext({ panelEnabled, getSummarySourceEnd, observeBackgroundTask, MEMORY_CHAT_MESSAGES, refreshFloorSummaries, floorCoverageEnd, SUMMARY_BATCH_FLOORS,
+    const context = vm.createContext({ panelEnabled, getSummarySourceEnd, getUpdateAndSimulationBounds, observeBackgroundTask, refreshFloorSummaries, floorCoverageEnd, SUMMARY_BATCH_FLOORS,
         timelineRounds, summaryLayers, firstInvalidMemorySource, prepareMemorySources, validateMemorySources, worldAuthorityForContext, authorityStoryStore,
         clearRecallHistory, isVectorApiConfigured, getSummaryPanelConfig: () => ({ inlineSummary: { enabled: false } }), ...dependencies });
     vm.runInContext(declarations.filter(node => node.type === 'FunctionDeclaration' ? names.includes(node.id.name)
@@ -54,7 +54,7 @@ const uiDeclarations = parse(uiSource, { sourceType: 'module', ecmaVersion: 'lat
         && node.expression.callee.type === 'FunctionExpression').expression.callee.body.body;
 
 export function uiEntry(names, dependencies) {
-    const context = vm.createContext({ MEMORY_CHAT_MESSAGES, ...dependencies });
+    const context = vm.createContext({ ...dependencies });
     vm.runInContext(uiDeclarations.filter(node => node.type === 'FunctionDeclaration' && names.includes(node.id.name))
         .map(node => uiSource.slice(node.start, node.end)).join('\n'), context);
     return context;

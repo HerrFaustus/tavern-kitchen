@@ -14,7 +14,6 @@ const fixture = await build({ stdin: { resolveDir: root, contents: `
     export {createPreset} from './modules/text-api/model.js';
     export {mountTextApiSettings} from './modules/text-api/settings-ui.js';
     export {mountWorldSettings} from './modules/xiaobai-os/apps/world/evolution-view.js';
-    export {mountEvolutionView} from './modules/xiaobai-os/apps/world/evolution-view.ts';
 ` }, bundle:true, format:'esm', platform:'browser', write:false, loader:{'.css':'empty'}, external:['../../../../../script.js','../../../../utils.js'] });
 const [workspaceCss, embeddedCss, apiCss] = await Promise.all(['style.css','core/kitchen-embedded.css','modules/text-api/settings-ui.css'].map(file => fs.readFile(file,'utf8')));
 const browser = await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_BIN});
@@ -66,8 +65,8 @@ try {
             }
             const repository = api.createTextApiRepository({common:storage,planner:storage});
             const workspace = api.createKitchenWorkspace({});
-            const world = {subscribed:true, encounterFrequency:'occasional', injectToStory:true};
-            const prefs = {read:()=>({enabled:true,apps:{world}}),subscribe:()=>()=>{},async setEncounterFrequency(v){world.encounterFrequency=v;},async setWorldPreference(key,value){world[key]=value;}};
+            const world = {subscribed:true, encounterFrequency:'occasional'};
+            const prefs = {read:()=>({enabled:true,apps:{world}}),subscribe:()=>()=>{},async setEncounterFrequency(v){world.encounterFrequency=v;}};
             globalThis.uiFixture = {workspace,world,calls:0,simRuns:0};
             const doc = globalThis.document;
             workspace.configure({actions:{
@@ -84,8 +83,6 @@ try {
                         };
                         frame.src = '/story'; mount.append(frame);
                     } else post({type:'KITCHEN_MEMORY_VIEW',view:'world'});
-                    workspace.showEvolution(target => api.mountEvolutionView(target,'situation',prefs,frame,
-                        () => api.requireAgent('simulation', async () => repository), selector => workspace.visitBinding('simulation',selector)));
                     const bar = workspace.getControls();
                     const triggerBtn = doc.createElement('button'); triggerBtn.id = 'sim-trigger'; triggerBtn.type = 'button'; triggerBtn.className = 'menu_button'; triggerBtn.textContent = '执行推演';
                     const alertBox = doc.createElement('div'); alertBox.setAttribute('role', 'alert'); alertBox.hidden = true;
@@ -161,8 +158,7 @@ try {
         await page.getByRole('button',{name:'世界与推演'}).click();
         await page.locator('#tk-world-encounter-frequency').selectOption('lively');
         assert.equal(await page.evaluate(() => globalThis.uiFixture.world.encounterFrequency), 'lively');
-        await page.locator('#tk-world-inject-to-story').uncheck();
-        assert.equal(await page.evaluate(() => globalThis.uiFixture.world.injectToStory), false);
+        assert.equal(await page.locator('#tk-world-inject-to-story').count(), 0);
         await page.getByRole('button',{name:'API',exact:true}).click();
         assert.equal(await binding.inputValue(),'p');
         await frame.getByLabel('更新 Agent').selectOption('p');

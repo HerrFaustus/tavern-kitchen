@@ -293,38 +293,6 @@ export async function buildVectorPromptText(excludeLastAi = false, options = {})
     }
 }
 
-const SNAPSHOT_STATUS_LABEL = { active: '进行中', potential: '待证实', closed: '已收束' };
-const SNAPSHOT_STATUS_ORDER = { active: 0, potential: 1, closed: 2 };
-
-function sanitizePromptSnippet(value, maxChars) {
-    const clean = String(value || '').replace(/\s+/g, ' ').trim();
-    if (!clean || clean.includes('{{') || clean.includes('管理员私有/')) return '';
-    return clean.slice(0, maxChars);
-}
-
-/** Formats compressed plot-line snapshots into compact read-only lines for prompt background. */
-function formatPlotLineSnapshotLines(snapshots = [], maxLines = 6) {
-    if (!Array.isArray(snapshots) || !snapshots.length) return [];
-    const ordered = [...snapshots]
-        .filter(snap => snap?.title && (snap.summary || snap.reading))
-        .sort((a, b) => (SNAPSHOT_STATUS_ORDER[a.status] ?? 9) - (SNAPSHOT_STATUS_ORDER[b.status] ?? 9) || (b.floor ?? -1) - (a.floor ?? -1))
-        .slice(0, maxLines);
-    const out = [];
-    for (const snap of ordered) {
-        const title = sanitizePromptSnippet(snap.title, 60);
-        const body = sanitizePromptSnippet(snap.summary || snap.reading, 160);
-        if (!title || !body) continue;
-        const focusText = snap.status !== 'closed' ? sanitizePromptSnippet(snap.nextFocus, 80) : '';
-        const focus = focusText ? `｜焦点：${focusText}` : '';
-        const chars = Array.isArray(snap.characters)
-            ? snap.characters.map(c => sanitizePromptSnippet(c, 30)).filter(Boolean).slice(0, 4)
-            : [];
-        const charTag = chars.length ? ` [${chars.join('、')}]` : '';
-        out.push(`  · 剧情线「${title}」(${SNAPSHOT_STATUS_LABEL[snap.status] || snap.status})${charTag}：${body}${focus}`);
-    }
-    return out;
-}
-
 export function buildRawPrompt(store, recallResult, hiddenThrough, { includeState = true } = {}) {
     const context = getContext();
     const { chat = [], name1 = '' } = context;
@@ -361,17 +329,8 @@ export function buildRawPrompt(store, recallResult, hiddenThrough, { includeStat
         const floorPrefix = `#${item.start + 1}-${item.end + 1}`;
         const header = relRange ? `[${floorPrefix} · ${relRange}]` : `[${floorPrefix}]`;
         const baseLine = `${header} ${item.text}`;
-        const snapshotLines = (item.depth ?? 0) > 0 ? formatPlotLineSnapshotLines(item.plotLineSnapshots) : [];
-        let chosenLine = '';
-        if (snapshotLines.length) {
-            const withSnapshots = `${baseLine}\n${snapshotLines.join('\n')}`;
-            if (pushWithBudget([], withSnapshots, plotBudget)) chosenLine = withSnapshots;
-        }
-        if (!chosenLine) {
-            if (!pushWithBudget([], baseLine, plotBudget)) break;
-            chosenLine = baseLine;
-        }
-        packed.push({ index: i, line: chosenLine });
+        if (!pushWithBudget([], baseLine, plotBudget)) break;
+        packed.push({ index: i, line: baseLine });
     }
     packed.sort((a, b) => a.index - b.index);
     background.push(...packed.map(entry => entry.line));

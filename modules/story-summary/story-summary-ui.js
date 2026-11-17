@@ -10,19 +10,11 @@ import { ARCHIVE_COPY, createSummaryArchive, getArchiveCharacters } from './arch
 import { DEFAULT_SUMMARY_DELAY_FLOORS } from './data/summary-delay.js';
 import { normalizeSummaryWorkflow, SUMMARY_BATCH_FLOORS } from './data/summary-workflow.js';
 import { DEFAULT_RECALL_TIMEOUT_SEC, MAX_RECALL_TIMEOUT_SEC, normalizeRecallTimeoutSec } from './data/recall-settings.js';
-import { RELATION_TRENDS } from './data/fact-predicates.js';
-import { createMemoryMaintenancePage } from './maintenance/ui.js';
-import { MEMORY_COPY } from './maintenance/copy.js';
-import { MEMORY_CHAT_MESSAGES } from './maintenance/chat-contract.js';
-import { DEFAULT_MEMORY_MAINTENANCE_ENABLED, normalizeProofreading } from './maintenance/settings.js';
 import { SUMMARY_FEEDBACK_COPY } from './feedback-copy.js';
 import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
 
-const UNANNOTATED_LABEL = '未标注';
-
 (function () {
     'use strict';
-    let memoryMaintenancePage;
     let archiveView;
     let settingsDirty = false;
     const dirtyFields = new Set();
@@ -33,7 +25,6 @@ const UNANNOTATED_LABEL = '未标注';
     // ═══════════════════════════════════════════════════════════════════════════
 
     const $ = id => document.getElementById(id);
-    const $$ = sel => document.querySelectorAll(sel);
     const h = v => String(v ?? '').replace(/[&<>"']/g, c =>
         ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
     );
@@ -127,11 +118,6 @@ const UNANNOTATED_LABEL = '未标注';
         return out;
     }
 
-    const SECTION_META = {
-        characters: { title: '编辑人物关系', hint: '编辑时，每个要素都应完整' },
-        facts: { title: '编辑事实图谱', hint: '每行一条：主体|谓词|值|趋势(可选)。删除用：主体|谓词|（留空值）' },
-    };
-
     const TREND_CLASS = {
         '破裂': 'trend-broken', '厌恶': 'trend-hate', '反感': 'trend-dislike',
         '陌生': 'trend-stranger', '投缘': 'trend-click', '亲密': 'trend-close', '交融': 'trend-merge'
@@ -145,10 +131,8 @@ const UNANNOTATED_LABEL = '未标注';
 
     const config = {
         ...normalizeSummaryWorkflow(),
-        memoryMaintenanceEnabled: DEFAULT_MEMORY_MAINTENANCE_ENABLED,
-        ...normalizeProofreading(),
         trigger: { enabled: true, interval: 1, delayFloors: DEFAULT_SUMMARY_DELAY_FLOORS, timing: 'after_ai', role: 'system', maxPerRun: 100, forceInsertAtEnd: false },
-        ui: { hideSummarized: true, keepVisibleCount: 5, windowUnit: "turn", recallEarlyOriginal: false },
+        ui: { hideSummarized: true, keepVisibleCount: 0, keepVisibleMigratedV2: true, windowUnit: "turn", recallEarlyOriginal: false },
         vector: {
             enabled: true,
             engine: 'online',
@@ -173,8 +157,6 @@ const UNANNOTATED_LABEL = '未标注';
     let summaryData = { rounds: [], characters: { main: [], relationships: [] }, facts: [], characterAliases: [] };
     let localGenerating = false;
     let vectorGenerating = false;
-    let currentEditSection = null;
-    let currentEditBaseline = null;
     let currentCharacterId = null;
     let lastRecallLogText = '';
     let recallHistoryEntries = [];
@@ -218,7 +200,7 @@ const UNANNOTATED_LABEL = '未标注';
         const btn = $('settings-save');
         if (btn) {
             btn.disabled = panelConfigLoad.status !== 'ready';
-            btn.textContent = panelConfigLoad.status === 'loading' ? SUMMARY_FEEDBACK_COPY.configLoad.waiting : MEMORY_COPY.settingsSave;
+            btn.textContent = panelConfigLoad.status === 'loading' ? SUMMARY_FEEDBACK_COPY.configLoad.waiting : '保存设置';
         }
     }
 
@@ -351,10 +333,10 @@ const UNANNOTATED_LABEL = '未标注';
                 const workflow = normalizeSummaryWorkflow(p);
                 config.summaryWorkflowVersion = workflow.summaryWorkflowVersion;
                 config.inlineSummary = workflow.inlineSummary;
-                Object.assign(config, normalizeProofreading(p));
-                config.memoryMaintenanceEnabled = true;
                 Object.assign(config.trigger, workflow.trigger);
                 Object.assign(config.ui, p.ui || {});
+                if (!p.ui?.keepVisibleMigratedV2 && Number(p.ui?.keepVisibleCount) === 5) config.ui.keepVisibleCount = 0;
+                config.ui.keepVisibleMigratedV2 = true;
                 delete config.ui.useVectorBoundary;
                 if (p.vector) config.vector = normalizeVectorConfigUI(p.vector);
                 normalizeTriggerConfig();
@@ -367,11 +349,10 @@ const UNANNOTATED_LABEL = '未标注';
         const workflow = normalizeSummaryWorkflow(cfg);
         config.summaryWorkflowVersion = workflow.summaryWorkflowVersion;
         config.inlineSummary = workflow.inlineSummary;
-        Object.assign(config, normalizeProofreading(cfg));
-        config.memoryMaintenanceEnabled = true;
-        if (!settingsDirty) memoryMaintenancePage?.setEnabled(true, config);
         Object.assign(config.trigger, workflow.trigger);
         Object.assign(config.ui, cfg.ui || {});
+        if (!cfg.ui?.keepVisibleMigratedV2 && Number(cfg.ui?.keepVisibleCount) === 5) config.ui.keepVisibleCount = 0;
+        config.ui.keepVisibleMigratedV2 = true;
         delete config.ui.useVectorBoundary;
         if (cfg.vector) config.vector = normalizeVectorConfigUI(cfg.vector);
         normalizeTriggerConfig();
@@ -535,7 +516,6 @@ const UNANNOTATED_LABEL = '未标注';
         settingsDirty = false;
         dirtyFields.clear();
         settingsSnapshot = structuredClone(config);
-        memoryMaintenancePage.setEnabled(true, config);
         $('api-connect-status').textContent = '';
         $('hide-summarized').checked = !!config.ui.hideSummarized;
         $('keep-visible-count').value = config.ui.keepVisibleCount;
@@ -546,19 +526,17 @@ const UNANNOTATED_LABEL = '未标注';
 
         $('settings-modal').classList.add('active');
         document.querySelector('.archive').inert = true;
-        postMsg('MEMORY_MAINTENANCE_QUERY');
         postMsg('SETTINGS_OPENED');
     }
 
     function collectSettingsFormToConfig() {
         config.inlineSummary.enabled = false;
-        config.memoryMaintenanceEnabled = true;
         config.ui.hideSummarized = $('hide-summarized').checked;
         const parsedKeep = Number.parseInt($('keep-visible-count').value, 10);
-        config.ui.keepVisibleCount = Number.isFinite(parsedKeep) ? Math.max(0, Math.min(50, parsedKeep)) : 5;
+        config.ui.keepVisibleCount = Number.isFinite(parsedKeep) ? Math.max(0, Math.min(50, parsedKeep)) : 0;
+        config.ui.keepVisibleMigratedV2 = true;
         config.ui.recallEarlyOriginal = $('recall-early-original').checked;
         delete config.ui.useVectorBoundary;
-        Object.assign(config, memoryMaintenancePage.getPreferences());
         config.trigger = {
             enabled: true,
             notifyOnComplete: false,
@@ -723,10 +701,6 @@ const UNANNOTATED_LABEL = '未标注';
             setHtml(container, events.map(tlItemHtml).join(''));
             updateTlPager(false);
         }
-    }
-
-    function getCharName(character) {
-        return typeof character === 'string' ? character : character.name;
     }
 
     function updateRelationships(data) {
@@ -1059,228 +1033,6 @@ const UNANNOTATED_LABEL = '未标注';
     }
 
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // Editor
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    function preserveAddedAt(n, o) {
-        if (o?._addedAt != null) n._addedAt = o._addedAt;
-        return n;
-    }
-
-    function createDelBtn() {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'btn btn-sm btn-del';
-        b.textContent = '删除';
-        return b;
-    }
-
-    function addDeleteHandler(item) {
-        const del = createDelBtn();
-        (item.querySelector('.struct-actions') || item).appendChild(del);
-        del.onclick = () => item.remove();
-    }
-
-    function relationTrendOptions(trend = '') {
-        return [{ value: '', label: UNANNOTATED_LABEL }, ...RELATION_TRENDS.map(value => ({ value, label: value }))]
-            .map(({ value, label }) => `<option value="${h(value)}"${trend === value ? ' selected' : ''}>${h(label)}</option>`).join('');
-    }
-
-    function renderCharactersEditor(data) {
-        const d = data || { main: [], relationships: [] };
-        const main = (d.main || []).map(getCharName);
-        const rels = d.relationships || [];
-
-        const es = $('editor-struct');
-        setHtml(es, `
-            <div class="struct-item">
-                <div class="struct-row"><strong>角色列表</strong></div>
-                <div id="char-main-list">
-                    ${(main.length ? main : ['']).map(n => `<div class="struct-row char-main-item"><input type="text" class="char-main-name" placeholder="角色名" value="${h(n || '')}"></div>`).join('')}
-                </div>
-                <div style="margin-top:8px"><button type="button" class="btn btn-sm" id="char-main-add">＋ 新增角色</button></div>
-            </div>
-            <div class="struct-item">
-                <div class="struct-row"><strong>人物关系</strong></div>
-                <div id="char-rel-list">
-                    ${(rels.length ? rels : [{ from: '', to: '', label: '', trend: '' }]).map(r => `
-                        <div class="struct-row char-rel-item">
-                            <input type="text" class="char-rel-from" placeholder="角色 A" value="${h(r.from || '')}">
-                            <input type="text" class="char-rel-to" placeholder="角色 B" value="${h(r.to || '')}">
-                            <input type="text" class="char-rel-label" placeholder="关系" value="${h(r.label || '')}">
-                            <select class="char-rel-trend">${relationTrendOptions(r.trend)}</select>
-                        </div>
-                    `).join('')}
-                </div>
-                <div style="margin-top:8px"><button type="button" class="btn btn-sm" id="char-rel-add">＋ 新增关系</button></div>
-            </div>
-        `);
-
-        es.querySelectorAll('.char-main-item,.char-rel-item').forEach(addDeleteHandler);
-
-        $('char-main-add').onclick = () => {
-            const div = document.createElement('div');
-            div.className = 'struct-row char-main-item';
-            setHtml(div, '<input type="text" class="char-main-name" placeholder="角色名">');
-            addDeleteHandler(div);
-            $('char-main-list').appendChild(div);
-        };
-
-        $('char-rel-add').onclick = () => {
-            const div = document.createElement('div');
-            div.className = 'struct-row char-rel-item';
-            setHtml(div, `
-                <input type="text" class="char-rel-from" placeholder="角色 A">
-                <input type="text" class="char-rel-to" placeholder="角色 B">
-                <input type="text" class="char-rel-label" placeholder="关系">
-                <select class="char-rel-trend">${relationTrendOptions()}</select>
-            `);
-            addDeleteHandler(div);
-            $('char-rel-list').appendChild(div);
-        };
-    }
-
-    let editorReturnFocus = null;
-    let editorEscHandler = null;
-
-    function openEditor(section) {
-        archiveView.closeDialogs();
-        editorReturnFocus = typeof document === 'undefined' ? null : document.activeElement;
-        currentEditSection = section;
-        currentEditBaseline = structuredClone(summaryData[section]);
-        if (section === 'facts') currentEditBaseline = currentEditBaseline.filter(fact => !fact.retracted);
-        const meta = SECTION_META[section];
-        const es = $('editor-struct');
-        const ta = $('editor-ta');
-
-        $('editor-title').textContent = meta.title;
-        $('editor-hint').textContent = meta.hint;
-        $('editor-err').classList.remove('visible');
-        $('editor-err').textContent = '';
-        es.classList.add('hidden');
-        ta.classList.remove('hidden');
-
-        if (section === 'facts') {
-            // 按人物首次出现的插入顺序分组，同一人物的事实保持相邻
-            const grouped = new Map();
-            for (const f of (summaryData.facts || []).filter(f => !f.retracted)) {
-                if (!grouped.has(f.s)) grouped.set(f.s, []);
-                grouped.get(f.s).push(f);
-            }
-            ta.value = [...grouped.values()].flat()
-                .map(f => [f.s, f.p, f.o].concat(f.trend ? [f.trend] : []).join('|'))
-                .join('\n');
-        } else {
-            ta.classList.add('hidden');
-            es.classList.remove('hidden');
-            if (section === 'characters') renderCharactersEditor(summaryData.characters || { main: [], relationships: [] });
-        }
-
-        // Compare the same editable projection at open and save, not hidden
-        // metadata or defaults introduced by the editor's serializer.
-        currentEditBaseline = readEditorData();
-        const doc = typeof document === 'undefined' ? null : document;
-        const modal = $('editor-modal');
-        modal.classList.add('active');
-        doc?.removeEventListener?.('keydown', editorEscHandler);
-        editorEscHandler = (event) => {
-            if (event.key !== 'Escape') return;
-            event.preventDefault();
-            closeEditor();
-        };
-        doc?.addEventListener?.('keydown', editorEscHandler);
-        const focusTarget = (section === 'facts' ? ta : es.querySelector?.('input, textarea, button')) || $('editor-close');
-        focusTarget?.focus?.();
-        postMsg('EDITOR_OPENED');
-    }
-
-    function closeEditor() {
-        const doc = typeof document === 'undefined' ? null : document;
-        doc?.removeEventListener?.('keydown', editorEscHandler);
-        editorEscHandler = null;
-        $('editor-modal').classList.remove('active');
-        currentEditSection = null;
-        currentEditBaseline = null;
-        const previous = editorReturnFocus;
-        editorReturnFocus = null;
-        if (previous?.isConnected !== false) previous?.focus?.();
-        postMsg('EDITOR_CLOSED');
-    }
-
-    function readEditorData() {
-        const section = currentEditSection;
-        const es = $('editor-struct');
-        const ta = $('editor-ta');
-        let parsed;
-
-        if (section === 'characters') {
-            const oldMainMap = new Map(currentEditBaseline.main.map(m => [getCharName(m), m]));
-            const mainNames = Array.from(es.querySelectorAll('.char-main-name')).map(i => i.value.trim()).filter(Boolean);
-            const main = mainNames.map(n => preserveAddedAt({ name: n }, oldMainMap.get(n)));
-
-            const oldRelMap = new Map(currentEditBaseline.relationships.map(r => [`${r.from}->${r.to}`, r]));
-            const rels = Array.from(es.querySelectorAll('.char-rel-item')).map(it => {
-                const from = it.querySelector('.char-rel-from').value.trim();
-                const to = it.querySelector('.char-rel-to').value.trim();
-                return preserveAddedAt({
-                    from, to,
-                    label: it.querySelector('.char-rel-label').value.trim(),
-                    trend: it.querySelector('.char-rel-trend').value
-                }, oldRelMap.get(`${from}->${to}`));
-            }).filter(r => r.from && r.to);
-
-            parsed = { main, relationships: rels };
-        } else if (section === 'facts') {
-            const oldMap = new Map(currentEditBaseline.map(f => [`${f.s}::${f.p}`, f]));
-            parsed = ta.value
-                .split('\n')
-                .map(l => l.trim())
-                .filter(Boolean)
-                .map(line => {
-                    const parts = line.split('|').map(s => s.trim());
-                    const s = parts[0];
-                    const p = parts[1];
-                    const o = parts[2];
-                    const trend = parts[3];
-                    if (!s || !p) return null;
-                    if (!o) return null;
-                    const key = `${s}::${p}`;
-                    const old = oldMap.get(key);
-                    const fact = {
-                        s, p, o,
-                        since: old?.since ?? 0,
-                        _addedAt: old?._addedAt ?? 0,
-                    };
-                    if (/^对.+的/.test(p) && trend) {
-                        fact.trend = trend;
-                    }
-                    return fact;
-                })
-                .filter(Boolean);
-        }
-        return parsed;
-    }
-
-    function saveEditor() {
-        const section = currentEditSection;
-        let parsed;
-        try {
-            parsed = readEditorData();
-        } catch (e) {
-            $('editor-err').textContent = `格式错误: ${e.message}`;
-            $('editor-err').classList.add('visible');
-            return;
-        }
-
-        postMsg('UPDATE_SECTION', { section, previous: currentEditBaseline, data: parsed });
-
-        if (section === 'characters') updateRelationships(parsed);
-        else if (section === 'facts') renderFacts(parsed);
-
-        closeEditor();
-    }
-
     function setOrphanBusy(busy, message) {
         if ($('btn-scan-orphans')) $('btn-scan-orphans').disabled = busy;
         if ($('orphan-scan-status') && message != null) $('orphan-scan-status').textContent = message;
@@ -1395,35 +1147,6 @@ const UNANNOTATED_LABEL = '未标注';
             case 'ARCHIVE_ORPHAN_CLEANUP_RESULT':
                 handleOrphanMessage(d);
                 break;
-            case 'WORLD_EVOLUTION_RECORDS': {
-                const container = $(d.section === 'people' ? 'people-developments' : 'situation-developments');
-                container.replaceChildren();
-                const news = d.news || [];
-                container.hidden = !news.length && !d.overview;
-                if (container.hidden) break;
-                const heading = document.createElement('h4');
-                heading.textContent = d.section === 'people' ? '幕后人物动向' : '幕后局势进展';
-                container.append(heading);
-                if (d.overview) {
-                    const overview = document.createElement('p'); overview.textContent = d.overview;
-                    container.append(overview);
-                }
-                for (const item of news) {
-                    const row = document.createElement('article'), title = document.createElement('strong');
-                    title.textContent = item.title;
-                    const body = document.createElement('p'); body.textContent = item.body;
-                    row.append(title, body);
-                    if (item.progress) {
-                        const proof = document.createElement('details'), label = document.createElement('summary');
-                        label.textContent = '推进依据 · 第 ' + (item.progress.floor + 1) + ' 楼';
-                        const text = document.createElement('p');
-                        text.textContent = item.progress.reason + ' · ' + item.progress.quote;
-                        proof.append(label, text); row.append(proof);
-                    }
-                    container.append(row);
-                }
-                break;
-            }
             case 'KITCHEN_MEMORY_VIEW': {
                 const modal = $('settings-modal');
                 const viewName = d.view || 'memory';
@@ -1433,13 +1156,9 @@ const UNANNOTATED_LABEL = '未标注';
                 document.documentElement.dataset.kitchenView = dataView;
                 $('data-page').hidden = viewName !== 'data';
                 $('recall-page').hidden = viewName !== 'recall';
-                $('proofreading-page').hidden = viewName !== 'proofreading';
-                document.querySelector('.archive').inert = ['data', 'recall', 'proofreading', 'settings'].includes(dataView);
-                if (viewName !== 'proofreading') memoryMaintenancePage?.close();
+                document.querySelector('.archive').inert = ['data', 'recall', 'settings'].includes(dataView);
                 if (viewName === 'data') postMsg('KITCHEN_CARD_INFO');
                 if (viewName === 'recall') postMsg('REQUEST_RECALL_HISTORY');
-                if (viewName === 'proofreading') memoryMaintenancePage?.open();
-                if (['world', 'people', 'relations'].includes(viewName)) postMsg('WORLD_EVOLUTION_REQUEST');
                 if (dataView === 'settings') {
                     openSettings();
                 } else {
@@ -1481,7 +1200,6 @@ const UNANNOTATED_LABEL = '未标注';
                     const p = d.payload;
                     summaryData.narrativeUnits = p.narrativeUnits || [];
                     const nextChatId = typeof p.chatId === 'string' ? p.chatId : '';
-                    memoryMaintenancePage.setChat(nextChatId);
                     if (nextChatId !== currentTimelineChatId || (p.branchId || '') !== (summaryData.branchId || '')) {
                         currentTimelineChatId = nextChatId; summaryData.branchId = p.branchId || '';
                         tlUnfilteredPage = null;
@@ -1513,16 +1231,7 @@ const UNANNOTATED_LABEL = '未标注';
                 renderSummaryStatus(d);
                 break;
 
-            case MEMORY_CHAT_MESSAGES.state:
-                memoryMaintenancePage.renderChat(d.payload);
-                break;
-            case 'MEMORY_MAINTENANCE_RESULTS':
-                memoryMaintenancePage.render(d.payload);
-                break;
             case 'WORLD_FIELD_SOURCE_RESULT': archiveView.showFieldSource(d.payload); break;
-            case 'MEMORY_MAINTENANCE_SOURCE_RESULT':
-                memoryMaintenancePage.renderSource(d.payload);
-                break;
 
             case 'SUMMARY_CLEARED': {
                 const t = d.payload?.totalFloors || 0;
@@ -1558,7 +1267,6 @@ const UNANNOTATED_LABEL = '未标注';
                 break;
 
             case 'PANEL_CONFIG_SAVE_RESULT': {
-                if (document.documentElement.dataset.kitchenView === 'settings') memoryMaintenancePage.settingsSaved(d.success);
                 const pending = pendingConfigSaveRequests.get(d.requestId || '');
                 if (pending) {
                     pendingConfigSaveRequests.delete(d.requestId || '');
@@ -1662,15 +1370,6 @@ const UNANNOTATED_LABEL = '未标注';
             };
         }
 
-        // Section edit buttons
-        $$('.sec-btn[data-section]').forEach(b => b.onclick = () => openEditor(b.dataset.section));
-
-        // Editor modal
-        $('editor-backdrop').onclick = closeEditor;
-        $('editor-close').onclick = closeEditor;
-        $('editor-cancel').onclick = closeEditor;
-        $('editor-save').onclick = saveEditor;
-
         // Settings workspace (设置 → 剧情与召回)
         $('settings-cancel').onclick = () => {
             Object.assign(config, settingsSnapshot);
@@ -1691,7 +1390,7 @@ const UNANNOTATED_LABEL = '未标注';
 
         $('keep-visible-count').onchange = e => {
             const parsedCount = Number.parseInt(e.target.value, 10);
-            const c = Number.isFinite(parsedCount) ? Math.max(0, Math.min(50, parsedCount)) : 5;
+            const c = Number.isFinite(parsedCount) ? Math.max(0, Math.min(50, parsedCount)) : 0;
             e.target.value = c;
         };
 
@@ -1755,10 +1454,9 @@ const UNANNOTATED_LABEL = '未标注';
             onSelectCharacter: selectCharacter,
             onTimelineChange: options => renderTimeline(summaryData.rounds, options),
             onFactsChange: () => renderFacts(summaryData.facts),
-            onEdit: openEditor, postMsg, setHtml, h,
+            postMsg, setHtml, h,
         });
-        $('settings-save').textContent = MEMORY_COPY.settingsSave;
-        memoryMaintenancePage = createMemoryMaintenancePage($('proofreading-page'), postMsg, { settingsHost: $('proofreading-settings-host') });
+        $('settings-save').textContent = '保存设置';
         loadConfig();
         tlPagingEnabled = localStorage.getItem(TL_PAGING_KEY) === '1';
 

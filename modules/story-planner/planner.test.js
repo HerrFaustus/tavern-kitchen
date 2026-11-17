@@ -116,7 +116,7 @@ test('invalid private text, stale completion and failed draft never reach a repl
     runtime.retry(); await runtime.prepare(); assert.equal(calls,3);
 });
 
-test('planner organizes input around characters, plotLines and situations and renders structured commentary/prediction/suggestion notes', async () => {
+test('planner organizes input around characters and situations with direct 3-pillar context and zero plotLines', async () => {
     const world = {
         worldId: 'w',
         branchId: 'b',
@@ -126,12 +126,15 @@ test('planner organizes input around characters, plotLines and situations and re
         ],
     };
     const store = {
+        lastSummarizedMesId: 2,
         summaryHistory: [{
             kind: 'batch',
             endMesId: 2,
             summary: '林疏夜探东仓并记下暗号。',
-            plotLines: [{ title: '东仓暗号', status: 'active', reading: '林疏已发现东仓暗门。', summary: '林疏追查暗号至东仓暗门。', quote: '林疏夜探东仓并记下暗号。', characters: ['林疏'] }],
         }],
+        floorSimulations: {
+            0: { floor: 0, text: '茶摊老板低声议论东仓暗门。' },
+        },
         json: {
             storyRecords: [
                 { id: 'p1', kind: 'person', name: '林疏', presence: 'present', note: '在仓外警戒' },
@@ -139,11 +142,13 @@ test('planner organizes input around characters, plotLines and situations and re
             ],
         },
     };
-    const snap = plannerSnapshot(world, { enabled: true, store }, [{ mes: '夜风起', is_user: true }], 'chat');
+    const snap = plannerSnapshot(world, { enabled: true, store }, [{ mes: '夜风起', is_user: false }], 'chat');
     const promptPayload = JSON.parse(writerInput(snap, null, 'opening')[1].content);
     assert.equal(promptPayload.planningTargets.characters[0].name, '林疏');
-    assert.equal(promptPayload.planningTargets.plotLines[0].title, '东仓暗号');
     assert.equal(promptPayload.planningTargets.situations[0].title, '城门戒严');
+    assert.equal('plotLines' in promptPayload.planningTargets, false);
+    assert.equal('lineState' in promptPayload, false);
+    assert.equal(promptPayload.recent[0].backgroundText, '茶摊老板低声议论东仓暗门。');
 
     const bad = publishBad => assert.throws(() => publishNotes(publishBad, null, snap, 'opening'), /私有/);
     bad(JSON.stringify({
@@ -161,10 +166,9 @@ test('planner organizes input around characters, plotLines and situations and re
         chapter: {
             entities: {
                 characters: [{ target: '林疏', commentary: '正处东仓外缘，精力消耗过半', prediction: '可能借巡夜身份试探守门人', suggestion: '突出其观察换防间隙时的迟疑' }],
-                plotLines: [{ target: '东仓暗号', commentary: '刚确认暗门位置，尚缺开启口令', prediction: '若强闯会惊动城防', suggestion: '保持线索开放，让玩家决定潜入或佯装巡检' }],
                 situations: [{ target: '城门戒严', commentary: '限制了撤离路径', prediction: '换防时会出现短暂松动', suggestion: '用远处巡逻脚步声提醒时限压力' }],
             },
-            dependencies: [{ lineTitle: '东仓暗号' }],
+            dependencies: [{ recordId: 's1', field: 'status' }],
         },
     }), null, snap, 'opening');
 
@@ -172,7 +176,7 @@ test('planner organizes input around characters, plotLines and situations and re
     assert.match(validNote.chapter.text, /点评：/);
     assert.match(validNote.chapter.text, /走向预测：/);
     assert.match(validNote.chapter.text, /建议：/);
-    assert.match(validNote.chapter.text, /【剧情线】/);
+    assert.doesNotMatch(validNote.chapter.text, /【剧情线】/);
     assert.match(validNote.chapter.text, /【局势】/);
 
     const copiedTexts = [];
@@ -183,12 +187,12 @@ test('planner organizes input around characters, plotLines and situations and re
         clipboard: { writeText: async text => { copiedTexts.push(text); } },
     });
     view.note({ state: 'ready', note: { ...validNote, revision: 1 } });
-    assert.equal(document.querySelectorAll('.tk-planner-entity').length, 4);
-    assert.match(document.querySelector('.tk-planner-overview').textContent, /人物 1.*剧情线 1.*局势 1/);
+    assert.equal(document.querySelectorAll('.tk-planner-entity').length, 3);
+    assert.match(document.querySelector('.tk-planner-overview').textContent, /人物 1.*局势 1/);
     assert.equal(document.querySelector('.tk-planner-global').open, false);
 
     // Filter by group and search keyword, then test stale badge and copy button.
-    document.querySelector('.tk-planner-filter[data-entity-filter="plotLines"]').click();
+    document.querySelector('.tk-planner-filter[data-entity-filter="characters"]').click();
     assert.equal(document.querySelectorAll('.tk-planner-chapter .tk-planner-entity:not([hidden])').length, 1);
     document.querySelector('.tk-planner-filter[data-entity-filter="all"]').click();
     const search = document.querySelector('.tk-planner-search');
@@ -203,14 +207,14 @@ test('planner organizes input around characters, plotLines and situations and re
 
     view.note({
         state: 'stale',
-        staleTargets: { all: false, characters: ['林疏'], plotLines: [], situations: [], details: [{ group: 'characters', target: '林疏', field: 'presence' }] },
+        staleTargets: { all: false, characters: ['林疏'], situations: [], details: [{ group: 'characters', target: '林疏', field: 'presence' }] },
         note: { ...validNote, revision: 1 },
     });
-    assert.equal(document.querySelectorAll('.tk-planner-entity.is-stale .tk-planner-tag.is-stale').length, 2);
+    assert.equal(document.querySelectorAll('.tk-planner-chapter .tk-planner-entity.is-stale .tk-planner-tag.is-stale').length, 1);
     assert.match(document.querySelector('.tk-planner-note-status').textContent, /林疏/);
 });
 
-test('granular single-entity, record field and plot-line dependencies surface stale targets in inspect()', async () => {
+test('granular single-entity and record field dependencies surface stale targets in inspect()', async () => {
     globalThis.indexedDB = new IDBFactory();
     const noteStore = createNoteStore();
     const store = {
@@ -221,7 +225,7 @@ test('granular single-entity, record field and plot-line dependencies surface st
             ],
         },
         summaryHistory: [
-            { endMesId: 1, summary: '林疏发现密信', plotLines: [{ title: '东仓暗号', status: 'active', reading: '发现暗门', quote: '发现密信' }] },
+            { endMesId: 1, summary: '林疏发现密信' },
         ],
     };
     const world = {
@@ -245,13 +249,11 @@ test('granular single-entity, record field and plot-line dependencies surface st
             chapter: {
                 entities: {
                     characters: [{ target: '林疏', commentary: '在门外蹲守', prediction: '试探守卫', suggestion: '描摹风声' }],
-                    plotLines: [{ target: '东仓暗号', commentary: '暗门刚露端倪', prediction: '待查口令', suggestion: '暂留扣子' }],
                     situations: [{ target: '城门戒严', commentary: '夜禁未解', prediction: '换防前紧张', suggestion: '强调时限' }],
                 },
                 dependencies: [
                     { entityId: 'c1', field: 'presence' },
                     { recordId: 's1', field: 'status' },
-                    { lineTitle: '东仓暗号' },
                 ],
             },
         }),
@@ -267,13 +269,13 @@ test('granular single-entity, record field and plot-line dependencies surface st
     assert.deepEqual(inspected.staleTargets.characters, ['林疏']);
     assert.deepEqual(inspected.staleTargets.situations, []);
 
-    // Reverting presence and changing plotLine version digest marks 东仓暗号 as stale.
+    // Reverting presence and changing situation status marks 城门戒严 as stale.
     store.json.storyRecords[0].presence = 'present';
-    store.summaryHistory[0].plotLines[0].status = 'advanced';
+    store.json.storyRecords[1].status = 'done';
     const nextSnap = snapshot();
-    const staleByLine = staleTargetsForNote(inspected.note, nextSnap, 'world');
-    assert.deepEqual(staleByLine.plotLines, ['东仓暗号']);
-    assert.deepEqual(staleByLine.characters, []);
+    const staleBySituation = staleTargetsForNote(inspected.note, nextSnap, 'world');
+    assert.deepEqual(staleBySituation.situations, ['城门戒严']);
+    assert.deepEqual(staleBySituation.characters, []);
 });
 
 test('partial incremental rewrite updates only staleTargets while preserving untouched entities and dependencies', async () => {
@@ -288,7 +290,7 @@ test('partial incremental rewrite updates only staleTargets while preserving unt
             ],
         },
         summaryHistory: [
-            { endMesId: 1, summary: '林疏发现密信', plotLines: [{ title: '东仓暗号', status: 'active', reading: '发现暗门', quote: '发现密信' }] },
+            { endMesId: 1, summary: '林疏发现密信' },
         ],
     };
     const world = {
@@ -326,14 +328,12 @@ test('partial incremental rewrite updates only staleTargets while preserving unt
                             { target: '林疏', commentary: '在门外蹲守', prediction: '试探守卫', suggestion: '描摹风声' },
                             { target: '沈砚', commentary: '留在码头接头', prediction: '静观动静', suggestion: '保留暗线' },
                         ],
-                        plotLines: [{ target: '东仓暗号', commentary: '暗门刚露端倪', prediction: '待查口令', suggestion: '暂留扣子' }],
                         situations: [{ target: '城门戒严', commentary: '夜禁未解', prediction: '换防前紧张', suggestion: '强调时限' }],
                     },
                     dependencies: [
                         { entityId: 'c1', field: 'presence' },
                         { entityId: 'c2', field: 'presence' },
                         { recordId: 's1', field: 'status' },
-                        { lineTitle: '东仓暗号' },
                     ],
                 },
             });
@@ -360,19 +360,17 @@ test('partial incremental rewrite updates only staleTargets while preserving unt
     assert.equal(seenPayloads[1].mode, 'partial');
     assert.deepEqual(seenPayloads[1].staleTargets.characters, ['林疏']);
     assert.deepEqual(seenPayloads[1].planningTargets.characters.map(c => c.name), ['林疏']);
-    assert.deepEqual(seenPayloads[1].planningTargets.plotLines, []);
     assert.deepEqual(seenPayloads[1].planningTargets.situations, []);
 
     const afterPartial = await runtime.inspect();
     assert.equal(afterPartial.state, 'ready');
     assert.match(partialText, /潜伏于檐角阴影/);
     assert.match(partialText, /沈砚[\s\S]*留在码头接头/);
-    assert.match(partialText, /东仓暗号[\s\S]*暗门刚露端倪/);
     assert.match(partialText, /城门戒严[\s\S]*夜禁未解/);
     assert.deepEqual(afterPartial.note.chapter.entities.characters.map(c => c.target), ['林疏', '沈砚']);
-    assert.equal(afterPartial.note.chapter.dependencies.length, 4);
+    assert.equal(afterPartial.note.chapter.dependencies.length, 3);
 
-    const scope={mode:'partial',staleTargets:{characters:['林疏'],plotLines:[],situations:[]}};
+    const scope={mode:'partial',staleTargets:{characters:['林疏'],situations:[]}};
     const author=chapter=>publishNotes(JSON.stringify({chapter}),afterPartial.note,snapshot(),'chapter-change',scope);
     const [lin,shen]=afterPartial.note.chapter.entities.characters;
     for(const chapter of [
@@ -408,7 +406,7 @@ test('partial incremental rewrite updates only staleTargets while preserving unt
     const branchReq = prepareWriterRequest(branchSnap, afterPartial.note, 'chapter-change');
     assert.equal(branchReq.mode, 'full');
 
-    // Fallback 3: partial payload exceeding 180000 chars falls back to full chapter recompute cleanly.
+    // Fallback 3: partial payload exceeding 180000 chars falls back to full chapter recompute cleanly while retaining all 3 pillars.
     ownerScope = 's-partial';
     const oversizedChat = Array.from({ length: 10 }, (_, i) => ({ is_user: i % 2 === 0, mes: '大段正文'.repeat(5500) }));
     const bigSnap = plannerSnapshot(world, { enabled: true, store }, oversizedChat, ownerScope);
@@ -417,5 +415,7 @@ test('partial incremental rewrite updates only staleTargets while preserving unt
     const stale = staleTargetsForNote(previousReady, bigSnap, 'chapter-change');
     const budgetReq = prepareWriterRequest(bigSnap, previousReady, 'chapter-change', stale);
     assert.equal(budgetReq.mode, 'full');
-    assert.equal(JSON.parse(budgetReq.messages[1].content).mode, undefined);
+    const parsedBudget = JSON.parse(budgetReq.messages[1].content);
+    assert.equal(parsedBudget.mode, undefined);
+    assert.ok(parsedBudget.world && parsedBudget.recentSummaries && parsedBudget.recent);
 });

@@ -1,19 +1,19 @@
 import { prefix, prepareWriterRequest, publishNotes, reviewReason, selectVersion, staleTargetsForNote } from './notes.js';
 
 function captureSnapshot(snapshot, snap, signal) {
-    const end = snap.chat.length - 1, source = prefix(snap.chat,end);
-    const { owner, boundary } = snap, version = snap.world.version, lines = JSON.stringify(snap.plotLines);
+    const end = snap.chat.length - 1, source = prefix(snap.chat, end);
+    const { owner, boundary } = snap, version = snap.world.version;
     return {
         fresh() {
             if (signal?.aborted) return false;
             const next = snapshot();
-            return next?.owner === owner && next.boundary === boundary && next.world.version === version && JSON.stringify(next.plotLines) === lines
-                && next.chat.length === end + 1 && prefix(next.chat,end) === source;
+            return next?.owner === owner && next.boundary === boundary && next.world.version === version
+                && next.chat.length === end + 1 && prefix(next.chat, end) === source;
         },
     };
 }
 
-export function createPlanner({snapshot, store, write, status}) {
+export function createPlanner({ snapshot, store, write, status, recall = null }) {
     let current, failed, pending;
     const cancel = () => { current?.abort(); current = null; pending = null; };
     return {
@@ -46,7 +46,7 @@ export function createPlanner({snapshot, store, write, status}) {
             const snap = read();
             if (!snap || signal?.aborted) return Promise.resolve('');
             if (force) failed = null;
-            const key = JSON.stringify([snap.owner,snap.world.version,snap.boundary,snap.lineState,prefix(snap.chat,snap.chat.length-1)]);
+            const key = JSON.stringify([snap.owner, snap.world.version, snap.boundary, prefix(snap.chat, snap.chat.length - 1)]);
             if (!force && !throwOnError && pending?.key === key) return pending.promise;
             cancel();
             const job = {key}; pending = job;
@@ -70,11 +70,14 @@ export function createPlanner({snapshot, store, write, status}) {
                 if (!reason) { status('当前章节札记已就绪'); return previous.chapter.text; }
                 const stale = staleTargetsForNote(previous, snap, reason);
                 const source = prefix(snap.chat, snap.chat.length - 1);
-                const ticket = JSON.stringify([snap.owner, snap.world.version, snap.boundary, snap.lineState, source, previous?.id, reason, snap.plotLines, stale]);
+                const ticket = JSON.stringify([snap.owner, snap.world.version, snap.boundary, source, previous?.id, reason, stale]);
                 if (failed === ticket) return '';
                 status('后台作家正在整理札记');
                 try {
-                    let request = prepareWriterRequest(snap, previous, reason, stale);
+                    const recalled = recall ? await recall(snap, controller.signal) : [];
+                    if (!fresh()) return '';
+                    const writerSnap = Array.isArray(recalled) && recalled.length ? { ...snap, recalledProse: recalled } : snap;
+                    let request = prepareWriterRequest(writerSnap, previous, reason, stale);
                     let raw, published;
                     try {
                         raw = await write(request.messages, controller.signal);
@@ -90,7 +93,7 @@ export function createPlanner({snapshot, store, write, status}) {
                         }
                         // WHY: Fall back once to a full chapter rewrite when partial diffs miss targets, overflow
                         // scoped dependencies, or produce malformed JSON so chapter notes do not get stuck.
-                        request = prepareWriterRequest(snap, previous, reason, stale, { forceFull: true });
+                        request = prepareWriterRequest(writerSnap, previous, reason, stale, { forceFull: true });
                         raw = await write(request.messages, controller.signal);
                         if (!fresh()) return '';
                         published = publishNotes(raw, previous, snap, reason, {

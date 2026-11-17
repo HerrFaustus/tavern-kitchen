@@ -9,7 +9,6 @@ import {
     formatCharacterAliasTableForAI,
     mergeCharacterAliasEdges,
     normalizeUserIdentityKey,
-    replaceCharacterAliases,
     sanitizeCharacterAliasUpdates,
 } from '../data/character-aliases.js';
 import { getArchiveCharacters } from '../archive-view.js';
@@ -210,37 +209,6 @@ test('automatic aliases reject generic relationship forms of address', () => {
     ]);
     assert.equal(applyCharacterAliasUpdates(json, updates, 39).aliasChanged, true);
     assert.deepEqual(json.characterAliases.map(alias => alias.from), ['道长']);
-});
-
-test('manual alias replacement keeps identity vocabulary outside historical content', () => {
-    const json = baseSummary();
-    const before = structuredClone(json);
-
-    const result = replaceCharacterAliases(json, [
-        { from: '李玄清', to: 'Gojo Satoru', evidence: '用户确认的不同语言名' },
-        { from: '老婆', to: 'Gojo Satoru', evidence: '' },
-    ], 100);
-
-    assert.equal(result.aliasChanged, true);
-    assert.deepEqual(json.characterAliases, [
-        { from: '李玄清', to: 'Gojo Satoru', evidence: '用户确认的不同语言名', _addedAt: 100 },
-        { from: '老婆', to: 'Gojo Satoru', evidence: '', _addedAt: 100 },
-    ]);
-    assert.deepEqual(
-        { events: json.events, characters: json.characters, arcs: json.arcs, facts: json.facts },
-        { events: before.events, characters: before.characters, arcs: before.arcs, facts: before.facts },
-    );
-});
-
-test('manual alias replacement rejects conflicting and circular mappings', () => {
-    assert.throws(() => replaceCharacterAliases(baseSummary(), [
-        { from: '小悟', to: '五条悟' },
-        { from: '小悟', to: '夏油杰' },
-    ], 100), /重复指向/);
-    assert.throws(() => replaceCharacterAliases(baseSummary(), [
-        { from: '小悟', to: '五条悟' },
-        { from: '五条悟', to: '小悟' },
-    ], 100), /循环/);
 });
 
 test('alias table formats canonical groups for prompt context', () => {

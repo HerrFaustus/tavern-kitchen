@@ -40,7 +40,7 @@ for (const enabled of [undefined, false, true]) test(`vector defaults and remove
     assert.equal(initial.trigger.enabled, false); assert.equal(initial.trigger.interval, 8); assert.equal(initial.trigger.timing, 'before_user');
     assert.equal(initial.proofreadingPrompt, undefined); assert.equal(initial.prompts, undefined);
     const saved = await mod.saveSummaryPanelConfigVerified(raw), loaded = await mod.loadConfigFromServer();
-    assert.equal(loaded.proofreadingInterval, 4); assert.equal(loaded.proofreadingPrompt, undefined); assert.equal(loaded.prompts, undefined);
+    assert.equal(loaded.proofreadingInterval, undefined); assert.equal(loaded.proofreadingPrompt, undefined); assert.equal(loaded.prompts, undefined);
     assert.equal(saved.vector.enabled, true); assert.equal(loaded.vector.enabled, true); assert.equal(mod.getVectorConfig().enabled, true);
     assert.equal(loaded.vector.embeddingApi.key, 'fixture-only'); assert.equal(loaded.vector.embeddingApi.model, 'fixture-model');
     assert.equal(raw.trigger.delayFloors, 4); assert.equal(raw.vector.enabled, enabled);
@@ -66,23 +66,29 @@ test('enabling retrieval preserves legacy flat API selections and explicit provi
     }
 });
 
-test('manual panel requests cannot restore retired delay or per-run settings', async () => {
+test('manual panel requests respect lag-1 updateEnd and cannot restore retired delay or per-run settings', async () => {
     let request;
     const host = entry(['handleFrameMessage'], { isTrustedMessage: () => true, document: { getElementById: () => ({}) }, isStorySummaryEnabledForCurrentChat: () => true,
-        currentMesId: null, getContext: () => ({ chatId: 'fixture', chat: Array.from({ length: 10 }, () => ({})) }),
+        currentMesId: null, getContext: () => ({ chatId: 'fixture', chat: Array.from({ length: 10 }, () => ({ mes: '回复' })) }),
+        postToFrame: () => {},
         handleManualGenerate: async (floor, config) => { request = { floor, config }; } });
     await host.handleFrameMessage({ data: { type: 'REQUEST_GENERATE', config: { trigger: { delayFloors: 9, maxPerRun: 1, role: 'user' } } } });
-    assert.equal(request.floor, 9); assert.equal(request.config.trigger.delayFloors, 0);
+    assert.equal(request.floor, 8); assert.equal(request.config.trigger.delayFloors, 0);
     assert.equal(request.config.trigger.maxPerRun, 100); assert.equal(request.config.trigger.role, 'user');
 });
 
-test('five-turn defaults and explicit overrides survive normalized storage', async () => {
+test('zero-turn keepVisible defaults, legacy 5->0 migration and explicit overrides survive normalized storage', async () => {
     const defaults = mod.applySummaryPanelConfigSnapshot({});
-    assert.equal(defaults.ui.keepVisibleCount, 5);
+    assert.equal(defaults.ui.keepVisibleCount, 0);
+    assert.equal(defaults.ui.keepVisibleMigratedV2, true);
+    assert.equal(defaults.ui.hideSummarized, true);
     assert.equal(defaults.ui.recallEarlyOriginal, false);
     assert.equal(defaults.ui.useVectorBoundary, undefined);
-    assert.equal(defaults.memoryMaintenanceEnabled, true);
-    assert.equal(defaults.proofreadingInterval, 5);
+    assert.equal(defaults.memoryMaintenanceEnabled, undefined);
+    assert.equal(defaults.proofreadingInterval, undefined);
+    const migratedFromOldDefault = mod.applySummaryPanelConfigSnapshot({ ui: { keepVisibleCount: 5, windowUnit: 'turn' } });
+    assert.equal(migratedFromOldDefault.ui.keepVisibleCount, 0);
+    assert.equal(migratedFromOldDefault.ui.keepVisibleMigratedV2, true);
     const legacy = mod.applySummaryPanelConfigSnapshot({ ui: { keepVisibleCount: 8 } });
     assert.equal(legacy.ui.keepVisibleCount, 4);
     await mod.saveSummaryPanelConfigVerified({ ...legacy, proofreadingInterval: 2, memoryMaintenanceEnabled: false,
@@ -90,6 +96,6 @@ test('five-turn defaults and explicit overrides survive normalized storage', asy
     const saved = await mod.loadConfigFromServer();
     assert.equal(saved.ui.keepVisibleCount, 4);
     assert.equal(saved.ui.recallEarlyOriginal, true);
-    assert.equal(saved.proofreadingInterval, 2);
-    assert.equal(saved.memoryMaintenanceEnabled, true);
+    assert.equal(saved.proofreadingInterval, undefined);
+    assert.equal(saved.memoryMaintenanceEnabled, undefined);
 });

@@ -81,7 +81,6 @@ function matchesQuery(node, query) {
             node.reason,
             node.evidence?.quote,
             '第 ' + (node.start + 1) + '–' + (node.end + 1) + ' 楼',
-            ...(node.plotLineSnapshots || []).flatMap(item => [item.title, item.summary, item.reading, item.nextFocus, ...(item.characters || [])]),
         ];
     return [timelineLabel(node.level), ...values].join(' ').toLocaleLowerCase().includes(query);
 }

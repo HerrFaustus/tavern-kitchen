@@ -525,48 +525,6 @@ export function validateAliasGraph(aliases) {
     if (issues.length) throw new Error(issues.map(issue => ALIAS_GRAPH_MESSAGES[issue.code](issue)).join('\n'));
 }
 
-/**
- * Replace the user-editable identity vocabulary as one coherent table.
- * Alias mappings are independent of summary-history rollback. Editing this
- * vocabulary does not rewrite historical content; it changes how present and
- * future names are resolved for recall and subsequent summary generation.
- */
-export function replaceCharacterAliases(json, rawAliases, floor) {
-    if (!Array.isArray(rawAliases)) {
-        throw new Error('别名映射必须是列表');
-    }
-
-    const existing = normalizeCharacterAliases(json?.characterAliases, floor);
-    const existingByEdge = new Map(existing.map(alias => [
-        `${normalizeAliasNameKey(alias.from)}\u0000${normalizeAliasNameKey(alias.to)}`,
-        alias,
-    ]));
-    const aliases = [];
-    for (const raw of rawAliases) {
-        if (!isPlainObject(raw)) throw new Error('别名映射格式无效');
-        const from = cleanName(raw.from);
-        const to = cleanName(raw.to);
-        const evidence = cleanEvidence(raw.evidence);
-        if (!from && !to && !evidence) continue;
-        const edgeKey = `${normalizeAliasNameKey(from)}\u0000${normalizeAliasNameKey(to)}`;
-        const existingAlias = existingByEdge.get(edgeKey);
-        aliases.push({
-            from,
-            to,
-            evidence,
-            _addedAt: existingAlias?._addedAt ?? normalizeAddedAt(floor, 0),
-        });
-    }
-    validateAliasGraph(aliases);
-
-    const tableChanged = !sameJson(existing, aliases);
-    if (tableChanged) {
-        if (aliases.length) json.characterAliases = aliases;
-        else delete json.characterAliases;
-    }
-    return { json, aliasChanged: tableChanged };
-}
-
 export function formatCharacterAliasTableForAI(json) {
     const aliases = normalizeCharacterAliases(json?.characterAliases);
     if (!aliases.length) return '';

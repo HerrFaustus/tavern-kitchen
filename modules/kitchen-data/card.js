@@ -5,10 +5,13 @@ import { readSummaryPackageData } from '../story-summary/data/summary-import.js'
 import { validateRangeSource } from '../story-summary/data/turn-source.js';
 import { taskDefinitions } from '../world-records/turn-actions.js';
 
+const LEGACY_CARD_TASK_KEYS = ['clues', 'peopleEvolution', 'subscribed', 'sceneryEvolution', 'encounter', 'mapEvolution'];
+const isKnownCardTask = key => Object.hasOwn(taskDefinitions, key) || LEGACY_CARD_TASK_KEYS.includes(key);
+
 function validateFloorWork(work) {
     if (work === undefined) return;
     const record = value => !!value && typeof value === 'object' && !Array.isArray(value);
-    const tasks = list => Array.isArray(list) && new Set(list).size === list.length && list.every(k => Object.hasOwn(taskDefinitions,k));
+    const tasks = list => Array.isArray(list) && new Set(list).size === list.length && list.every(isKnownCardTask);
     const effect = key => /^turn:[a-f0-9]{64}$/.test(key);
     const assert = valid => { if (!valid) throw new Error('逐楼处理记录格式无效'); };
     assert(record(work));
@@ -26,15 +29,27 @@ function validateFloorWork(work) {
                     && draft.groups.every(g => record(g) && typeof g.id === 'string' && Array.isArray(g.rows) && g.rows.every(r => draft.keys.includes(r?.task))));
             }
         }
-        if (entry.decisions !== undefined) assert(record(entry.decisions) && Object.entries(entry.decisions).every(([id,d]) => effect(id) && ['accepted','rejected'].includes(d)));
-        if (entry.review !== undefined) assert(record(entry.review) && Object.entries(entry.review).every(([id,row]) => effect(id) && typeof row?.reason === 'string'
-            && Array.isArray(row.rows) && row.rows.every(r => Object.hasOwn(taskDefinitions,r?.task))));
+        if (entry.decisions !== undefined) assert(record(entry.decisions) && Object.entries(entry.decisions).every(([id, d]) => effect(id) && ['accepted', 'rejected'].includes(d)));
+        if (entry.review !== undefined) assert(record(entry.review) && Object.entries(entry.review).every(([id, row]) => effect(id) && typeof row?.reason === 'string'
+            && Array.isArray(row.rows) && row.rows.every(r => isKnownCardTask(r?.task))));
+    }
+}
+
+function validateFloorSimulations(simulations) {
+    if (simulations === undefined) return;
+    const record = value => !!value && typeof value === 'object' && !Array.isArray(value);
+    const assert = valid => { if (!valid) throw new Error('逐楼推演记录格式无效'); };
+    assert(record(simulations));
+    for (const [end, entry] of Object.entries(simulations)) {
+        assert(record(entry));
+        assert(Number.isSafeInteger(entry.floor) && entry.floor >= 0 && String(entry.floor) === end);
+        assert(typeof entry.digest === 'string' && !!entry.digest && typeof entry.text === 'string');
     }
 }
 
 export function cardMemory(value) {
-    const fields = ['json','floorWork','lastSummarizedMesId','summaryHistory','floorDrafts','pendingImportBoundary','summaryInvalid','sourceInvalidFromFloor','sourceRollbackFromFloor','updatedAt','importedArchive'];
-    return { storySummary: Object.fromEntries(fields.filter(key => Object.hasOwn(value.storySummary,key)).map(key => [key,retireArcData(value.storySummary[key])])),
+    const fields = ['json', 'floorWork', 'floorSimulations', 'lastSummarizedMesId', 'summaryHistory', 'floorDrafts', 'pendingImportBoundary', 'summaryInvalid', 'sourceInvalidFromFloor', 'sourceRollbackFromFloor', 'updatedAt', 'importedArchive'];
+    return { storySummary: Object.fromEntries(fields.filter(key => Object.hasOwn(value.storySummary, key)).map(key => [key, retireArcData(value.storySummary[key])])),
         stateAtoms: structuredClone(value.stateAtoms), l0Index: structuredClone(value.l0Index) };
 }
 
@@ -45,6 +60,7 @@ export function validateKitchenCard(value) {
         || !Array.isArray(notes) || notes.length > 10000 || typeof source?.digest !== 'string') throw new Error('后厨卡数据不完整');
     readSummaryPackageData(summary);
     validateFloorWork(memory.storySummary.floorWork);
+    validateFloorSimulations(memory.storySummary.floorSimulations);
     if (memory.storySummary.summaryHistory !== undefined && !Array.isArray(memory.storySummary.summaryHistory)) throw new Error('总结历史格式无效');
     if (world) {
         const parsed = validateWorld(structuredClone(world));

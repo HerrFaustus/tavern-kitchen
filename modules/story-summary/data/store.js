@@ -25,7 +25,8 @@ import { normalizeEventStringArray } from "./events.js";
 import { upgradeSummaryHistory, createSummaryBatch } from './summary-history.js';
 export { getRollbackOnceTargetEndMesId } from './summary-history.js';
 import { getRollbackOnceTargetEndMesId } from './summary-history.js';
-import { maintenanceImpact, sameMemory, restoreMaintenance } from '../maintenance/domain.js';
+import { legacyMaintenanceImpact as maintenanceImpact, restoreLegacyMaintenance as restoreMaintenance } from './legacy-maintenance.js';
+import { sameMemory } from './memory-json.js';
 import { deleteStateVectorsByIds, deleteStateVectorsFromFloor, deleteStateVectorsAtFloors } from '../vector/storage/state-store.js';
 import { readSummaryMemory, getPublishedSummaryMemory, commitSummaryMemory, getMemoryCommitState, assertMemoryWritable, rememberLoadedMemory,
     getRuntimeInvalidSourceFloor, getRuntimeSourceRollbackFloor, noteInvalidMemorySource, waitForMemoryCommit,
@@ -306,6 +307,8 @@ function discardFloorDrafts(store, fromFloor) {
     if (!Object.keys(store.floorDrafts || {}).length) delete store.floorDrafts;
     for (const floor of Object.keys(store.floorWork || {})) if (Number(floor) >= fromFloor) delete store.floorWork[floor];
     if (!Object.keys(store.floorWork || {}).length) delete store.floorWork;
+    for (const floor of Object.keys(store.floorSimulations || {})) if (Number(floor) >= fromFloor) delete store.floorSimulations[floor];
+    if (!Object.keys(store.floorSimulations || {}).length) delete store.floorSimulations;
 }
 
 // A batch is the smallest confirmed unit. An opaque import cannot be split at an edited floor.
@@ -371,6 +374,7 @@ export async function recoverSummaryTail(chatId, token, validate) {
     // Drop the untrusted suffix before visiting maintenance receipts in a damaged history.
     const draft = { ...store, summaryHistory: prefix.history, lastSummarizedMesId: fromFloor - 1, json: prefix.json, updatedAt: Date.now() };
     if (draft.floorWork) draft.floorWork = Object.fromEntries(Object.entries(draft.floorWork).filter(([floor]) => +floor < fromFloor));
+    if (draft.floorSimulations) draft.floorSimulations = Object.fromEntries(Object.entries(draft.floorSimulations).filter(([floor]) => +floor < fromFloor));
     if (draft.floorDrafts) draft.floorDrafts = { ...draft.floorDrafts };
     delete draft.summaryInvalid;
     delete draft.sourceInvalidFromFloor;
@@ -855,6 +859,7 @@ export async function clearSummaryData(chatId) {
     store.summaryHistory = [];
     delete store.floorDrafts;
     delete store.floorWork;
+    delete store.floorSimulations;
     delete store.pendingImportBoundary;
     delete store.summaryInvalid;
     delete store.sourceInvalidFromFloor;
@@ -883,6 +888,12 @@ export function getFacts() {
 export function isFloorMemoryOmitted(floor) {
     if (!chat_metadata.extensions?.[EXT_ID]?.storySummary) return false;
     return !!getPublishedSummaryMemory().storySummary?.summaryHistory?.some(batch => batch.floorEntry?.floor === floor && batch.floorEntry.omitted);
+}
+
+/** Strictly read-only access to published store; never calls getSummaryStore() schema initialization/migration. */
+export function getReadOnlyPublishedSummaryStore() {
+    if (!chat_metadata.extensions?.[EXT_ID]?.storySummary) return null;
+    return getPublishedSummaryMemory().storySummary;
 }
 
 export function getNewCharacters() {

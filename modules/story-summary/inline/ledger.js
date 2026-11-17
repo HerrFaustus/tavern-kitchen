@@ -2,7 +2,7 @@ import { reviewedRounds } from '../data/summary-layers.js';
 import { floorSource, prepareFloorPayload, validateFloorPayload } from './protocol.js';
 import { applyExactSummaryHistoryUndo, summaryBatchChanges, buildSummaryUndo } from '../data/summary-undo.js';
 import { createSummaryBatch } from '../data/summary-history.js';
-import { memoryItems, memoryKey, replaceMemoryRecords, sameMemory, setMemoryItems } from '../maintenance/domain.js';
+import { memoryItems, memoryKey, replaceMemoryRecords, sameMemory, setMemoryItems } from '../data/memory-json.js';
 import { memoryPolicy, memoryDigest } from '../data/memory-policy.js';
 import { captureRangeSource } from '../data/turn-source.js';
 import { applyInlineAnchors, isInlineAnchorReceipt } from './anchors.js';

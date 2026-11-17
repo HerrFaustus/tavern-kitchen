@@ -56,8 +56,6 @@ try {
                 workspace.getMount('memory').append(frame);
             }, recall() {
                 workspace.getMount('recall').querySelector('iframe').contentWindow.postMessage({source:'TavernKitchen',type:'KITCHEN_MEMORY_VIEW',view:'recall'},globalThis.location.origin);
-            }, proofreading() {
-                workspace.getMount('proofreading').querySelector('iframe').contentWindow.postMessage({source:'TavernKitchen',type:'KITCHEN_MEMORY_VIEW',view:'proofreading'},globalThis.location.origin);
             }, 'settings-memory'() {
                 workspace.getMount('settings-memory').querySelector('iframe').contentWindow.postMessage({source:'TavernKitchen',type:'KITCHEN_MEMORY_VIEW',view:'settings-memory'},globalThis.location.origin);
             }},
@@ -66,7 +64,7 @@ try {
     });
     const frame=page.frameLocator('iframe');
     await page.waitForFunction(() => globalThis.frameReady === true);
-    assert.equal(await page.getByRole('button',{name:/总结设置|校对设置/}).count(), 0);
+    assert.equal(await page.getByRole('button',{name:/总结设置/}).count(), 0);
     assert.equal(await frame.locator('.archive #btn-generate').count(), 1);
     assert.equal(await frame.locator('#summary-options, #summary-controls, #tab-summary, #tab-agent, #trigger-interval, #trigger-role, #use-vector-boundary, #filter-rules-content').count(), 0);
     await page.evaluate(() => globalThis.document.querySelector('iframe').contentWindow.postMessage({
@@ -88,15 +86,13 @@ try {
         entries:[{id:'r1',chatId:'default',targetFloor:9,type:'normal',status:'success',mode:'vector',queryPreview:'旧码头仓库线索',focusCharacters:['林默'],candidateCount:4,includedCount:1,trimmedCount:0,chunks:[{floor:2,speaker:'林默',score:0.88,included:true,text:'木箱夹层藏着半张船票。'}]}],
     }, globalThis.location.origin));
     assert.match(await frame.locator('#recall-detail').innerText(), /木箱夹层藏着半张船票/);
-    await page.evaluate(() => globalThis.workspace.open('proofreading'));
-    await frame.locator('#proofreading-page').waitFor({state:'visible'});
-    await frame.locator('#proofreading-page .memory-record-view').waitFor({state:'visible'});
-    assert.equal(await frame.locator('#proofreading-page input[type="checkbox"], #proofreading-page .memory-controls').count(), 0);
+    assert.equal(await frame.locator('#proofreading-page').count(), 0);
     await page.evaluate(() => globalThis.workspace.open('settings-memory'));
     await frame.locator('#settings-modal.active').waitFor();
     assert.ok(await frame.locator('#settings-retention-section').isVisible());
-    assert.ok(await frame.locator('#proofreading-settings-host #proofreading-interval').isVisible());
+    assert.equal(await frame.locator('#proofreading-settings-host, #proofreading-interval').count(), 0);
     assert.ok(await frame.locator('#settings-recall-section').isVisible());
+    assert.equal(await frame.locator('#keep-visible-count').inputValue(), '0');
     await frame.locator('#keep-visible-count').fill('3');
     await frame.locator('#settings-save').click();
     await page.waitForFunction(() => globalThis.savedSettings?.config?.ui?.keepVisibleCount === 3);
@@ -108,5 +104,5 @@ try {
     await frame.locator('.archive').waitFor({state:'visible'});
     assert.ok(await frame.locator('#settings-modal').isHidden());
     assert.deepEqual(errors,[]);
-    console.log('Verified streamlined memory settings, recall page, proofreading view and recovery controls inside unified workspace.');
+    console.log('Verified streamlined memory settings (keepVisibleCount default 0), recall page and recovery controls inside unified workspace.');
 } finally { await browser.close(); }

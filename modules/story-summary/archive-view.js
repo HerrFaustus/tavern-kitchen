@@ -9,7 +9,7 @@ export const ARCHIVE_COPY = Object.freeze({
     noResults: '没有找到匹配的内容', noEvents: '还没有剧情记录',
     noEventsHint: '总结当前聊天后，故事的经过会在这里展开。',
     noPeople: '暂无人物记录', noFacts: '暂无世界状态', noAliases: '暂无相关别名',
-    eventDetail: '剧情详情', personDetail: '人物档案', editEvents: '编辑剧情',
+    eventDetail: '剧情详情', personDetail: '人物档案',
     participants: '参与人物', causes: '前因', noTime: '未标注时间', untitled: '未命名事件',
     noTrajectory: '暂无人物轨迹', disabledChat: '当前聊天已停用',
 });
@@ -52,7 +52,7 @@ export function getArchiveStateFacts(data, section) {
 }
 
 // Presentation state belongs to this iframe. Data and all writes remain owned by story-summary-ui.
-export function createSummaryArchive({ getData, hasChat, getSelectedCharacter, onSelectCharacter, onTimelineChange, onFactsChange, onEdit, postMsg, setHtml, h }) {
+export function createSummaryArchive({ getData, hasChat, getSelectedCharacter, onSelectCharacter, onTimelineChange, onFactsChange, postMsg, setHtml, h }) {
     const $ = id => document.getElementById(id);
     const detail = $('archive-detail');
     let view = 'story';
@@ -119,19 +119,12 @@ export function createSummaryArchive({ getData, hasChat, getSelectedCharacter, o
 
     function timelineItem(node) {
         if (!node.round) {
-            const { id, level, start, end, text, reason, evidence, plotLineSnapshots } = node;
-            const snapLabels = { active: '进行中', potential: '潜在线', closed: '已收束' };
-            const snapshotsHtml = Array.isArray(plotLineSnapshots) && plotLineSnapshots.length
-                ? `<div class="timeline-plot-snapshots"><div class="archive-label">阶段剧情线快照</div>${plotLineSnapshots.map(item =>
-                    `<div class="timeline-plot-snapshot"><strong>${h(item.title)}</strong> <span class="archive-muted">${h(snapLabels[item.status] || item.status)}</span>：${h(item.summary || item.reading)}</div>`
-                ).join('')}</div>`
-                : '';
+            const { id, level, start, end, text, reason, evidence } = node;
             return `<details class="timeline-unit" data-unit="${h(id)}" ${expanded.has(id) || node.reveal ? 'open' : ''}>
                 <summary><strong>${h(timelineLabel(level))}</strong> <span class="archive-muted">第 ${h(start + 1)}–${h(end + 1)} 楼</span>
                 <span class="timeline-unit-text">${h(text)}</span></summary>
                 ${reason ? `<p class="archive-muted">收束依据：${h(reason)}</p>` : ''}
                 ${evidence ? `<blockquote>第 ${h(evidence.floor)} 楼：${h(evidence.quote)}</blockquote>` : ''}
-                ${snapshotsHtml}
                 <div class="timeline-children">${node.children.map(timelineItem).join('')}</div></details>`;
         }
         const { round: event, index } = node;
@@ -290,7 +283,6 @@ export function createSummaryArchive({ getData, hasChat, getSelectedCharacter, o
             openDialog(detail);
             postMsg('WORLD_FIELD_SOURCE', {key: sourceKey, chatId: getData().chatId, branchId: getData().branchId});
         }
-        if (button.dataset.archiveEdit) { closeDialogs(); onEdit(button.dataset.archiveEdit); }
     });
     return {
         showFieldSource(result) {

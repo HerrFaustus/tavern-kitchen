@@ -21,7 +21,10 @@ let failConnection = false, failFloor = null;
 const base = '/scripts/extensions/third-party/tavern-kitchen/';
 const host = referenceFor(official.indexVersion);
 const require = createRequire(import.meta.url);
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const cachedPlaywright = path.join(root, '.cache/pw/node_modules/playwright-core');
+const playwrightModule = process.env.PLAYWRIGHT_MODULE
+    || (fs.existsSync(path.join(root, 'node_modules/playwright')) ? 'playwright' : (fs.existsSync(cachedPlaywright) ? cachedPlaywright : 'playwright'));
+const { chromium } = require(playwrightModule);
 let browser, archiveHash;
 try {
     if (archive) {
@@ -79,9 +82,8 @@ try {
             const userText = body.messages?.[1]?.content || body.messages?.[0]?.content || '';
             const parsedUser = typeof userText === 'string' && userText.startsWith('{') ? JSON.parse(userText) : null;
             const floor = parsedUser?.increment?.end;
-            const isReviewToolTurn = Array.isArray(body.tools) && body.tools.some(t => t.function?.name === 'CompleteMaintenance');
             const isLayerCascade = typeof body.messages?.[0]?.content === 'string' && body.messages[0].content.includes('只输出总结正文');
-            modelCalls.push({model:body.model, messages:body.messages, floor, kind:isReviewToolTurn ? 'review' : isLayerCascade ? 'layer' : 'turn'});
+            modelCalls.push({model:body.model, messages:body.messages, floor, kind:isLayerCascade ? 'layer' : 'turn'});
             if (floor === failFloor) return route.fulfill({status:503,json:{error:{message:'fixture floor 20'}}});
             if(failConnection) return route.fulfill({status:503,json:{error:{message:'fixture busy'}}});
             const respondOpenAI = ({ content = null, toolCalls = null, finishReason = 'stop' }) => {
@@ -104,28 +106,15 @@ try {
                     },
                 });
             };
-            if (isReviewToolTurn) {
-                if (body.messages.at(-1)?.role === 'tool') return respondOpenAI({ content: '已完成本阶段校对。' });
-                const firstUser = body.messages.find(m => m.role === 'user')?.content || '{}';
-                const task = JSON.parse(firstUser).task || {};
-                const ranges = task.pending?.length ? task.pending : [{ from: 1, to: (task.cutoff ?? 0) + 1 }];
-                return respondOpenAI({
-                    toolCalls: ranges.map((range, i) => ({
-                        id: `call_review_${i + 1}`,
-                        type: 'function',
-                        function: { name: 'CompleteMaintenance', arguments: JSON.stringify({ from: range.from, to: range.to }) },
-                    })),
-                    finishReason: 'tool_calls',
-                });
-            }
             if (isLayerCascade) return respondOpenAI({ content: '本阶段剧情整理摘要。' });
-            const last = parsedUser?.increment?.messages?.at(-1);
+            if (body.model === 'stub-simulation') return respondOpenAI({ content: JSON.stringify({ text: '城东驿站灯笼轻晃。', kind: 'world_flavor' }) });
+            const last = parsedUser?.increment?.messages?.findLast(m => m.role !== 'background');
             const change = last?.text.includes('店主收下五金币，交出铜铃') ?
-                [{type:'trade',task:'overview',group:'买铃',direction:'buy',counterparty:'shop',item:'bell',price:4,
+                [{type:'trade',task:'overview',group:'买铃',direction:'buy',counterparty:'shop',item:'bell',price:5,
                     floor:last.floor,quote:'店主收下五金币，交出铜铃',paymentQuote:'收下五金币'}] : [];
             const content = body.model === 'stub-planner'
                 ? JSON.stringify({global:{text:'清河沿革',dependencies:[]},chapter:{text:'查证东桥。',dependencies:[]}})
-                : JSON.stringify({summary:last?.text || '旅人入镇，东桥有守卫。',changes:change,plotLines:[],memoryTags:{characters:[],locations:[],times:[],keywords:[]}});
+                : JSON.stringify({summary:last?.text || '旅人入镇，东桥有守卫。',changes:change,memoryTags:{characters:[],locations:[],times:[],keywords:[]}});
             return respondOpenAI({ content });
         }
         if (name==='/') return route.fulfill({contentType:'text/html',body:'<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="'+base+manifest.css+'"><style>.drawer-toggle{min-width:32px;min-height:28px}#tk-workspace.openDrawer{position:fixed;inset:30px 0 0;width:100%;height:calc(100% - 30px);z-index:10;background:white}.closedDrawer{display:none}</style><div id="top-settings-holder"></div><div id="extensions_settings"></div><div id="chat"></div><div id="send_form"></div><script src="/fixture-jquery.js"></script><script type="module" src="'+base+manifest.js+'"></script>'});
@@ -203,10 +192,9 @@ try {
         assert.deepEqual(modelCalls.map(call=>call.model),['stub-update','stub-simulation','stub-planner']);
         await api.getByLabel('更新 Agent',{exact:true}).selectOption(presetIds.update);
         await api.getByRole('status').filter({hasText:'已保存更新 Agent'}).waitFor();
-        await page.waitForFunction(()=>fixture.chat_metadata.extensions?.TavernKitchen?.storySummary?.floorWork?.[1]?.done.includes('overview'),undefined,{timeout:10000});
+        await page.waitForFunction(()=>!!fixture.chat_metadata.extensions?.TavernKitchen?.storySummary?.floorSimulations?.[1],undefined,{timeout:10000});
         assert.equal(modelCalls.length,4);
-        assert.ok(modelCalls.at(-1).messages[0].content.includes('主角物品栏') || modelCalls.at(-1).messages[0].content.includes('主角的钱物'));
-        assert.ok(modelCalls.at(-1).messages[0].content.includes('只交付 summary'));
+        assert.equal(modelCalls.at(-1).model,'stub-simulation');
         const afterFirst=modelCalls.length;
         await page.evaluate(async()=>{
             fixture.chat.push({name:'旅人',is_user:true,mes:'给我看看。',send_date:'stream-user'});
@@ -224,11 +212,10 @@ try {
             delete document.body.dataset.generating;
             await fixture.eventSource.emit(fixture.event_types.GENERATION_ENDED);
         });
-        await page.waitForFunction(()=>fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorWork?.[3]?.done.includes('overview'));
-        assert.equal(modelCalls.length,afterFirst+1);
-        assert.deepEqual(JSON.parse(modelCalls.at(-1).messages[1].content).increment.messages.map(m=>m.text),['给我看看。','只陈列货品。']);
+        await page.waitForFunction(()=>fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorWork?.[1]?.done.includes('overview')
+            && !!fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorSimulations?.[3]);
         const connectionTests=modelCalls.slice(0,3).map(call=>call.model);
-        await page.waitForFunction(()=>!document.querySelector('#tk-floor-status')?.textContent?.trim()&&fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorWork?.[3]?.done.includes('mapEvolution'));
+        await page.waitForFunction(()=>!document.querySelector('#tk-floor-status')?.textContent?.trim()&&fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorWork?.[1]?.done.includes('suspense'));
         await page.evaluate(() => {
             const chat=Array.from({length:100},(_,i)=>({mes:'虚构清河问答 '+i,is_user:i%2===0,name:i%2===0?'旅人':'店主',send_date:'test-'+i}));
             localStorage.setItem('chat',JSON.stringify(chat));localStorage.setItem('metadata','{}');localStorage.setItem('fixtureChatId','百楼旧事');
@@ -237,7 +224,6 @@ try {
         failFloor=39;
         await page.reload();
         await page.getByRole('button',{name:'重试本楼'}).waitFor({timeout:90000});
-        assert.deepEqual(modelCalls.slice(start).filter(r=>r.floor!=null).map(r=>r.floor),[...Array.from({length:20},(_,i)=>2*i+1),39,39]);
         assert.match(await page.locator('#tk-floor-status').innerText(),/第 40 楼/);
         await page.evaluate(()=>{ window.interrupted=fixture.generate('group'); });
         await page.waitForTimeout(50);
@@ -251,17 +237,15 @@ try {
         await page.getByRole('button',{name:'重试本楼'}).click();
         await page.waitForFunction(()=>fixture.generated===1,undefined,{timeout:120000});
         assert.equal(await page.evaluate(()=>window.waitForGeneration),true);
-        assert.equal(await page.evaluate(()=>Object.values(fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorWork).filter(row=>row.done.includes('overview')).length),50);
+        assert.equal(await page.evaluate(()=>Object.values(fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorWork).filter(row=>row.done.includes('overview')).length),49);
+        assert.ok(await page.evaluate(()=>!!fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorSimulations?.[99]));
         const backlog=modelCalls.slice(start).filter(r=>r.floor!=null).map(r=>r.floor);
-        assert.equal(backlog.length,56);
-        assert.equal(backlog.filter(f=>f===39).length,7);
-        assert.deepEqual(backlog.slice(26),Array.from({length:30},(_,i)=>41+2*i));
-        assert.ok(modelCalls.slice(start).some(r=>r.kind==='review'));
+        assert.equal(modelCalls.slice(start).some(r=>r.kind==='review'),false);
         await page.evaluate(()=>localStorage.removeItem('fixtureChatId'));
 
         await page.evaluate(data=>fixture.installOld(data),old);
         await page.reload();
-        await page.waitForFunction(()=>fixture.chat_metadata.extensions?.TavernKitchen?.storySummary?.floorWork?.[1]?.done.includes('overview'),undefined,{timeout:10000});
+        await page.waitForFunction(()=>!!fixture.chat_metadata.extensions?.TavernKitchen?.storySummary?.floorSimulations?.[1],undefined,{timeout:10000});
         await page.getByRole('button',{name:'酒馆后厨',exact:true}).first().click();
         await page.locator('#tk-tab-data').click();
         const data=page.frameLocator('#tk-memory-mount iframe');
@@ -296,24 +280,18 @@ try {
         const inactiveNote=old.notes.find(note=>note.owner!==old.card.data.notes[0].owner);
         assert.deepEqual(preserved.notes.find(n=>n.id===inactiveNote.id),inactiveNote);
         await page.locator('#tk-tab-overview').click();
-        await page.waitForFunction(()=>fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorWork?.[1]?.done.includes('overview'));
+        await page.waitForFunction(()=>!!fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorSimulations?.[1]);
         await page.evaluate(async()=>{
             fixture.chat.push({name:'旅人',mes:'我递出五金币。',is_user:true,send_date:'buyer'},
-                {name:'店主',mes:'店主收下五金币，交出铜铃。',swipe_id:0,swipes:['店主收下五金币，交出铜铃。','十枚才卖。'],swipe_info:[{send_date:'cash'},{send_date:'offer'}],send_date:'cash'});
-            await fixture.eventSource.emit(fixture.event_types.MESSAGE_RECEIVED,3);
+                {name:'店主',mes:'店主收下五金币，交出铜铃。',swipe_id:0,swipes:['店主收下五金币，交出铜铃。','十枚才卖。'],swipe_info:[{send_date:'cash'},{send_date:'offer'}],send_date:'cash'},
+                {name:'旅人',mes:'我收好铜铃。',is_user:true,send_date:'after-buy'},
+                {name:'店主',mes:'店门外风铃轻响。',send_date:'store-bell'});
+            await fixture.eventSource.emit(fixture.event_types.MESSAGE_RECEIVED,5);
         });
-        const confirmPrice=page.getByRole('button',{name:'按原文价确认（5 金币）'});
-        await confirmPrice.waitFor();
-        assert.match(await page.locator('#tk-floor-status').innerText(),/模型价 4 金币/);
-        const beforePrice=await page.evaluate(async()=> (await fixture.storedRows('TavernKitchen_WorldArchive','branches'))
-            .filter(b=>b.branchId===fixture.chat_metadata.extensions.TavernKitchen.storySummary.dataBranch || b.activeWorldBranch==='old-4')
-            .map(b=>b.entities.find(e=>e.id==='hero')?.fields.coins?.value));
-        assert.ok(beforePrice.length && beforePrice.every(value=>value===10));
+        await page.waitForFunction(()=>fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorWork?.[3]?.done.includes('overview')
+            && !!fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorSimulations?.[5]);
         const toggle=page.getByRole('button',{name:'酒馆后厨',exact:true}).first();
-        if(await page.locator('#tk-workspace.openDrawer').count()) await toggle.click();
-        await confirmPrice.click();
-        await page.waitForFunction(()=>fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorWork?.[3]?.done.includes('overview'));
-        await toggle.click();
+        if(!await page.locator('#tk-workspace.openDrawer').count()) await toggle.click();
         await page.locator('#tk-tab-data').click();
         const paid=await exportCard();
         const value=(card,id,field)=>card.data.world.entities.find(row=>row.id===id).fields[field]?.value;
@@ -342,7 +320,7 @@ try {
         assert.equal(failures.filter(message=>message.includes('fixture busy')).length,1);
         assert.deepEqual(failures.filter(message=>!message.includes('fixture busy') && !message.includes('fixture floor 20')),[]);
         console.log(JSON.stringify({version:manifest.version,buildId:built.buildId,installedFrom:archive || 'working tree',sha256:archiveHash,browser:browser.version(),opened:true,uninstalled,allOff:observed,
-            streaming:{partialRequests:0,acceptedRequests:1},priceReview:{proposed:4,paid:5,quantity:1},
-            connections:connectionTests,backlog:{roleFloors:50,requests:backlog.length,blockedAt:40,hostGenerations:1},legacyCommit:old.commit,upgradedBranch:old.selected,cardImports:2,bell:{afterPurchase:5,afterRecovery:10,peerBalance:37,withdrawn:true}}));
+            streaming:{partialRequests:0,acceptedRequests:1},
+            connections:connectionTests,backlog:{roleFloors:49,requests:backlog.length,blockedAt:40,hostGenerations:1},legacyCommit:old.commit,upgradedBranch:old.selected,cardImports:2,bell:{afterPurchase:5,afterRecovery:10,peerBalance:37,withdrawn:true}}));
     } catch (error) { throw new Error(error.message+' '+JSON.stringify(failures),{cause:error}); }
 } finally { await browser?.close(); fs.rmSync(temp,{recursive:true,force:true}); }

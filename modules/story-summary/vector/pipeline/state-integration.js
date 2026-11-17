@@ -18,7 +18,7 @@ import { L0_FLOOR_MAX_ATTEMPTS, summarizeL0Floors } from './l0-floor-status.js';
 import { trackVectorActivity } from '../runtime/vector-activity.js';
 import { createAnchorExtractionDraft } from '../../data/anchor-extraction.js';
 import { assertMemoryWritable, waitForMemoryCommit } from '../../data/memory-commit.js';
-import { sameMemory } from '../../maintenance/domain.js';
+import { sameMemory } from '../../data/memory-json.js';
 import { invalidateSummaryAnchors, getSummaryStore, isFloorMemoryOmitted } from '../../data/store.js';
 import { embed } from '../llm/siliconflow.js';
 import { extractAtomsForRound } from '../llm/atom-extraction.js';

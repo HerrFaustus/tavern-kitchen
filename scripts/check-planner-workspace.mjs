@@ -8,18 +8,25 @@ const root = path.resolve(import.meta.dirname, '..');
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const shims = {
-    'script.js': 'export const extension_prompts=globalThis.__plannerFixture.prompts,extension_prompt_types={IN_CHAT:1},extension_prompt_roles={SYSTEM:0};',
+    'extensions.js': 'export const extension_settings={}; export const getContext=()=>({chat:[],chatId:"planner-fixture",name1:"旅人",getTokenCountAsync:async()=>100});',
+    'utils.js': 'export const debounce=fn=>fn;',
+    'script.js': 'export const extension_prompts=globalThis.__plannerFixture.prompts,extension_prompt_types={IN_CHAT:1},extension_prompt_roles={SYSTEM:0},chat_metadata={},getRequestHeaders=()=>({});',
     'event-manager.js': 'export const event_types=new Proxy({},{get:(_,key)=>key}); export const createModuleEvents=()=>({on:(key,fn)=>{globalThis.__plannerFixture.events[key]=fn;},cleanup(){}});',
     'generate-interceptor.js': 'export const GENERATE_INTERCEPTOR_ORDER={STORY_PLANNER:300}; export const registerGenerateInterceptor=(_id,fn)=>{globalThis.__plannerFixture.interceptor=fn;}; export const unregisterGenerateInterceptor=()=>{};',
     'text-api-host.js': 'export const resolveTextApi=async()=>({provider:"other",baseUrl:"http://fixture.test/v1",model:"stub-planner",apiKey:"fixture"}); export const generateFeatureText=async()=>{const f=globalThis.__plannerFixture;f.calls++;if(f.failNextRequest){f.failNextRequest=false;throw Error("fixture failure");}return {text:JSON.stringify({global:{text:"幕后线索尚未揭晓。",dependencies:[]},chapter:{text:"旅人站在码头。\\n海风吹动斗篷。\\n"+"船工低声商议潮水与航程。".repeat(240),dependencies:[]}})};};',
+    'raw-recall.js': 'export async function recallRawMemory(){return {chunks:[],focusCharacters:[]};}',
 };
 const bundle = await build({absWorkingDir:root,entryPoints:['scripts/fixtures/planner-workspace.js'],bundle:true,write:false,format:'esm',platform:'browser',
     plugins:[{name:'planner-fixture-boundaries',setup(api){
         api.onResolve({filter:/.*/},args=>{
             const name=path.basename(args.path);
             const resolved=path.resolve(args.resolveDir,args.path);
-            const key=resolved === path.join(root,'modules/text-api/host.js') ? 'text-api-host.js' : name;
-            return Object.hasOwn(shims,key) ? {path:key,namespace:'fixture'} : null;
+            let key = null;
+            if (resolved === path.join(root,'modules/text-api/host.js')) key = 'text-api-host.js';
+            else if (resolved === path.join(root,'modules/story-summary/vector/retrieval/raw-recall.js')) key = 'raw-recall.js';
+            else if (!resolved.startsWith(root + path.sep) && (name === 'extensions.js' || name === 'utils.js')) key = name;
+            else if (Object.hasOwn(shims,name) && name !== 'extensions.js' && name !== 'utils.js' && name !== 'raw-recall.js') key = name;
+            return key ? {path:key,namespace:'fixture'} : null;
         });
         api.onLoad({filter:/.*/,namespace:'fixture'},args=>({contents:shims[args.path]}));
     }}]});

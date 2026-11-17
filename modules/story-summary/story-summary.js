@@ -1,11 +1,10 @@
 import { getKitchenMount, openKitchenTab, closeKitchenWorkspace, bindKitchenFrame } from '../../core/kitchen-workspace.js';
 import { pruneOrphanFloorWork } from '../../core/upgrade-selfcheck.js';
 import { refreshFloorSummaries } from './floor-summary.js';
-import { createFloorSummaryController } from './inline/controller.js';
-import { extractGeneratedFloorPayload, floorSource, stripFloorProtocol } from './inline/protocol.js';
+import { getUpdateAndSimulationBounds } from './data/turn-bounds.js';
 import { floorCoverageEnd, isFloorEntryCurrent } from './inline/ledger.js';
-import { mergeNewData, executeRollback } from './data/store.js';
-import { getTextFilterRules } from './data/config.js';
+import { floorSource } from './inline/protocol.js';
+import { executeRollback } from './data/store.js';
 import { parseStoryUpdates } from '../story-state/records.js';
 import { getRuntimeInvalidSourceFloor, getRuntimeSourceRollbackFloor } from './data/memory-commit.js';
 // ═══════════════════════════════════════════════════════════════════════════
@@ -36,10 +35,8 @@ import { STORY_SUMMARY_TOGGLE_EVENT } from './runtime-events.js';
 import { panelEnabled } from '../../core/panel-policy.js';
 import { isXiaobaiMasterEnabled } from './runtime-gate.js';
 import { initChatDeletionLifecycle } from './chat-deletion-lifecycle.js';
-import { createMemoryMaintenanceHost } from './maintenance/host.js';
 import { createSummaryDiagnostics } from './summary-diagnostics.js';
 import { buildRecallHistoryEntry, clearRecallHistory, getRecallHistory, recordRecallHistoryEntry } from './recall-history.js';
-import { MEMORY_CHAT_MESSAGES } from './maintenance/chat-contract.js';
 import { SUMMARY_FEEDBACK_COPY } from './feedback-copy.js';
 import { summaryFailureReason } from './summary-failure.js';
 import {
@@ -85,18 +82,14 @@ import {
 import { commitSummaryMemory, readSummaryMemory, readPublishedSummaryMemory, assertMemoryWritable, getMemoryCommitState, getPendingMemoryCommit, waitForMemoryCommit } from './data/memory-commit.js';
 import { usesStoryRecall } from './generate/recall-policy.js';
 import { prepareImportedSummary, readSummaryPackageData, SUMMARY_MEMORY_PACKAGE } from './data/summary-import.js';
-import { createFactIdAllocator } from './data/fact-identity.js';
-import { mergeEditedFactsWithTimestamps } from './data/fact-edits.js';
 import { memorySaveError } from './data/memory-copy.js';
 import { hasActiveAnchorHistoryFromFloor } from './data/anchor-invalidation.js';
-import { normalizeCharacterAliases, replaceCharacterAliases } from "./data/character-aliases.js";
-import { stampEditedCharacters } from "./data/character-edits.js";
+import { normalizeCharacterAliases } from "./data/character-aliases.js";
 import { normalizeEventMemoryRole } from "./data/events.js";
-import { isRelationFact, parseRelationTarget } from "./data/fact-predicates.js";
 import { formatStorySummaryL2Events } from "./prompt-events.js";
 import { projectStoryCharacters } from "./prompt-characters.js";
 import { notifyWorldSourcesChanged } from '../world-records/sources.js';
-import { prepareMemorySources, prepareSummaryRecovery, summaryRecoveryScope, validateMemorySources } from '../world-records/turn-runtime.js';
+import { prepareSummaryRecovery, summaryRecoveryScope } from '../world-records/turn-runtime.js';
 import { captureRangeSource, firstInvalidMemorySource } from './data/turn-source.js';
 import { worldAuthorityForContext, authorityStoryStore, worldFieldSource } from '../world-records/authority-context.js';
 
@@ -121,7 +114,7 @@ import { isGenerating } from '../../shared/common/sillytavern-generation-state.j
 
 // summary generation
 import { runSummaryGeneration } from "./generate/generator.js";
-import { createSummaryGenerationCancelledError, generateFloorSummary, generateReviewedLayer, isSummaryGenerationCancelledError } from "./generate/llm.js";
+import { createSummaryGenerationCancelledError, generateReviewedLayer, isSummaryGenerationCancelledError } from "./generate/llm.js";
 
 // vector service
 import { getEngineFingerprint } from "./vector/utils/embedder.js";
@@ -143,6 +136,7 @@ import { inspectRawVectorStatus } from './vector/pipeline/raw-vector-status.js';
 import {
     getMeta,
     updateMeta,
+    deleteChunksAtFloor,
     clearEventVectors,
     clearAllChunks,
     clearChatData,
@@ -161,7 +155,7 @@ import { createVectorMaintenanceScheduler } from './vector/pipeline/maintenance-
 import { repairMissingChunks } from "./vector/pipeline/chunk-repair.js";
 import { maintainChunks } from './vector/pipeline/chunk-maintenance.js';
 import { clearAllAtomsAndVectors, getAnchorStats } from "./vector/pipeline/state-integration.js";
-import { clearStateVectors, deleteStateVectorsByIds, getStateAtoms, getStateAtomsCount, getStateVectorsCount, getL0Index } from "./vector/storage/state-store.js";
+import { clearStateVectors, getStateAtoms, getStateAtomsCount, getStateVectorsCount, getL0Index } from "./vector/storage/state-store.js";
 
 import {
     clearRecallRuntime,
@@ -195,7 +189,6 @@ import { invalidateLexicalIndex, addChunkDocuments, clearChunkDocuments, removeD
 import { createMessageSourceTracker } from './data/message-sources.js';
 import { summaryLayers, timelineRounds } from './data/summary-layers.js';
 import { getChatIdentity } from './data/chat-identity.js';
-import { applySummarySectionEdit } from './data/section-edits.js';
 import { retainSourceChange, synchronizeSourceCaches } from './data/source-sync.js';
 import { observeAsyncCallback, observeBackgroundTask } from '../../shared/common/async-errors.js';
 
@@ -219,44 +212,10 @@ const serviceTests = createServiceTests({
     onStatus: (target, state) => postToFrame({ type: 'VECTOR_ONLINE_STATUS', target, ...state }),
 });
 const summaryDiagnostics = createSummaryDiagnostics();
-const memoryMaintenance = createMemoryMaintenanceHost({
-    submitted: () => window.dispatchEvent(new Event('tavernKitchen:summary-saved')),
-    generateReviewedLayer,
-    readSummaryDiagnostics: args => summaryDiagnostics.read(getChatIdentity(getContext()), args),
-    isEnabled: () => panelEnabled('proofreading') && isXiaobaiMasterEnabled() && Boolean(getContext()?.chatId),
-    invalidateRecall: () => {
-        recallReuse.invalidate();
-    },
-    refreshSummary: () => {
-        refreshEntityLexiconAndWarmup();
-        postToFrame({ type: 'SUMMARY_FULL_DATA', payload: buildFramePayload(getSummaryStore()) });
-    },
-    chatChanged: payload => postToFrame({ type: MEMORY_CHAT_MESSAGES.state, payload }),
-    changed: payload => {
-        if (payload?.stateOnly) postToFrame({ type: 'MEMORY_MAINTENANCE_RESULTS', payload });
-        else observeBackgroundTask(sendMemoryMaintenanceResults(), { source: import.meta.url, operation: 'changed' });
-    },
-});
-
-async function sendMemoryMaintenanceResults(offset = 0) {
-    const chatId = getContext()?.chatId;
-    const identity = memoryMaintenance.chat.identity;
-    try {
-        const payload = await memoryMaintenance.results(offset);
-        if (memoryMaintenance.chat.identity === identity) postToFrame({ type: 'MEMORY_MAINTENANCE_RESULTS', payload: { ...payload, offset } });
-    } catch (error) {
-        xbLog.error(MODULE_ID, 'memory_maintenance_results_failed', error);
-        if (memoryMaintenance.chat.identity === identity) postToFrame({ type: 'MEMORY_MAINTENANCE_RESULTS', payload: {
-            chatId, items: [], next: null, state: { status: 'failed', code: 'load_failed' },
-        } });
-    }
-}
 const messageButtonOwnership = createMessageButtonOwnership();
 const iframePath = `${extensionFolderPath}/modules/story-summary/story-summary.html`;
-const VALID_SECTIONS = ["characters", "facts"];
 const MESSAGE_EVENT = "message";
 let activeSummaryExecution = null;
-let floorSummaryRequest = null;
 
 function getStorySummaryEnablement() {
     const context = getContext();
@@ -1354,7 +1313,7 @@ function getHideUiSettings() {
     const cfg = getSummaryPanelConfig() || {};
     const ui = cfg.ui || {};
     const parsedKeep = Number.parseInt(ui.keepVisibleCount, 10);
-    const keepVisibleCount = Number.isFinite(parsedKeep) ? Math.max(0, Math.min(50, parsedKeep)) : 5;
+    const keepVisibleCount = Number.isFinite(parsedKeep) ? Math.max(0, Math.min(50, parsedKeep)) : 0;
     return {
         hideSummarized: !!ui.hideSummarized,
         keepVisibleCount,
@@ -1372,7 +1331,7 @@ function setHideUiSettings(patch = {}) {
             keepVisibleCount: patch.keepVisibleCount !== undefined
                 ? (() => {
                     const parsedKeep = Number.parseInt(patch.keepVisibleCount, 10);
-                    return Number.isFinite(parsedKeep) ? Math.max(0, Math.min(50, parsedKeep)) : 5;
+                    return Number.isFinite(parsedKeep) ? Math.max(0, Math.min(50, parsedKeep)) : 0;
                 })()
                 : current.keepVisibleCount,
         },
@@ -1671,54 +1630,6 @@ export function getStorySummaryCommittedThrough() {
     return Number.isSafeInteger(through) && through >= 0 ? through : -1;
 }
 
-function mergeCharacterRelationshipsIntoFacts(existingFacts, relationships, floorHint = 0) {
-    const safeFacts = Array.isArray(existingFacts) ? existingFacts : [];
-    const safeRels = Array.isArray(relationships) ? relationships : [];
-
-    const nonRelationFacts = safeFacts.filter((fact) => fact?.retracted || !isRelationFact(fact));
-    const oldRelationByKey = new Map();
-
-    for (const fact of safeFacts) {
-        const to = parseRelationTarget(fact?.p);
-        const from = String(fact?.s || "").trim();
-        if (!from || !to) continue;
-        oldRelationByKey.set(`${from}->${to}`, fact);
-    }
-
-    const allocateFactId = createFactIdAllocator(safeFacts);
-    const newRelationFacts = [];
-
-    for (const rel of safeRels) {
-        const from = String(rel?.from || "").trim();
-        const to = String(rel?.to || "").trim();
-        if (!from || !to) continue;
-
-        const key = `${from}->${to}`;
-        const oldFact = oldRelationByKey.get(key);
-        const label = String(rel?.label || "").trim() || "未知";
-        const trend = String(rel?.trend || "").trim();
-        const id = oldFact?.id || allocateFactId();
-
-        newRelationFacts.push({
-            id,
-            s: from,
-            p: oldFact?.p || `对${to}的关系`,
-            o: label,
-            ...(trend ? { trend } : {}),
-            since: oldFact?.since ?? floorHint,
-            _addedAt: oldFact?._addedAt ?? floorHint,
-        });
-    }
-
-    return [...nonRelationFacts, ...newRelationFacts];
-}
-
-function getCurrentFloorHint() {
-    const { chat } = getContext();
-    const lastFloor = (Array.isArray(chat) ? chat.length : 0) - 1;
-    return Math.max(0, lastFloor);
-}
-
 function openPanelForMessage(mesId) {
     createOverlay();
     showOverlay();
@@ -1877,18 +1788,6 @@ async function handleFrameMessage(event) {
     if (!isTrustedMessage(event, iframe, "TavernKitchen-StoryFrame")) return;
 
     const data = event.data;
-    const chatAction = Object.keys(MEMORY_CHAT_MESSAGES).find(action => action !== 'state' && MEMORY_CHAT_MESSAGES[action] === data.type);
-    if (chatAction) {
-        const requestIdentity = chatAction === 'query' ? memoryMaintenance.chat.identity : data.identity;
-        try {
-            if (chatAction === 'query') postToFrame({ type: MEMORY_CHAT_MESSAGES.state, payload: memoryMaintenance.chat.query(data) });
-            else await memoryMaintenance.chat[chatAction](data);
-        } catch (error) {
-            memoryMaintenance.chat.report(error, requestIdentity);
-            xbLog.error(MODULE_ID, 'memory_chat_failed', error);
-        }
-        return;
-    }
 
     switch (data.type) {
         case 'KITCHEN_CARD_INFO':
@@ -1973,20 +1872,6 @@ async function handleFrameMessage(event) {
             postToFrame({type:'WORLD_FIELD_SOURCE_RESULT', payload:worldFieldSource(world, ctx, data)});
             break;
         }
-        case 'MEMORY_MAINTENANCE_SOURCE':
-            postToFrame({ type: 'MEMORY_MAINTENANCE_SOURCE_RESULT', payload: memoryMaintenance.source(data) });
-            break;
-        case 'MEMORY_MAINTENANCE_QUERY':
-            await sendMemoryMaintenanceResults(data.offset);
-            break;
-        case 'MEMORY_MAINTENANCE_CANCEL':
-            memoryMaintenance.cancelAutomatic();
-            break;
-        case 'MEMORY_MAINTENANCE_REPAIR':
-            try { await memoryMaintenance.repairIndexes(); }
-            catch (error) { xbLog.error(MODULE_ID, 'memory_maintenance_index_failed', error); }
-            await sendMemoryMaintenanceResults();
-            break;
         case "FRAME_READY": {
             frameReady = true;
             flushPendingFrameMessages();
@@ -2008,8 +1893,14 @@ async function handleFrameMessage(event) {
                 break;
             }
             const ctx = getContext();
-            currentMesId = (ctx.chat?.length ?? 1) - 1;
-            await handleManualGenerate(currentMesId, { ...(data.config || {}),
+            const bounds = getUpdateAndSimulationBounds(ctx.chat);
+            const hasRunner = typeof floorRunner !== 'undefined' && floorRunner;
+            if (bounds.updateEnd < 0 && !hasRunner) {
+                postToFrame({ type: "SUMMARY_STATUS", statusText: "等待下一楼回复完成后再总结" });
+                notifySummaryState();
+                break;
+            }
+            await handleManualGenerate(bounds.updateEnd, { ...(data.config || {}),
                 trigger: { ...(data.config?.trigger || {}), delayFloors: 0, maxPerRun: SUMMARY_BATCH_FLOORS } }, data.recovery);
             break;
         }
@@ -2096,78 +1987,6 @@ async function handleFrameMessage(event) {
             hideOverlay();
             break;
 
-        case "UPDATE_SECTION": {
-            if (!VALID_SECTIONS.includes(data.section)) break;
-            const context = getContext();
-            const { chatId } = context;
-            const chatIdentity = getChatIdentity(context);
-            try {
-                cancelActiveSummaryExecution();
-                cancelRecallAndClearPrompt('summary-edited');
-                const committed = await runVectorWriteTask({ chatId, kind: 'summary-manual-edit', scope: VECTOR_WRITE_SCOPES.CONSISTENCY }, async () => {
-                    // Prepare against the state preceding writers actually published,
-                    // not a snapshot captured while this edit was still queued.
-                    do { await waitForMemoryCommit(); } while (getMemoryCommitState() === 'saving');
-                    if (getChatIdentity(getContext()) !== chatIdentity) return null;
-                    assertMemoryWritable(chatId);
-                    getSummaryStore();
-                    const previous = readSummaryMemory();
-                    const next = structuredClone(previous);
-                    const store = next.storySummary;
-                    store.json ||= {};
-                    const oldFacts = store.json.facts || [];
-                    const edited = applySummarySectionEdit(data.section, data.previous, data.data,
-                        buildFramePayload(previous.storySummary)[data.section]);
-                    store.json[data.section] = data.section === "characters"
-                        ? stampEditedCharacters(store.json.characters, edited, getCurrentFloorHint())
-                        : edited;
-                    if (data.section === "facts") store.json.facts = [
-                        ...oldFacts.filter(fact => fact.retracted),
-                        ...mergeEditedFactsWithTimestamps(oldFacts, edited.filter(fact => !fact.retracted), getCurrentFloorHint()),
-                    ];
-                    if (data.section === "characters") {
-                        store.json.facts = mergeCharacterRelationshipsIntoFacts(store.json.facts, edited.relationships, getCurrentFloorHint());
-                    }
-                    store.updatedAt = Date.now();
-                    await commitSummaryMemory(chatId, next, { previous });
-                    return true;
-                });
-                if (getChatIdentity(getContext()) !== chatIdentity) break;
-                if (!committed) throw new Error('metadata_commit_cancelled');
-                postToFrame({ type: 'SUMMARY_FULL_DATA', payload: buildFramePayload(readPublishedSummaryMemory().storySummary) });
-            } catch (error) {
-                if (getChatIdentity(getContext()) === chatIdentity) reportMemorySaveFailure(error);
-                else console.warn({ source: import.meta.url, operation: 'UPDATE_SECTION' }, error);
-            }
-            break;
-        }
-
-        case "UPDATE_CHARACTER_ALIASES": {
-            if (!Array.isArray(data.aliases)) break;
-            try {
-                cancelActiveSummaryExecution();
-                const { chatId } = getContext();
-                await waitForMemoryCommit();
-                assertMemoryWritable(chatId);
-                getSummaryStore();
-                const previous = readSummaryMemory();
-                const next = structuredClone(previous);
-                const store = next.storySummary;
-                store.json ||= {};
-                const result = replaceCharacterAliases(store.json, data.aliases, getCurrentFloorHint());
-                if (!result.aliasChanged) break;
-                cancelRecallAndClearPrompt('character-aliases-edited');
-                memoryMaintenance.cancel();
-                store.updatedAt = Date.now();
-                await commitSummaryMemory(chatId, next, { previous });
-                refreshEntityLexiconAndWarmup();
-                postToFrame({ type: 'SUMMARY_FULL_DATA', payload: buildFramePayload(getSummaryStore()) });
-            } catch (error) {
-                reportMemorySaveFailure(error);
-            }
-            break;
-        }
-
         case "TOGGLE_HIDE_SUMMARIZED": {
             setHideUiSettings({ hideSummarized: !!data.enabled });
 
@@ -2179,7 +1998,7 @@ async function handleFrameMessage(event) {
         case "UPDATE_KEEP_VISIBLE": {
             const oldCount = getHideUiSettings().keepVisibleCount;
             const parsedCount = Number.parseInt(data.count, 10);
-            const newCount = Number.isFinite(parsedCount) ? Math.max(0, Math.min(50, parsedCount)) : 5;
+            const newCount = Number.isFinite(parsedCount) ? Math.max(0, Math.min(50, parsedCount)) : 0;
             if (newCount === oldCount) break;
 
             setHideUiSettings({ keepVisibleCount: newCount });
@@ -2204,7 +2023,6 @@ async function handleFrameMessage(event) {
                     );
                     const previousVectorConfig = transition.previousVectorConfig;
                     const savedConfig = transition.result;
-                    if (!savedConfig.memoryMaintenanceEnabled) memoryMaintenance.cancelAutomatic();
                     const nextVectorConfig = savedConfig?.vector || {};
                     const vectorEnabledChanged = !!previousVectorConfig?.enabled !== !!nextVectorConfig?.enabled;
                     const vectorFingerprintChanged = !!previousVectorConfig?.enabled
@@ -2631,8 +2449,6 @@ function clearExtensionPrompt() {
     delete extension_prompts[EXT_PROMPT_KEY];
 }
 
-const FLOOR_PROMPT_KEY = 'tavernKitchenMainReplySummary';
-let removeFloorDisplayFilter = null;
 async function ensureFloorSources() {
     await ensureCurrentSources(undefined, { requireSummary: false });
     const store = getSummaryStore();
@@ -2642,29 +2458,6 @@ async function ensureFloorSources() {
         if (result.status !== 'rolled_back') throw new Error('本楼原文变化后的回退尚未完成，请稍后重试。');
     }
 }
-const mainReplySummary = createFloorSummaryController({
-    getContext, enabled: isStorySummaryEnabledForCurrentChat,
-    getConfig: () => getSummaryPanelConfig().inlineSummary || { enabled: false, review: false },
-    getFilterRules: getTextFilterRules,
-    ensureSources: ensureFloorSources, read: readSummaryMemory, commit: commitSummaryMemory, merge: mergeNewData,
-    busy: () => isHostGenerating() || isSummaryGenerating(), refresh: refreshFloorSummaries,
-    afterCommit: async (floor, previous, next) => {
-        const chatId = getContext().chatId;
-        cancelRecallAndClearPrompt('floor-summary-edited');
-        recallReuse.invalidate();
-        invalidateLexicalIndex();
-        const changedAtoms = (previous.stateAtoms || []).filter(atom =>
-            JSON.stringify(atom) !== JSON.stringify(next.stateAtoms?.find(item => item.atomId === atom.atomId))).map(atom => atom.atomId);
-        if (changedAtoms.length) await deleteStateVectorsByIds(chatId, changedAtoms);
-        await clearRecallRuntime(chatId);
-        if (getVectorConfig()?.enabled) {
-            rememberVectorMaintenance(chatId, floor, 'main_reply');
-            scheduleAutoL0Backfill(AUTO_L0_BACKFILL_DELAY_MS, chatId);
-        }
-        postToFrame({ type: 'SUMMARY_FULL_DATA', payload: buildFramePayload(getSummaryStore()) });
-        await applyHideState();
-    },
-});
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Prompt 注入
@@ -2729,7 +2522,6 @@ function cancelRecallAndClearPrompt(reason) {
 // recall must not preserve a view from halfway through the operation.
 async function changeRecallData(chatId, change) {
     if (getContext()?.chatId !== chatId) return;
-    memoryMaintenance.cancel();
     cancelEmbeddingWriteTasks('Memory data replaced');
     cancelRecallAndClearPrompt('memory-data-changed');
     try {
@@ -3202,13 +2994,10 @@ function registerAfterAiGateHandler() {
 let storySummaryTeardown = null;
 
 function handleChatChange() {
-    delete extension_prompts[FLOOR_PROMPT_KEY];
-    mainReplySummary.reset();
     vectorMaintenanceScheduler.clear();
     const reloaded = messageSources.switchChat(getContext());
     embeddingConnection.cancel();
     serviceTests.cancel();
-    memoryMaintenance.reset();
     if (!reloaded) cancelRecallAndClearPrompt('chat-changed');
     cancelActiveSummaryExecution();
     activeSummaryExecution = null;
@@ -3226,7 +3015,6 @@ async function registerEvents() {
     resumeVectorWriteCoordinator();
     window.registerKitchenModuleCleanup?.(MODULE_ID, unregisterEvents);
     events = createModuleEvents(MODULE_ID);
-    memoryMaintenance.start();
     activeChatId = getContext().chatId || null;
     messageSources.reset(getContext());
     registerAfterAiGateHandler();
@@ -3311,11 +3099,8 @@ async function registerEvents() {
         runStorySummaryRecallInterceptor,
         GENERATE_INTERCEPTOR_ORDER.STORY_SUMMARY,
     );
-    removeFloorDisplayFilter?.();
-    removeFloorDisplayFilter = null;
-    // Retire a previous main-reply interceptor when reinitializing without reload.
+    // Retire any leftover main-reply interceptor when reinitializing without reload.
     unregisterGenerateInterceptor('story-floor-summary');
-    delete extension_prompts[FLOOR_PROMPT_KEY];
     events.on(event_types.GENERATION_STOPPED, () => {
         const { chatId } = getContext();
         cancelActiveRecall('generation-stopped', {
@@ -3352,14 +3137,10 @@ async function unregisterEvents() {
 
 async function runStorySummaryTeardown() {
     unregisterGenerateInterceptor('story-floor-summary');
-    delete extension_prompts[FLOOR_PROMPT_KEY];
-    removeFloorDisplayFilter?.(); removeFloorDisplayFilter = null;
-    mainReplySummary.reset();
     summaryDiagnostics.clear();
     messageSources.reset();
     embeddingConnection.cancel();
     serviceTests.cancel();
-    memoryMaintenance.stop();
     // The master switch invokes this cleanup directly (without awaiting it).
     // Restore flags synchronously, before waiting for any background writer.
     const hideCleanup = hideState.clear();
@@ -3412,7 +3193,6 @@ async function deactivateCurrentChatStorySummary() {
     clearDeferredBackgroundTasks();
     cancelPendingHide();
     cancelRecallAndClearPrompt('deactivated');
-    memoryMaintenance.cancel();
     cancelEmbeddingWriteTasks('Story Summary deactivated for current chat');
     lastRecallLogText = "";
 
@@ -3467,17 +3247,14 @@ $(document).on(STORY_SUMMARY_TOGGLE_EVENT, observeAsyncCallback(async (_e, enabl
 // ═══════════════════════════════════════════════════════════════════════════
 
 export async function refreshPanelState() {
-    if (!panelEnabled('proofreading')) { memoryMaintenance.cancel(); memoryMaintenance.chat.reset({preview:false}); }
-
     if (!panelEnabled('memory')) {
         messageButtonOwnership.runOwnedCleanup(() => $('.tavernKitchen-story-summary-btn').remove());
     }
-    if (!isXiaobaiMasterEnabled() || !panelEnabled('memory') && !panelEnabled('proofreading')) {
+    if (!isXiaobaiMasterEnabled() || !panelEnabled('memory')) {
         cancelActiveSummaryExecution();
         cancelRecallAndClearPrompt('disabled');
         await unregisterEvents();
     } else {
-        if (!panelEnabled('memory')) { cancelActiveSummaryExecution(); cancelRecallAndClearPrompt('disabled'); }
         await initializeStorySummary();
     }
     notifyStorySummaryChatState();
@@ -3491,7 +3268,7 @@ function reportStartupFailure(error) {
 // 首次加载和重新开启必须先同步配置，再注册事件和应用聊天隐藏状态。
 async function initializeStorySummary() {
     if (!isXiaobaiMasterEnabled() || !getSettings().storySummary?.enabled) return;
-    if (!panelEnabled('memory') && !panelEnabled('proofreading')) return;
+    if (!panelEnabled('memory')) return;
     try {
         await loadConfigFromServer();
     } catch (e) {
@@ -3516,7 +3293,7 @@ export function openStoryMemory(floor = Math.max(0, getContext().chat.length - 1
     postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view: 'memory' });
 }
 export function openStoryMemorySettings(view = 'settings') {
-    memoryWorkspaceView = ['proofreading', 'data', 'recall', 'settings-memory'].includes(view) ? view : 'memory';
+    memoryWorkspaceView = ['data', 'recall', 'settings-memory'].includes(view) ? view : 'memory';
     openPanelForMessage(Math.max(0, getContext().chat.length - 1));
     postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view });
 }
@@ -3531,21 +3308,21 @@ export function getWorldMemorySnapshot() {
     return {...snapshot,store:snapshot.store || {},enabled:isXiaobaiMasterEnabled() && Boolean(getContext()?.chatId)};
 }
 export function getFloorSummarySnapshot(readWorld = false) {
+    const chat = getContext().chat || [];
     const store = panelEnabled('memory') || readWorld && chat_metadata?.extensions?.[EXT_ID]?.storySummary ? getPublishedSummaryStore() : null;
-    const invalid = Array.isArray(store?.summaryHistory) && store.summaryHistory.find(batch => batch?.floorEntry && !isFloorEntryCurrent(batch.floorEntry, getContext().chat));
-    const sourceInvalid = firstInvalidMemorySource(store, getContext().chat || []);
+    const invalid = Array.isArray(store?.summaryHistory) && store.summaryHistory.find(batch => batch?.floorEntry && !isFloorEntryCurrent(batch.floorEntry, chat));
+    const sourceInvalid = firstInvalidMemorySource(store, chat);
     const invalidFrom = Math.min(sourceInvalid ?? Infinity, invalid?.floorEntry?.source?.start ?? Infinity,
         store?.sourceInvalidFromFloor ?? Infinity, store?.sourceRollbackFromFloor ?? Infinity,
         getRuntimeInvalidSourceFloor() ?? Infinity, getRuntimeSourceRollbackFloor() ?? Infinity);
-    return { enabled: isXiaobaiMasterEnabled() && isStorySummaryEnabledForCurrentChat(),
-        chat: getContext().chat, store, invalidFrom: Number.isFinite(invalidFrom) ? invalidFrom : undefined,
-        keepVisibleTurns: getSummaryPanelConfig().ui?.keepVisibleCount ?? 5, inlineConfig: getSummaryPanelConfig().inlineSummary, getError: mainReplySummary.error };
-}
-export function updateFloorSummary(floor, change, source) { return mainReplySummary.update(floor, change, source); }
-export function extractMainReplySummary(floor) {
-    // WHY: 2A retires main-reply <kitchen_summary> extraction and anchor bypasses in production.
-    if (floorRunner) return Promise.resolve({ status: 'retired', error: '主回复标签提取已退役，请使用统一楼层队列重跑或修订。' });
-    return mainReplySummary.ingest(floor, { force: true });
+    return {
+        enabled: isXiaobaiMasterEnabled() && isStorySummaryEnabledForCurrentChat(),
+        chat,
+        store,
+        bounds: getUpdateAndSimulationBounds(chat),
+        invalidFrom: Number.isFinite(invalidFrom) ? invalidFrom : undefined,
+        keepVisibleTurns: getSummaryPanelConfig().ui?.keepVisibleCount ?? 0,
+    };
 }
 export async function resetFloorForRerun(floor) {
     await waitForMemoryCommit();
@@ -3566,10 +3343,18 @@ export async function resetFloorForRerun(floor) {
     }
     const latest = readSummaryMemory();
     const floorWork = latest?.storySummary?.floorWork;
-    if (floorWork && Object.keys(floorWork).some(key => Number(key) >= floor)) {
+    const floorSimulations = latest?.storySummary?.floorSimulations;
+    const hasDrafts = Boolean(
+        (floorWork && Object.keys(floorWork).some(key => Number(key) >= floor))
+        || (floorSimulations && Object.keys(floorSimulations).some(key => Number(key) >= floor)),
+    );
+    if (hasDrafts) {
         const next = structuredClone(latest);
         for (const key of Object.keys(next.storySummary.floorWork || {})) {
             if (Number(key) >= floor) delete next.storySummary.floorWork[key];
+        }
+        for (const key of Object.keys(next.storySummary.floorSimulations || {})) {
+            if (Number(key) >= floor) delete next.storySummary.floorSimulations[key];
         }
         await commitSummaryMemory(chatId, next, { previous: latest });
     }
@@ -3578,67 +3363,37 @@ export async function resetFloorForRerun(floor) {
     refreshFloorSummaries();
 }
 
-/** One explicit rerun or single-floor summary; routes through unified floor-host queue when installed. */
+/** One explicit rerun or single-floor summary; routes strictly through unified floor-host queue. */
 export async function summarizeFloorOnDemand(floor) {
     if (!isStorySummaryEnabledForCurrentChat()) throw new Error('请先启用当前聊天的剧情记录。');
     if (!Number.isInteger(floor) || floor < 0) throw new Error('楼层无效。');
-    if (floorSummaryRequest != null) throw new Error('已有楼层正在总结，请稍候。');
-    if (isHostGenerating() || isSummaryGenerating()) throw new Error('请等待当前生成完成后再总结本楼。');
+    if (isHostGenerating() || isSummaryGenerating()) throw new Error('请等待当前生成完成后再重试本楼。');
     const chat = getContext().chat || [];
     const source = floorSource(chat, floor);
-    if (!source) throw new Error('只能总结叙事 AI 回复。');
-    if (floorRunner) {
-        const release = guard.acquire('summary');
-        if (!release) throw new Error('已有总结任务在运行，请稍候。');
-        const execution = beginSummaryExecution();
-        if (!execution) { release(); throw new Error('无法启动总结任务。'); }
-        notifySummaryState();
-        floorSummaryRequest = floor;
-        try {
-            await floorRunner.rerunFloor(floor);
-            assertSummaryExecutionActive(execution);
-            const store = getPublishedSummaryStore();
-            if (store) {
-                sendFrameFullData(store, getContext().chat?.length || 0);
-                refreshEntityLexiconAndWarmup();
-                applyHideStateDebounced();
-                await updateFrameStatsAfterSummary(store, execution);
-                await autoVectorizeMissingEvents(store, execution);
-                await rebuildActiveVectorCacheAfterSummary(execution);
-            }
-            if (isStorySummaryConsumableForCurrentChat()) scheduleVectorIntegrityCheck();
-            refreshFloorSummaries();
-            return { committed: true };
-        } finally {
-            floorSummaryRequest = null;
-            finishSummaryExecution(execution, release);
-        }
-    }
-    const text = chat.slice(source.start, floor + 1)
-        .map(item => `${item.is_user ? '玩家' : item.name || '角色'}：${stripFloorProtocol(item.mes)}`)
-        .join('\n\n');
-    if (!text.trim()) throw new Error('本楼正文为空。');
-    floorSummaryRequest = floor;
-    const identity = getChatIdentity(getContext());
+    if (!source) throw new Error('只能重跑叙事 AI 回复。');
+    if (!floorRunner) throw new Error('统一楼层队列尚未就绪，请稍后重试。');
+    const release = guard.acquire('summary');
+    if (!release) throw new Error('已有总结任务在运行，请稍候。');
+    const execution = beginSummaryExecution();
+    if (!execution) { release(); throw new Error('无法启动总结任务。'); }
+    notifySummaryState();
     try {
-        await ensureFloorSources();
-        if (!isStorySummaryEnabledForCurrentChat() || identity !== getChatIdentity(getContext())) throw new Error('聊天已切换或剧情记录已关闭，本次总结未写入。');
-        const preparedSources = await prepareMemorySources(source.start, floor);
-        let raw;
-        try { raw = await generateFloorSummary({ store: getPublishedSummaryStore(), floorText: text }); }
-        catch (cause) {
-            if (isSummaryGenerationCancelledError(cause)) throw cause;
-            throw Object.assign(new Error(cause.message, { cause }), { summaryModelFailure: true });
+        await floorRunner.rerunFloor(floor);
+        assertSummaryExecutionActive(execution);
+        const store = getPublishedSummaryStore();
+        if (store) {
+            sendFrameFullData(store, getContext().chat?.length || 0);
+            refreshEntityLexiconAndWarmup();
+            applyHideStateDebounced();
+            await updateFrameStatsAfterSummary(store, execution);
+            await autoVectorizeMissingEvents(store, execution);
+            await rebuildActiveVectorCacheAfterSummary(execution);
         }
-        await validateMemorySources(preparedSources);
-        if (!isStorySummaryEnabledForCurrentChat() || identity !== getChatIdentity(getContext())) throw new Error('聊天已切换或剧情记录已关闭，本次总结未写入。');
-        const extracted = extractGeneratedFloorPayload(raw);
-        if (extracted.status !== 'ready') throw Object.assign(new Error(extracted.error || '总结格式有误，未写入。'), { summaryModelFailure: true });
-        return await mainReplySummary.update(floor, {
-            payload: extracted.payload, reviewed: true, deleted: false, empty: false, omitted: false,
-        }, source.digest, preparedSources);
+        if (isStorySummaryConsumableForCurrentChat()) scheduleVectorIntegrityCheck();
+        refreshFloorSummaries();
+        return { committed: true };
     } finally {
-        floorSummaryRequest = null;
+        finishSummaryExecution(execution, release);
     }
 }
 export function invalidateWorldContext() {
@@ -3719,7 +3474,6 @@ export function kitchenCardMemory() {
     };
 }
 
-export const floorReview = memoryMaintenance;
 export { getPublishedSummaryStore, generateReviewedLayer, summaryRecoveryPreview, recoverSummaryTail };
 export async function inspectCurrentVectorStatusForUpgrade() {
     const { chat, chatId } = getContext();
@@ -3738,4 +3492,31 @@ export async function saveFloorWork(source, check, update) {
     update(entry,store);
     await commitSummaryMemory(chatId,next,{previous,validate:check});
     if (isStorySummaryEnabledForCurrentChat()) notifySummaryState();
+}
+export async function saveFloorSimulation(source, check, update) {
+    check(); await waitForMemoryCommit(); check();
+    const chatId = getContext().chatId, previous = readSummaryMemory(), next = structuredClone(previous);
+    const store = next.storySummary;
+    const simulations = (store.floorSimulations ??= {});
+    simulations[source.end] = update(simulations[source.end], store);
+    await commitSummaryMemory(chatId, next, { previous, validate: check });
+    if (isStorySummaryEnabledForCurrentChat()) notifySummaryState();
+}
+export async function reconcileSettledFloorChunks(floor) {
+    if (!Number.isInteger(floor) || floor < 0) return;
+    const store = getPublishedSummaryStore();
+    const sim = store?.floorSimulations?.[floor];
+    if (!sim || typeof sim.text !== 'string' || !sim.text.trim()) return;
+    const chatId = getContext()?.chatId;
+    if (!chatId) return;
+    removeDocumentsByFloor(floor, chatId);
+    const meta = await getMeta(chatId);
+    if ((meta?.lastChunkFloor ?? -1) >= floor) {
+        await runVectorWriteTask({ chatId, kind: 'settle-floor-sim-chunks', scope: VECTOR_WRITE_SCOPES.CONSISTENCY }, async () => {
+            await deleteChunksAtFloor(chatId, floor);
+            const live = await getMeta(chatId);
+            await updateMeta(chatId, { lastChunkFloor: Math.min(live.lastChunkFloor ?? -1, floor - 1) });
+        });
+        if (getVectorConfig()?.enabled) scheduleAutoL0Backfill(AUTO_L0_BACKFILL_DELAY_MS, chatId);
+    }
 }

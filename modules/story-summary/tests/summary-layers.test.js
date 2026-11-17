@@ -1,77 +1,94 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { summaryLayers, layerSignature, projectLayers } from '../data/summary-layers.js';
-import { readNarrativeUnits, requestNarrativeClosure, validateStagedUnits } from '../maintenance/narrative-review.js';
+import {
+    summaryLayers,
+    layerSignature,
+    projectLayers,
+    planNextCompression,
+    selectHistoryNodesBefore,
+    thresholdForLevel,
+    DEFAULT_LEAF_KEEP_RECENT,
+} from '../data/summary-layers.js';
 import { captureRangeSource } from '../data/turn-source.js';
 
-function fixture() {
-    const chat = Array.from({length: 20}, (_, i) => ({is_user: i % 2 === 0, mes: '原文' + (i + 1) + '。'}));
-    const summaryHistory = Array.from({length: 10}, (_, i) => ({endMesId: 2*i+1, summary: '摘要' + (i+1),
-        sourceReceipt: {id: 's' + i, source: captureRangeSource(chat, 2*i, 2*i+1)} }));
-    return {store: {summaryHistory}, chat};
+function makeRounds(count) {
+    const chat = Array.from({ length: count * 2 }, (_, i) => ({ is_user: i % 2 === 0, mes: `原文 ${i + 1}。` }));
+    const summaryHistory = Array.from({ length: count }, (_, i) => ({
+        kind: 'batch',
+        previousEndMesId: i * 2 - 1,
+        endMesId: i * 2 + 1,
+        summary: `摘要 ${i + 1}`,
+        roundSource: captureRangeSource(chat, i * 2, i * 2 + 1),
+    }));
+    return { chat, summaryHistory };
 }
-test('a review at turn ten closes turn seven, rejects unsupported divisions, and composes a chapter only from closed stages', async () => {
-    const c = fixture(), history = c.store.summaryHistory, staged = [];
-    let calls = 0;
-    const read = level => readNarrativeUnits(c, staged, 19, {level});
-    const close = (level, from, to, overrides = {}) => requestNarrativeClosure({level, from, to, revision: read(level).revision,
-        reason: '目标已有明确结果', evidence: {floor: to, quote: c.chat[to-1].mes}, ...overrides}, c, staged, 19,
-        async () => '总结' + (++calls), async () => c);
-    assert.equal(read('stage').total, 10);
-    await assert.rejects(close('stage', 1, 14, {evidence:{floor:14, quote:'不存在'}}));
-    await assert.rejects(close('stage', 1, 13));
-    await assert.rejects(close('stage', 1, 14, {revision:'旧版'}));
-    assert.equal(calls, 0);
-    staged.push((await close('stage', 1, 14)).node);
-    assert.equal((await close('stage', 1, 14)).status, 'unchanged');
-    assert.equal(read('stage').units[0].from, 15);
-    await assert.rejects(close('chapter', 1, 14));
-    staged.push((await close('stage', 15, 18)).node);
-    staged.push((await close('chapter', 1, 18)).node);
-    assert.equal(calls, 3);
-    validateStagedUnits(c, staged);
-    history.at(-1).reviewLayers = structuredClone(staged);
-    const {parents, leaves} = summaryLayers(history);
-    assert.deepEqual(projectLayers(leaves, parents).map(n => n.text), ['总结3', '摘要10']);
-    assert.equal((await close('chapter', 1, 18)).status,'unchanged');
-    history[0].summary = '更正';
-    assert.deepEqual(summaryLayers(history).parents.map(n=>n.text), ['总结2']);
-    c.chat[1].mes = '换了正文'; assert.throws(()=>read('stage'));
-});
-test('legacy fixed-size summaries remain usable without creating new groups', () => {
-    const c = fixture(), h = c.store.summaryHistory;
-    const kids = summaryLayers(h).leaves.slice(0,5);
-    h[4].layers = {stage:{level:'stage',start:0,end:9,text:'旧阶段',sourceId:layerSignature(kids)}};
-    assert.deepEqual(summaryLayers(h).parents.map(n=>n.text), ['旧阶段']);
+
+test('planNextCompression automatically rolls L0->L1->L2->L3+ from minDepth=0 without manual proofreading', () => {
+    assert.equal(thresholdForLevel(0), 12);
+    assert.equal(thresholdForLevel(1), 6);
+    assert.equal(thresholdForLevel(2), 3);
+
+    // 14 rounds with default keepRecent=3 leaves only 11 eligible L0 nodes (<12) -> null
+    const c14 = makeRounds(14);
+    assert.equal(planNextCompression(c14.summaryHistory, { chat: c14.chat, minDepth: 0 }), null);
+
+    // 15 rounds -> compresses oldest 12 into L1 stage node
+    const c15 = makeRounds(15);
+    const l1Plan = planNextCompression(c15.summaryHistory, { chat: c15.chat, minDepth: 0, leafKeepRecent: DEFAULT_LEAF_KEEP_RECENT });
+    assert.equal(l1Plan?.depth, 1);
+    assert.equal(l1Plan?.level, 'stage');
+    assert.equal(l1Plan?.nodes.length, 12);
+    assert.equal(l1Plan?.start, 0);
+    assert.equal(l1Plan?.end, 23);
+
+    // Build 6 L1 stage nodes + 3 recent L0 rounds -> next plan is L2 chapter
+    const total = 12 * 6 + 3;
+    const c75 = makeRounds(total);
+    for (let i = 0; i < 6; i++) {
+        const plan = planNextCompression(c75.summaryHistory, { chat: c75.chat, minDepth: 0 });
+        assert.equal(plan?.depth, 1);
+        const tail = c75.summaryHistory[Math.min(c75.summaryHistory.length - 1, Math.floor(plan.end / 2))];
+        (tail.compressionNodes ??= []).push({
+            id: `l1-${i}`,
+            level: plan.level,
+            depth: plan.depth,
+            start: plan.start,
+            end: plan.end,
+            childIds: plan.childIds,
+            sourceId: plan.sourceId,
+            text: `阶段 ${i + 1}`,
+        });
+    }
+    const l2Plan = planNextCompression(c75.summaryHistory, { chat: c75.chat, minDepth: 0 });
+    assert.equal(l2Plan?.depth, 2);
+    assert.equal(l2Plan?.level, 'chapter');
+    assert.equal(l2Plan?.nodes.length, 6);
+    assert.equal(l2Plan?.start, 0);
+    assert.equal(l2Plan?.end, 143);
+
+    const anchorTail = c75.summaryHistory[Math.floor(l2Plan.end / 2)];
+    (anchorTail.compressionNodes ??= []).push({
+        id: 'l2-0',
+        level: l2Plan.level,
+        depth: l2Plan.depth,
+        start: l2Plan.start,
+        end: l2Plan.end,
+        childIds: l2Plan.childIds,
+        sourceId: l2Plan.sourceId,
+        text: '第一章完结',
+    });
+
+    const selected = selectHistoryNodesBefore(c75.summaryHistory, c75.chat, total * 2);
+    assert.equal(selected[0].level, 'chapter');
+    assert.equal(selected[0].text, '第一章完结');
+    assert.equal(selected.length, 4); // 1 L2 chapter + 3 recent L0 rounds
 });
 
-test('narrative closure carries merged plotLineSnapshots onto stage and chapter units', async () => {
-    const c = fixture(), history = c.store.summaryHistory, staged = [];
-    history[0].summary = '摘要1，立约';
-    history[0].plotLines = [{ title: '暗线一', status: 'potential', characters: ['阿墨'], reading: '立约', quote: '立约' }];
-    history[5].summary = '摘要6，赴约';
-    history[5].plotLines = [{ title: '暗线一', status: 'active', characters: ['白岚'], reading: '赴约', quote: '赴约', nextFocus: '对质' }];
-    const read = level => readNarrativeUnits(c, staged, 19, { level });
-    const roundUnits = read('round');
-    assert.equal(roundUnits.units[0].plotLines[0].title, '暗线一');
-    const stage1 = await requestNarrativeClosure({
-        level: 'stage', from: 1, to: 10, revision: read('stage').revision,
-        reason: '阶段收束', evidence: { floor: 10, quote: c.chat[9].mes },
-    }, c, staged, 19, async () => '阶段一', async () => c);
-    staged.push(stage1.node);
-    assert.equal(stage1.node.plotLineSnapshots[0].title, '暗线一');
-    const stage2 = await requestNarrativeClosure({
-        level: 'stage', from: 11, to: 18, revision: read('stage').revision,
-        reason: '第二阶段', evidence: { floor: 18, quote: c.chat[17].mes },
-    }, c, staged, 19, async () => '阶段二', async () => c);
-    staged.push(stage2.node);
-    const ch = await requestNarrativeClosure({
-        level: 'chapter', from: 1, to: 18, revision: read('chapter').revision,
-        reason: '章末合流', evidence: { floor: 18, quote: c.chat[17].mes },
-    }, c, staged, 19, async () => '章一', async () => c);
-    staged.push(ch.node);
-    assert.equal(ch.node.plotLineSnapshots[0].status, 'active');
-    assert.deepEqual(ch.node.plotLineSnapshots[0].characters, ['阿墨', '白岚']);
-    history.at(-1).reviewLayers = structuredClone(staged);
-    assert.equal(summaryLayers(history).parents.find(n => n.level === 'chapter').plotLineSnapshots[0].nextFocus, '对质');
+test('legacy fixed-size layers remain usable without creating new groups', () => {
+    const c = makeRounds(10);
+    const kids = summaryLayers(c.summaryHistory).leaves.slice(0, 5);
+    c.summaryHistory[4].layers = { stage: { level: 'stage', start: 0, end: 9, text: '旧阶段', sourceId: layerSignature(kids) } };
+    const { leaves, parents } = summaryLayers(c.summaryHistory);
+    assert.deepEqual(parents.map(n => n.text), ['旧阶段']);
+    assert.equal(projectLayers(leaves, parents).length, 6);
 });

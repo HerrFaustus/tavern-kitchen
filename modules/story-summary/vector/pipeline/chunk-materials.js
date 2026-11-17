@@ -1,6 +1,9 @@
 import { chunkMessage as chunkRawMessage } from './chunk-text.js';
-import { isFloorMemoryOmitted } from '../../data/store.js';
-const chunkMessage = (floor, message) => isFloorMemoryOmitted(floor) ? [] : chunkRawMessage(floor, message);
+import { floorRecallMessage } from '../../data/turn-bounds.js';
+import { getReadOnlyPublishedSummaryStore, isFloorMemoryOmitted } from '../../data/store.js';
+const chunkMessage = (floor, message) => isFloorMemoryOmitted(floor)
+    ? []
+    : chunkRawMessage(floor, floorRecallMessage(floor, message, getReadOnlyPublishedSummaryStore()));
 
 // Saved inputs own an already processed floor. Later chat additions must not
 // manufacture extra chunks. Read current prose only for an absent floor or a

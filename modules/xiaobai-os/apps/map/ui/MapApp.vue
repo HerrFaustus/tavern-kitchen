@@ -5,14 +5,12 @@ import { placeFeatures } from '../../../domains/map/features.js';
 import PlaceText from './PlaceText.vue';
 import { mentionIndex } from './place-mentions.js';
 import AtlasBrowser from './AtlasBrowser.vue';
-import MapEditorPanel from './MapEditorPanel.vue';
 import { compassLabels, featureLabels, geographyLabels } from '../../../domains/map/types.js';
 import { locationTrail, visitedMapLocationKeys } from '../../../domains/map/hierarchy.js';
 import { useMapState } from './use-map-state.js';
 
 const props = defineProps<XiaobaiOsAppProps>();
-const { state, busy, disabledReason, status, notice, refresh, adopt, updateMap } = useMapState(props);
-const showEditor = ref(false);
+const { state, busy, status, notice, refresh, adopt } = useMapState(props);
 const selection = ref('');
 const featureName = ref('');
 function select(key: string, feature = '') {
@@ -42,7 +40,6 @@ watch(() => state.value.chatIdentity, () => select(''));
 <template>
     <section class="place-index">
         <div class="tk-module-data">
-            <MapEditorPanel v-if="showEditor" :map="map" :place="place" :busy="busy" :disabled-reason="disabledReason" :commit="updateMap" @select="select" />
             <AtlasBrowser v-if="map && place" :key="state.chatIdentity ?? ''" :map="map" :selected="place.key" :current="current" :feature="feature?.name ?? ''" @select="select" />
             <article v-if="place && feature">
                 <small>{{ trail.map(item => item.name).join(' › ') }} › 地点要素</small>
@@ -96,7 +93,6 @@ watch(() => state.value.chatIdentity, () => select(''));
         </div>
         <div class="tk-module-actions" aria-label="地图操作">
             <p v-if="status || notice" role="status">{{ status || notice }}</p>
-            <button type="button" class="menu_button" :disabled="busy || !!disabledReason" @click="showEditor = !showEditor">{{ showEditor ? '收起地图维护' : '手动维护地图' }}</button>
             <button v-if="state.status === 'conflict'" class="menu_button" @click="adopt">放弃未保存的更改并恢复</button>
             <button v-if="state.status === 'error' || state.status === 'blocked'" class="menu_button" @click="refresh">重新加载</button>
         </div>

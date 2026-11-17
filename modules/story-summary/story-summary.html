@@ -11,8 +11,6 @@
     <link rel="stylesheet" href="story-summary-timeline.css">
     <link rel="stylesheet" href="summary-status.css">
     <link rel="stylesheet" href="settings-config.css">
-    <link rel="stylesheet" href="maintenance/ui.css">
-    <link rel="stylesheet" href="maintenance/chat-ui.css">
     <link rel="stylesheet" href="archive.css">
     <link rel="stylesheet" href="workspace.css">
     <link id="tk-embedded-styles" rel="stylesheet" href="../../core/kitchen-embedded.css">
@@ -126,7 +124,6 @@
                 <div class="archive-people-layout">
                     <div class="archive-person-head">
                         <h2 id="archive-person-name" tabindex="-1"></h2>
-                        <section id="world-people-editor" hidden aria-label="人物档案维护"></section>
                     </div>
                     <div id="archive-profile-home">
                         <section class="archive-profile" id="archive-profile">
@@ -136,12 +133,8 @@
                         </section>
                     </div>
                 </div>
-                <section id="people-developments" hidden></section>
             </section>
             <section id="archive-world" role="tabpanel" aria-labelledby="archive-tab-world" hidden>
-                <section id="world-proposals" hidden aria-label="待核对的世界变化"></section>
-                <section id="world-situation-editor" hidden aria-label="世界状态维护"></section>
-                <section id="situation-developments" hidden></section>
                 <div class="archive-world-layout">
                     <nav class="archive-world-index" id="archive-world-index" aria-label="世界状态对象"></nav>
                     <div><div class="archive-section-head"><h2 id="archive-world-heading">世界状态</h2></div><p id="archive-world-hint" class="archive-muted" hidden></p><div id="facts-list"></div></div>
@@ -193,38 +186,10 @@
         </details>
     </section>
 
-    <section id="proofreading-page" hidden aria-label="记忆校对"></section>
-
     <dialog class="archive-drawer" id="archive-detail" aria-labelledby="archive-detail-title">
         <div class="archive-drawer-head"><h2 id="archive-detail-title"></h2><button class="archive-icon" data-close-archive="" aria-label="返回档案">×</button></div>
         <div class="archive-drawer-body" id="archive-detail-body"></div>
     </dialog>
-
-    <!-- Editor Modal -->
-    <div class="modal" id="editor-modal" role="dialog" aria-modal="true" aria-labelledby="editor-title">
-        <div class="modal-bg" id="editor-backdrop"></div>
-        <div class="modal-box">
-            <div class="modal-head">
-                <h2 id="editor-title">编辑</h2>
-                <button type="button" aria-label="关闭编辑" class="modal-close" id="editor-close">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="18" y1="6" x2="6" y2="18" />
-                        <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                </button>
-            </div>
-            <div class="modal-body">
-                <div class="editor-hint" id="editor-hint"></div>
-                <div id="editor-struct" class="hidden"></div>
-                <textarea class="editor-ta" id="editor-ta"></textarea>
-                <div class="editor-err" id="editor-err"></div>
-            </div>
-            <div class="modal-foot">
-                <button class="btn" id="editor-cancel">取消</button>
-                <button class="btn btn-p" id="editor-save">保存</button>
-            </div>
-        </div>
-    </div>
 
     <!-- Settings Workspace (设置 → 剧情与召回) -->
     <div class="summary-workspace" id="settings-modal">
@@ -237,11 +202,7 @@
                 <section class="settings-section summary-group" id="settings-retention-section">
                     <h3 class="settings-section-title">总结原文保留<small class="workspace-scope">全局</small></h3>
                     <label class="archive-setting"><span>隐藏已总结楼层 · <strong id="summarized-count">0</strong> 楼</span><input type="checkbox" id="hide-summarized"></label>
-                    <label class="archive-setting"><span>保留最近原文（轮）</span><input type="number" id="keep-visible-count" min="0" max="50" value="5"></label>
-                </section>
-                <section class="settings-section summary-group" id="settings-proofreading-section">
-                    <h3 class="settings-section-title">校对索引与频率<small class="workspace-scope">全局 / 此聊天</small></h3>
-                    <div id="proofreading-settings-host"></div>
+                    <label class="archive-setting"><span>保留最近原文（轮）</span><input type="number" id="keep-visible-count" min="0" max="50" value="0"></label>
                 </section>
                 <section class="settings-section summary-group" id="settings-recall-section">
                     <h3 class="settings-section-title">原文召回与向量<small class="workspace-scope">全局 / 此聊天</small></h3>

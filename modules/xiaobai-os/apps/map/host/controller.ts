@@ -10,7 +10,6 @@ import type {
 } from '../../../types.js';
 import type { MapService } from '../application/service.js';
 import type { MapClientState, MapClientStatus } from '../types.js';
-import { parseMapDomain } from '../../../domains/map/invariants.js';
 import { readMapConditions } from '../../../../story-state/situation-links.js';
 import { maintenanceState } from './maintenance-state.js';
 
@@ -165,17 +164,8 @@ export function createMapController({
             assertSameActivation(current, payload);
             return emitState(current);
         }
-        if (message.type === 'map/update-data') {
-            const expectedRevision = typeof payload.expectedRevision === 'number'
-                ? payload.expectedRevision
-                : (map.readCurrent().map?.revision ?? 0);
-            const candidate = parseMapDomain(payload.map);
-            await map.replaceCurrent(candidate, { expectedRevision });
-            assertSameActivation(current, payload);
-            return emitState(current);
-        }
         if (message.type === 'map/maintain-once' || message.type === 'map/rebuild') {
-            throw new Error('地点与人物位置已由统一后厨队列（simulation）自动维护，或请在下方直接手工增删改。');
+            throw new Error('地点与人物位置已由统一后厨队列（simulation）自动维护。');
         }
         throw new Error('未知的地图操作');
     }

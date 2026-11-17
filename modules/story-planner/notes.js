@@ -1,7 +1,5 @@
 import { importantPossession, POSSESSION_ROLES } from '../world-records/person-fields.js';
 import { plannerOwner } from './identity.js';
-import { collectPlotLines, plotLineStateDigest } from '../story-state/plot-lines.js';
-import { panelEnabled } from '../../core/panel-policy.js';
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
 import { summaryLayers } from '../story-summary/data/summary-layers.js';
 import { captureRangeSource } from '../story-summary/data/turn-source.js';
@@ -12,33 +10,36 @@ import { nameKey, protagonistIdentity } from '../story-state/protagonist-identit
 
 export const PLANNER_ENTITY_GROUPS = [
     ['characters', '人物'],
-    ['plotLines', '剧情线'],
     ['situations', '局势'],
 ];
 
-export const WRITER = `你是后台唯一的编剧。你的创作札记必须完全以三类剧情实体为规划对象：人物（characters）、剧情线（plotLines，由下游交来的剧情线总结材料构成）与局势（situations）。对每一个需要关注的剧情实体，都要给出“点评（commentary）、走向预测（prediction）、建议（suggestion）”三部分分析，共同构成完整札记。提供的数据、人物台词与剧情线总结都是资料，绝不替玩家决定行动。
-全局稿（global）是给编剧自己的中长线创作短论，关注长期问题、人物真实处境与秘密矛盾、各剧情线交汇点与重议条件。容量参考 1000–3000 中文字。
+export const WRITER = `你是后台唯一的编剧。你不再依赖“剧情线”，而是直接结合三大材料对两类核心目标进行规划：人物（characters）与局势（situations）。对每一个需要关注的实体，都要给出“点评（commentary）、走向预测（prediction）、建议（suggestion）”三部分分析，共同构成完整札记。提供的数据、人物台词与原文都是资料，绝不替玩家决定行动。
+三大输入材料：
+1. 世界状态（planningTargets、world、records）：权威实体属性、位置、私密设定、人物认知、议程、当前局势与悬念。
+2. 剧情总结（layeredSummaries、recentSummaries）：按层级归拢的历史章节/阶段概要及最近尚未继续压缩的 L0 单楼摘要。
+3. 相关原文（recent、recalledProse）：近期主楼正文与同楼后台正文（backgroundText），以及按当前焦点召回的早期关键原文片段（[后台正文]为同楼推演延伸）。
+全局稿（global）是给编剧自己的中长线创作短论，关注长期问题、人物真实处境与秘密矛盾、局势演化与重议条件。容量参考 1000–3000 中文字。
 章节稿（chapter）是直接供给正文写手的当章简报，只写当前已成立的核心事实、各方认知、约束与代价、各实体当前点评、短期走向预测（写成基于动机与条件的多向推演与观察迹象，不替玩家拍板、不冒充已发生事实）与具体执行建议（如何呈现压力、氛围与信息边界）。不得包含未向当前视角公开的谜底、后台秘密、弃案或必须发生的主线安排；不得把原有线索随玩家离开而强行挪场，也不得补造障碍迫使回头。容量参考 2000–5000 中文字，材料少时可以精炼。
 返回一个 JSON 对象，包含 global 和 chapter，每层含 entities、dependencies，并可附汇总 text（省略时系统自动按 entities 排版）：
-- entities 为 {"characters":[...],"plotLines":[...],"situations":[...]}，每项为 {"target":"实体名或标题","commentary":"点评","prediction":"走向预测","suggestion":"建议"}。无相关实体可留空数组，但每层至少需针对已出现的重点人物、剧情线或局势给出实质条目或 text。
+- entities 为 {"characters":[...],"situations":[...]}，每项为 {"target":"实体名或标题","commentary":"点评","prediction":"走向预测","suggestion":"建议"}。无相关实体可留空数组，但每层至少需针对已出现的重点人物或局势给出实质条目或 text。
 - 在 opening、global-change 与 chapter（章节推进）时须同时提交 global 与 chapter，以最新章节总结同步更新全局推演；仅在 chapter-change 时只提交 chapter。
-- dependencies 是少量决定本稿能否成立的前提，支持单实体字段级引用：人物/世界实体 {entityId,field}（field 可取实体字段名或 name/aliases/presence/knowledge/agendas）、局势/记录 {recordId,field?}（可指定 status/description/releaseCondition/due/presence/note 等字段或省略整条）、剧情线 {lineTitle,field?}（可指定 status/summary/nextFocus/characters 或省略整线版本摘要）。plotLines 是已汇总的剧情线总结；potential 仅代表未证实联系，不得在章节稿写成谜底或必经事件；closed 只能作背景依据。严禁虚构引用。
+- dependencies 是少量决定本稿能否成立的前提，仅支持两类引用：人物/世界实体 {entityId,field}（field 可取实体字段名或 name/aliases/presence/knowledge/agendas）、局势/记录 {recordId,field?}（可指定 status/description/releaseCondition/due/presence/note 等字段或省略整条）。严禁虚构引用。
 - 当输入包含 mode:"partial" 及 staleTargets（与 previousChapterEntities）时，仅需在 chapter.entities 中输出受影响的变更目标或新增目标及其对应 dependencies；每个请求目标必须作答；明确移除须在 chapter.removed 的对应分类列出目标，不能借缺项删除。不得改动其他目标及依赖。`;
 
-export function plannerSnapshot(world, memory, chat, identity) {
+export function plannerSnapshot(world, memory, chat, identity, options = {}) {
     if (!world || !identity || !memory?.enabled || memory.invalidFrom != null || memory.store?.summaryInvalid
         || memory.store?.sourceInvalidFromFloor != null || memory.store?.sourceRollbackFromFloor != null) return null;
-    const layers = summaryLayers(memory.store?.summaryHistory || [], [], {chat});
+    const layers = summaryLayers(memory.store?.summaryHistory || [], [], { chat });
     const last = layers.parents.filter(unit => unit.level === 'chapter').at(-1);
     const records = worldStoryRecords(world, memory.store?.json?.storyRecords || []);
-    const plotLines = panelEnabled('clues') ? collectPlotLines(memory.store?.summaryHistory, records, { layers, chat }) : [];
     return {
         world,
         records,
         layers,
         chat,
-        plotLines,
-        lineState: plotLines.length ? memoryDigest(plotLineStateDigest(plotLines)) : '',
+        floorSimulations: memory.store?.floorSimulations || {},
+        lastSummarizedMesId: memory.store?.lastSummarizedMesId ?? -1,
+        recalledProse: Array.isArray(options.recalledProse) ? options.recalledProse : [],
         owner: plannerOwner(identity, world),
         legacyOwner: identity,
         boundary: last ? memoryDigest([last.start, last.end, last.sourceId, last.text]) : 'opening',
@@ -87,7 +88,7 @@ function readEntities(raw, { allowEmpty = false } = {}) {
     return normalized;
 }
 
-/** Renders structured character/plotLine/situation notes into prompt-ready plain text. */
+/** Renders structured character/situation notes into prompt-ready plain text. */
 export function formatPlannerEntities(entities) {
     if (!entities) return '';
     const sections = [];
@@ -117,15 +118,10 @@ function collectEntityTexts(entities) {
     return out.filter(Boolean);
 }
 
-/** Builds entity-centric planning targets (characters, summarized plot lines, situations) from snapshot data. */
 export function buildPlanningTargets(snap) {
-    const plotLines = snap.plotLines || [];
     const entities = snap.world?.entities || [];
-    const hero = protagonistIdentity(entities,snap.cast?.player).hero;
+    const hero = protagonistIdentity(entities, snap.cast?.player).hero;
     const records = snap.records || [];
-    const plotLineTitlesForName = names => plotLines
-        .filter(line => (line.characters || []).some(name => names.has(nameKey(name))))
-        .map(line => line.title);
 
     const characters = [];
     const seenPersonKeys = new Set();
@@ -136,7 +132,7 @@ export function buildPlanningTargets(snap) {
         for (const key of names) seenPersonKeys.add(key);
         const publicFields = {}, privateFields = {};
         for (const [key, record] of Object.entries(entity.fields || {})) {
-            if (!record || record.value === undefined || ['coins','金币'].includes(key) && entity.id !== hero?.id) continue;
+            if (!record || record.value === undefined || ['coins', '金币'].includes(key) && entity.id !== hero?.id) continue;
             if (isPrivateStoryField(key)) privateFields[key] = record.value;
             else publicFields[key] = record.value;
         }
@@ -154,20 +150,17 @@ export function buildPlanningTargets(snap) {
             ...(personState && { presence: personState.presence, ...(personState.note && { presenceNote: personState.note }) }),
             ...(knowledge.length && { knowledge }),
             ...(agendas.length && { agendas }),
-            ...(plotLineTitlesForName(names).length && { plotLines: plotLineTitlesForName(names) }),
         });
     }
 
     for (const record of records) {
         if (record.kind !== 'person' || !record.name || seenPersonKeys.has(nameKey(record.name))) continue;
-        const names = new Set([nameKey(record.name)]);
         seenPersonKeys.add(nameKey(record.name));
         characters.push({
             id: record.id,
             name: record.name,
             presence: record.presence,
             ...(record.note && { presenceNote: record.note }),
-            ...(plotLineTitlesForName(names).length && { plotLines: plotLineTitlesForName(names) }),
         });
     }
 
@@ -186,13 +179,35 @@ export function buildPlanningTargets(snap) {
             ...(record.due && { due: record.due }),
             ...(record.reason && { reason: record.reason }),
             ...(record._history?.length && { history: record._history.slice(-4).map(item => item.text) }),
-            ...(record._developments?.length && { developments: record._developments }),
         }));
 
-    return { characters, plotLines, situations };
+    return { characters, situations };
 }
 
-const LINE_DEP_FIELDS = new Set(['status', 'summary', 'reading', 'nextFocus', 'characters', 'situationIds', 'floor', 'roundCount']);
+/** Extracts focus query & focus character names from current world state for StoryPlanner early-prose recall. */
+export function buildPlannerProseQuery(snap) {
+    const targets = buildPlanningTargets(snap);
+    const focusCharactersOverride = targets.characters
+        .filter(c => c.presence === 'present' || c.presence === 'nearby' || c.agendas?.some(a => a.status === 'open') || c.publicFields?.['重要'] || c.publicFields?.important)
+        .flatMap(c => [c.name, ...(c.aliases || [])])
+        .filter(Boolean);
+    const openSituations = targets.situations
+        .filter(s => s.status === 'open')
+        .slice(-6)
+        .map(s => [s.title, s.description, s.parties, s.scope].filter(Boolean).join(' '))
+        .filter(Boolean);
+    const agendaTexts = targets.characters
+        .flatMap(c => (c.agendas || []).filter(a => a.status === 'open').map(a => `${c.name} ${a.title} ${a.description || ''}`))
+        .slice(-6);
+    const recentChatText = (snap.chat || []).slice(-2).map(m => m?.mes || '').filter(Boolean);
+    const queryOverride = [...openSituations, ...agendaTexts, ...focusCharactersOverride.slice(0, 8), ...recentChatText]
+        .join('\n')
+        .slice(0, 1500);
+    return {
+        queryOverride,
+        focusCharactersOverride: [...new Set(focusCharactersOverride)],
+    };
+}
 
 function entityCharacterMeta(entity, field, records = []) {
     const names = new Set([entity.name, ...(entity.aliases || [])].filter(Boolean).map(nameKey));
@@ -217,27 +232,8 @@ function entityCharacterMeta(entity, field, records = []) {
 }
 
 function resolveDependency(ref, snapshot, requireExactField = false) {
-    if (ref.lineTitle) {
-        const line = snapshot.plotLines?.find(item => item.title === ref.lineTitle);
-        if (!line) return null;
-        if (ref.field) {
-            if (!LINE_DEP_FIELDS.has(ref.field)) return null;
-            return { value: line[ref.field] ?? '', group: 'plotLines', target: line.title };
-        }
-        return {
-            value: {
-                title: line.title,
-                status: line.status,
-                summary: line.summary || line.reading || '',
-                nextFocus: line.nextFocus || '',
-                floor: line.floor ?? -1,
-                characters: line.characters || [],
-            },
-            group: 'plotLines',
-            target: line.title,
-        };
-    }
-    if (ref.recordId) {
+    if (ref?.lineTitle) return null;
+    if (ref?.recordId) {
         const record = snapshot.records?.find(item => item.id === ref.recordId);
         if (!record) return null;
         const group = record.kind === 'person' ? 'characters' : 'situations';
@@ -248,10 +244,6 @@ function resolveDependency(ref, snapshot, requireExactField = false) {
                 if (requireExactField && !Array.isArray(record._history)) return null;
                 return { value: (record._history || []).map(item => item.text), group, target };
             }
-            if (ref.field === 'developments') {
-                if (requireExactField && !Array.isArray(record._developments)) return null;
-                return { value: record._developments || [], group, target };
-            }
             if (requireExactField && !Object.hasOwn(record, ref.field)) return null;
             return { value: record[ref.field] ?? null, group, target };
         }
@@ -259,7 +251,7 @@ function resolveDependency(ref, snapshot, requireExactField = false) {
         for (const key of Object.keys(content)) if (key.startsWith('_')) delete content[key];
         return { value: content, group, target };
     }
-    if (!ref.entityId || typeof ref.field !== 'string' || !ref.field.trim()) return null;
+    if (!ref?.entityId || typeof ref.field !== 'string' || !ref.field.trim()) return null;
     const entity = snapshot.world?.entities?.find(e => e.id === ref.entityId);
     if (!entity) return null;
     const group = (!entity.kind || entity.kind === 'person' || entity.kind === 'subject') ? 'characters' : 'situations';
@@ -279,12 +271,11 @@ function resolveDependency(ref, snapshot, requireExactField = false) {
 function readDependencies(rawDependencies, snap) {
     if (!Array.isArray(rawDependencies) || rawDependencies.length > 40) throw new Error('札记格式无效');
     return rawDependencies.map(item => {
+        if (typeof item?.lineTitle === 'string') throw new Error('剧情线已移除，请仅引用人物或局势前提');
         const field = typeof item?.field === 'string' && item.field.trim() ? item.field.trim() : undefined;
-        const ref = typeof item?.lineTitle === 'string'
-            ? { lineTitle: item.lineTitle, ...(field && { field }) }
-            : typeof item?.recordId === 'string'
-                ? { recordId: item.recordId, ...(field && { field }) }
-                : { entityId: item?.entityId, field: item?.field };
+        const ref = typeof item?.recordId === 'string'
+            ? { recordId: item.recordId, ...(field && { field }) }
+            : { entityId: item?.entityId, field: item?.field };
         const resolved = resolveDependency(ref, snap, true);
         if (!resolved || resolved.value === undefined) throw new Error('札记前提无法核对');
         return {
@@ -304,6 +295,7 @@ function readNote(raw, snap, limit) {
     const dependencies = readDependencies(raw?.dependencies, snap);
     return { text, ...(entities && { entities }), dependencies };
 }
+
 const valid = (note, snap) => (note.dependencies || []).every(ref => {
     const resolved = resolveDependency(ref, snap, false);
     return resolved !== null && resolved.value !== undefined && ref.digest === memoryDigest(resolved.value);
@@ -318,8 +310,8 @@ export function invalidatedDependencies(note, snap) {
         if (resolved !== null && resolved.value !== undefined && ref.digest === memoryDigest(resolved.value)) continue;
         stale.push({
             ...ref,
-            group: ref.group || resolved?.group || (ref.lineTitle ? 'plotLines' : ref.recordId ? 'situations' : 'characters'),
-            target: ref.target || resolved?.target || ref.lineTitle || ref.recordId || ref.entityId || '',
+            group: ref.group || resolved?.group || (ref.recordId ? 'situations' : 'characters'),
+            target: ref.target || resolved?.target || ref.recordId || ref.entityId || '',
         });
     }
     return stale;
@@ -328,8 +320,8 @@ export function invalidatedDependencies(note, snap) {
 /** Computes entity-level invalidation markers for UI highlighting without calling the writer. */
 export function staleTargetsForNote(previous, snap, reason = reviewReason(previous, snap)) {
     if (!previous || !snap || !reason) return null;
-    if (reason === 'chapter') return { all: true, characters: [], plotLines: [], situations: [], details: [] };
-    const buckets = { characters: new Set(), plotLines: new Set(), situations: new Set() };
+    if (reason === 'chapter') return { all: true, characters: [], situations: [], details: [] };
+    const buckets = { characters: new Set(), situations: new Set() };
     const details = [
         ...invalidatedDependencies(previous.global, snap),
         ...invalidatedDependencies(previous.chapter, snap),
@@ -337,52 +329,38 @@ export function staleTargetsForNote(previous, snap, reason = reviewReason(previo
     for (const item of details) {
         if (item.group && buckets[item.group] && item.target) buckets[item.group].add(item.target);
     }
-    if ((previous.lineState || '') !== (snap.lineState || '')) {
-        const prevDigests = previous.lineDigests || {};
-        const currentLines = snap.plotLines || [];
-        const seen = new Set();
-        for (const line of currentLines) {
-            seen.add(line.title);
-            const digest = memoryDigest(plotLineStateDigest([line]));
-            if (!Object.keys(prevDigests).length || prevDigests[line.title] !== digest) {
-                buckets.plotLines.add(line.title);
-            }
-        }
-        for (const title of Object.keys(prevDigests)) {
-            if (!seen.has(title)) buckets.plotLines.add(title);
-        }
-    }
     return {
         all: false,
         characters: [...buckets.characters],
-        plotLines: [...buckets.plotLines],
         situations: [...buckets.situations],
-        details: details.map(({ group, target, field, entityId, recordId, lineTitle }) => ({
+        details: details.map(({ group, target, field, entityId, recordId }) => ({
             group,
             target,
             ...(field && { field }),
             ...(entityId && { entityId }),
             ...(recordId && { recordId }),
-            ...(lineTitle && { lineTitle }),
         })),
     };
 }
+
 export function prefix(chat, end) {
     return end < 0 ? '' : end >= chat.length ? null : captureRangeSource(chat, 0, end).digest;
 }
+
 export function selectVersion(rows, snap) {
     // An old import and later publications used independent revision counters.
     // A matching publication in the real branch therefore takes precedence.
     return rows.filter(row => row.owner === snap.owner).sort((a, b) => Number(!!a.recoveredLegacy) - Number(!!b.recoveredLegacy) || b.revision - a.revision)
         .find(row => prefix(snap.chat, row.end) === row.source);
 }
+
 export function reviewReason(previous, snap) {
     if (!previous) return 'opening';
     if (!valid(previous.global, snap) || !previous.global?.dependencies?.length && !previous.chapter?.dependencies?.length && previous.basis !== snap.world.version) return 'global-change';
     if (previous.boundary !== snap.boundary) return 'chapter';
-    if ((previous.lineState || '') !== (snap.lineState || '')) return 'chapter-change';
     return valid(previous.chapter, snap) && (previous.chapter.dependencies?.length || previous.basis === snap.world.version) ? '' : 'chapter-change';
 }
+
 const WRITER_BUDGET_CHARS = 180000;
 
 function hasStructuredEntities(entities) {
@@ -390,7 +368,6 @@ function hasStructuredEntities(entities) {
 }
 
 function depKey(ref) {
-    if (ref?.lineTitle) return `line:${ref.lineTitle}:${ref.field || ''}`;
     if (ref?.recordId) return `rec:${ref.recordId}:${ref.field || ''}`;
     return `ent:${ref?.entityId || ''}:${ref?.field || ''}`;
 }
@@ -422,7 +399,7 @@ function mergePartialChapter(rawChapter, previous, snap, staleTargets) {
         const incList = incomingEntities[group] || [];
         const staleKeys = new Set((staleTargets?.[group] || []).map(nameKey));
         const removed = rawChapter.removed?.[group] || [];
-        if (!Array.isArray(removed) || removed.some(item=>typeof item !== 'string') || new Set(removed.map(nameKey)).size !== removed.length)
+        if (!Array.isArray(removed) || removed.some(item => typeof item !== 'string') || new Set(removed.map(nameKey)).size !== removed.length)
             throw new Error('局部改稿的删除清单无效');
         const removedKeys = new Set(removed.map(nameKey));
         const answers = [...incList.map(item => nameKey(item.target)), ...removedKeys];
@@ -467,8 +444,8 @@ function mergePartialChapter(rawChapter, previous, snap, staleTargets) {
     for (const prevRef of previous.chapter?.dependencies || []) {
         const key = depKey(prevRef);
         if (freshKeys.has(key) || seenDeps.has(key)) continue;
-        const group = prevRef.group || (prevRef.lineTitle ? 'plotLines' : prevRef.recordId ? 'situations' : 'characters');
-        const targetKey = nameKey(prevRef.target || prevRef.lineTitle || '');
+        const group = prevRef.group || (prevRef.recordId ? 'situations' : 'characters');
+        const targetKey = nameKey(prevRef.target || '');
         if (targetKey && !keptTargetKeys[group]?.has(targetKey)) continue;
         const resolved = resolveDependency(prevRef, snap, false);
         if (resolved === null || resolved.value === undefined || prevRef.digest !== memoryDigest(resolved.value)) continue;
@@ -576,20 +553,55 @@ export function publishNotes(raw, previous, snap, reason, options = {}) {
         }
     }
     const end = snap.chat.length - 1, source = prefix(snap.chat, end);
-    const lineDigests = Object.fromEntries((snap.plotLines || []).map(line => [line.title, memoryDigest(plotLineStateDigest([line]))]));
     return {
         owner: snap.owner,
         boundary: snap.boundary,
         basis: snap.world.version,
-        lineState: snap.lineState,
-        ...(Object.keys(lineDigests).length && { lineDigests }),
         end,
         source,
         reason,
         global,
         chapter,
-        id: memoryDigest([snap.owner, snap.boundary, source, snap.world.version, snap.plotLines, previous?.id || '', reason]),
+        id: memoryDigest([snap.owner, snap.boundary, source, snap.world.version, previous?.id || '', reason]),
     };
+}
+
+function recentMessagesWithSimulations(snap, count = 10) {
+    const chat = Array.isArray(snap.chat) ? snap.chat : [];
+    const startIdx = Math.max(0, chat.length - count);
+    return chat.slice(startIdx).map((msg, offset) => {
+        const floor = startIdx + offset;
+        const sim = snap.floorSimulations?.[floor];
+        const candidate = msg?.swipe_id ?? 0;
+        const simText = (!msg?.is_user && sim && typeof sim.text === 'string' && sim.text.trim()
+            && (sim.candidate == null || sim.candidate === candidate))
+            ? sim.text.trim()
+            : '';
+        return {
+            floor,
+            name: msg?.name || (msg?.is_user ? '用户' : '角色'),
+            role: msg?.is_user ? 'player' : 'story',
+            text: msg?.mes || '',
+            ...(simText ? { backgroundText: simText } : {}),
+        };
+    });
+}
+
+function buildSummaryPillar(snap) {
+    const parents = snap.layers?.parents || [];
+    const leaves = snap.layers?.leaves || [];
+    const layeredSummaries = parents.map(unit => ({
+        level: unit.level,
+        start: unit.start,
+        end: unit.end,
+        text: unit.text,
+    }));
+    const recentSummaries = leaves.slice(-12).map(unit => ({
+        start: unit.start,
+        end: unit.end,
+        text: unit.text,
+    }));
+    return { layeredSummaries, recentSummaries };
 }
 
 function buildPartialPayload(snap, previous, reason, staleTargets) {
@@ -599,19 +611,15 @@ function buildPartialPayload(snap, previous, reason, staleTargets) {
     );
     const staleEntityIds = new Set();
     const staleRecordIds = new Set();
-    const staleLineTitles = new Set();
     for (const detail of staleTargets?.details || []) {
         if (detail.entityId) staleEntityIds.add(detail.entityId);
         if (detail.recordId) staleRecordIds.add(detail.recordId);
-        if (detail.lineTitle) staleLineTitles.add(detail.lineTitle);
     }
 
     const scopedCharacters = allTargets.characters.filter(item =>
         staleKeys.characters.has(nameKey(item.name))
         || (item.aliases || []).some(alias => staleKeys.characters.has(nameKey(alias)))
         || staleEntityIds.has(item.id));
-    const scopedPlotLines = allTargets.plotLines.filter(item =>
-        staleKeys.plotLines.has(nameKey(item.title)) || staleLineTitles.has(item.title));
     const scopedSituations = allTargets.situations.filter(item =>
         staleKeys.situations.has(nameKey(item.title)) || staleRecordIds.has(item.id));
 
@@ -632,6 +640,7 @@ function buildPartialPayload(snap, previous, reason, staleTargets) {
         || staleKeys.situations.has(nameKey(record.title || record.name || ''))
         || [...(record.holders || []), ...(Array.isArray(record.parties) ? record.parties : String(record.parties || '').split(/[、，,]/))].some(name => staleCharacterNames.has(nameKey(name))));
 
+    const { layeredSummaries, recentSummaries } = buildSummaryPillar(snap);
     return {
         mode: 'partial',
         reason,
@@ -641,17 +650,16 @@ function buildPartialPayload(snap, previous, reason, staleTargets) {
         previousChapterEntities: previous.chapter.entities,
         planningTargets: {
             characters: scopedCharacters,
-            plotLines: scopedPlotLines,
             situations: scopedSituations,
         },
         characters: scopedCharacters,
-        plotLines: scopedPlotLines,
         situations: scopedSituations,
         world: scopedWorld,
         records: scopedRecords,
-        chapterHistory: snap.layers.parents.filter(unit => unit.level === 'chapter').map(unit => unit.text),
-        recentSummaries: snap.layers.leaves.slice(-10).map(unit => unit.text),
-        recent: snap.chat.slice(-10).map(msg => ({ name: msg.name, role: msg.is_user ? 'player' : 'story', text: msg.mes })),
+        layeredSummaries,
+        recentSummaries,
+        recent: recentMessagesWithSimulations(snap, 10),
+        ...(snap.recalledProse?.length ? { recalledProse: snap.recalledProse.slice(0, 12) } : {}),
     };
 }
 
@@ -680,24 +688,6 @@ function compactRecordFields(fields, maxChars) {
     return out;
 }
 
-function compactPlotLines(plotLines, { fieldMax = 280, maxCharsPerArr = 12 } = {}) {
-    return (plotLines || []).map(line => {
-        if (!line || typeof line !== 'object') return line;
-        const next = {
-            title: line.title,
-            status: line.status,
-            ...(line.floor !== undefined && { floor: line.floor }),
-            ...(line.roundCount !== undefined && { roundCount: line.roundCount }),
-            ...(line.summary && { summary: truncateText(line.summary, fieldMax) }),
-            ...(line.reading && { reading: truncateText(line.reading, fieldMax) }),
-            ...(line.nextFocus && { nextFocus: truncateText(line.nextFocus, fieldMax) }),
-            ...(Array.isArray(line.characters) && { characters: line.characters.slice(0, maxCharsPerArr) }),
-            ...(Array.isArray(line.situationIds) && { situationIds: line.situationIds.slice(0, maxCharsPerArr) }),
-        };
-        return next;
-    });
-}
-
 function compactPlanningTargets(targets, { textMax = 240, fieldMax = 400, listMax = 4 } = {}) {
     return {
         characters: (targets?.characters || []).map(char => ({
@@ -724,94 +714,120 @@ function compactPlanningTargets(targets, { textMax = 240, fieldMax = 400, listMa
                     description: truncateText(item.description, textMax),
                 })),
             }),
-            ...(char.plotLines?.length && { plotLines: char.plotLines.slice(0, 8) }),
         })),
-        situations: (targets?.situations || []).map(item => ({
-            id: item.id,
-            kind: item.kind,
-            title: item.title,
-            status: item.status,
-            description: truncateText(item.description, textMax),
-            ...(item.parties && { parties: truncateText(String(item.parties), 120) }),
-            ...(item.impact && { impact: truncateText(item.impact, 180) }),
-            ...(item.releaseCondition && { releaseCondition: truncateText(item.releaseCondition, 180) }),
-            ...(item.reason && { reason: truncateText(item.reason, 180) }),
+        situations: (targets?.situations || []).map(row => ({
+            id: row.id,
+            kind: row.kind,
+            title: row.title,
+            status: row.status,
+            description: truncateText(row.description, textMax),
+            ...(row.parties && { parties: truncateText(row.parties, textMax) }),
+            ...(row.scope && { scope: truncateText(row.scope, textMax) }),
+            ...(row.impact && { impact: truncateText(row.impact, textMax) }),
+            ...(row.releaseCondition && { releaseCondition: truncateText(row.releaseCondition, textMax) }),
+            ...(row.due && { due: row.due }),
+            ...(row.reason && { reason: truncateText(row.reason, textMax) }),
+            ...(row.history?.length && { history: row.history.slice(-2).map(text => truncateText(text, textMax)) }),
         })),
     };
 }
 
+function compactSummaryList(list, limit, textMax) {
+    return list.slice(-limit).map(item => ({ ...item, text: truncateText(item?.text, textMax) }));
+}
+
+function compactProseList(list, limit, textMax, bgMax = 0) {
+    return list.slice(-limit).map(item => ({
+        ...item,
+        text: truncateText(item?.text, textMax),
+        ...(bgMax > 0 && item?.backgroundText ? { backgroundText: truncateText(item.backgroundText, bgMax) } : {}),
+        ...(bgMax === 0 && item?.backgroundText !== undefined ? {} : {}),
+    }));
+}
+
 function serializeFullPayload(snap, previous, reason) {
     const planningTargets = buildPlanningTargets(snap);
+    const { layeredSummaries, recentSummaries } = buildSummaryPillar(snap);
     const payload = {
         reason,
         previousGlobal: previous?.global.text,
         previousChapter: previous?.chapter.text,
+        // Pillar 1: World State (targets + world entities + records)
         planningTargets,
-        characters: planningTargets.characters,
-        plotLines: snap.plotLines,
-        situations: planningTargets.situations,
         world: plannerWorldEntities(snap),
         records: snap.records,
-        chapterHistory: snap.layers.parents.filter(unit => unit.level === 'chapter').map(unit => unit.text),
-        recentSummaries: snap.layers.leaves.slice(-10).map(unit => unit.text),
-        recent: snap.chat.slice(-10).map(msg => ({ name: msg.name, role: msg.is_user ? 'player' : 'story', text: msg.mes })),
+        // Pillar 2: Story Summaries (layered hierarchy + recent L0 leaves)
+        layeredSummaries,
+        recentSummaries,
+        // Pillar 3: Relevant Original Prose (recent turns + floor simulations + recalled early chunks)
+        recent: recentMessagesWithSimulations(snap, 10),
+        recalledProse: (snap.recalledProse || []).slice(0, 12),
     };
     let body = JSON.stringify(payload);
+
+    // Proportional compaction tier 1: compact all three pillars smoothly without removing any pillar.
     if (body.length > WRITER_BUDGET_CHARS) {
-        // Prioritize entity-centric planning targets + summarized plotLines when prompt size tightens.
-        payload.recent = payload.recent.slice(-4);
-        payload.recentSummaries = payload.recentSummaries.slice(-5);
-        payload.chapterHistory = payload.chapterHistory.slice(-4);
-        delete payload.characters;
-        delete payload.situations;
-        body = JSON.stringify(payload);
-    }
-    if (body.length > WRITER_BUDGET_CHARS) {
-        delete payload.world;
-        delete payload.records;
-        body = JSON.stringify(payload);
-    }
-    if (body.length > WRITER_BUDGET_CHARS) {
-        // Deep-trim nested planningTargets, plotLines, and history slices without mutating snap.
-        payload.planningTargets = compactPlanningTargets(payload.planningTargets, { textMax: 240, fieldMax: 400, listMax: 4 });
-        payload.plotLines = compactPlotLines(payload.plotLines, { fieldMax: 280 });
+        payload.planningTargets = compactPlanningTargets(payload.planningTargets, { textMax: 320, fieldMax: 420, listMax: 5 });
+        payload.world = payload.world.map(entity => ({
+            id: entity.id,
+            name: entity.name,
+            kind: entity.kind,
+            ...(entity.aliases?.length && { aliases: entity.aliases.slice(0, 5) }),
+            ...(entity.fields && { fields: compactRecordFields(entity.fields, 320) }),
+        }));
+        payload.records = payload.records.map(r => compactRecordFields(r, 280));
+        payload.layeredSummaries = compactSummaryList(payload.layeredSummaries, 12, 1200);
+        payload.recentSummaries = compactSummaryList(payload.recentSummaries, 8, 900);
+        payload.recent = compactProseList(payload.recent, 6, 1200, 600);
+        payload.recalledProse = compactProseList(payload.recalledProse, 8, 600, 0);
         if (payload.previousGlobal) payload.previousGlobal = truncateText(payload.previousGlobal, 12000);
         if (payload.previousChapter) payload.previousChapter = truncateText(payload.previousChapter, 12000);
         body = JSON.stringify(payload);
     }
+
+    // Proportional compaction tier 2: tighter limits across all three pillars while preserving each pillar's essence.
     if (body.length > WRITER_BUDGET_CHARS) {
-        payload.recent = payload.recent.slice(-2).map(msg => ({ ...msg, text: truncateText(msg?.text, 800) }));
-        payload.recentSummaries = payload.recentSummaries.slice(-2).map(text => truncateText(text, 500));
-        payload.chapterHistory = payload.chapterHistory.slice(-2).map(text => truncateText(text, 600));
+        payload.planningTargets = compactPlanningTargets(payload.planningTargets, { textMax: 180, fieldMax: 220, listMax: 3 });
+        payload.world = payload.world.slice(0, 48).map(entity => ({ id: entity.id, name: entity.name, kind: entity.kind }));
+        payload.records = payload.records.slice(-48).map(r => compactRecordFields(r, 160));
+        payload.layeredSummaries = compactSummaryList(payload.layeredSummaries, 6, 650);
+        payload.recentSummaries = compactSummaryList(payload.recentSummaries, 4, 500);
+        payload.recent = compactProseList(payload.recent, 4, 700, 350);
+        payload.recalledProse = compactProseList(payload.recalledProse, 5, 380, 0);
+        if (payload.previousGlobal) payload.previousGlobal = truncateText(payload.previousGlobal, 6000);
+        if (payload.previousChapter) payload.previousChapter = truncateText(payload.previousChapter, 6000);
         body = JSON.stringify(payload);
     }
+
+    // Proportional compaction tier 3: halve array lengths synchronously down to >= 1 per non-empty pillar.
     if (body.length > WRITER_BUDGET_CHARS) {
-        delete payload.recent;
-        delete payload.recentSummaries;
-        delete payload.chapterHistory;
         payload.planningTargets = compactPlanningTargets(payload.planningTargets, { textMax: 120, fieldMax: 140, listMax: 2 });
-        payload.plotLines = compactPlotLines(payload.plotLines, { fieldMax: 140, maxCharsPerArr: 6 });
-        if (payload.previousGlobal) payload.previousGlobal = truncateText(payload.previousGlobal, 4000);
-        if (payload.previousChapter) payload.previousChapter = truncateText(payload.previousChapter, 4000);
+        if (payload.previousGlobal) payload.previousGlobal = truncateText(payload.previousGlobal, 3000);
+        if (payload.previousChapter) payload.previousChapter = truncateText(payload.previousChapter, 3000);
         body = JSON.stringify(payload);
     }
+    const trimHalf = (arr, minKeep = 1) => arr.length > minKeep ? arr.slice(-Math.max(minKeep, Math.floor(arr.length / 2))) : arr;
     while (body.length > WRITER_BUDGET_CHARS && (
-        (payload.plotLines?.length || 0) > 1
+        (payload.planningTargets?.characters?.length || 0) > 1
         || (payload.planningTargets?.situations?.length || 0) > 1
-        || (payload.planningTargets?.characters?.length || 0) > 1
+        || (payload.world?.length || 0) > 1
+        || (payload.records?.length || 0) > 1
+        || (payload.layeredSummaries?.length || 0) > 1
+        || (payload.recentSummaries?.length || 0) > 1
+        || (payload.recent?.length || 0) > 1
+        || (payload.recalledProse?.length || 0) > 1
     )) {
-        if ((payload.planningTargets?.characters?.length || 0) > 1) {
-            payload.planningTargets.characters = payload.planningTargets.characters.slice(-Math.max(1, Math.floor(payload.planningTargets.characters.length / 2)));
-        }
-        if ((payload.planningTargets?.situations?.length || 0) > 1) {
-            payload.planningTargets.situations = payload.planningTargets.situations.slice(-Math.max(1, Math.floor(payload.planningTargets.situations.length / 2)));
-        }
-        if ((payload.plotLines?.length || 0) > 1) {
-            payload.plotLines = payload.plotLines.slice(-Math.max(1, Math.floor(payload.plotLines.length / 2)));
-        }
+        payload.planningTargets.characters = trimHalf(payload.planningTargets.characters, 1);
+        payload.planningTargets.situations = trimHalf(payload.planningTargets.situations, 1);
+        payload.world = trimHalf(payload.world, 1);
+        payload.records = trimHalf(payload.records, 1);
+        payload.layeredSummaries = trimHalf(payload.layeredSummaries, 1);
+        payload.recentSummaries = trimHalf(payload.recentSummaries, 1);
+        payload.recent = trimHalf(payload.recent, 1);
+        payload.recalledProse = payload.recalledProse.length > 1 ? payload.recalledProse.slice(0, Math.max(1, Math.floor(payload.recalledProse.length / 2))) : payload.recalledProse;
         body = JSON.stringify(payload);
     }
-    if (JSON.stringify([{role:'system',content:WRITER},{role:'user',content:body}]).length > 200000) throw new Error('作家材料超出单次预算');
+    if (JSON.stringify([{ role: 'system', content: WRITER }, { role: 'user', content: body }]).length > 200000) throw new Error('作家材料超出单次预算');
     return body;
 }
 

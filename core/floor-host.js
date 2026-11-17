@@ -1,9 +1,8 @@
-import { watchChapterSaves } from '../modules/story-summary/maintenance/notification.js';
 import { createModuleEvents, event_types } from './event-manager.js';
 import { requireAgent } from './panel-controls.js';
 import { registerGenerateInterceptor, unregisterGenerateInterceptor } from '../shared/common/generate-interceptor.js';
 import { getChatIdentity } from '../modules/story-summary/data/chat-identity.js';
-import { getSummarySourceEnd } from '../modules/story-summary/generate/source-boundary.js';
+import { getUpdateAndSimulationBounds } from '../modules/story-summary/data/turn-bounds.js';
 import { createFloorProcessing } from '../modules/world-records/turn-processing.js';
 import { taskDefinitions } from '../modules/world-records/turn-actions.js';
 import { generateFeatureText } from '../modules/text-api/host.js';
@@ -16,14 +15,9 @@ export function floorTasks(settings) {
     const world = settings?.xiaobaiOs?.apps?.world || {};
     const tasks = [];
     const add = (key, group, label = taskDefinitions[key]?.[0]) => tasks.push({ key, group, label });
-    for (const key of ['memory', 'overview', 'people', 'places', 'situation', 'suspense', 'clues']) add(key, 'update');
-    for (const key of ['peopleEvolution', 'subscribed', 'sceneryEvolution']) add(key, 'simulation');
+    for (const key of ['memory', 'overview', 'people', 'places', 'situation', 'suspense']) add(key, 'update');
     const frequency = world.encounterFrequency ?? 'occasional';
-    if (['occasional', 'lively'].includes(frequency)) {
-        tasks.push({ key: 'encounter', group: 'simulation', label: taskDefinitions.encounter[0], frequency });
-    }
-    add('mapEvolution', 'simulation');
-    add('review', 'review', '校对');
+    tasks.push({ key: 'simulation', group: 'simulation', label: taskDefinitions.simulation[0], frequency });
     add('chapter', 'chapter', '章节整理');
     return tasks;
 }
@@ -32,7 +26,16 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
     let streamStart = null, statusNode, failure, batch = 0;
     const read = () => {
         const ctx = getContext(), chat = ctx.chat || [];
-        return { owner: getChatIdentity(ctx), playerName:ctx.name1, chat, end: getSummarySourceEnd(chat, Math.min(chat.length - 1, streamStart ?? Infinity)) };
+        const requestedEnd = Math.min(chat.length - 1, streamStart ?? Infinity);
+        const bounds = getUpdateAndSimulationBounds(chat, requestedEnd);
+        return {
+            owner: getChatIdentity(ctx),
+            playerName: ctx.name1,
+            chat,
+            end: bounds.stableEnd,
+            simulationEnd: bounds.simulationEnd,
+            updateEnd: bounds.updateEnd,
+        };
     };
     const plannerEnabled = () => true;
     const chapter = createChapterProcessing({read, memory, requireUpdate:() => requireAgent('update'),
@@ -45,19 +48,15 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
             doc: document,
             info,
             hasChat: (getContext().chat || []).length > 0,
-            entry: info ? memory.getPublishedSummaryStore()?.floorWork?.[info.floor] : null,
-            readOwner: () => read().owner,
-            isCurrentFailure: () => failure === info,
             onRetry: () => queue.settle(),
             onOpenAgent: agent => workspace.visitBinding(agent),
             onOpenRecovery: route => workspace.open(route),
-            onSaveFloorWork: memory.saveFloorWork,
         });
         if (statusNode) (document.querySelector('#send_form') || document.querySelector('#tk-workspace'))?.prepend(statusNode);
     }
     const queue = createFloorProcessing({ read, tasks:() => floorTasks(settings), store:() => memory.getPublishedSummaryStore() || {},
-        save: memory.saveFloorWork, getService: () => archive().service, requireAgent, generate:generateFeatureText,
-        review:memory.floorReview, chapter, status:render });
+        save: memory.saveFloorWork, saveSim: memory.saveFloorSimulation, getService: () => archive().service, requireAgent, generate:generateFeatureText,
+        chapter, onUpdateSettled: floor => memory.reconcileSettledFloorChunks?.(floor), status:render });
     const kick = () => { const ticket=++batch; queueMicrotask(() => { if (ticket === batch && !failure && archive() && streamStart === null) queue.settle().catch(error => { if (error.name !== 'AbortError' && !failure) console.warn('[TavernKitchen] 逐楼处理已中断',error); }); }); };
     const settingsChanged = () => { failure = null; statusNode?.remove(); statusNode = null; queue.invalidate(); kick(); };
     const events = createModuleEvents('ordered-floors');
@@ -84,7 +83,6 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
     });
     events.on(event_types.GENERATION_STOPPED, () => { queue.cancelGeneration(); });
     window.addEventListener('tavernKitchen:floor-settings', settingsChanged);
-    const stopChapter = watchChapterSaves({ enabled:() => true, changed:kick });
     const onSummarySaved = () => {
         // WHY: executeRollback may finish deleting stale floorWork slightly after MESSAGE_SWIPED's microtask kick latched a source-change failure;
         // clearing that stale error once on summary-saved lets floor processing either settle or advance to world-conflict recovery.
@@ -143,5 +141,5 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
         await queue.settle();
     }
     return { settingsChanged, settleManual, cancelManual, rerunFloor, dispose() { queue.cancelGeneration(); queue.invalidate(); batch++; events.cleanup();
-        unregisterGenerateInterceptor('ordered-floors'); stopChapter(); window.removeEventListener('tavernKitchen:summary-saved',onSummarySaved); window.removeEventListener('tavernKitchen:floor-settings',settingsChanged); } };
+        unregisterGenerateInterceptor('ordered-floors'); window.removeEventListener('tavernKitchen:summary-saved',onSummarySaved); window.removeEventListener('tavernKitchen:floor-settings',settingsChanged); } };
 }

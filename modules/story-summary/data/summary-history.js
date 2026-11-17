@@ -1,5 +1,5 @@
 import { normalizeSummaryUndo } from './summary-undo.js';
-import { validateMaintenanceReceipt, upgradeMaintenanceReceipt } from '../maintenance/history.js';
+import { upgradeLegacyMaintenanceReceipt as upgradeMaintenanceReceipt } from './legacy-maintenance.js';
 import { isMemoryPolicy } from './memory-policy.js';
 import { validateMemorySourceReceipt, validateRangeSource } from './turn-source.js';
 import { validateStoredUpdate } from '../../world-records/update-result.js';
@@ -88,13 +88,6 @@ export function upgradeSummaryHistory(history) {
         valid(value[i].kind === 'batch' && value[i].previousEndMesId === value[i - 1].endMesId);
     }
     return { value, changed: JSON.stringify(value) !== JSON.stringify(history) };
-}
-
-export function appendMaintenanceReceipt(store, receipt, boundary = store.lastSummarizedMesId) {
-    validateMaintenanceReceipt(receipt);
-    const batch = store.summaryHistory?.find(entry => entry.endMesId === boundary);
-    valid(batch);
-    batch.maintenance.push(receipt);
 }
 
 export function getRollbackOnceTargetEndMesId(store) {

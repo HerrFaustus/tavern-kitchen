@@ -1,10 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { setImmediate } from 'node:timers';
-import { parseHTML } from 'linkedom';
-import { buildFloorSummaryProtocol, extractFloorPayload, extractGeneratedFloorPayload, floorSource, prepareFloorPayload, stripFloorProtocol, isNarrativeReply } from './protocol.js';
-import { createFloorSummaryController } from './controller.js';
-import { createFloorPanel } from './panel.js';
+import { extractFloorPayload, extractGeneratedFloorPayload, floorSource, prepareFloorPayload, stripFloorProtocol, isNarrativeReply } from './protocol.js';
 import { installFloorDisplayFilter } from './host-regex.js';
 import { applyTextFilterRules } from '../data/text-filter-rules.js';
 import { floorCoverageEnd, isFloorEntryCurrent, restoreFloorRoundSources } from './ledger.js';
@@ -66,18 +62,6 @@ test('legacy floor-only rounds regain a review and recall source only for matchi
     assert.equal(store.summaryHistory[1].roundSource, undefined);
     assert.equal(restoreFloorRoundSources(store, chat), false);
 });
-test('review mode and malformed replies perform no model calls or metadata writes; chat changes cancel a queued edit', async () => {
-    let context = { chatId: 'a', characterId: 1, chat: [{ is_user: true, mes: '走吧' }, { mes: raw(payload) }] };
-    let writes = 0, release;
-    const pending = new Promise(resolve => { release = resolve; });
-    const controller = createFloorSummaryController({ getContext: () => context, enabled: () => true,
-        getConfig: () => ({ enabled: true, review: true }), ensureSources: () => pending,
-        read: () => ({ storySummary: {} }), merge: () => assert.fail('unexpected merge'), commit: () => { writes++; } });
-    assert.equal((await controller.ingest(1)).pending, true); assert.equal(writes, 0);
-    const writing = controller.update(1, { payload, stage: true });
-    await Promise.resolve(); context = { ...context, chatId: 'b' }; release();
-    await assert.rejects(writing, /变化|切换/); assert.equal(writes, 0);
-});
 test('native regex hides only the protocol in display and outgoing prompts while keeping raw chat editable', () => {
     const settings = { regex: [{ id: 'user-rule' }] }, remove = installFloorDisplayFilter(settings);
     const rule = settings.regex.at(-1);
@@ -94,57 +78,6 @@ test('coverage never jumps over old unsummarized replies or a deleted floor', ()
     store.summaryHistory[1].floorEntry.deleted = true;
     assert.equal(floorCoverageEnd(store), 1);
 });
-test('floor panel uses two-line preview, editable grouped entries and explicit approval without unsafe markup', async () => {
-    const { document } = parseHTML('<html><body></body></html>');
-    const calls = [], snapshot = { enabled: true, chat: [{ mes: raw({ ...payload, summary: '<img src=x onerror=alert(1)>' }) }], store: {} };
-    const panel = createFloorPanel({ doc: document, floor: 0, schedule() {}, openMemory() {},
-        updateFloor: async (...args) => calls.push(args), extractFloor: async () => ({ status: 'missing' }) });
-    document.body.append(panel.node); panel.refresh(snapshot);
-    assert.equal(panel.node.querySelector('.tk-fp-toggle').getAttribute('aria-expanded'), 'false');
-    assert.equal(panel.node.querySelectorAll('.tk-fp-head button').length, 1);
-    panel.node.querySelector('.tk-fp-toggle').click();
-    assert.equal(panel.node.querySelector('.tk-fp-toggle').getAttribute('aria-expanded'), 'true');
-    assert.match(panel.node.querySelector('.tk-fp-more').textContent, /标为番外/u);
-    assert.match(panel.node.querySelector('.tk-fp-more').textContent, /重新提取/u);
-    assert.match(panel.node.querySelector('.tk-fp-more').textContent, /查看剧情/u);
-    assert.equal(panel.node.querySelectorAll('img').length, 0);
-    assert.match(panel.node.querySelector('.tk-fp-group').textContent, /贝拉/);
-    panel.node.querySelector('.tk-fp-summary').click();
-    const textarea = panel.node.querySelector('textarea'); textarea.value = '已审查的摘要';
-    panel.node.querySelector('form').dispatchEvent(new document.defaultView.Event('submit', { cancelable: true }));
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(calls.length, 1); assert.equal(calls[0][1].payload.summary, '已审查的摘要'); assert.equal(calls[0][1].stage, true);
-});
-
-test('floor panel exposes one-click floor summarization when the host provides it', async () => {
-    const { document } = parseHTML('<html><body></body></html>');
-    let calls = 0;
-    const panel = createFloorPanel({ doc: document, floor: 0, schedule() {}, summarizeFloor: async () => { calls++; },
-        updateFloor: async () => {}, extractFloor: async () => ({}) });
-    document.body.append(panel.node); panel.refresh({ chat: [{ mes: '正文，尚未附带总结。' }], store: {} });
-    const button = panel.node.querySelector('.tk-fp-head-action');
-    assert.ok(button);
-    assert.match(button.getAttribute('aria-label'), /总结本楼/u);
-    button.click();
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(calls, 1);
-    assert.match(buildFloorSummaryProtocol({ json: { storyRecords: [], events: [] } }), /<kitchen_summary>/u);
-});
-
-test('existing floor summary asks before model regeneration', () => {
-    const { document } = parseHTML('<html><body></body></html>');
-    const message = raw(payload);
-    const source = floorSource([{ mes: message }], 0);
-    const entry = { floor: 0, payload, source, anchorVersion: 1 };
-    const store = { lastSummarizedMesId: 0, summaryHistory: [{ kind: 'batch', previousEndMesId: -1, endMesId: 0, floorEntry: entry, undo: null }] };
-    const panel = createFloorPanel({ doc: document, floor: 0, schedule() {}, summarizeFloor: async () => {},
-        updateFloor: async () => {}, extractFloor: async () => ({}) });
-    document.body.append(panel.node); panel.refresh({ chat: [{ mes: message }], store });
-    const button = panel.node.querySelector('.tk-fp-head-action');
-    assert.equal(button.textContent, '重新总结');
-    button.click();
-    assert.match(panel.node.querySelector('.tk-fp-summarize-confirm').textContent, /替换现有摘要/u);
-});
 
 test('completed replies schedule independent updates without consuming attached main-reply summaries', async () => {
     const reasons = [], config = { inlineSummary: { enabled: true } };
@@ -160,30 +93,6 @@ test('completed replies schedule independent updates without consuming attached 
     assert.deepEqual(reasons, []);
     await mod.handleMessageReceived('test-chat', 0);
     assert.deepEqual(reasons, []);
-});
-
-test('changing source while an editor is open blocks stale save and cancel reloads the current view', () => {
-    const { document } = parseHTML('<html><body></body></html>'); let scheduled = 0;
-    const snapshot = { chat: [{ mes: raw(payload) }], store: {} };
-    const panel = createFloorPanel({ doc: document, floor: 0, schedule() { scheduled++; } });
-    document.body.append(panel.node); panel.refresh(snapshot); panel.node.querySelector('.tk-fp-toggle').click();
-    panel.node.querySelector('.tk-fp-summary').click();
-    snapshot.chat[0].mes = raw({ ...payload, summary: '新回复' }); panel.refresh(snapshot);
-    assert.equal(panel.node.querySelector('[type="submit"]').disabled, true);
-    [...panel.node.querySelectorAll('button')].find(node => node.textContent === '取消').click(); panel.refresh(snapshot);
-    assert.ok(scheduled); assert.equal(panel.node.querySelector('.tk-fp-preview').textContent, '新回复');
-});
-
-test('re-extraction cannot silently discard unsaved edits; cancelling retains the form value', () => {
-    const { document } = parseHTML('<html><body></body></html>'); let extracts = 0;
-    const panel = createFloorPanel({ doc: document, floor: 0, schedule() {}, extractFloor: async () => { extracts++; } });
-    document.body.append(panel.node); panel.refresh({ chat: [{ mes: raw(payload) }], store: {} });
-    panel.node.querySelector('.tk-fp-toggle').click(); panel.node.querySelector('.tk-fp-summary').click();
-    panel.node.querySelector('textarea').value = '尚未保存的修订';
-    panel.node.querySelector('[aria-label^="重新提取"]').click();
-    assert.equal(extracts, 0); assert.match(panel.node.querySelector('.tk-fp-extract-confirm').textContent, /覆盖人工修改/);
-    [...panel.node.querySelectorAll('button')].find(node => node.textContent === '取消重新提取').click();
-    assert.equal(panel.node.querySelector('textarea').value, '尚未保存的修订'); assert.equal(extracts, 0);
 });
 
 test('native system notices are not narrative floors, while hidden real replies still are', () => {

@@ -44,6 +44,26 @@ export function pruneOrphanFloorWork(storySummary, chat = []) {
         delete storySummary.floorWork;
     }
 
+    if (isPlainRecord(storySummary.floorSimulations)) {
+        const floorSimulations = storySummary.floorSimulations;
+        for (const [key, row] of Object.entries(floorSimulations)) {
+            const floor = Number(key);
+            const validFloorIndex = String(floor) === String(key).trim()
+                && Number.isInteger(floor)
+                && floor >= 0
+                && floor < chatLength;
+            const userMessageFloor = validFloorIndex && Boolean(chat[floor]?.is_user);
+            const validRow = isPlainRecord(row) && typeof row.text === 'string' && row.text.trim() && typeof row.digest === 'string' && row.digest;
+            if (!validFloorIndex || userMessageFloor || !validRow) {
+                delete floorSimulations[key];
+                prunedFloors.push(`sim:${key}`);
+            }
+        }
+        if (Object.keys(floorSimulations).length === 0) {
+            delete storySummary.floorSimulations;
+        }
+    }
+
     return {
         changed: prunedFloors.length > 0,
         prunedFloors,

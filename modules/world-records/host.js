@@ -1,8 +1,6 @@
 import {historicalWorld} from './historical.js';
 import { createNoteStore } from '../story-planner/storage.js';
 import { createWorldCardData } from '../kitchen-data/world.js';
-import { createProposalPanel } from './proposal-panel.js';
-import { createWorldEditorPanel } from './editor-panel.js';
 import { createWorldRecoveryPanel } from './recovery-panel.js';
 import { plannerSnapshot } from '../story-planner/notes.js';
 import { ambientControl, ambientPrompt, mapLocalConditions } from '../story-state/ambient.js';
@@ -31,7 +29,7 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
     const sourceIdentity = () => storyIdentityKey(captureStoryIdentity(getContext()));
     const identity = (branch = getMemorySnapshot()?.store?.dataBranch) => { const story = sourceIdentity(); return story ? JSON.stringify([getAccountId(), story, ...(branch ? [branch] : [])]) : ''; };
     const storage = createWorldStorage();
-    let authority, proposalPanel, peopleEditor, situationEditor, recoveryPanel, latestState = null;
+    let authority, recoveryPanel, latestState = null;
     const service = createWorldService({ storage, getIdentity: identity, isSourceCurrent: turn => !!turn
         && isRangeSourceCurrent(turn.source, getContext().chat || [])
         && getSummarySourceEnd(getContext().chat, turn.source.end) >= turn.source.end,
@@ -44,17 +42,11 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
         }, onChanged: (state, owner) => {
         if (owner === identity()) {
             latestState = state;
-            if (isVisible('situation') && !proposalPanel?.isEditing()) proposalPanel?.show(state);
-            if (isVisible('situation') && !situationEditor?.isEditing()) situationEditor?.show(state);
-            if (isVisible('people') && !peopleEditor?.isEditing()) peopleEditor?.show(state);
             if (isVisible('data')) recoveryPanel?.noteChange(state);
         }
         authority?.publish(state, owner);
         publishWorldBridgeState(sourceIdentity(), owner, state);
     } });
-    proposalPanel = createProposalPanel({ service, getIdentity:identity });
-    peopleEditor = createWorldEditorPanel({ service, getIdentity: identity, section: 'people', getPlayerName: () => getContext().name1, getMemorySnapshot });
-    situationEditor = createWorldEditorPanel({ service, getIdentity: identity, section: 'situation', getPlayerName: () => getContext().name1, getMemorySnapshot });
     const recoveryStamp=()=>{
         const chat=getContext().chat || [], memory=getMemorySnapshot();
         return memoryDigest({chat:chat.length ? captureRangeSource(chat,0,chat.length-1) : null,
@@ -103,8 +95,7 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
     });
     const involvementFor = (world, options) => readInvolvement(world, getMemorySnapshot(), getContext().name1, options);
     const disconnectFocus = registerInvolvement(key => key && captureStoryIdentity(getContext())?.key === key ? involvementFor(authority.read()?.state, {includeAgendas:true}) : []);
-    const inventory = createWorldEditorPanel({ service, getIdentity:identity, section:'overview', getPlayerName:() => getContext().name1 });
-    const protagonist = createProtagonistView({ inventory, getInvolvement: involvementFor, getSnapshot: getMemorySnapshot, getPlayerName: () => getContext().name1 });
+    const protagonist = createProtagonistView({ getInvolvement: involvementFor, getSnapshot: getMemorySnapshot, getPlayerName: () => getContext().name1 });
     const bookOptions = {getSnapshot:getMemorySnapshot, openSource(floor) {
         const context = getContext(), message = context.chat?.[floor], snapshot = getMemorySnapshot();
         const available = message && snapshot?.enabled && snapshot.invalidFrom == null && !snapshot.store?.summaryInvalid && snapshot.store?.sourceInvalidFromFloor == null;
@@ -115,7 +106,7 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
         content.append(title, text);
         return new context.Popup(content, context.POPUP_TYPE.TEXT).show().catch(onError);
     }};
-    const views = { overview: protagonist, clues: createSuspenseBook({...bookOptions, clues:true}), suspense: createSuspenseBook(bookOptions) };
+    const views = { overview: protagonist, suspense: createSuspenseBook(bookOptions) };
     let disposed = false, scheduled = false, epoch = 0;
     const frameBindings = new Map();
     function attachFrameMount(key, frame, mount) {
@@ -127,38 +118,6 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
             frame.addEventListener('load', mount);
         }
         mount();
-    }
-    const syncAndShow = (section, panel) => {
-        const owner = identity(), token = epoch;
-        if (!owner) { panel.show(null); return; }
-        Promise.resolve()
-            .then(() => active() ? sync() : service.read())
-            .then(state => {
-                if (!disposed && owner === identity() && token === epoch && isVisible(section) && !panel.isEditing()) {
-                    panel.show(state);
-                }
-            })
-            .catch(error => onError(error));
-    };
-    function showProposals(frame) {
-        attachFrameMount('proposals', frame, () => {
-            if (disposed || !isVisible('situation')) return;
-            const target = frame.contentDocument?.getElementById('world-proposals');
-            if (!target) return;
-            proposalPanel.mount(target);
-            syncAndShow('situation', proposalPanel);
-        });
-    }
-    function showEditor(frame, section = 'situation') {
-        const panel = section === 'people' ? peopleEditor : situationEditor;
-        const targetId = section === 'people' ? 'world-people-editor' : 'world-situation-editor';
-        attachFrameMount(`editor:${section}`, frame, () => {
-            if (disposed || (!isVisible(section) && !(section === 'people' && isVisible('relations')))) return;
-            const target = frame.contentDocument?.getElementById(targetId);
-            if (!target) return;
-            panel.mount(target);
-            syncAndShow(section === 'people' && isVisible('relations') ? 'relations' : section, panel);
-        });
     }
     function showRecovery(frame) {
         attachFrameMount('recovery', frame, () => {
@@ -275,8 +234,6 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
         storage,
         noteStore,
         cardData: createWorldCardData({ identity, storage, service, noteStore }),
-        showProposals,
-        showEditor,
         showRecovery,
         initialize,
         plannerSnapshot(end) {
@@ -286,6 +243,8 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
                 world = historicalWorld(world,end); evidence = chat.slice(0,end+1);
                 const store = memory?.store || {};
                 view = {...memory,store:{...store,summaryHistory:(store.summaryHistory || []).filter(row=>row.endMesId<=end),
+                    floorSimulations: Object.fromEntries(Object.entries(store.floorSimulations || {}).filter(([k]) => Number(k) <= end)),
+                    lastSummarizedMesId: Math.min(store.lastSummarizedMesId ?? -1, end),
                     json:{...store.json,storyRecords:(store.json?.storyRecords || []).filter(row=>Number.isInteger(row._addedAt) && row._addedAt<=end)}}};
             }
             const snap = plannerSnapshot(world, view, evidence, identity());
@@ -303,7 +262,7 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
         async prepare(query, tasks) {
             const factText = await authority.prepare(query, getContext().name1, state => involvementFor(state), {tasks});
             const state = authority.read()?.state, memory = getMemorySnapshot();
-            const local = (!tasks || tasks.some(key=>['peopleEvolution','subscribed','sceneryEvolution','encounter'].includes(key))) && state && memory?.enabled && memory.invalidFrom == null
+            const local = (!tasks || tasks.some(key=>['peopleEvolution','subscribed','sceneryEvolution','encounter','simulation'].includes(key))) && state && memory?.enabled && memory.invalidFrom == null
                 ? ambientPrompt(memory.store, state, worldStoryRecords(state, availableStoryRecords(memory.store)), getAmbientPreferences?.() || {})
                 : '';
             const raw = [factText, local].filter(Boolean).join('\n');
@@ -321,7 +280,7 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
             if (!identity()) { view.empty(); return; }
             const state = active() ? await sync() : await service.read(); if (isVisible(route) && !disposed) { if (state) view.show(state); else view.empty(); }
         },
-        reset() { epoch++; latestState = null; proposalPanel.reset(); peopleEditor.reset(); inventory.reset(); situationEditor.reset(); recoveryPanel.reset(); service.invalidate(); authority.reset(); for (const view of Object.values(views)) view.reset(); },
-        dispose() { disposed = true; for (const binding of frameBindings.values()) binding.frame.removeEventListener('load', binding.onLoad); frameBindings.clear(); proposalPanel.reset(); peopleEditor.reset(); inventory.reset(); situationEditor.reset(); recoveryPanel.reset(); service.invalidate(); authority.reset(); disconnectFocus(); unregisterConditions(); unregisterCatalog(); unregisterTurns(); unregisterBridge(); unregisterAuthority(); unsubscribe(); unregisterMemory(); for (const view of Object.values(views)) view.reset(); storage.close().catch(error => onError(error)); },
+        reset() { epoch++; latestState = null; recoveryPanel.reset(); service.invalidate(); authority.reset(); for (const view of Object.values(views)) view.reset(); },
+        dispose() { disposed = true; for (const binding of frameBindings.values()) binding.frame.removeEventListener('load', binding.onLoad); frameBindings.clear(); recoveryPanel.reset(); service.invalidate(); authority.reset(); disconnectFocus(); unregisterConditions(); unregisterCatalog(); unregisterTurns(); unregisterBridge(); unregisterAuthority(); unsubscribe(); unregisterMemory(); for (const view of Object.values(views)) view.reset(); storage.close().catch(error => onError(error)); },
     };
 }

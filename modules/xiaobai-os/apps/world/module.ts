@@ -34,7 +34,7 @@ export function createWorldModule(dependencies: {
                 },
                 isStoryBackgroundEnabled(identityKey) {
                     const snapshot = (context.partition as PartitionStore<WorldDomain>).peekCurrent();
-                    return snapshot?.identityKey === identityKey && dependencies.settings.read()!.apps.world.injectToStory;
+                    return snapshot?.identityKey === identityKey;
                 },
             }));
             return dependencies.install({ world, execution: context.execution, maintenance: context.useCapability(MAINTENANCE_CAPABILITY),

@@ -43,6 +43,7 @@ function applyRecord(list, change, idKey) {
 // backfills older floors. Skip later narrative facts and manual unfloored edits,
 // and replay only the eligible differences onto the closest complete historical prefix.
 export function historicalWorld(state, floor) {
+    if (!state?.events?.length) return state;
     const firstLater = state.events.find(event => {
         const at = evidenceFloor(state, event);
         return at !== null && at > floor;

@@ -5,12 +5,12 @@ import { TEXT_API_COPY as COPY } from './copy.js';
 
 export const TEXT_API_SETTINGS_KEY = 'textApiPresets';
 export const TEXT_API_VERSION = 1;
-export const TEXT_API_FEATURES = Object.freeze(['summary', 'planner', 'memory', 'world', 'opening', 'l0', 'embedding', 'rerank']);
+export const TEXT_API_FEATURES = Object.freeze(['summary', 'planner', 'world', 'opening', 'l0', 'embedding', 'rerank']);
 export const HOST_BINDING = '@host';
 export const HOST_PROVIDER = 'sillytavern-current';
 
 export const AGENT_BINDINGS = Object.freeze({
-    update: { name: '更新', features: ['summary', 'memory', 'opening'] },
+    update: { name: '更新', features: ['summary', 'opening'] },
     simulation: { name: '推演', features: ['world'] },
     planner: { name: '编剧', features: ['planner'] },
 });

@@ -36,14 +36,14 @@ export async function mountFixture() {
     const input = buildUpdateContext(state,memory.store,chat,receipt);
     const evidence = {floor:1,quote:'主角支付五金币，铁匠收到五金币，铁剑交给主角。'};
     const change = (entityId,field,before,value) => ({type:'field',entityId,field,before:{present:true,value:before},value,
-        nature:'established_fact',certainty:'uncertain',groupId:'trade',evidence});
+        nature:'established_fact',certainty:'explicit',groupId:'trade',evidence});
     const update = prepareWorldUpdate({basis:{worldId:state.worldId,branchId:state.branchId,version:state.version},
         proposals:[change('hero','coins',10,5),change('smith','coins',0,5),change('sword','owner',{entityId:'smith'},{entityId:'hero'}),
             {type:'field',entityId:'smith',field:'真实身份',before:{present:false},value:'隐藏的幕后首脑',
                 nature:'established_fact',certainty:'uncertain',groupId:'secret',evidence}],
         conflicts:[],acknowledgedReceipts:input.executionReceipts.map(item=>item.commandId)},input);
     memory.store.summaryHistory.push({worldUpdate:update,sourceReceipt:receipt,summary:'买下铁剑。',endMesId:1});
-    await service.syncTurns(chat,{history:memory.store.summaryHistory});
+    await archive.prepare();
     let frame;
     function openView(view) {
         if (!frame) {
@@ -61,7 +61,6 @@ export async function mountFixture() {
             frame.src='/scripts/extensions/third-party/tavern-kitchen/modules/story-summary/story-summary.html';
             workspace.getMount('situation').append(frame);
         } else frame.contentWindow.postMessage({source:'TavernKitchen',type:'KITCHEN_MEMORY_VIEW',view},globalThis.location.origin);
-        if (view === 'world') archive.showProposals(frame);
         if (view === 'data') archive.showRecovery(frame);
     }
     workspace.configure({ actions:{situation:()=>openView('world'),people:()=>openView('people'),data:()=>openView('data')} });

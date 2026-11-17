@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { panelEnabled, usePanelSettings } from './panel-policy.js';
 import { requireAgent, panelAgent } from './panel-controls.js';
-import { MEMORY_TOOLS } from '../modules/story-summary/maintenance/tools.js';
 import { initializeOpening } from '../modules/world-records/opening.js';
 import { buildMapMaintenancePrompt } from '../modules/xiaobai-os/apps/map/maintenance/prompt.js';
 
@@ -24,7 +23,5 @@ test('opening and map maintenance always use built-in backend instructions and i
     assert.notEqual(sent[0].content,'旧的自定义开局提示词');
     assert.match(sent[1].content,/潮水上涨/);
     assert.ok(buildMapMaintenancePrompt('automatic').length > 20);
-    const readTool = MEMORY_TOOLS.find(item => item.function.name === 'ReadMemory');
-    assert.ok(readTool && Array.isArray(readTool.function.parameters.required));
     usePanelSettings({});
 });

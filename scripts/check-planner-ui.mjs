@@ -42,7 +42,7 @@ async function inspect(doc, width, createPlannerSettings) {
     const fitsPlain = controls.scrollWidth <= controls.clientWidth;
     view.note({
         state: 'stale',
-        staleTargets: { all: false, characters: ['林默'], plotLines: [], situations: [], details: [{ group: 'characters', target: '林默', field: 'presence' }] },
+        staleTargets: { all: false, characters: ['林默'], situations: [], details: [{ group: 'characters', target: '林默', field: 'presence' }] },
         note: {
             id: 'fiction-entities',
             revision: 3,
@@ -50,16 +50,14 @@ async function inspect(doc, width, createPlannerSettings) {
                 text: '实体模式正文',
                 entities: {
                     characters: [{ target: '林默', commentary: '握紧账本', prediction: '今晚会去码头核对船单', suggestion: '保持克制观察' }],
-                    plotLines: [{ target: '药车失踪案', commentary: '线索指向旧桥', prediction: '车夫可能已越过关卡', suggestion: '埋下雨水脚印伏笔' }],
-                    situations: [],
+                    situations: [{ target: '药车失踪案', commentary: '线索指向旧桥', prediction: '车夫可能已越过关卡', suggestion: '埋下雨水脚印伏笔' }],
                 },
             },
             global: {
                 text: globalText,
                 entities: {
                     characters: [],
-                    plotLines: [{ target: '走私暗线', commentary: '后台真凶未露面', prediction: '三日后收网', suggestion: '暂不揭示账房身份' }],
-                    situations: [],
+                    situations: [{ target: '走私暗线', commentary: '后台真凶未露面', prediction: '三日后收网', suggestion: '暂不揭示账房身份' }],
                 },
             },
         },

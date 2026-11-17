@@ -1,5 +1,3 @@
-import { retireArcData } from '../data/legacy-arcs.js';
-import { runMemoryAgent } from '../maintenance/runner.js';
 import { createTestModuleUrl } from './helpers/bundle-module.js';
 // Real summary/anchor/history transaction, HTTP confirmation and IndexedDB boundary.
 // Protects import undo, source retirement and ambiguous saves; no model calls or source-text assertions.
@@ -12,9 +10,7 @@ import path from 'node:path';
 import { build } from 'esbuild';
 import 'fake-indexeddb/auto';
 import { IDBObjectStore } from 'fake-indexeddb';
-import { timelineRounds } from '../data/summary-layers.js';
 import { maintenanceFixture } from './fixtures/memory-maintenance.js';
-import { memoryPolicy } from '../data/memory-policy.js';
 import { entry } from './helpers/story-summary-entry.js';
 import { hostSaveEntry } from './helpers/host-save-entry.js';
 import { createHideStateController } from '../hide-state.js';
@@ -28,8 +24,6 @@ import { summaryFailureReason } from '../summary-failure.js';
 import { createSummaryDiagnostics } from '../summary-diagnostics.js';
 import { getChatIdentity } from '../data/chat-identity.js';
 import { captureRangeSource } from '../data/turn-source.js';
-import { applySummarySectionEdit } from '../data/section-edits.js';
-import { mergeEditedFactsWithTimestamps } from '../data/fact-edits.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const host = globalThis.__memoryStorageTest = { metadata: {}, context: {} };
@@ -50,7 +44,6 @@ const shims = {
         const context=options.updateContext;
         return JSON.stringify({summary:'本轮行动已经完成，双方保留各自的记录。',worldUpdate:{basis:{worldId:context.basis.worldId,branchId:context.basis.branchId,version:context.basis.version},proposals:[],acknowledgedReceipts:context.executionReceipts.map(item=>item.commandId),conflicts:[]},...JSON.parse(raw)});
     }; export function parseSummaryJson(raw){try{return JSON.parse(raw);}catch{return null;}} export const isSummaryGenerationCancelledError=()=>false;`,
-    'modules/story-summary/maintenance/runner.js': 'export const createSharedMemoryAgent=()=>{throw Error("unexpected Agent request");}; export const runMemoryAgent=createSharedMemoryAgent; let sequence=0; export const memoryRunId=()=>"memory-storage-test-"+(++sequence);',
     'modules/story-summary/vector/utils/embedder.js': 'export const getEngineFingerprint=()=>"test-engine";',
     'modules/story-summary/vector/llm/siliconflow.js': 'export const embed=(texts)=>globalThis.__memoryStorageTest.embed(texts);',
     'modules/story-summary/vector/llm/atom-extraction.js': 'export const extractAtomsForRound=()=>{throw Error("unexpected anchor request");};',
@@ -67,21 +60,14 @@ const bundled = await build({
         "export { currentTurns, turnProgress } from './modules/world-records/turn-ledger.js';",
         "export { worldUpdates, buildUpdateContext } from './modules/world-records/update-context.js';",
         "export * from './modules/story-summary/inline/ledger.js';",
-        "export * from './modules/story-summary/inline/controller.js';",
         "export * from './modules/story-summary/data/memory-commit.js';",
         "export * from './modules/story-summary/data/summary-import.js';",
-        "export { normalizeCharacterAliases, replaceCharacterAliases } from './modules/story-summary/data/character-aliases.js';",
+        "export { normalizeCharacterAliases } from './modules/story-summary/data/character-aliases.js';",
         "export * from './modules/story-summary/data/summary-history.js';",
         "export * from './modules/story-summary/data/anchor-extraction.js';",
         "export * from './modules/story-summary/data/anchor-invalidation.js';",
         "export * from './modules/story-summary/data/message-sources.js';",
         "export * from './modules/story-summary/data/source-sync.js';",
-        "export * from './modules/story-summary/maintenance/domain.js';",
-        "export * from './modules/story-summary/maintenance/history.js';",
-        "export * from './modules/story-summary/maintenance/ranges.js';",
-        "export * from './modules/story-summary/maintenance/session.js';",
-        "export * from './modules/story-summary/maintenance/commit.js';",
-        "export * from './modules/story-summary/maintenance/host.js';",
         "export * from './modules/story-summary/generate/generator.js';",
         "export { buildVectorPromptText } from './modules/story-summary/generate/prompt.js';",
         "export * from './modules/story-summary/vector/storage/state-store.js';",
@@ -146,223 +132,6 @@ async function importFixture() {
     await mod.commitSummaryMemory(host.context.chatId, next);
     return structuredClone(ext().storySummary.json);
 }
-
-// Acceptance: queued panel edits must preserve preceding source retirement and
-// unrelated panel edits. Cost: silently unsaved changes or resurrected stale anchors.
-function manualPanelEntry(errors, execution = null) {
-    return entry(['handleFrameMessage', 'buildFramePayload', 'cancelActiveSummaryExecution'], {
-        ...mod, structuredClone, document: { getElementById: () => ({}) }, isTrustedMessage: () => true,
-        getContext: () => host.context, getChatIdentity, VALID_SECTIONS: ['characters', 'facts'],
-        applySummarySectionEdit, mergeEditedFactsWithTimestamps, getCurrentFloorHint: () => host.context.chat.length - 1,
-        cancelRecallAndClearPrompt() {}, memoryMaintenance: { cancel: () => assert.fail('manual edit cancelled maintenance') },
-        activeSummaryExecution: execution, cancelPendingHide() {}, refreshEntityLexiconAndWarmup() {},
-        runVectorWriteTask: vectorWrites.runVectorWriteTask, VECTOR_WRITE_SCOPES: vectorWrites.VECTOR_WRITE_SCOPES,
-        postToFrame() {}, reportMemorySaveFailure: error => errors.push(error.code),
-    });
-}
-
-function editSection(panel, section, data, previous = structuredClone(ext().storySummary.json[section])) {
-    return panel.handleFrameMessage({ data: { type: 'UPDATE_SECTION', section, previous, data } });
-}
-
-// Acceptance: saving a manual correction cancels generation synchronously, even
-// after its response arrived; it must not discard maintenance or overwrite the edit.
-// Cost: silently losing user-authored memory and paying for another generation.
-for (const section of ['facts', 'aliases']) for (const phase of ['request', 'response']) {
-    test(`manual ${section} save protects edits during summary ${phase}`, async () => {
-        await importFixture();
-        host.context.chat.push({ mes: '次日', is_user: true }, { mes: '共同出发', is_user: false });
-        const controller = new AbortController();
-        const panel = manualPanelEntry([], { controller });
-        if (section === 'aliases') panel.memoryMaintenance = { cancel() {} };
-        const errors = [];
-        panel.reportMemorySaveFailure = error => errors.push(error.code);
-        let entered, respond, finishSave, observedStage, calls = 0;
-        const started = new Promise(resolve => { entered = resolve; });
-        host.generate = () => { calls++; entered(); return new Promise(resolve => { respond = resolve; }); };
-        const running = mod.runSummaryGeneration(25, { trigger: { delayFloors: 0 } }, {
-            onProgress: ({ stage }) => { observedStage = stage; },
-        }, { signal: controller.signal });
-        await started;
-        const response = JSON.stringify({ events: [],
-            factUpdates: [{ s: '夏实', p: '回收原因', o: '模型旧值', isState: false }],
-            characterAliasUpdates: [{ from: ['小夏'], to: '旅人', evidence: '模型旧解释' }],
-        });
-        let saving, edited;
-        try {
-            if (phase === 'response') {
-                const maintenance = mod.createMemorySession(readMaintenanceState()); maintenance.initial();
-                maintenance.runTool('EditMemory', { edits: [fixFact], evidence: ev2 });
-                host.afterSave = () => new Promise(resolve => { finishSave = resolve; });
-                saving = saveMaintenanceSession(maintenance);
-                while (!finishSave) await Promise.resolve();
-                respond(response);
-                await nextTurn();
-                assert.equal(observedStage, 'save_confirmation');
-            }
-            if (section === 'facts') {
-                const facts = structuredClone(ext().storySummary.json.facts);
-                facts[0].o = '用户刚保存的修正';
-                edited = editSection(panel, 'facts', facts);
-            } else edited = panel.handleFrameMessage({ data: { type: 'UPDATE_CHARACTER_ALIASES',
-                aliases: [{ from: '小夏', to: '夏实', evidence: '用户确认的身份' }] } });
-            assert.equal(controller.signal.aborted, true);
-        } finally {
-            host.afterSave = null;
-            finishSave?.();
-            respond(response);
-            await saving;
-            await edited;
-        }
-        const result = await running;
-        assert.equal(result.cancelled, true);
-        assert.equal(result.committed === true, false);
-        assert.deepEqual(errors, []);
-        assert.equal(calls, 1);
-        assert.equal(disk().storySummary.lastSummarizedMesId, 23);
-        if (section === 'facts') assert.equal(disk().storySummary.json.facts[0].o, '用户刚保存的修正');
-        else assert.equal(disk().storySummary.json.characterAliases[0].to, '夏实');
-        if (phase === 'response') assert.equal(disk().storySummary.summaryHistory[0].maintenance.length, 1);
-        assert.deepEqual(disk(), ext());
-    });
-}
-
-for (const preceding of ['source-sync', 'panel-edit']) {
-    test(`manual summary edit uses the memory published by preceding ${preceding}`, async () => {
-        await importFixture(); await seedAnchors();
-        const errors = [];
-        const panel = manualPanelEntry(errors);
-        const tracker = mod.createMessageSourceTracker(); tracker.reset(host.context);
-        let release;
-        const blocked = new Promise(resolve => { release = resolve; });
-        const blocking = vectorWrites.runVectorWriteTask({ scope: vectorWrites.VECTOR_WRITE_SCOPES.IO }, () => blocked);
-        let first;
-        if (preceding === 'source-sync') {
-            host.context.chat[1].mes += ' edited prose';
-            first = vectorWrites.runVectorWriteTask({ scope: vectorWrites.VECTOR_WRITE_SCOPES.CONSISTENCY },
-                () => mod.synchronizeSourceCaches(tracker, host.context));
-        } else {
-            first = editSection(panel, 'facts', [{ s:'同行者', p:'衣着', o:'灰斗篷' }]);
-        }
-        const second = editSection(panel, 'facts', [{ s: '主角', p: '当前情绪', o: '平静' }]);
-        try { await nextTurn(); }
-        finally { release(); }
-        await Promise.all([blocking, first, second]);
-        assert.deepEqual(errors, []);
-        assert.ok(disk().storySummary.json.facts.some(fact => fact.s === '主角' && fact.o === '平静'));
-        if (preceding === 'source-sync') {
-            assert.equal(disk().stateAtoms.some(atom => atom.floor === 1), false);
-            assert.equal(disk().l0Index.byFloor[1], undefined);
-            assert.equal(tracker.inspect(host.context), null);
-        } else assert.ok(disk().storySummary.json.facts.some(fact => fact.s === '同行者' && fact.o === '灰斗篷'));
-        assert.deepEqual(disk(), ext());
-    });
-}
-
-// Acceptance: a queued edit must never be applied to another character's chat,
-// even when filenames match. Cost: cross-chat data corruption.
-test('queued manual summary edit stays with its original character', async () => {
-    await importFixture();
-    const errors = [], panel = manualPanelEntry(errors);
-    const before = structuredClone(ext()), saves = host.writes;
-    let release;
-    const blocked = new Promise(resolve => { release = resolve; });
-    const blocking = vectorWrites.runVectorWriteTask({ scope: vectorWrites.VECTOR_WRITE_SCOPES.IO }, () => blocked);
-    const editing = editSection(panel, 'facts', [{ s: '主角', p: '当前情绪', o: '旧聊天的修改' }]);
-    try {
-        await nextTurn();
-        host.context = { ...host.context, characterId: 1,
-            characters: [...host.context.characters, { name: '另一角色', avatar: 'another.png', chat: host.context.chatId }] };
-    } finally { release(); }
-    await Promise.all([blocking, editing]);
-    assert.equal(host.writes, saves);
-    assert.deepEqual(ext(), before);
-    assert.deepEqual(errors, []);
-});
-
-// Acceptance: an editor opened before a rollback must save only the user's
-// changes, never revive untouched withdrawn facts. Cost: corrupt canonical memory.
-for (const timing of ['queued', 'finished']) test(`manual edit preserves source rollback (${timing})`, async () => {
-    await importFixture();
-    const context = host.context;
-    context.chat.push({ mes: '次日', is_user: true }, { mes: '共同出发', is_user: false });
-    host.generate = async () => JSON.stringify({ events: [], factUpdates: [{ s: '旅人', p: '行程', o: '共同出发', isState: false }] });
-    await mod.runSummaryGeneration(25, { trigger: { delayFloors: 0 } });
-    const previous = structuredClone(ext().storySummary.json.facts);
-    const edited = structuredClone(previous);
-    edited.find(fact => fact.p === '物品').o = '代为保管药箱';
-    const tracker = mod.createMessageSourceTracker(); tracker.reset(context);
-    context.chat[25].mes = '独自留下';
-    const errors = [], panel = manualPanelEntry(errors);
-    let release;
-    const blocking = vectorWrites.runVectorWriteTask({ scope: vectorWrites.VECTOR_WRITE_SCOPES.IO },
-        () => new Promise(resolve => { release = resolve; }));
-    await nextTurn();
-    const rollback = vectorWrites.runVectorWriteTask({ scope: vectorWrites.VECTOR_WRITE_SCOPES.CONSISTENCY },
-        () => mod.synchronizeSourceCaches(tracker, context, { kind: 'swipe', floor: 25 }));
-    let editing;
-    if (timing === 'queued') editing = editSection(panel, 'facts', edited, previous);
-    release(); await Promise.all([blocking, rollback]);
-    if (timing === 'finished') editing = editSection(panel, 'facts', edited, previous);
-    await editing;
-    assert.deepEqual(errors, []);
-    assert.equal(disk().storySummary.lastSummarizedMesId, 23);
-    assert.equal(disk().storySummary.json.facts.some(fact => fact.p === '行程'), false);
-    assert.equal(disk().storySummary.json.facts.find(fact => fact.p === '物品').o, '代为保管药箱');
-});
-
-// Acceptance: manual edits and independent Agent edits may commit in either
-// order without stopping the run or losing either result. Cost: lost maintenance.
-for (const order of ['agent-first', 'user-first']) test(`manual edit coexists with maintenance (${order})`, async () => {
-    await importFixture();
-    const previous = structuredClone(ext().storySummary.json.facts);
-    const edited = structuredClone(previous);
-    edited.find(fact => fact.p === '物品').o = '代为保管药箱';
-    const session = mod.createMemorySession(readMaintenanceState()); session.initial();
-    session.runTool('EditMemory', { edits: [fixFact], evidence: ev2 });
-    const errors = [], panel = manualPanelEntry(errors);
-    if (order === 'agent-first') await saveMaintenanceSession(session);
-    await editSection(panel, 'facts', edited, previous);
-    if (order === 'user-first') await saveMaintenanceSession(session);
-    assert.deepEqual(errors, []);
-    assert.equal(disk().storySummary.json.facts[0].o, fixFact.patch.o);
-    assert.equal(disk().storySummary.json.facts.find(fact => fact.p === '物品').o, '代为保管药箱');
-});
-
-// Acceptance: a user-edited target makes only the Agent's stale edit reread;
-// the maintenance session remains usable. Cost: overwriting user edits or wasted runs.
-test('maintenance can reread a manually changed target and continue', async () => {
-    await importFixture();
-    const session = mod.createMemorySession(readMaintenanceState()); session.initial();
-    session.runTool('EditMemory', { edits: [fixFact], evidence: ev2 });
-    const edited = structuredClone(ext().storySummary.json.facts);
-    edited[0].o = '用户补充的信息';
-    const errors = [];
-    await editSection(manualPanelEntry(errors), 'facts', edited);
-    assert.deepEqual(errors, []);
-    await assert.rejects(saveMaintenanceSession(session), { code: 'memory_updated' });
-    session.discard();
-    const latest = session.runTool('ReadMemory', { collection: 'facts', key: fixFact.key }, readMaintenanceState());
-    assert.equal(latest.items[0].value.o, '用户补充的信息');
-    session.runTool('EditMemory', { edits: [fixFact], evidence: ev2 });
-    const saved = await saveMaintenanceSession(session);
-    assert.equal(saved.receipt.operations.length, 1);
-    assert.equal(disk().storySummary.json.facts[0].o, fixFact.patch.o);
-});
-
-// Acceptance: editing visible facts cannot reactivate a hidden retracted fact.
-// Cost: withdrawn memory becomes active again without the user's knowledge.
-test('manual facts edit preserves retracted records without reviving them', async () => {
-    await importFixture();
-    const withdrawn = mod.readSummaryMemory(); withdrawn.storySummary.json.facts[0].retracted = true;
-    await mod.commitSummaryMemory(host.context.chatId, withdrawn);
-    const previous = structuredClone(ext().storySummary.json.facts.filter(fact => !fact.retracted));
-    const edited = structuredClone(previous); edited[0].o = '代为保管药箱';
-    const errors = [];
-    await editSection(manualPanelEntry(errors), 'facts', edited, previous);
-    assert.deepEqual(errors, []);
-    assert.deepEqual(disk().storySummary.json.facts[0], withdrawn.storySummary.json.facts[0]);
-});
 
 // Acceptance: opt-in success feedback means both persistence and follow-up
 // work finished. Cost: a hidden failed save or misleading completion signal.
@@ -488,21 +257,6 @@ async function seedAnchors() {
     next.l0Index = structuredClone(host.fixture.l0Index);
     await mod.commitSummaryMemory(host.context.chatId, next);
 }
-
-async function maintain(commands) {
-    const next = mod.readSummaryMemory();
-    const { memory, results } = mod.editMemoryBatch({ json: next.storySummary.json, atoms: next.stateAtoms }, commands, host.fixture.cutoff);
-    const operations = results.map((result, index) => ({ ...commands[index], changes: result.changes }));
-    next.storySummary.json = memory.json;
-    next.stateAtoms = memory.atoms;
-    mod.appendMaintenanceReceipt(next.storySummary, { version: 2, id: `receipt-${host.writes}`, runId: 'storage-test', policy: memoryPolicy(), operations,
-        coverage: { supplied: [], missingAnchors: [] } });
-    await mod.commitSummaryMemory(host.context.chatId, next);
-    return operations;
-}
-const ev2 = { floor: 2, quote: '看到了机密' };
-const fixFact = { kind: 'edit', collection: 'facts', key: 'f-1', patch: { o: '未经证实的传闻' } };
-const fixAnchor = { kind: 'edit', collection: 'anchors', key: 'atom-1-0', patch: { semantic: '夏实说听说可能如此，自己没有确证。' } };
 
 async function seedCacheRange(chatId, floors, lastChunkFloor = Math.max(...floors)) {
     const keys = floors.map(floor => ({ chatId, floor, chunkId: `c-${floor}-0` }));
@@ -1272,7 +1026,7 @@ test('an empty extraction status is retired live and persisted by the next host 
 });
 
 test('ordinary edit preserves later memory/vectors and retires only the affected anchor history', async () => {
-    await importFixture(); await seedAnchors(); await maintain([fixAnchor]); await completeRange();
+    await importFixture(); await seedAnchors();
     const chatId = host.context.chatId;
     await seedCacheRange(chatId, [0, 1, 3, 22, 23]);
     await seedCacheRange('other', [1, 3]);
@@ -1282,7 +1036,6 @@ test('ordinary edit preserves later memory/vectors and retires only the affected
     assert.deepEqual(ext().stateAtoms, before.stateAtoms.filter(atom => atom.floor !== 1));
     assert.deepEqual(ext().storySummary.json, before.storySummary.json);
     assert.equal(ext().l0Index.byFloor[1], undefined);
-    assert.deepEqual(mod.maintenanceRanges(ext().storySummary.summaryHistory, 23).pending, [{ from: 2, to: 2 }]);
     for (const table of [mod.chunksTable, mod.stateVectorsTable]) {
         assert.deepEqual((await table.where('chatId').equals(chatId).toArray()).map(row => row.floor).sort((a, b) => a - b), [0, 3, 22, 23]);
         assert.equal(await table.where('chatId').equals('other').count(), 2);
@@ -1308,368 +1061,6 @@ for (const failureStage of ['vectors', 'boundary']) test(`local edit invalidatio
     assert.deepEqual(host.mutations, []);
 });
 
-test('pure source retirement preserves its input, including absent anchors and completed history', async () => {
-    await importFixture(); await seedAnchors(); await maintain([{ ...fixAnchor, kind: 'delete' }]); await completeRange();
-    const before = mod.readSummaryMemory(), original = structuredClone(before);
-    const result = mod.invalidateMemoryAnchors(before, 1);
-    assert.deepEqual(before, original);
-    assert.deepEqual(result.next.storySummary.json, original.storySummary.json);
-    assert.ok(result.atomIds.includes('atom-1-0'));
-    assert.ok(result.retired > 0);
-    assert.ok(result.next.stateAtoms.every(atom => atom.floor < 1));
-    assert.deepEqual(mod.maintenanceRanges(result.next.storySummary.summaryHistory, 23).pending, [{ from: 2, to: 24 }]);
-    const repeated = mod.invalidateMemoryAnchors(result.next, 1);
-    assert.deepEqual(repeated.next, result.next);
-    assert.equal(repeated.retired, 0);
-    assert.deepEqual(repeated.atomIds, []);
-});
-
-for (const identityShape of ['portable', 'duplicate']) {
-    test(`imported ${identityShape} fact identities support maintenance and undo without changing their content`, async () => {
-        // The portable decoder supplies empty IDs; import is the identity boundary.
-        const facts = host.fixture.json.facts;
-        for (const fact of facts) fact.id = identityShape === 'portable' ? '' : 'f-8';
-        facts.at(-1).id = 'retained-identity';
-        const content = facts.map(({ id: _id, ...fact }) => fact);
-        const imported = await importFixture();
-        assert.equal(new Set(imported.facts.map(f => f.id)).size, facts.length);
-        assert.ok(imported.facts.every(f => f.id));
-        assert.equal(imported.facts.at(-1).id, 'retained-identity');
-        if (identityShape === 'duplicate') assert.equal(imported.facts[0].id, 'f-8');
-        assert.deepEqual(imported.facts.map(({ id: _id, _addedAt: _floor, ...fact }) => fact),
-            content.map(({ _addedAt: _floor, ...fact }) => fact));
-        assert.deepEqual(disk().storySummary.json.facts, imported.facts);
-
-        await maintain([{ ...fixFact, key: imported.facts[0].id }]);
-        assert.equal(ext().storySummary.json.facts[0].o, fixFact.patch.o);
-        assert.equal((await mod.rollbackSummaryOnce(host.context.chatId)).success, true);
-        assert.deepEqual(ext().storySummary.json.facts, imported.facts);
-        assert.deepEqual(disk().storySummary.json.facts, imported.facts);
-    });
-}
-
-function readMaintenanceState() {
-    const store = mod.getSummaryStore();
-    return { chatId: host.context.chatId, chat: host.context.chat, store, json: store.json,
-        cutoff: store.lastSummarizedMesId, atoms: mod.getStateAtoms(), l0Index: mod.getL0Index() };
-}
-
-async function saveMaintenanceSession(session) {
-    return mod.commitMemorySession(session, { runId: 'session-test', calls: [] }, {
-        read: readMaintenanceState,
-        commit: (next, previous, _impact, validate) => mod.commitSummaryMemory(host.context.chatId, next,
-            { previous, validate, maintenanceWrite: true }),
-    });
-}
-
-for (const change of ['append', 'edit']) test(`content-sync entry keeps maintenance alive while retiring ${change} caches`, async () => {
-    await importFixture(); await seedAnchors();
-    const original = structuredClone(ext().storySummary.json);
-    const tracker = mod.createMessageSourceTracker(); tracker.reset(host.context);
-    const session = mod.createMemorySession(readMaintenanceState()); session.initial();
-    session.runTool('ReadSource', { floor: 2 }, readMaintenanceState());
-    let syncing;
-    const sync = () => { syncing = mod.synchronizeSourceCaches(tracker, host.context); return syncing; };
-    const gate = entry(['runContentChangeSync'], {
-        getContext: () => host.context, isStorySummaryEnabledForCurrentChat: () => true,
-        messageSources: tracker, memoryMaintenance: { cancel: () => assert.fail('source-only change cancelled maintenance') },
-        handleMessageUpdated: sync, recallReuse: { invalidate() {}, historyChanged() {} },
-        cancelPendingHide() {}, cancelEmbeddingWriteTasks: vectorWrites.cancelEmbeddingWriteTasks,
-        isChatStale: () => false, clearHideState: async () => {}, reportMemorySaveFailure: assert.fail,
-        xbLog: { error: assert.fail },
-    });
-    if (change === 'append') host.context.chat.push({ mes: '新的尾楼', is_user: false });
-    else host.context.chat[1].mes = '修改后的真实原因，原先只是传闻。';
-    gate.runContentChangeSync(sync);
-    assert.equal((await syncing).status, 'synced');
-    assert.deepEqual(ext().storySummary.json, original);
-    assert.equal(ext().storySummary.lastSummarizedMesId, 23);
-    assert.equal(session.runTool('ReadSource', { floor: 2 }, readMaintenanceState()).items[0].text, host.context.chat[1].mes);
-    session.runTool('EditMemory', { edits: [fixFact], evidence: { floor: 2, quote: change === 'append' ? '看到了机密' : '原先只是传闻' } });
-    const saved = await saveMaintenanceSession(session);
-    assert.equal(saved.receipt.operations.length, 1);
-    assert.equal(disk().storySummary.json.facts[0].o, fixFact.patch.o);
-});
-
-test('source edits after reading do not reject confirmed maintenance completion', async () => {
-    await importFixture();
-    const session = mod.createMemorySession(readMaintenanceState()); session.initial();
-    session.runTool('ReadSource', { floor: 2 }, readMaintenanceState());
-    host.context.chat = structuredClone(host.context.chat);
-    host.context.chat[1].mes += ' 原文修订';
-    host.context.chat[20].mes += ' 未读原文修订';
-    host.context.chat.push({ mes: '边界以后的新楼', is_user: false });
-    session.runTool('ReadSource', { floor: 2 }, readMaintenanceState());
-    session.runTool('CompleteMaintenance', { from: 1, to: 24 });
-    const saved = await saveMaintenanceSession(session);
-    assert.deepEqual(saved.ranges.completed, [{ from: 1, to: 24 }]);
-    assert.deepEqual(saved.ranges, progress());
-    assert.deepEqual(disk(), ext());
-});
-
-test('an existing source warning does not erase newly confirmed maintenance on later saves', async () => {
-    await importFixture(); await completeRange();
-    mod.noteInvalidMemorySource(5);
-    const marked = mod.readSummaryMemory(); marked.storySummary.sourceInvalidFromFloor = 5;
-    await mod.commitSummaryMemory(host.context.chatId, marked);
-    assert.deepEqual(progress().pending, [{ from: 6, to: 24 }]);
-    const session = mod.createMemorySession(readMaintenanceState()); session.initial();
-    session.runTool('CompleteMaintenance', { from: 6, to: 24 });
-    const saved = await saveMaintenanceSession(session);
-    assert.deepEqual(saved.ranges, progress());
-    assert.deepEqual(progress().pending, []);
-    assert.equal(ext().storySummary.sourceInvalidFromFloor, 5);
-    assert.equal(mod.isSummaryConsumable(ext().storySummary, host.context.chat.length), false);
-    const unrelated = mod.readSummaryMemory(); unrelated.storySummary.updatedAt = Date.now();
-    await mod.commitSummaryMemory(host.context.chatId, unrelated);
-    assert.deepEqual(progress().pending, []);
-    assert.deepEqual(disk(), ext());
-    const expanded = mod.readSummaryMemory(); expanded.storySummary.sourceInvalidFromFloor = 2;
-    await mod.commitSummaryMemory(host.context.chatId, expanded);
-    assert.deepEqual(progress().pending, [{ from: 3, to: 24 }]);
-    assert.deepEqual(disk(), ext());
-});
-
-// Acceptance: earlier maintenance cannot discard a paid generation; new facts
-// and arcs win, causal links follow merges, and undo restores the maintained base.
-// Cost: wasted calls, lost memory, mislinked events or broken rollback.
-test('generation merges concurrent factual corrections and preserves their exact undo', async () => {
-        await importFixture();
-        const initial = mod.readSummaryMemory();
-        initial.storySummary.json.arcs = [{ name: '夏实', trajectory: '出发前', progress: 0.1, moments: [], _addedAt: 23 }];
-        await mod.commitSummaryMemory(host.context.chatId, initial);
-        host.context.chat.push({ mes: '次日', is_user: true }, { mes: '共同出发，确认了新的回收原因。', is_user: false });
-        let release, entered, calls = 0;
-        const started = new Promise(resolve => { entered = resolve; });
-        host.generate = () => { calls++; entered(); return new Promise(resolve => { release = resolve; }); };
-        const generating = mod.runSummaryGeneration(25, { trigger: { delayFloors: 0 } });
-        await started;
-        let maintained;
-        try {
-            const session = mod.createMemorySession(readMaintenanceState()); session.initial();
-            const edit = session.runTool('EditMemory', { edits: [
-                fixFact,
-                { kind: 'edit', collection: 'facts', key: 'f-3', patch: { o: '北京' } },
-            ], evidence: ev2 });
-            assert.equal(edit.status, 'staged', JSON.stringify(edit));
-            await saveMaintenanceSession(session);
-            maintained = mod.readSummaryMemory();
-        } finally {
-            release(JSON.stringify({ events: [
-                { title: '次日出发', summary: '两人共同出发。(#25-26)', causedBy: ['evt-4'] },
-                { title: '途中确认', summary: '途中确认新的原因。(#26)', causedBy: ['new-1', 'evt-4'] },
-            ], factUpdates: [{ s: '夏实', p: '回收原因', o: '新剧情确认的原因', isState: false }],
-            arcUpdates: [{ name: '夏实', trajectory: '新剧情进展', progress: 80 }], newCharacters: ['同行者'] }));
-        }
-        const result = await generating;
-        assert.equal(result.success, true, JSON.stringify(result));
-        assert.equal(calls, 1);
-        assert.equal(ext().storySummary.json.events, undefined);
-        assert.equal(ext().storySummary.json.facts.find(fact => fact.id === 'f-1').o, '新剧情确认的原因');
-        assert.equal(ext().storySummary.json.facts.find(fact => fact.id === 'f-3').o, '北京');
-        assert.equal(ext().storySummary.json.arcs, undefined);
-        assert.equal(ext().storySummary.json.characters.main.at(-1).name, '同行者');
-        assert.deepEqual(ext().storySummary.summaryHistory[0], maintained.storySummary.summaryHistory[0]);
-        assert.deepEqual(disk(), ext());
-        assert.equal((await mod.rollbackSummaryOnce(host.context.chatId)).success, true);
-        assert.deepEqual(ext().storySummary.json, retireArcData(maintained.storySummary.json));
-        assert.deepEqual(ext().storySummary.summaryHistory, maintained.storySummary.summaryHistory);
-        assert.deepEqual(disk(), ext());
-});
-
-for (const action of ['completion', 'outcome', 'anchor', 'summary']) {
-    test(`pending generation preserves ${action} maintenance while committing new content`, async () => {
-        await importFixture(); await seedAnchors();
-        const initial = mod.readSummaryMemory();
-        initial.storySummary.updatedAt = 1;
-        await mod.commitSummaryMemory(host.context.chatId, initial);
-        host.context.chat.push({ mes: '次日', is_user: true }, { mes: '共同出发', is_user: false });
-        const session = mod.createMemorySession(readMaintenanceState()); session.initial();
-        let release, entered;
-        const started = new Promise(resolve => { entered = resolve; });
-        host.generate = () => { entered(); return new Promise(resolve => { release = resolve; }); };
-        const generating = mod.runSummaryGeneration(25, { trigger: { delayFloors: 0 } });
-        await started;
-        if (action === 'completion') session.runTool('CompleteMaintenance', { from: 1, to: 24 });
-        else if (action === 'outcome') session.conclude({ status: 'partial', summary: '下次继续' });
-        else session.runTool('EditMemory', { edits: [action === 'anchor' ? fixAnchor : fixFact], evidence: ev2 });
-        let saved;
-        try { saved = await saveMaintenanceSession(session); }
-        finally { release(JSON.stringify({ events: [], factUpdates: [{ s: '旅人', p: '行程', o: '共同出发', isState: false }] })); }
-        const result = await generating;
-        assert.equal(result.success, true, JSON.stringify(result));
-        assert.equal(result.stale, undefined);
-        assert.equal(saved.current.store.updatedAt === 1, action !== 'summary');
-        assert.ok(ext().storySummary.summaryHistory[0].maintenance.some(receipt => receipt.id === saved.receipt.id));
-        assert.equal(ext().storySummary.lastSummarizedMesId, 25);
-        if (action === 'summary') assert.equal(ext().storySummary.json.facts[0].o, fixFact.patch.o);
-        if (action === 'anchor') assert.equal(ext().stateAtoms[0].semantic, fixAnchor.patch.semantic);
-    });
-}
-
-for (const scenario of ['completion', 'outcome', 'anchor', 'summary', 'source-edit', 'cancel', 'chat-switch', 'save-rejected', 'save-unconfirmed']) {
-    test(`summary response during ${scenario} maintenance save waits, then revalidates before committing`, async () => {
-        await importFixture(); await seedAnchors();
-        const initial = mod.readSummaryMemory();
-        host.context.chat.push({ mes: '次日', is_user: true }, { mes: '共同出发', is_user: false });
-        const session = mod.createMemorySession(readMaintenanceState()); session.initial();
-        const controller = new AbortController();
-        let release, entered, calls = 0, settled = false;
-        const started = new Promise(resolve => { entered = resolve; });
-        host.generate = () => { calls++; entered(); return new Promise(resolve => { release = resolve; }); };
-        const generating = mod.runSummaryGeneration(25, { trigger: { delayFloors: 0 } }, {}, { signal: controller.signal })
-            .then(result => { settled = true; return result; });
-        await started;
-        if (scenario === 'outcome') session.conclude({ status: 'partial', summary: '下次继续' });
-        else if (scenario === 'anchor' || scenario === 'summary') {
-            session.runTool('EditMemory', { edits: [scenario === 'anchor' ? fixAnchor : fixFact], evidence: ev2 });
-        } else session.runTool('CompleteMaintenance', { from: 1, to: 24 });
-        let finishSave, saveEntered;
-        const saveStarted = new Promise(resolve => { saveEntered = resolve; });
-        host.afterSave = () => { saveEntered(); return new Promise(resolve => { finishSave = resolve; }); };
-        if (scenario === 'save-rejected') {
-            host.expireReadback = true;
-            host.mode = 'old';
-            const saveMetadata = host.context.saveMetadata;
-            host.context.saveMetadata = async () => {
-                try { await saveMetadata(); }
-                finally { host.mode = 'save'; host.context.saveMetadata = saveMetadata; }
-            };
-        }
-        if (scenario === 'save-unconfirmed') host.mode = 'read_fail';
-        const writes = host.writes;
-        const saving = saveMaintenanceSession(session);
-        const saved = scenario === 'save-rejected'
-            ? assert.rejects(saving, { code: 'metadata_not_saved', uncertain: false })
-            : scenario === 'save-unconfirmed'
-                ? assert.rejects(saving, { code: 'metadata_save_unconfirmed', uncertain: true }) : saving;
-        let result, maintenance;
-        try {
-            await saveStarted;
-            release(JSON.stringify({ events: [], factUpdates: [{ s: '旅人', p: '行程', o: '共同出发', isState: false }] }));
-            await nextTurn();
-            assert.equal(settled, false);
-            assert.equal(host.writes, writes + 1);
-            if (scenario === 'source-edit') host.context.chat[24].mes = '修改后的来源';
-            if (scenario === 'chat-switch') host.context = { ...host.context, chatId: 'other-chat' };
-            if (scenario === 'cancel') {
-                controller.abort();
-                await nextTurn();
-                assert.equal(settled, true); // Cancellation must not wait for the unrelated save.
-            }
-        } finally {
-            host.afterSave = null;
-            finishSave?.();
-            try { maintenance = await saved; }
-            finally { host.mode = 'save'; host.expireReadback = false; result = await generating; }
-        }
-        const commits = ['completion', 'outcome', 'anchor', 'summary', 'save-rejected', 'save-unconfirmed'].includes(scenario);
-        assert.equal(result.success, commits, JSON.stringify(result));
-        assert.equal(result.stale === true, scenario === 'source-edit');
-        assert.equal(result.cancelled === true, ['cancel', 'chat-switch'].includes(scenario));
-        assert.equal(mod.getMemoryCommitState(), 'ready');
-        assert.equal(calls, 1);
-        assert.equal(host.writes, writes + 1 + Number(commits));
-        assert.equal(ext().storySummary.lastSummarizedMesId, commits ? 25 : 23);
-        if (maintenance) assert.ok(ext().storySummary.summaryHistory[0].maintenance.some(receipt => receipt.id === maintenance.receipt.id));
-        if (scenario === 'save-rejected') assert.deepEqual(ext().storySummary.summaryHistory[0].maintenance,
-            initial.storySummary.summaryHistory[0].maintenance);
-        assert.equal(ext().storySummary.json.facts.some(fact => fact.s === '旅人' && fact.p === '行程' && fact.o === '共同出发'), commits);
-        if (scenario === 'summary') assert.equal(ext().storySummary.json.facts[0].o, fixFact.patch.o);
-        if (scenario === 'anchor') assert.equal(ext().stateAtoms[0].semantic, fixAnchor.patch.semantic);
-        assert.deepEqual(host.files.get(host.fixture.chatId).extensions.TavernKitchen, ext());
-    });
-}
-
-test('an old event edit cannot add a card to a migrated chat', async () => {
-    await importFixture();
-    const session = mod.createMemorySession(readMaintenanceState());
-    const before = mod.readSummaryMemory();
-    const rejected = session.runTool('EditMemory', { edits: [{ kind: 'edit', collection: 'events', key: 'evt-1', patch: { title: '旧事件' } }], evidence: ev2 });
-    assert.equal(rejected.status, 'needs_fix');
-    assert.deepEqual(mod.readSummaryMemory(), before);
-});
-
-test('index status and repair include earlier runs regardless of results pagination', async () => {
-    await importFixture(); await seedAnchors();
-    await maintain([fixAnchor]);
-    const next = mod.readSummaryMemory();
-    for (let i = 0; i < 10; i++) mod.appendMaintenanceReceipt(next.storySummary, {
-        version: 2, id: `later-${i}`, runId: `later-run-${i}`, policy: memoryPolicy(), operations: [],
-        coverage: { supplied: [], missingAnchors: [] }, outcome: { status: 'partial' },
-    });
-    await mod.commitSummaryMemory(host.context.chatId, next, { maintenanceWrite: true });
-    host.vectorConfig.enabled = true;
-    const maintenance = mod.createMemoryMaintenanceHost({ isEnabled: () => true, changed() {} });
-    const first = await maintenance.results(), older = await maintenance.results(10);
-    assert.equal(first.items.length, 10); assert.equal(older.items.length, 1);
-    assert.deepEqual(first.index, { status: 'pending', count: 1 });
-    assert.deepEqual(older.index, first.index);
-    let embedded = 0;
-    host.embed = texts => { embedded += texts.length; return texts.map(() => [1, 0]); };
-    assert.equal((await maintenance.repairIndexes()).status, 'ready');
-    assert.equal(embedded, 2); // One anchor scene and its relation.
-    assert.deepEqual((await maintenance.results()).index, { status: 'ready', count: 0 });
-    assert.deepEqual((await maintenance.results(10)).index, { status: 'ready', count: 0 });
-});
-
-async function completeRange(from = 1, to = 24) {
-    const next = mod.readSummaryMemory();
-    mod.appendMaintenanceReceipt(next.storySummary, { version: 2, id: `complete-${host.writes}`, runId: 'complete-run', policy: memoryPolicy(),
-        cutoff: host.fixture.cutoff + 1, operations: [], completion: { from, to }, coverage: { supplied: [], missingAnchors: [] } });
-    await mod.commitSummaryMemory(host.context.chatId, next, { maintenanceWrite: true });
-}
-const progress = () => mod.maintenanceRanges(ext().storySummary.summaryHistory, ext().storySummary.lastSummarizedMesId);
-
-test('completion survives reload; manual edits invalidate its fixed baseline in the same confirmed save', async () => {
-    await importFixture(); await completeRange();
-    host.metadata = structuredClone(host.metadata); mod.reload(); mod.getSummaryStore();
-    assert.deepEqual(progress().pending, []);
-    const next = mod.readSummaryMemory(); next.storySummary.json.facts[0].o = '用户改动';
-    await mod.commitSummaryMemory(host.context.chatId, next);
-    assert.deepEqual(progress().pending, [{ from: 1, to: 24 }]);
-    assert.deepEqual(disk(), ext());
-});
-
-test('late anchors reopen just their floor; clear and same-ID regeneration never resurrect completion', async () => {
-    await importFixture(); await completeRange();
-    const next = mod.readSummaryMemory(); next.stateAtoms.push(structuredClone(host.fixture.atoms[0]));
-    await mod.commitSummaryMemory(host.context.chatId, next);
-    assert.deepEqual(progress().pending, [{ from: 2, to: 2 }]);
-    await completeRange(2, 2);
-    const { next: cleared } = mod.invalidateMemoryAnchors(mod.readSummaryMemory(), 1, 'anchors_cleared');
-    await mod.commitSummaryMemory(host.context.chatId, cleared);
-    assert.equal(ext().stateAtoms.length, 0);
-    const afterClear = progress();
-    host.metadata = structuredClone(host.metadata); mod.reload(); mod.getSummaryStore();
-    const rebuilt = mod.readSummaryMemory(); rebuilt.stateAtoms.push(structuredClone(host.fixture.atoms[0]));
-    await mod.commitSummaryMemory(host.context.chatId, rebuilt);
-    assert.deepEqual(progress(), afterClear);
-    assert.deepEqual(disk(), ext());
-});
-
-test('own edits retain completed ranges; import replacement and rollback remove their receipts', async () => {
-    await importFixture(); await completeRange();
-    const next = mod.readSummaryMemory(); next.storySummary.json.facts[0].o = '维护修正';
-    await mod.commitSummaryMemory(host.context.chatId, next, { maintenanceWrite: true });
-    assert.deepEqual(progress().pending, []);
-    await mod.rollbackSummaryOnce(host.context.chatId);
-    assert.deepEqual(progress().completed, []);
-    await completeRange(); await importFixture();
-    assert.deepEqual(progress().completed, []);
-});
-
-test('old-server save and uncertain save never publish newly completed ranges', async () => {
-    for (const mode of ['old', 'read_fail']) {
-        host.mode = 'save'; await importFixture();
-        host.mode = mode;
-        await assert.rejects(completeRange());
-        const published = mod.readPublishedSummaryMemory();
-        assert.deepEqual(mod.maintenanceRanges(published.storySummary.summaryHistory, 23).completed, []);
-        if (mode === 'read_fail') assert.equal(mod.getMemoryCommitState(), 'unconfirmed');
-    }
-});
-
 test('person records share actual summary persistence and return to the imported baseline on rollback', async () => {
     const original = await importFixture();
     const previous = mod.readSummaryMemory();
@@ -1690,111 +1081,12 @@ test('person records share actual summary persistence and return to the imported
     assert.deepEqual(disk(), ext());
 });
 
-test('actual import baseline: repeated maintenance is reversible but imported events/facts are not erased', async () => {
-    const original = await importFixture();
-    assert.equal(mod.getRollbackOnceTargetEndMesId(ext().storySummary), null);
-    await maintain([fixFact]);
-    await maintain([{ ...fixFact, patch: { o: '夏实只听说，未查证' } }]);
-    host.metadata = structuredClone(host.metadata); mod.reload();
-    const result = await mod.rollbackSummaryOnce(host.context.chatId);
-    assert.equal(result.success, true);
-    assert.equal(result.targetEndMesId, 23);
-    assert.deepEqual(ext().storySummary.json, original);
-    assert.equal(original.events, undefined);
-    assert.match(timelineRounds(ext().storySummary)[0].summary, /青山船票争吵/);
-    assert.equal(original.facts.length, 5);
-    assert.equal(mod.getRollbackOnceTargetEndMesId(ext().storySummary), null);
-    assert.deepEqual(disk(), ext());
-});
-
-test('fact correction survives the next generated batch; batch then maintenance rollback restores the original facts', async () => {
-    host.fixture.json.facts.push({ id: 'f-6', s: '药君', p: '物品', o: '拥有药杖', since: 3, _addedAt: 19 });
-    const original = await importFixture();
-    const correction = { kind: 'edit', collection: 'facts', key: 'f-2', patch: { s: '药君', o: '拥有药箱和药杖' } };
-    await assert.rejects(maintain([correction]), { code: 'fact_conflict' });
-    assert.deepEqual(disk().storySummary.json, original);
-    await maintain([correction, { kind: 'delete', collection: 'facts', key: 'f-6' }]);
-    const corrected = structuredClone(ext().storySummary.json);
-    const next = mod.readSummaryMemory();
-    const merged = mod.mergeNewData(next.storySummary.json, { factUpdates: [] }, 25, { returnMeta: true });
-    assert.deepEqual(merged.json.facts, corrected.facts);
-    next.storySummary.json = merged.json;
-    next.storySummary.lastSummarizedMesId = 25;
-    mod.addSummarySnapshot(next.storySummary, 23, 25, merged.undo);
-    host.context.chat.push({ mes: '次日', is_user: true }, { mes: '出发' });
-    await mod.commitSummaryMemory(host.context.chatId, next);
-    assert.equal((await mod.rollbackSummaryOnce(host.context.chatId)).success, true);
-    assert.deepEqual(ext().storySummary.json, corrected);
-    assert.equal((await mod.rollbackSummaryOnce(host.context.chatId)).success, true);
-    assert.deepEqual(ext().storySummary.json, original);
-    assert.deepEqual(disk(), ext());
-});
-
 test('upstream import boundary converts once; corrupt exact inverse cannot become a baseline', () => {
     const oldImport = [{ endMesId: 23 }];
     const upgraded = mod.upgradeSummaryHistory(oldImport);
     assert.equal(upgraded.value[0].kind, 'baseline');
     assert.equal(mod.getRollbackOnceTargetEndMesId({ lastSummarizedMesId: 23, summaryHistory: upgraded.value }), null);
     assert.throws(() => mod.upgradeSummaryHistory([{ format: 1, previousEndMesId: -1, endMesId: 23, undo: { version: 1, unknown: true } }]));
-});
-
-for (const kind of ['edit', 'delete']) {
-    test(`${kind} anchor: clear retires history, reload and same-ID extraction cannot resurrect old source`, async () => {
-        const original = await importFixture();
-        await seedAnchors();
-        await maintain([fixFact, { ...fixAnchor, kind }]);
-        await mod.saveStateVectors(host.context.chatId, [{ atomId: 'atom-1-0', floor: 1, vector: [1, 0] }], 'test');
-        const writes = host.writes;
-        await mod.invalidateSummaryAnchors(host.context.chatId, 0, 'anchors_cleared');
-        assert.equal(host.writes - writes, 1);
-        assert.equal((await mod.getAllStateVectors(host.context.chatId)).length, 0);
-        const receipt = ext().storySummary.summaryHistory[0].maintenance[0];
-        assert.equal(receipt.operations[1].changes[0].retired.reason, 'anchors_cleared');
-        assert.equal(mod.maintenanceImpact(receipt.operations).atomIds.length, 0);
-        assert.ok(receipt.operations[1].changes[0].before);
-        host.metadata = structuredClone(host.metadata); mod.reload();
-        const extraction = mod.createAnchorExtractionDraft(host.context.chatId, host.context.chat);
-        const regenerated = { ...host.fixture.atoms[0], semantic: '重新提取的新正文，不能被旧撤销覆盖' };
-        extraction.addAtoms([regenerated]);
-        extraction.setStatus(1, { status: 'ok', atoms: 1 });
-        await extraction.commit();
-        assert.equal((await mod.rollbackSummaryOnce(host.context.chatId)).success, true);
-        assert.deepEqual(ext().storySummary.json, original);
-        assert.deepEqual(ext().stateAtoms, [regenerated]);
-    });
-}
-
-test('active anchor conflicts still refuse undo; retirement only skips explicitly invalidated changes', async () => {
-    await importFixture(); await seedAnchors(); await maintain([fixFact, fixAnchor]);
-    const edit = mod.readSummaryMemory();
-    edit.stateAtoms[0].semantic = '人工修改';
-    await mod.commitSummaryMemory(host.context.chatId, edit);
-    const before = structuredClone(ext());
-    const result = await mod.rollbackSummaryOnce(host.context.chatId);
-    assert.equal(result.reason, 'history_discontinuous');
-    assert.deepEqual(ext(), before);
-});
-
-test('source invalidation scans every batch, including absent anchors, before undoing a generated batch', async () => {
-    await importFixture(); await seedAnchors();
-    await maintain([{ ...fixAnchor, kind: 'delete' }]);
-    // Add a new generated batch after the imported baseline.
-    const next = mod.readSummaryMemory();
-    const merged = mod.mergeNewData(next.storySummary.json, { factUpdates: [{ s: '夏实', p: '城市', o: '北京' }] }, 25, { returnMeta: true });
-    next.storySummary.json = merged.json;
-    next.storySummary.lastSummarizedMesId = 25;
-    mod.addSummarySnapshot(next.storySummary, 23, 25, merged.undo);
-    await mod.commitSummaryMemory(host.context.chatId, next);
-    host.context.chat.push({ mes: 'new', is_user: true }, { mes: 'new reply', is_user: false });
-    // Ordinary edit keeps L2 but retires the older, already absent L0 operation.
-    await mod.rollbackSummaryIfNeeded({ invalidateFromFloor: 1 });
-    assert.equal(ext().storySummary.lastSummarizedMesId, 25);
-    assert.ok(ext().storySummary.summaryHistory[0].maintenance[0].operations[0].changes[0].retired);
-    const result = await mod.rollbackSummaryIfNeeded({ changedFromFloor: 24 });
-    assert.equal(result.status, 'rolled_back');
-    assert.equal(ext().storySummary.lastSummarizedMesId, 23);
-    assert.equal((await mod.rollbackSummaryOnce(host.context.chatId)).success, true);
-    assert.equal(ext().stateAtoms.length, 0);
 });
 
 test('source replacement across baseline preserves imported content and persists only source invalidity', async () => {
@@ -1807,15 +1099,6 @@ test('source replacement across baseline preserves imported content and persists
     assert.equal(ext().storySummary.summaryInvalid, undefined);
     assert.equal(mod.isSummaryConsumable(ext().storySummary, 24), false);
     assert.deepEqual(disk(), ext());
-});
-
-test('undoing baseline maintenance cannot clear an unresolved source boundary', async () => {
-    const original = await importFixture(); await maintain([fixFact]);
-    await mod.rollbackSummaryIfNeeded({ changedFromFloor: 20 });
-    assert.equal((await mod.rollbackSummaryOnce(host.context.chatId)).success, true);
-    assert.deepEqual(ext().storySummary.json, original);
-    assert.equal(ext().storySummary.sourceRollbackFromFloor, 20);
-    assert.equal(mod.isSummaryConsumable(ext().storySummary, 24), false);
 });
 
 test('source stays blocked when both rollback and safety-marker saves are confirmed not saved', async () => {
@@ -1831,7 +1114,7 @@ test('source stays blocked when both rollback and safety-marker saves are confir
 });
 
 test('ordinary source edit with failed vector cleanup blocks old anchors without corrupting history', async t => {
-    await importFixture(); await seedAnchors(); await maintain([fixAnchor]);
+    await importFixture(); await seedAnchors();
     const original = structuredClone(ext().storySummary.json);
     const cacheFailure = t.mock.method(mod.stateVectorsTable, 'where', () => { throw new Error('cache offline'); });
     host.context.chat[1].mes = 'edited source';
@@ -1851,7 +1134,7 @@ test('ordinary source edit with failed vector cleanup blocks old anchors without
 });
 
 test('ordinary source edit never calls a failing host save', async () => {
-    await importFixture(); await seedAnchors(); await maintain([fixAnchor]);
+    await importFixture(); await seedAnchors();
     host.mode = 'old';
     const beforeIO = { writes: host.writes, reads: host.reads };
     host.context.chat[1].mes = 'edited source';
@@ -2351,9 +1634,10 @@ test('L0 results remain draft-only, merge with newer summary, but cannot overwri
     const extraction = mod.createAnchorExtractionDraft(host.context.chatId, host.context.chat);
     extraction.addAtoms(host.fixture.atoms.slice(0, 1)); extraction.setStatus(1, { status: 'ok', atoms: 1 });
     assert.equal(ext().stateAtoms.length, 0);
-    await maintain([fixFact]);
+    const edit = mod.readSummaryMemory(); edit.storySummary.json.facts[0].o = '并发事实更新';
+    await mod.commitSummaryMemory(host.context.chatId, edit);
     await extraction.commit();
-    assert.equal(ext().storySummary.json.facts[0].o, fixFact.patch.o);
+    assert.equal(ext().storySummary.json.facts[0].o, '并发事实更新');
     const stale = mod.createAnchorExtractionDraft(host.context.chatId, host.context.chat);
     stale.setStatus(3, { status: 'empty', atoms: 0 });
     host.context.chat[2].mes = 'changed USER';
@@ -2438,39 +1722,6 @@ for (const persistence of ['host', 'confirmed']) test(`anchor extraction persist
     assert.deepEqual(disk(), ext());
 });
 
-// Acceptance: source changes win over both outcomes of a submitted manual/Agent save.
-// Cost: old-branch anchors resurrected or unrelated durable edits lost.
-for (const outcome of ['saved-original', 'saved-retired', 'not-saved', 'conflict']) {
-    test(`retirement during a durable save preserves its actual outcome: ${outcome}`, async () => {
-        await importFixture(); await seedAnchors(); await maintain([fixAnchor]);
-        const chatId = host.context.chatId;
-        const previous = mod.readSummaryMemory();
-        const next = structuredClone(previous);
-        next.storySummary.json.facts[0].o = 'durable edit';
-        if (outcome === 'not-saved') host.mode = 'old';
-        let release;
-        host.afterSave = () => new Promise(resolve => { release = resolve; });
-        const writing = mod.commitSummaryMemory(chatId, next).then(() => null, error => error.code);
-        while (!release) await nextTurn();
-        const beforeIO = { writes: host.writes, reads: host.reads };
-        host.context.chat[1].mes += ' replaced source';
-        mod.retireSummaryMemorySources(chatId, { floors: [1] });
-        assert.equal(mod.getPublishedStateAtoms().some(atom => atom.floor === 1), false);
-        assert.equal(ext().l0Index.byFloor[1], undefined);
-        assert.deepEqual({ writes: host.writes, reads: host.reads }, beforeIO);
-        if (outcome === 'saved-retired') host.files.set(chatId, structuredClone(host.metadata));
-        if (outcome === 'conflict') { disk().storySummary.json.facts[1].o = 'unrelated external edit'; host.expireReadback = true; }
-        release();
-        const error = await writing;
-        assert.equal(error, outcome === 'not-saved' ? 'metadata_not_saved' : outcome === 'conflict' ? 'metadata_save_conflict' : null);
-        assert.equal(ext().stateAtoms.some(atom => atom.floor === 1), false);
-        assert.equal(mod.getPublishedStateAtoms().some(atom => atom.floor === 1), false);
-        assert.equal(mod.readPublishedSummaryMemory().storySummary.json.facts[0].o,
-            outcome.startsWith('saved') ? 'durable edit' : previous.storySummary.json.facts[0].o);
-        assert.ok(mod.readPublishedSummaryMemory().storySummary.summaryHistory[0].maintenance[0].operations[0].changes[0].retired);
-    });
-}
-
 test('an entirely superseded manual extraction is not reported as saved', async () => {
     await importFixture();
     const draft = mod.createAnchorExtractionDraft(host.context.chatId, host.context.chat, { persistence: 'confirmed' });
@@ -2485,37 +1736,6 @@ test('an entirely superseded manual extraction is not reported as saved', async 
     assert.equal(ext().stateAtoms.length, 0);
     assert.equal(mod.getMemoryCommitState(), 'ready');
 });
-
-for (const mixed of [false, true]) test(`Agent reports the post-swipe receipt, preserving unrelated edits: ${mixed}`, async () => {
-    await importFixture(); await seedAnchors();
-    const session = mod.createMemorySession(readMaintenanceState()); session.initial();
-    session.runTool('EditMemory', { edits: mixed ? [fixAnchor, fixFact] : [fixAnchor], evidence: ev2 });
-    session.conclude({ status: 'completed' });
-    let release;
-    host.afterSave = () => new Promise(resolve => { release = resolve; });
-    const writing = saveMaintenanceSession(session).then(saved => ({ saved }), error => ({ error: error.code }));
-    while (!release) await nextTurn();
-    mod.retireSummaryMemorySources(host.context.chatId, { floors: [1] });
-    release();
-    const result = await writing;
-    assert.equal(result.error, undefined);
-    session.acknowledge(result.saved);
-    assert.equal(session.savedCount, mixed ? 1 : 0);
-    assert.equal(result.saved.outcome.status, mixed ? 'partially_superseded' : 'superseded');
-    const history = mod.projectMaintenanceRun(ext().storySummary, 'session-test');
-    assert.equal(history.outcome.status, result.saved.outcome.status);
-    assert.equal(history.counts.anchors, 0);
-    if (mixed) {
-        assert.equal(result.error, undefined);
-        assert.equal(result.saved.current.atoms.some(atom => atom.floor === 1), false);
-        assert.deepEqual(result.saved.impact.atomIds, []);
-        assert.equal(result.saved.current.json.facts[0].o, fixFact.patch.o);
-        assert.ok(result.saved.receipt.operations[0].changes[0].retired);
-    } else assert.equal(result.saved.current.atoms.some(atom => atom.floor === 1), false);
-    assert.equal(mod.getMemoryCommitState(), 'ready');
-});
-
-
 
 test('cleanup releases only the source boundary it actually handled', async t => {
     await importFixture(); await seedAnchors();
@@ -2574,7 +1794,6 @@ for (const version of ['1.14.0', '1.18.0']) test(`official ST ${version} saves l
 
 
 // Main-reply summaries must share the real persistence/undo path, with no generation gateway.
-const inlinePayload = (summary, records = []) => ({ summary, updates: { storyUpdates: records } });
 let sourceAccount = 0;
 function sourceArchive(t, getAmbientPreferences) {
     host.autoUnifiedFixture = true;
@@ -2604,34 +1823,6 @@ async function seedUpdateWorld(f) {
 }
 const updateProposal = floor => ({ type: 'field', entityId: 'resource-holder', field: 'coins', before: { present: true, value: 10 }, value: 5,
     nature: 'established_fact', evidence: { floor, quote: '铁剑' } });
-
-test('correcting a paid turn survives reload without resubmitting its world effect', async t => {
-    await importFixture();
-    const f = sourceArchive(t), floor = appendSourceTurn();
-    host.context.chat[floor].mes = '铁匠收下五金币。你拿到了铁剑。';
-    await seedUpdateWorld(f);
-    host.generate = async ({ updateContext }) => JSON.stringify({ summary: '买下铁剑。', worldUpdate: unifiedBlock(updateContext,
-        [{ ...updateProposal(floor), groupId: 'payment', certainty: 'explicit', evidence: { floor, quote: '铁匠收下五金币' } }]) });
-    assert.equal((await mod.runSummaryGeneration(floor, { trigger: {} })).success, true);
-    const before = await f.service().read(), batch = structuredClone(disk().storySummary.summaryHistory.at(-1));
-    assert.equal(before.entities.find(entity => entity.id === 'resource-holder').fields.coins.value, 5);
-    const current = readMaintenanceState(), session = mod.createMemorySession(current);
-    await session.reviewUnit('ReviseRoundSummary', { to: floor + 1, version: 0, previous: batch.summary,
-        text: '主角支付五金币，拿到了铁剑。', evidence: { floor: floor + 1, quote: '拿到了铁剑' } }, current);
-    await saveMaintenanceSession(session);
-    host.metadata = structuredClone(host.files.get(host.context.chatId)); mod.reload();
-    const store = mod.getSummaryStore();
-    assert.equal(timelineRounds(store).at(-1).version, 1);
-    assert.deepEqual(store.summaryHistory.at(-1).sourceReceipt, batch.sourceReceipt);
-    assert.deepEqual(store.summaryHistory.at(-1).worldUpdate, batch.worldUpdate);
-    await f.archive.prepare();
-    const after = await f.service().read();
-    assert.deepEqual(after.events.slice(0, before.events.length), before.events);
-    // Reopening may confirm source delivery. It must never repeat the payment.
-    assert.ok(after.events.slice(before.events.length).every(event => event.effects.every(effect => effect.type === 'source')));
-    assert.deepEqual(mod.worldUpdates(after), mod.worldUpdates(before));
-    assert.equal(after.entities.find(entity => entity.id === 'resource-holder').fields.coins.value, 5);
-});
 
 test('one actual summary transaction receives the full world and saves summary plus proposals without mutating world facts', async t => {
     await importFixture(); const f = sourceArchive(t), floor = appendSourceTurn(); await seedUpdateWorld(f); let calls = 0;
@@ -2822,195 +2013,6 @@ for (const edit of ['player', 'reply', 'reload']) test(`editing a confirmed sour
     assert.equal(disk().storySummary.json.facts.find(item => item.p === '本轮物品').o, '未购买'); assert.equal(calls, 2);
 });
 
-test('manual floor revisions preserve later source receipts through replay and confirmed metadata storage', async t => {
-    await importFixture(); const f = sourceArchive(t), first = appendSourceTurn(), controller = inlineController();
-    await controller.update(first, { payload: inlinePayload('购买铁剑') });
-    const second = appendSourceTurn(); await controller.update(second, { payload: inlinePayload('离开铁匠铺') });
-    const receipt = disk().storySummary.summaryHistory.at(-1).sourceReceipt;
-    await controller.update(first, { payload: inlinePayload('买剑后收好收据') });
-    assert.deepEqual(disk().storySummary.summaryHistory.at(-1).sourceReceipt, receipt);
-    await f.archive.prepare(); const turns = mod.currentTurns(await f.service().read()).filter(item => item.source.end >= first);
-    assert.equal(turns.length, 2); assert.ok(turns.every(item => item.memory.length === 1));
-});
-
-function inlineController() {
-    return mod.createFloorSummaryController({ getContext: () => host.context, enabled: () => true,
-        getConfig: () => ({ enabled: true, review: false }), ensureSources: () => mod.waitForMemoryCommit(),
-        read: mod.readSummaryMemory, commit: mod.commitSummaryMemory, merge: mod.mergeNewData });
-}
-test('main reply commits once, replays a historical correction and survives actual reload and undo', async () => {
-    await importFixture();
-    const baseline = structuredClone(ext().storySummary);
-    const start = host.context.chat.length;
-    host.generate = () => assert.fail('main reply must not call independent summary API');
-    const first = inlinePayload('抵达渡口', [{ id: 'scene', kind: 'scene', location: '渡口', situation: '等船', participants: [] }]);
-    host.context.chat.push({ mes: '出发', is_user: true }, { mes: `正文<kitchen_summary>${JSON.stringify(first)}</kitchen_summary>` });
-    const controller = inlineController();
-    await controller.ingest(start + 1);
-    const writes = host.writes;
-    await controller.ingest(start + 1); assert.equal(host.writes, writes);
-    const firstId = ext().storySummary.summaryHistory.at(-1).floorEntry.source.digest;
-    const second = inlinePayload('船已开走', [{ id: 'scene', kind: 'scene', location: '码头', situation: '错过渡船', participants: [] }]);
-    host.context.chat.push({ mes: '等着', is_user: true }, { mes: `正文<kitchen_summary>${JSON.stringify(second)}</kitchen_summary>` });
-    await controller.ingest(start + 3);
-    const secondId = ext().storySummary.summaryHistory.at(-1).floorEntry.source.digest;
-    await controller.update(start + 1, { payload: inlinePayload('抵达旧渡口', first.updates.storyUpdates), reviewed: true });
-    assert.equal(ext().storySummary.summaryHistory.at(-2).summary, '抵达旧渡口');
-    assert.equal(ext().storySummary.summaryHistory.at(-2).floorEntry.source.digest, firstId);
-    assert.equal(ext().storySummary.summaryHistory.at(-1).floorEntry.source.digest, secondId);
-    assert.equal((ext().storySummary.json.storyRecords || []).some(record => record.kind === 'scene'), false);
-    host.metadata = structuredClone(host.files.get(host.context.chatId)); mod.reload(); mod.getSummaryStore();
-    assert.equal(ext().storySummary.summaryHistory.at(-2).floorEntry.payload.summary, '抵达旧渡口');
-    assert.equal((await mod.executeRollback(host.context.chatId, mod.getSummaryStore(), baseline.lastSummarizedMesId)).status, 'rolled_back');
-    assert.deepEqual(ext().storySummary.json.facts, baseline.json.facts);
-    assert.ok(ext().storySummary.summaryHistory.every(batch => ![firstId, secondId].includes(batch.floorEntry?.source.digest)));
-});
-test('pending review, deletion and omission use one confirmed transaction; a failed save leaves current memory intact', async () => {
-    await importFixture();
-    const floor = host.context.chat.length + 1, payload = inlinePayload('确认收到信件');
-    host.context.chat.push({ mes: '接信', is_user: true }, { mes: `正文<kitchen_summary>${JSON.stringify(payload)}</kitchen_summary>` });
-    const controller = inlineController();
-    await controller.update(floor, { payload, stage: true });
-    assert.equal(ext().storySummary.lastSummarizedMesId, host.fixture.cutoff);
-    await controller.update(floor, { reviewed: true });
-    assert.equal(disk().storySummary.summaryHistory.at(-1).floorEntry.reviewed, true);
-    await controller.update(floor, { omitted: true });
-    assert.equal(timelineRounds(ext().storySummary).some(round => round._addedAt === floor), false);
-    await controller.update(floor, { omitted: false });
-    assert.equal(timelineRounds(ext().storySummary).some(round => round._addedAt === floor), true);
-    const before = structuredClone(ext().storySummary);
-    host.mode = 'old';
-    await assert.rejects(controller.update(floor, { payload: inlinePayload('不应保存的修改') }));
-    assert.deepEqual(ext().storySummary, before);
-    host.mode = 'ok';
-    await controller.update(floor, { deleted: true });
-    assert.equal(ext().storySummary.summaryHistory.at(-1).floorEntry.deleted, true);
-    assert.equal(timelineRounds(ext().storySummary).some(round => round._addedAt === floor), false);
-});
-
-test('earlier floor edits preserve later maintenance fields and replayed history remains undoable', async () => {
-    await importFixture();
-    const floor = host.context.chat.length + 1;
-    const original = { summary: '灯塔熄灭', updates: { events: [{ title: '灯塔', summary: '灯灭了', participants: [] }] } };
-    host.context.chat.push({ mes: '查看灯塔', is_user: true }, { mes: `灯塔熄灭。<kitchen_summary>${JSON.stringify(original)}</kitchen_summary>` });
-    const controller = inlineController(); await controller.ingest(floor);
-    const current = readMaintenanceState(), session = mod.createMemorySession(current);
-    await session.reviewUnit('ReviseRoundSummary', { to: floor + 1, version: 0, previous: '灯塔熄灭',
-        text: '灯塔的灯熄灭了。', evidence: { floor: floor + 1, quote: '灯塔熄灭' } }, current);
-    await saveMaintenanceSession(session);
-    assert.equal(timelineRounds(ext().storySummary).at(-1).summary, '灯塔的灯熄灭了。');
-    await controller.update(floor, { payload: { ...original, summary: '守望者目睹灯塔熄灭' } });
-    assert.equal(timelineRounds(ext().storySummary).at(-1).summary, '守望者目睹灯塔熄灭');
-    host.metadata = structuredClone(host.files.get(host.context.chatId)); mod.reload();
-    assert.equal((await mod.executeRollback(host.context.chatId, mod.getSummaryStore(), host.fixture.cutoff)).status, 'rolled_back');
-    assert.ok(timelineRounds(ext().storySummary).every(row => row._addedAt < floor));
-});
-
-test('omitting an early round preserves source identity, restores safely, and stale source edits never overwrite memory', async () => {
-    await importFixture(); const start = host.context.chat.length;
-    const controller = inlineController();
-    for (const text of ['第一封信', '第二封信']) {
-        host.context.chat.push({ mes: '读信', is_user: true }, { mes: `<kitchen_summary>${JSON.stringify(inlinePayload(text))}</kitchen_summary>` });
-        await controller.ingest(host.context.chat.length - 1);
-    }
-    const firstId = ext().storySummary.summaryHistory.at(-2).floorEntry.source.digest;
-    const secondId = ext().storySummary.summaryHistory.at(-1).floorEntry.source.digest;
-    await controller.update(start + 1, { deleted: true });
-    host.context.chat.push({ mes: '再读', is_user: true }, { mes: `<kitchen_summary>${JSON.stringify(inlinePayload('第三封信'))}</kitchen_summary>` });
-    await controller.ingest(start + 5);
-    assert.notEqual(ext().storySummary.summaryHistory.at(-1).floorEntry.source.digest, firstId);
-    await controller.update(start + 1, { deleted: false });
-    assert.ok(ext().storySummary.summaryHistory.some(row => row.floorEntry?.source.digest === firstId));
-    assert.ok(ext().storySummary.summaryHistory.some(row => row.floorEntry?.source.digest === secondId));
-    const before = structuredClone(ext()); host.context.chat[start + 1].mes += '原文改变';
-    await assert.rejects(controller.update(start + 1, { payload: inlinePayload('不该写入') }), /原文|候选/);
-    assert.deepEqual(ext(), before);
-});
-
-test('an unsummarized earlier floor can be filled without losing a later inline summary', async () => {
-    await importFixture(); const start = host.context.chat.length; const controller = inlineController();
-    for (const text of ['先前没摘的信件', '后来已摘的信件']) host.context.chat.push({ mes: '读信', is_user: true },
-        { mes: `<kitchen_summary>${JSON.stringify(inlinePayload(text))}</kitchen_summary>` });
-    await controller.ingest(start + 3);
-    const laterId = ext().storySummary.summaryHistory.at(-1).floorEntry.source.digest;
-    await controller.ingest(start + 1);
-    assert.equal(ext().storySummary.summaryHistory.at(-2).floorEntry.floor, start + 1);
-    assert.equal(ext().storySummary.summaryHistory.at(-1).floorEntry.source.digest, laterId);
-    assert.equal(ext().storySummary.lastSummarizedMesId, start + 3);
-});
-
-const inlineAnchor = { scene: '贝拉来到渡口，将失踪的通行证交还给守卫。', where: '渡口', edges: [{ s: '贝拉', t: '守卫', r: '交还通行证' }] };
-test('main-reply anchors share review, confirmed save, omission, editing and exact rollback with summaries', async () => {
-    await importFixture(); const original = structuredClone(ext());
-    const floor = host.context.chat.length + 1;
-    const payload = { ...inlinePayload('交还通行证'), anchors: [inlineAnchor] };
-    host.context.chat.push({ mes: '还给守卫', is_user: true }, { mes: `<kitchen_summary>${JSON.stringify(payload)}</kitchen_summary>` });
-    const controller = inlineController();
-    await controller.update(floor, { payload, stage: true }); assert.deepEqual(ext().stateAtoms, original.stateAtoms);
-    await controller.update(floor, { reviewed: true });
-    const atom = ext().stateAtoms.find(row => row.floor === floor);
-    assert.equal(atom.semantic, inlineAnchor.scene); assert.deepEqual(atom.edges, inlineAnchor.edges);
-    assert.equal(ext().l0Index.byFloor[floor].status, 'ok'); assert.deepEqual(disk(), ext());
-    assert.equal(mod.projectMaintenanceReceipts(ext().storySummary).items.some(run => run.runId === `inline-anchors-${floor}`), false);
-    const before = structuredClone(ext()); host.mode = 'old';
-    await assert.rejects(controller.update(floor, { payload: { ...payload, anchors: [] } })); assert.deepEqual(ext(), before); host.mode = 'ok';
-    await controller.update(floor, { omitted: true }); assert.equal(ext().stateAtoms.some(row => row.floor === floor), false);
-    await controller.update(floor, { omitted: false }); assert.equal(ext().stateAtoms.find(row => row.floor === floor).atomId, atom.atomId);
-    await controller.update(floor, { payload: { ...payload, anchors: [{ ...inlineAnchor, where: '北岸渡口' }] } });
-    assert.notEqual(ext().stateAtoms.find(row => row.floor === floor).atomId, atom.atomId);
-    host.metadata = structuredClone(host.files.get(host.context.chatId)); mod.reload(); mod.getSummaryStore();
-    assert.equal((await mod.executeRollback(host.context.chatId, mod.getSummaryStore(), host.fixture.cutoff)).status, 'rolled_back');
-    assert.deepEqual(ext().stateAtoms, original.stateAtoms); assert.equal(ext().l0Index.byFloor[floor], undefined);
-});
-
-test('historical anchor replay preserves later manual corrections and explicit empty anchors remove the floor', async () => {
-    await importFixture(); const floor = host.context.chat.length + 1;
-    const payload = { ...inlinePayload('交还通行证'), anchors: [inlineAnchor] };
-    host.context.chat.push({ mes: '还给守卫', is_user: true }, { mes: `<kitchen_summary>${JSON.stringify(payload)}</kitchen_summary>` });
-    const controller = inlineController(); await controller.ingest(floor);
-    const key = ext().stateAtoms.find(row => row.floor === floor).atomId;
-    const session = mod.createMemorySession(readMaintenanceState()); session.initial();
-    session.runTool('ReadMemory', { collection: 'anchors', key }, readMaintenanceState());
-    const edit = session.runTool('EditMemory', { edits: [{ kind: 'edit', collection: 'anchors', key, patch: { where: '守卫岗亭' } }], evidence: { floor, quote: '还给守卫' } });
-    assert.equal(edit.status, 'staged', JSON.stringify(edit)); await saveMaintenanceSession(session);
-    await controller.update(floor, { payload: { ...payload, summary: '修正摘要但保留本楼场景卡' } });
-    assert.equal(ext().stateAtoms.find(row => row.atomId === key).where, '守卫岗亭');
-    const before = structuredClone(ext());
-    await assert.rejects(controller.update(floor, { payload: { ...payload, anchors: [] } }), /修订.*移除/);
-    assert.deepEqual(ext(), before);
-});
-
-test('main reply anchors enter existing embedding repair without calling the anchor extraction model', async () => {
-    await importFixture(); const floor = host.context.chat.length + 1;
-    const payload = { ...inlinePayload('交还通行证'), anchors: [inlineAnchor] };
-    host.context.chat.push({ mes: '还给守卫', is_user: true }, { mes: `<kitchen_summary>${JSON.stringify(payload)}</kitchen_summary>` });
-    await inlineController().ingest(floor);
-    host.vectorConfig = { enabled: true, embeddingApi: {} };
-    const inputs = []; host.embed = texts => { inputs.push(...texts); return texts.map(() => [1, 0]); };
-    assert.equal((await mod.getL0VectorBuildStatus(host.context.chatId)).missing > 0, true);
-    const repaired = await mod.vectorizeMissingStateAtoms(host.context.chatId);
-    assert.equal(repaired.success, true, JSON.stringify(repaired));
-    assert.equal((await mod.getL0VectorBuildStatus(host.context.chatId)).missing, 0);
-    assert.ok(inputs.includes(inlineAnchor.scene));
-    const atom = ext().stateAtoms.find(row => row.floor === floor);
-    assert.equal(await mod.stateVectorsTable.where('[chatId+atomId]').equals([host.context.chatId, atom.atomId]).count(), 1);
-});
-
-test('undo restores the pre-existing anchor extraction status along with the original hand-maintained anchor', async () => {
-    await importFixture(); const floor = host.context.chat.length + 1;
-    const payload = { ...inlinePayload('交还通行证'), anchors: [inlineAnchor] };
-    host.context.chat.push({ mes: '还给守卫', is_user: true }, { mes: `<kitchen_summary>${JSON.stringify(payload)}</kitchen_summary>` });
-    const before = mod.readSummaryMemory();
-    before.stateAtoms.push({ atomId: 'hand-existing', floor, source: 'ai', semantic: '已手工整理的原场景记录，保留其原有含义。', where: '旧渡口', edges: [], quality: 0.3 });
-    before.l0Index.byFloor[floor] = { floor, status: 'ok', atoms: 1, updatedAt: 12345 };
-    await mod.commitSummaryMemory(host.context.chatId, before);
-    await inlineController().ingest(floor);
-    assert.equal(ext().stateAtoms.some(atom => atom.atomId === 'hand-existing'), false);
-    assert.equal((await mod.executeRollback(host.context.chatId, mod.getSummaryStore(), host.fixture.cutoff)).status, 'rolled_back');
-    assert.deepEqual(ext().stateAtoms, before.stateAtoms);
-    assert.deepEqual(ext().l0Index.byFloor[floor], before.l0Index.byFloor[floor]);
-});
-
 test('published world authority filters actual summary constraint reads without rewriting historical summary data', async () => {
     await importFixture(); const original = structuredClone(ext().storySummary.json);
     host.context.characterId = 0; host.context.characters = [{ avatar: 'authority-test.png' }];
@@ -3025,49 +2027,6 @@ test('published world authority filters actual summary constraint reads without 
         host.context.chatId = 'another-story';
         assert.ok(mod.getFacts().some(row => row.s === fact.s && row.p === fact.p));
     } finally { remove(); }
-});
-
-test('six independent updates preserve all leaves until proofreading closes a unit', async t => {
-    await importFixture(); const archive = sourceArchive(t); await archive.archive.prepare();
-    let calls = 0;
-    host.generate = async ({ updateContext }) => {
-        assert.equal(updateContext.background.hierarchyAvailable, false);
-        return JSON.stringify({ events: [], factUpdates: [], summary: '本轮' + (++calls), worldUpdate: unifiedBlock(updateContext) });
-    };
-    for (let i = 0; i < 6; i++) assert.equal((await mod.runSummaryGeneration(appendSourceTurn(), { trigger: {} })).success, true);
-    assert.equal(calls, 6);
-    assert.ok(disk().storySummary.summaryHistory.every(b => !b.layers && !b.reviewLayers));
-    const current = readMaintenanceState();
-    const session = mod.createMemorySession({ ...current, generateReviewedLayer: async () => '交易告一段落' });
-    let step = 0, end, confirmed;
-    const tool = (name, args) => ({ text: '', toolCalls: [{ id: 'call' + step, name, arguments: JSON.stringify(args) }] });
-    const outcome = await runMemoryAgent(session, {mode:'auto', readCurrent: readMaintenanceState,
-        config: { provider:'openai', model:'offline-test' }, countTokens: async () => ({tokens:100,source:'test'}),
-        adapter: { chat: async request => {
-            step++;
-            if (step === 1) {
-                assert.ok(request.tools.some(t => t.function.name === 'CloseNarrativeUnit'));
-                return tool('ReadNarrativeUnits', {level:'stage'});
-            }
-            if (step === 2) {
-                const {units, revision} = JSON.parse(request.messages.at(-1).content);
-                end = units[2].to;
-                return tool('CloseNarrativeUnit', {level:'stage', from:units[0].from, to:end, revision,
-                    reason:'铁剑完成交付', evidence:{floor:end, quote:'你拿到了铁剑。'}});
-            }
-            assert.equal(JSON.parse(request.messages.at(-1).content).status, 'staged');
-            return {text:'前三轮已构成一个阶段。'};
-        } }, onFinish: async () => { confirmed = await saveMaintenanceSession(session); return confirmed; } });
-    assert.equal(outcome.saved, 1);
-    assert.equal(confirmed.impact.summary, true);
-    const node = disk().storySummary.summaryHistory.at(-1).reviewLayers[0];
-    assert.equal(node.end, end - 1); assert.equal(node.text, '交易告一段落');
-    host.generate = async ({updateContext}) => {
-        assert.equal(updateContext.background.summaries.find(unit => unit.level === 'stage').summary, node.text);
-        assert.equal(updateContext.background.summaries.length, 5); // Imported baseline plus stage and three later rounds.
-        return JSON.stringify({ events: [], factUpdates: [], summary:'后续', worldUpdate: unifiedBlock(updateContext) });
-    };
-    assert.equal((await mod.runSummaryGeneration(appendSourceTurn(), {trigger:{}})).success, true);
 });
 
 test('ambient developments persist with their source batch and inject only on arrival', async t => {

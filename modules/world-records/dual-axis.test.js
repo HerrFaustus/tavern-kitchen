@@ -38,7 +38,7 @@ test('installWorldAuthorityGeneration applies dynamic depth from prepareInjectio
             export const registerGenerateInterceptor = (_id, fn) => globalThis.__dualAxisInterceptors.push(fn);
             export const unregisterGenerateInterceptor = () => {};
         `,
-        'modules/story-summary/generate/recall-policy.js': 'export const usesStoryRecall = () => true;',
+        'modules/story-summary/generate/recall-policy.js': 'export const usesStoryRecall = type => type !== "quiet";',
     };
     globalThis.__dualAxisPrompts = prompts;
     globalThis.__dualAxisInterceptors = interceptors;
@@ -79,6 +79,73 @@ test('installWorldAuthorityGeneration applies dynamic depth from prepareInjectio
 
     await interceptors[0]([], 0, () => {}, 'swipe', { signal: new AbortController().signal });
     assert.equal(prompts.tavernKitchenWorldAuthority.depth, 2);
+
+    dispose();
+});
+
+test('installWorldAuthorityGeneration injects fresh simulation extension at depth=1 alongside depth>=2 world state and clears on swipe/quiet', async () => {
+    const prompts = {};
+    const interceptors = [];
+    const shims = {
+        'script.js': `
+            export const extension_prompts = globalThis.__dualAxisPrompts;
+            export const extension_prompt_types = { IN_CHAT: 1 };
+            export const extension_prompt_roles = { SYSTEM: 0 };
+        `,
+        'shared/common/generate-interceptor.js': `
+            export const GENERATE_INTERCEPTOR_ORDER = { STORY_SUMMARY: 100 };
+            export const registerGenerateInterceptor = (_id, fn) => globalThis.__dualAxisInterceptors.push(fn);
+            export const unregisterGenerateInterceptor = () => {};
+        `,
+        'modules/story-summary/generate/recall-policy.js': 'export const usesStoryRecall = type => type !== "quiet";',
+    };
+    globalThis.__dualAxisPrompts = prompts;
+    globalThis.__dualAxisInterceptors = interceptors;
+
+    const out = await build({
+        entryPoints: [path.join(root, 'modules/world-records/generation-host.js')],
+        bundle: true,
+        write: false,
+        format: 'esm',
+        platform: 'neutral',
+        plugins: [{
+            name: 'dual-axis-sim-shims',
+            setup(buildCtx) {
+                buildCtx.onResolve({ filter: /.*/ }, args => {
+                    const target = args.path.startsWith('.')
+                        ? path.resolve(args.resolveDir, args.path)
+                        : path.join(root, args.path);
+                    const rel = path.relative(root, target).replace(/\\/g, '/');
+                    if (shims[rel]) return { path: rel, namespace: 'shim' };
+                    if (args.path.endsWith('/script.js')) return { path: 'script.js', namespace: 'shim' };
+                    return null;
+                });
+                buildCtx.onLoad({ filter: /.*/, namespace: 'shim' }, args => ({ contents: shims[args.path], loader: 'js' }));
+            },
+        }],
+    });
+
+    // eslint-disable-next-line no-unsanitized/method -- Generated local test bundle with fixed host shims; no external source.
+    const { installWorldAuthorityGeneration } = await import(await createTestModuleUrl(out.outputFiles[0].text));
+    const dispose = installWorldAuthorityGeneration({
+        getContext: () => ({ chatId: 'c-sim', chat: [{ is_user: false, mes: '铁匠看向火炉。' }] }),
+        prepare: async () => ({ value: '已确认状态：铁匠铺在城东', depth: 2 }),
+        prepareSimulation: type => (type === 'swipe' ? '' : '[后台延伸] 城东巷口已有驿卒停马。'),
+    });
+
+    await interceptors[0]([], 0, () => {}, 'normal', { signal: new AbortController().signal });
+    assert.equal(prompts.tavernKitchenWorldAuthority.value, '已确认状态：铁匠铺在城东');
+    assert.equal(prompts.tavernKitchenWorldAuthority.depth, 2);
+    assert.equal(prompts.tavernKitchenSimulationExtension.value, '[后台延伸] 城东巷口已有驿卒停马。');
+    assert.equal(prompts.tavernKitchenSimulationExtension.depth, 1);
+
+    await interceptors[0]([], 0, () => {}, 'swipe', { signal: new AbortController().signal });
+    assert.equal(prompts.tavernKitchenWorldAuthority.depth, 2);
+    assert.equal(prompts.tavernKitchenSimulationExtension, undefined);
+
+    await interceptors[0]([], 0, () => {}, 'quiet', { signal: new AbortController().signal });
+    assert.equal(prompts.tavernKitchenWorldAuthority, undefined);
+    assert.equal(prompts.tavernKitchenSimulationExtension, undefined);
 
     dispose();
 });

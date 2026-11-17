@@ -2,21 +2,18 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { build } from 'esbuild';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const root = path.resolve(process.argv[2] || path.resolve(import.meta.dirname, '..'));
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_BIN });
 try {
-    const editorBundle = (await build({entryPoints:['modules/world-records/editor-panel.js'],bundle:true,write:false,format:'esm'})).outputFiles[0].text;
     const page = await browser.newPage({ viewport: { width: 319, height: 780 } });
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/*', async route => {
         const url = new URL(route.request().url());
         if (url.origin !== 'http://kitchen.test') { await route.abort(); return; }
-        if (url.pathname === '/editor.js') return route.fulfill({contentType:'text/javascript',body:editorBundle});
         if (url.pathname === '/') {
             await route.fulfill({ contentType: 'text/html', body: '<style>body{margin:0;background:#202024;color:#ddd}</style><iframe title="summary" style="width:100%;height:760px;border:0"></iframe>' });
             return;
@@ -101,16 +98,11 @@ try {
     assert.match(await frame.locator('#recall-detail').innerText(), /灯塔铁门露出铜锁/);
     await frame.locator('#recall-diagnostics-wrap > summary').click();
     assert.match(await frame.locator('#recall-diagnostics-log').innerText(), /recall ok line 1/);
-    await view('proofreading');
-    await frame.locator('#proofreading-page').waitFor({ state: 'visible' });
-    await frame.locator('.memory-record-view').waitFor({ state: 'visible' });
-    assert.equal(await frame.locator('#proofreading-page .memory-controls, #proofreading-page input[type="checkbox"]').count(), 0);
-    assert.ok(await frame.locator('#settings-modal').isHidden());
-    assert.equal(await frame.locator('#settings-close, .memory-api, [data-workspace-page], #summary-text-api').count(), 0);
+    assert.equal(await frame.locator('#proofreading-page').count(), 0);
     await view('settings-memory');
     await frame.locator('#settings-modal.active').waitFor();
     assert.ok(await frame.locator('#settings-retention-section').isVisible());
-    assert.ok(await frame.locator('#proofreading-settings-host #proofreading-interval').isVisible());
+    assert.equal(await frame.locator('#proofreading-settings-host, #proofreading-interval').count(), 0);
     assert.ok(await frame.locator('#settings-recall-section').isVisible());
     assert.equal(await frame.locator('#trigger-interval, #trigger-role, #use-vector-boundary, #filter-rules-content, #tab-summary, #tab-agent').count(), 0);
     await frame.locator('#settings-save').click();
@@ -184,25 +176,9 @@ try {
     state.entities.push(twin);
     await deliver(state);
     await frame.getByRole('button',{name:/东门传令官/}).click();
-    await frame.locator('body').evaluate(async (_, entities) => {
-        const {createWorldEditorPanel} = await import('/editor.js');
-        const editor = createWorldEditorPanel({service:{},getIdentity:()=> 'fixture',section:'people'});
-        editor.mount(globalThis.document.getElementById('world-people-editor')); editor.show({version:1,branchId:'主线',entities});
-    },state.entities);
-    for (const width of [319,600]) {
-        await page.setViewportSize({width,height:780});
-        await frame.getByText('编辑人物',{exact:true}).click();
-        await frame.getByRole('button',{name:'编辑名称'}).click();
-        assert.equal(await frame.getByLabel('对象',{exact:true}).inputValue(),twin.id);
-        await frame.getByLabel('名称',{exact:true}).fill('未保存的别名');
-        await frame.getByRole('button',{name:'取消',exact:true}).click();
-        assert.equal(await frame.locator('#archive-person-name').innerText(),'阿棠');
-        assert.ok(await frame.getByText('编辑人物',{exact:true}).evaluate(el => el.ownerDocument.activeElement === el));
-        if (process.env.TK_UI_SHOTS) {
-            await fs.mkdir(process.env.TK_UI_SHOTS,{recursive:true});
-            await page.screenshot({path:path.join(process.env.TK_UI_SHOTS,'人物-'+width+'-档案.png')});
-        }
-    }
+    assert.equal(await frame.locator('#world-people-editor, button:has-text("编辑人物"), button:has-text("编辑名称")').count(), 0);
+    await page.setViewportSize({width:600,height:780});
+    assert.equal(await frame.locator('#archive-person-name').innerText(),'阿棠');
     await frame.locator('#archive-people-back').click();
     assert.ok(await frame.getByRole('button',{name:/东门传令官/}).evaluate(el => el.ownerDocument.activeElement === el));
     await frame.getByRole('button',{name:/西门守卫/}).click();
@@ -263,6 +239,6 @@ try {
     await view('memory');
     await frame.locator('#archive-story').waitFor();
     assert.deepEqual(errors, []);
-    console.log('Verified summary settings, proofreading navigation and direct character profiles with relationship entries.');
+    console.log('Verified summary settings, read-only character profiles with relationship entries and dual-axis views.');
 } finally { await browser.close(); }
 

@@ -40,43 +40,12 @@ try {
     }
     const {page} = await openFixture();
     const frame=page.frameLocator('iframe');
-    const rootPanel=frame.locator('#world-proposals');
-    await rootPanel.waitFor({state:'visible'});
-    assert.equal(await rootPanel.locator('.tk-proposal-row').count(),1);
-    assert.doesNotMatch(await rootPanel.innerText(),/隐藏的幕后首脑|真实身份/);
-    await rootPanel.locator('.tk-proposal-queue > summary').click();
-    await rootPanel.locator('.tk-proposal-row > summary').click();
-    assert.match(await rootPanel.innerText(),/第 2 楼|主角支付五金币/);
-    for (const width of [319,1280]) {
-        await page.setViewportSize({width,height:780});
-        const size=await rootPanel.evaluate(el=>({width:el.clientWidth,scrollWidth:el.scrollWidth}));
-        assert.ok(size.scrollWidth<=size.width,`proposal panel overflows at ${width}px`);
-    }
-    await rootPanel.getByRole('button',{name:'确认写入'}).click();
-    await rootPanel.getByRole('status').filter({hasText:'已保存'}).waitFor();
-    const result=await page.evaluate(()=>globalThis.fixture.read());
-    assert.equal(result.entities.find(item=>item.id==='hero').fields.coins.value,5);
-    assert.equal(result.entities.find(item=>item.id==='smith').fields.coins.value,0);
-    assert.equal(result.entities.find(item=>item.id==='sword').fields.owner.value.entityId,'hero');
-    assert.equal(result.updates[0].reviews.length,3);
-    assert.equal(new Set(result.updates[0].reviews.map(item=>item.eventId)).size,1);
-    assert.equal(result.receipts.at(-1).origins.length,3);
-    if (!await rootPanel.locator('.tk-proposal-queue').evaluate(node=>node.open)) await rootPanel.locator('.tk-proposal-queue > summary').click();
-    await rootPanel.getByText('显示未直接证实或幕后变化（可能涉及剧透）').click();
-    await rootPanel.locator('.tk-proposal-row > summary').click();
-    assert.match(await rootPanel.innerText(),/隐藏的幕后首脑/);
-    await rootPanel.getByRole('button',{name:'拒绝'}).click();
-    await rootPanel.getByLabel('处理说明（可选）').fill('这条推测不成立');
-    await rootPanel.getByRole('button',{name:'拒绝变化'}).click();
-    await rootPanel.getByRole('status').filter({hasText:'已保存'}).waitFor();
-    const rejected=await page.evaluate(()=>globalThis.fixture.read());
-    assert.equal(rejected.updates[0].reviews.at(-1).action,'rejected');
-    assert.equal(rejected.updates[0].reviews.at(-1).reason,'这条推测不成立');
-    assert.equal(rejected.entities.find(item=>item.id==='smith').fields['真实身份'],undefined);
-    assert.deepEqual(await page.evaluate(()=>globalThis.fixture.errors),[]);
+    assert.equal(await frame.locator('#world-proposals').count(), 0);
+    await page.evaluate(() => globalThis.fixture.service.syncTurns(globalThis.fixture.chat));
 
     // Moving unchanged content must not be mistaken for a changed source.
-    const originalBranch=rejected.branchId;
+    const beforeRecovery = await page.evaluate(() => globalThis.fixture.read());
+    const originalBranch = beforeRecovery.branchId;
     await page.evaluate(async()=>{globalThis.fixture.chat.unshift({mes:'更早的开场。',send_date:'opening'});await globalThis.fixture.workspace.open('data');});
     const recovery=frame.locator('#world-recovery');
     await recovery.waitFor({state:'visible'});
@@ -87,8 +56,6 @@ try {
         const size=await frame.locator('#data-page').evaluate(el=>({width:el.clientWidth,scrollWidth:el.scrollWidth}));
         assert.ok(size.scrollWidth<=size.width,`data page overflows at ${width}px`);
     }
-    // Editing the synthetic source makes the already-written trade stale.
-    // Exercise the actual data route, fork before the effect, then switch back.
     await page.evaluate(()=>{globalThis.fixture.chat.shift();globalThis.fixture.chat[1].mes='主角没有购买铁剑。';});
     await recovery.getByRole('button',{name:'重新读取'}).click();
     await recovery.getByRole('status').filter({hasText:'正文来源有变'}).waitFor();
@@ -105,29 +72,9 @@ try {
     await recovery.getByRole('button',{name:'重新读取'}).click();
     assert.equal(await recovery.getByLabel('保留的世界分支').count(),0);
     assert.match(await recovery.innerText(),/已撤销的回执/);
-    const second=await openFixture(), next=second.page.frameLocator('iframe').locator('#world-proposals');
-    await next.waitFor({state:'visible'});
-    await next.locator('.tk-proposal-queue > summary').click();
-    await next.locator('.tk-proposal-row > summary').click();
-    await next.getByRole('button',{name:'修改'}).click();
-    const values=next.getByLabel('新值');
-    await values.nth(0).fill('4');
-    await values.nth(1).fill('4');
-    await next.getByLabel('处理说明（可选）').fill('核对后修改数额');
-    await next.getByRole('button',{name:'确认并保存'}).click();
-    await next.getByRole('alert').filter({hasText:'成交价与原文实际收付不符'}).waitFor();
-    await values.nth(0).fill('5'); await values.nth(1).fill('5');
-    await next.getByRole('button',{name:'确认并保存'}).click();
-    await next.getByRole('status').filter({hasText:'已保存'}).waitFor();
-    const edited=await second.page.evaluate(()=>globalThis.fixture.read());
-    assert.equal(edited.entities.find(item=>item.id==='hero').fields.coins.value,5);
-    assert.equal(edited.entities.find(item=>item.id==='smith').fields.coins.value,0);
-    assert.equal(edited.updates[0].update.proposals[0].value,5);
-    assert.equal(edited.updates[0].reviews[0].proposal.value,5);
-    assert.deepEqual(await second.page.evaluate(()=>globalThis.fixture.errors),[]);
-    const card=await second.page.evaluate(async()=>{const {testCardRoundTrip}=await import('/card.js');return testCardRoundTrip();});
+    const card=await page.evaluate(async()=>{const {testCardRoundTrip}=await import('/card.js');return testCardRoundTrip();});
     assert.deepEqual(card,{exportedNotes:1,containsSetting:false,branchChanged:true,chapter:'灯塔等待来客',recovered:'旧导入章节札记',
         calls:0,rejected:true,activeUnchanged:true,notesAfterRecovery:1,sourcePreserved:true,revisionPreserved:true});
     assert.deepEqual(errors,[]);
-    console.log('Verified isolated workspace, grouped proposal review, in-place world restoration, source conflicts, and actual IndexedDB card/notes round trip.');
+    console.log('Verified isolated workspace without manual proposal review, in-place world restoration, source conflicts, and actual IndexedDB card/notes round trip.');
 } finally { await browser.close(); }

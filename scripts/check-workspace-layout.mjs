@@ -45,7 +45,7 @@ try {
         const workspace = createKitchenWorkspace({});
         globalThis.workspace = workspace;
         const configure = () => workspace.configure({
-            actions: { data() {}, suspense() {}, settings() {}, planner() {}, overview() {}, people() {}, situation() {}, opening() {}, clues() {}, map() {
+            actions: { data() {}, suspense() {}, settings() {}, planner() {}, overview() {}, people() {}, situation() {}, opening() {}, map() {
                 const mount = workspace.getMount('map');
                 if (mount.querySelector('iframe')) return;
                 const frame = globalThis.document.createElement('iframe');
@@ -97,10 +97,10 @@ try {
         assert.ok(await page.locator('.tk-subnav button').filter({hasText:subLabel}).isVisible());
     }
     await page.getByRole('tab', { name: '剧情', exact: true }).click();
-    for (const subLabel of ['总结', '召回', '悬念', '剧情线', '校对']) {
+    for (const subLabel of ['总结', '召回', '悬念']) {
         assert.ok(await page.locator('.tk-subnav button').filter({hasText:subLabel}).isVisible());
     }
-    for (const [route] of [['suspense'],['clues'],['opening'],['planner']]) {
+    for (const [route] of [['suspense'],['opening'],['planner']]) {
         await page.evaluate(route => globalThis.workspace.open(route),route);
         assert.equal(await page.getByRole('button',{name:/设置$/}).count(), 0);
         assert.equal(await page.locator('[data-settings-group=model], [data-settings-group=prompts]').count(),0);

@@ -13,6 +13,7 @@ import { createPlannerSettings } from './settings-view.js';
 import { emptyWorld } from '../world-records/domain.js';
 import { preflightOrderedFloorAgents, renderFloorStatus } from '../../core/floor-status.js';
 import { requireAgent } from '../../core/panel-controls.js';
+import { captureRangeSource } from '../story-summary/data/turn-source.js';
 
 function memoryNoteStore() {
     let rows = [];
@@ -205,7 +206,7 @@ test('9A.3: publishNotes blocks structured, nested array/object, clause, and pun
     assert.match(clean.chapter.text, /客栈账房/);
 });
 
-test('9A.4: serializeFullPayload deeply compacts oversized planningTargets and plotLines under WRITER_BUDGET_CHARS without mutating snap', () => {
+test('9A.4: serializeFullPayload proportionally trims oversized inputs under WRITER_BUDGET_CHARS while preserving all three pillars', () => {
     const hugeKnowledge = Array.from({ length: 40 }, (_, i) => ({
         kind: 'knowledge',
         person: '林深',
@@ -221,25 +222,41 @@ test('9A.4: serializeFullPayload deeply compacts oversized planningTargets and p
         description: `局势描述-${i}-` + '丙'.repeat(3000),
         impact: '丁'.repeat(1500),
         _history: [{ text: '戊'.repeat(1500) }],
-        _developments: ['己'.repeat(1500)],
+        _developments: [{ title: `动态-${i}`, body: '己'.repeat(1500) }],
     }));
     const world = makeWorld(1);
-    const memory = makeMemory({ storyRecords: [...hugeKnowledge, ...hugeSituations] });
-    const chat = makeChat();
-    const snap = plannerSnapshot(world, memory, chat, 'owner-budget');
-    snap.plotLines = Array.from({ length: 20 }, (_, i) => ({
-        title: `剧情线-${i}`,
-        status: 'active',
-        summary: `线摘要-${i}-` + '庚'.repeat(3000),
-        nextFocus: '辛'.repeat(1000),
-        characters: ['林深'],
+    const chat = Array.from({ length: 32 }, (_, idx) => ({
+        mes: idx % 2 === 0 ? `第${idx}楼提问` : `第${idx}楼回复` + '辛'.repeat(idx === 31 ? 8000 : 120),
+        is_user: idx % 2 === 0,
+        name: idx % 2 === 0 ? '你' : '叙述者',
+        send_date: `t-${idx}`,
     }));
-    const originalPlotLineSummaryLen = snap.plotLines[0].summary.length;
+    const memory = makeMemory({
+        summaryHistory: Array.from({ length: 16 }, (_, i) => ({
+            kind: 'batch',
+            startMesId: i * 2,
+            endMesId: i * 2 + 1,
+            roundSource: captureRangeSource(chat, i * 2, i * 2 + 1),
+            summary: `摘要-${i}-` + '庚'.repeat(4000),
+        })),
+        storyRecords: [...hugeKnowledge, ...hugeSituations],
+    });
+    const snap = {
+        ...plannerSnapshot(world, memory, chat, 'owner-budget'),
+        recalledProse: Array.from({ length: 12 }, (_, i) => ({ floor: i, speaker: '林深', text: `召回-${i}-` + '壬'.repeat(3000) })),
+    };
+    const originalFirstRecordLen = snap.records[0].content.length;
 
     const req = prepareWriterRequest(snap, null, 'opening');
     assert.equal(req.mode, 'full');
     assert.ok(JSON.stringify(req.messages).length <= 200000);
-    assert.equal(snap.plotLines[0].summary.length, originalPlotLineSummaryLen);
+    assert.equal(snap.records[0].content.length, originalFirstRecordLen);
+    const sent = JSON.parse(req.messages[1].content);
+    assert.ok(sent.planningTargets.characters.length >= 1);
+    assert.ok(sent.planningTargets.situations.length >= 1);
+    assert.ok(sent.layeredSummaries.length + sent.recentSummaries.length >= 1);
+    assert.ok(sent.recent.length >= 1);
+    assert.ok(sent.recalledProse.length >= 1);
 });
 
 test('9A.5: runtime retries cleanly on snapshot changes, keeps same-snapshot auto-debounce, and rejects manual triggers for UI display', async () => {
@@ -363,4 +380,45 @@ test('9A.6: preflightOrderedFloorAgents blocks missing required agents and warns
     assert.equal(blocked, false);
     assert.equal(blockedAbort, true);
     assert.equal(blockedRendered[0].error.agent, 'update');
+});
+
+test('9A.7: createPlanner invokes recall(snap, signal) and includes recalledProse in writerInput payload without plotLines', async () => {
+    const world = makeWorld(1);
+    const chat = makeChat();
+    const memory = makeMemory({
+        storyRecords: [{ id: 's1', kind: 'situation', title: '城东戒严', status: 'open', description: '夜间封闭', parties: ['巡夜司'] }],
+    });
+    const store = memoryNoteStore();
+    const recallCalls = [];
+    const writeCalls = [];
+    const runtime = createPlanner({
+        snapshot: () => plannerSnapshot(world, memory, chat, 'owner-recall'),
+        store,
+        status: () => {},
+        async recall(snap, signal) {
+            recallCalls.push({ owner: snap.owner, hasSignal: !!signal });
+            return [{ floor: 0, speaker: '铁匠', text: '旧年炉火下藏过半块玉佩。' }];
+        },
+        async write(messages) {
+            writeCalls.push(JSON.parse(messages[1].content));
+            return JSON.stringify({
+                global: {
+                    entities: { characters: [{ target: '林深', commentary: '记住旧玉佩', prediction: '追查出处', suggestion: '核对线索' }] },
+                    dependencies: [],
+                },
+                chapter: {
+                    entities: { situations: [{ target: '城东戒严', commentary: '夜行受阻', prediction: '绕行小道', suggestion: '结合旧闻探路' }] },
+                    dependencies: [],
+                },
+            });
+        },
+    });
+
+    const result = await runtime.prepare();
+    assert.equal(recallCalls.length, 1);
+    assert.equal(recallCalls[0].hasSignal, true);
+    assert.equal(writeCalls.length, 1);
+    assert.equal(writeCalls[0].recalledProse[0].text, '旧年炉火下藏过半块玉佩。');
+    assert.equal('plotLines' in writeCalls[0].planningTargets, false);
+    assert.match(result, /城东戒严/);
 });

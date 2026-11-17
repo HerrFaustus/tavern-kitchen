@@ -15,8 +15,6 @@ import { turnOperations } from './turn-actions.js';
 import { createFloorProcessing } from './turn-processing.js';
 import { renderFloorStatus, resolveFailureRoute } from '../../core/floor-status.js';
 import { createWorldRecoveryPanel } from './recovery-panel.js';
-import { createWorldEditorPanel } from './editor-panel.js';
-import { worldStoryRecords } from './world-story-state.js';
 
 const testSource = { module: 'manual', key: 'stage2', label: 'Stage 2 人工测试' };
 const makeCmd = (state, operations, id = `cmd-${state.version}`) => ({
@@ -219,7 +217,7 @@ test('opening projection persists numeric coins and private secret/rumor/conditi
     assert.equal(state.claims.filter(c => c.status === 'withdrawn' && c.source?.module === 'world-opening').length, 3);
 });
 
-test('turnOperations filters kinds, emits ambiguity/resolvedRefs, creates claims for non-established creates, honors reviewed bypasses and blocks coins', () => {
+test('turnOperations filters kinds, detects ambiguity, auto-downgrades uncertain rows and blocks coins', () => {
     let state = emptyWorld('w-turn', 'main', '清河');
     state = applyCommand(state, makeCmd(state, [
         { type: 'create', id: 'hero', kind: 'person', name: '主角', source: testSource },
@@ -228,6 +226,7 @@ test('turnOperations filters kinds, emits ambiguity/resolvedRefs, creates claims
         { type: 'create', id: 'lin2', kind: 'person', name: '林氏', source: testSource },
         { type: 'create', id: 'jade', kind: 'item', name: '玉佩', source: testSource },
         { type: 'set', entityId: 'jade', field: 'owner', value: { entityId: 'lin1' }, source: testSource },
+        { type: 'set', entityId: 'jade', field: '剧情意义', value: '定情玉佩', source: testSource },
     ])).state;
 
     const source = {
@@ -240,68 +239,52 @@ test('turnOperations filters kinds, emits ambiguity/resolvedRefs, creates claims
         ],
     };
 
-    // Ambiguity metadata + disambiguation via resolvedRefs
+    // Ambiguity detection throws cleanly so turn-processing can skip with warning + verified_noop
     assert.throws(
         () => turnOperations(state, [{ task: 'people', type: 'set', target: '林氏', field: '身份', value: '掌柜', quote: '林氏收下五金币', floor: 1 }], { source, playerName: '主角', effectId: 'ef1', commandId: 'c1' }),
-        err => {
-            assert.equal(err.ambiguity?.ref, '林氏');
-            assert.equal(err.ambiguity?.candidates.length, 2);
-            return true;
-        },
+        err => err.ambiguity?.ref === '林氏' && err.ambiguity?.candidates.length === 2,
     );
-    const resolvedOps = turnOperations(
-        state,
-        [{ task: 'people', type: 'set', target: '林氏', field: '身份', value: '掌柜', quote: '林氏收下五金币', floor: 1 }],
-        { source, playerName: '主角', effectId: 'ef2', commandId: 'c2', resolvedRefs: { 林氏: 'lin1' } },
-    );
-    assert.ok(resolvedOps.some(op => op.type === 'set' && op.entityId === 'lin1' && op.field === '身份'));
 
-    // __create_new__ for homonym + non-established_fact create emits 存在 + 剧情意义 claims
-    const rumoredOps = turnOperations(
-        state,
-        [{ task: 'people', type: 'create', ref: 'boxRef', kind: 'item', name: '锦盒', importance: '一只锦盒', nature: 'rumor', quote: '林氏还提到一只锦盒', floor: 1 }],
-        { source, playerName: '主角', effectId: 'ef3', commandId: 'c3', resolvedRefs: { boxRef: '__create_new__' } },
-    );
-    assert.ok(rumoredOps.some(op => op.type === 'claim' && op.field === '存在' && op.nature === 'rumor'));
-    assert.ok(rumoredOps.some(op => op.type === 'claim' && op.field === '剧情意义' && op.nature === 'rumor'));
-
-    // knownBy enforces person kind (rejects item ref, accepts person id)
-    assert.throws(
-        () => turnOperations(
-            state,
-            [{ task: 'peopleEvolution', type: 'set', target: 'lin1', field: '去向', value: '北门', result: '林氏动身', knownBy: ['玉佩'], quote: '林氏收下五金币', floor: 1 }],
-            { source, playerName: '主角', effectId: 'ef4a', commandId: 'c4a' },
-        ),
-        /知情范围/,
-    );
-    const knownOps = turnOperations(
-        state,
-        [{ task: 'peopleEvolution', type: 'set', target: 'lin1', field: '去向', value: '北门', result: '林氏动身', knownBy: ['lin2'], quote: '林氏收下五金币', floor: 1 }],
-        { source, playerName: '主角', effectId: 'ef4b', commandId: 'c4b' },
-    );
-    assert.deepEqual(knownOps[0].source.knownBy, ['lin2']);
-
-    // reviewed bypasses allow edited non-verbatim quote, priceEdited+positive int trade, and existing item importance, while keeping coins blocked
-    const reviewedOps = turnOperations(
+    // uncertain:true auto-downgrades create & set to hypothesis claim; rejects uncertain trade
+    const uncertainOps = turnOperations(
         state,
         [
-            { task: 'people', type: 'set', target: 'jade', field: 'description', value: '双鱼纹玉佩', quote: '人工复核补充：确认玉佩纹样', floor: 1 },
-            { task: 'overview', type: 'trade', direction: 'buy', counterparty: 'lin1', item: 'jade', price: 6, priceEdited: true, paymentQuote: '人工核对按六金币成交', quote: '人工核对买下玉佩', floor: 1 },
+            { task: 'people', type: 'create', ref: 'boxRef', kind: 'item', name: '锦盒', importance: '一只锦盒', uncertain: true, quote: '林氏还提到一只锦盒', floor: 1 },
+            { task: 'people', type: 'set', target: 'jade', field: '材质', value: '羊脂玉', uncertain: true, quote: '把玉佩交给主角', floor: 1 },
         ],
-        { source, playerName: '主角', effectId: 'ef5', commandId: 'c5', reviewed: true },
+        { source, playerName: '主角', effectId: 'ef3', commandId: 'c3' },
     );
-    assert.ok(reviewedOps.some(op => op.type === 'purchase' && op.price === 6));
+    assert.ok(uncertainOps.some(op => op.type === 'claim' && op.field === '存在' && op.nature === 'hypothesis'));
+    assert.ok(uncertainOps.some(op => op.type === 'claim' && op.field === '材质' && op.nature === 'hypothesis'));
     assert.throws(
         () => turnOperations(
             state,
-            [{ task: 'people', type: 'set', target: 'hero', field: 'coins', value: 99, quote: '人工核对改金币', floor: 1 }],
-            { source, playerName: '主角', effectId: 'ef6', commandId: 'c6', reviewed: true },
+            [{ task: 'overview', type: 'trade', direction: 'buy', counterparty: 'lin1', item: 'jade', price: 5, uncertain: true, paymentQuote: '收下五金币', quote: '把玉佩交给主角', floor: 1 }],
+            { source, playerName: '主角', effectId: 'ef3t', commandId: 'c3t' },
+        ),
+        /交易依据存在疑问/,
+    );
+
+    // Direct coins mutation remains blocked and non-verbatim quotes rejected
+    assert.throws(
+        () => turnOperations(
+            state,
+            [{ task: 'people', type: 'set', target: 'jade', field: 'description', value: '双鱼纹玉佩', quote: '不存在的原文', floor: 1 }],
+            { source, playerName: '主角', effectId: 'ef5', commandId: 'c5' },
+        ),
+        /引文无法在本轮核对/,
+    );
+    assert.throws(
+        () => turnOperations(
+            state,
+            [{ task: 'people', type: 'set', target: 'hero', field: 'coins', value: 99, quote: '林氏收下五金币', floor: 1 }],
+            { source, playerName: '主角', effectId: 'ef6', commandId: 'c6' },
         ),
         /钱包变动须通过主角交易核算/,
     );
 });
 
-test('turn-processing emits verified_noop on zero-op accepted review and floor-status handles inline edit + disambiguation + retry', async t => {
+test('turn-processing warns and emits verified_noop without halting queue, and floor-status exposes zero manual review cards', async t => {
     const chat = [
         { is_user: true, name: '主角', send_date: 'u1', mes: '我看向林氏。' },
         { is_user: false, name: '旁白', send_date: 'a1', mes: '林氏整理好茶具。' },
@@ -318,7 +301,11 @@ test('turn-processing emits verified_noop on zero-op accepted review and floor-s
     ], '初始化'));
 
     let storeObj = {};
-    let retried = false;
+    const warns = [];
+    const originalWarn = console.warn;
+    console.warn = (...args) => warns.push(args);
+    t.after(() => { console.warn = originalWarn; });
+
     const queue = createFloorProcessing({
         read: () => ({ owner: 'queue-s2', playerName: '主角', chat, end: 1 }),
         store: () => storeObj,
@@ -338,62 +325,38 @@ test('turn-processing emits verified_noop on zero-op accepted review and floor-s
                 changes: [{ task: 'people', type: 'create', ref: 'linRef', kind: 'person', name: '林氏', floor: 1, quote: '林氏整理好茶具' }],
             }),
         }),
-        review: {},
         chapter: {},
         status: () => {},
     });
 
-    await assert.rejects(queue.settle(), /有多个同称对象|对象不唯一/);
+    await queue.settle();
     const entry = storeObj.floorWork[1];
-    const [effectId] = Object.keys(entry.review);
-    assert.equal(entry.review[effectId].ambiguity?.ref, 'linRef');
-    assert.ok(entry.review[effectId].ambiguity?.candidates.some(c => c.id === '__create_new__'));
-    assert.equal(resolveFailureRoute({ message: '待核 proposals 未处理' }), 'situation');
+    assert.deepEqual(entry.done, ['people']);
+    assert.equal(entry.warnings?.length, 1);
+    assert.ok(warns.some(args => String(args[0]).includes('自动跳过')));
+    const updated = await service.read();
+    assert.ok(updated.events.some(e => e.title === '自动跳过歧义变化'));
     assert.equal(resolveFailureRoute({ message: '世界版本冲突' }), 'world');
     assert.equal(resolveFailureRoute({ message: '原文来源不一致' }), 'data');
 
-    const { document, window } = createDom();
-    let retryCount = 0;
+    const { document } = createDom();
+    let retries = 0, agents = 0, recoveries = 0;
     const node = renderFloorStatus({
         doc: document,
-        info: { floor: 1, message: entry.review[effectId].reason, error: { message: entry.review[effectId].reason } },
+        info: { floor: 1, message: '请求失败', error: { message: '网络错误' } },
         hasChat: true,
-        entry,
-        readOwner: () => 'queue-s2',
-        isCurrentFailure: () => true,
-        onRetry: async () => {
-            retryCount += 1;
-            retried = true;
-            await queue.settle();
-        },
-        onOpenAgent: () => {},
-        onOpenRecovery: () => {},
-        onSaveFloorWork: async (_source, guard, apply) => {
-            guard();
-            apply(storeObj.floorWork[1]);
-        },
+        onRetry: () => { retries += 1; },
+        onOpenAgent: () => { agents += 1; },
+        onOpenRecovery: () => { recoveries += 1; },
     });
-    const refSelect = node.querySelector('select[data-review-ref="linRef"]');
-    assert.ok(refSelect);
-    setControlValue(refSelect, window, 'lin1');
-    const quoteInput = node.querySelector('input[data-review-field="quote"]');
-    assert.ok(quoteInput);
-    setControlValue(quoteInput, window, '人工核对：确认为已有 lin1');
-    const confirmCheck = node.querySelector('input[data-review-confirmed]');
-    confirmCheck.checked = true;
-    const applyBtn = [...node.querySelectorAll('button')].find(b => b.textContent === '应用修改并重试');
-    applyBtn.click();
-    for (let i = 0; i < 60; i += 1) {
-        if (retried && !storeObj.floorWork[1].review) break;
-        await setImmediate();
-    }
-    assert.equal(retryCount, 1);
-    assert.equal(storeObj.floorWork[1].review, undefined);
-    assert.equal(storeObj.floorWork[1].editedGroups, undefined);
-    assert.equal(storeObj.floorWork[1].resolvedRefs, undefined);
-    const updated = await service.read();
-    assert.ok(updated.receipts.some(r => r.origin?.effectId === effectId));
-    assert.equal(updated.entities.filter(e => e.name === '林氏').length, 2);
+    assert.equal(node.querySelector('.tk-review-card'), null);
+    assert.equal(node.querySelectorAll('select, input, form').length, 0);
+    [...node.querySelectorAll('button')].find(b => b.textContent === '重试本楼').click();
+    [...node.querySelectorAll('button')].find(b => b.textContent === '查看恢复').click();
+    await setImmediate();
+    assert.equal(retries, 1);
+    assert.equal(recoveries, 1);
+    assert.equal(agents, 0);
 });
 
 test('recovery panel previews Schema 4 deletions without crashing and compensates World DB if restoreMemory fails', async t => {
@@ -436,147 +399,4 @@ test('recovery panel previews Schema 4 deletions without crashing and compensate
     const afterFailure = await service.read();
     assert.equal(afterFailure.version, state.version);
     assert.equal(afterFailure.entities.length, 0);
-});
-
-test('editor panel closes manual CRUD: clear_field, merge_entities, delete_entity, resolve claim, coins ledger and story record CRUD', async t => {
-    const storage = createWorldStorage({ indexedDB: new IDBFactory() });
-    t.after(() => storage.close());
-    let owner = 'ed-s2';
-    const service = createWorldService({ storage, getIdentity: () => owner });
-    await service.ensure('手工维护');
-    let base = await service.read();
-    base = (await service.commit(service.command(base, [
-        { type: 'create', id: 'hero', kind: 'person', name: '林晚', source: testSource },
-        { type: 'create', id: 'dup', kind: 'person', name: '晚姑娘', source: testSource },
-        { type: 'set', entityId: 'hero', field: 'coins', value: 15, source: testSource },
-        { type: 'set', entityId: 'hero', field: '身份', value: '学徒', source: testSource },
-        { type: 'set', entityId: 'dup', field: '旧籍', value: '江南', source: testSource },
-        { type: 'claim', id: 'claim-1', entityId: 'hero', field: '称号', value: '司夜使', nature: 'hypothesis', source: testSource },
-    ], '初始化'))).state;
-
-    const { document, window } = createDom('<!doctype html><html><body><section id="world-editor"></section></body></html>');
-    const root = document.getElementById('world-editor');
-    const memorySnapshot = { enabled: true, store: { json: { storyRecords: [] } } };
-    const panel = createWorldEditorPanel({
-        service,
-        getIdentity: () => owner,
-        section: 'situation',
-        getPlayerName: () => '林晚',
-        getMemorySnapshot: () => memorySnapshot,
-    });
-    panel.mount(root);
-    panel.show(base);
-
-    const waitIdle = async () => {
-        for (let i = 0; i < 60; i += 1) {
-            await setImmediate();
-            const alert = root.querySelector('[role="alert"]')?.textContent;
-            if (alert) return { ok: false, message: alert };
-            if (!panel.isEditing()) return { ok: true };
-        }
-        return { ok: false, message: 'timeout' };
-    };
-    const click = text => {
-        const btn = [...root.querySelectorAll('button')].find(b => b.textContent.trim() === text);
-        assert.ok(btn, `Missing button: ${text}`);
-        btn.click();
-    };
-    const setField = (labelText, value) => {
-        const fields = [...root.querySelectorAll('label.tk-world-editor-field')];
-        const field = fields.find(n => (n.querySelector('span')?.textContent.trim() || '') === labelText)
-            || fields.find(n => n.querySelector('span')?.textContent.includes(labelText));
-        assert.ok(field, `Missing field: ${labelText}`);
-        const ctrl = [...field.querySelectorAll('input, select, textarea')].find(n => !n.hidden) || field.querySelector('input, select, textarea');
-        setControlValue(ctrl, window, value);
-    };
-    const checkBox = text => {
-        const field = [...root.querySelectorAll('label.tk-world-editor-field')].find(n => n.textContent.includes(text));
-        assert.ok(field, `Missing checkbox: ${text}`);
-        const box = field.querySelector('input[type="checkbox"]');
-        box.checked = true;
-        box.dispatchEvent(new window.Event('change', { bubbles: true }));
-    };
-    const submit = () => root.querySelector('form.tk-world-editor-form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
-
-    // 1. Generic 设置属性 rejects coins
-    click('设置属性');
-    setField('目标对象', 'hero');
-    setField('属性名（如 身份、owner、location）', '金币');
-    setField('值', '999');
-    submit();
-    assert.equal((await waitIdle()).ok, false);
-    click('取消');
-
-    // 2. 调整余额 ledger updates protagonist coins safely
-    click('调整余额');
-    setField('账户人物', 'hero');
-    setField('调整方式', 'add');
-    setField('金额 / 目标余额（金币）', '5');
-    setField('调整原因（必填）', '清点钱袋');
-    checkBox('确认写入本次金币余额变动');
-    submit();
-    assert.deepEqual(await waitIdle(), { ok: true });
-    assert.equal((await service.read()).entities.find(e => e.id === 'hero').fields.coins.value, 20);
-
-    // 3. 裁决候选 resolves pending claim
-    click('裁决候选（1）');
-    setField('裁决结果', 'accepted');
-    submit();
-    assert.deepEqual(await waitIdle(), { ok: true });
-    assert.equal((await service.read()).entities.find(e => e.id === 'hero').fields['称号'].value, '司夜使');
-
-    // 4. 清空属性 clears non-coins field
-    click('清空属性');
-    setField('目标对象', 'hero');
-    setField('要清空的属性', '身份');
-    submit();
-    assert.deepEqual(await waitIdle(), { ok: true });
-    assert.equal((await service.read()).entities.find(e => e.id === 'hero').fields['身份'], undefined);
-
-    // 5. 合并对象 merges dup -> hero
-    click('合并对象');
-    setField('被合并（将删除）的对象', 'dup');
-    setField('保留并合入的目标对象', 'hero');
-    checkBox('确认不可逆合并并移除被合并对象');
-    submit();
-    assert.deepEqual(await waitIdle(), { ok: true });
-    const afterMerge = await service.read();
-    assert.equal(afterMerge.entities.some(e => e.id === 'dup'), false);
-    assert.equal(afterMerge.entities.find(e => e.id === 'hero').fields['旧籍'].value, '江南');
-
-    // 6. 维护剧情记录 add -> edit -> delete + 删除对象
-    click('维护剧情记录');
-    setField('记录类型', 'situation');
-    setField('标题', '夜间宵禁');
-    setField('具体描述', '城门酉时关闭');
-    setField('影响范围', '清河');
-    submit();
-    assert.deepEqual(await waitIdle(), { ok: true });
-    let records = worldStoryRecords(await service.read(), []);
-    assert.equal(records.length, 1);
-    const createdId = records[0].id;
-
-    click('维护剧情记录');
-    setField('操作类型', 'edit');
-    setField('选择现有记录', createdId);
-    setField('具体描述', '城门改为戌时关闭');
-    submit();
-    assert.deepEqual(await waitIdle(), { ok: true });
-    records = worldStoryRecords(await service.read(), []);
-    assert.equal(records[0].description, '城门改为戌时关闭');
-
-    click('维护剧情记录');
-    setField('操作类型', 'delete');
-    setField('选择现有记录', createdId);
-    checkBox('确认删除该条剧情记录');
-    submit();
-    assert.deepEqual(await waitIdle(), { ok: true });
-    assert.equal(worldStoryRecords(await service.read(), []).length, 0);
-
-    click('删除对象');
-    setField('要删除的对象', 'hero');
-    checkBox('确认永久删除该对象及指向它的引用和候选');
-    submit();
-    assert.deepEqual(await waitIdle(), { ok: true });
-    assert.equal((await service.read()).entities.length, 0);
 });

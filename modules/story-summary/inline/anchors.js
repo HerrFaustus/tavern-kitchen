@@ -1,6 +1,6 @@
 import { calcAtomQuality } from '../vector/llm/atom-quality.js';
 import { memoryPolicy, memoryDigest } from '../data/memory-policy.js';
-import { sameMemory } from '../maintenance/domain.js';
+import { sameMemory } from '../data/memory-json.js';
 
 function text(value, label, max, min = 1) {
     if (typeof value !== 'string' || value.trim().length < min || value.length > max) throw new Error(`场景锚点：${label}无效`);

@@ -19,6 +19,8 @@ scripts/.story-summary-replay-cache/
 
 # Local verification artifacts and previews
 .playwright-cli/
+.impeccable/
+.pnpm-store/
 /output/
 
 .cache/

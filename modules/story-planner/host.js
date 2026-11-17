@@ -6,6 +6,9 @@ import { generateFeatureText, resolveTextApi } from '../text-api/host.js';
 import { createPlanner } from './runtime.js';
 import { createNoteStore } from './storage.js';
 import { assertPlannerPresetReady } from './preset.js';
+import { buildPlannerProseQuery } from './notes.js';
+import { getVectorConfig } from '../story-summary/data/config.js';
+import { recallRawMemory } from '../story-summary/vector/retrieval/raw-recall.js';
 import { subscribeWorldBridge } from '../world-records/bridge.js';
 import { subscribeWorldSources } from '../world-records/sources.js';
 
@@ -21,6 +24,29 @@ export function installPlanner({snapshot, loadSnapshot, isVisible = () => true, 
         scheduleRefresh();
     };
     const writer = createPlanner({snapshot, store:createNoteStore(), status,
+        async recall(snap, signal) {
+            const vectorConfig = getVectorConfig?.();
+            const hiddenThrough = Math.min(snap?.lastSummarizedMesId ?? -1, (snap?.chat?.length || 1) - 1);
+            if (!vectorConfig?.enabled || hiddenThrough < 0) return [];
+            const { queryOverride, focusCharactersOverride } = buildPlannerProseQuery(snap);
+            if (!queryOverride) return [];
+            try {
+                const res = await recallRawMemory(vectorConfig, {
+                    hiddenThrough,
+                    queryOverride,
+                    focusCharactersOverride,
+                    signal,
+                });
+                return (res?.chunks || []).slice(0, 12).map(chunk => ({
+                    floor: chunk.floor,
+                    speaker: chunk.speaker,
+                    text: chunk.text,
+                }));
+            } catch (error) {
+                if (error?.name === 'AbortError') throw error;
+                return [];
+            }
+        },
         async write(messages,signal) {
             const preset = await resolveTextApi('planner');
             assertPlannerPresetReady(preset);

@@ -8,7 +8,6 @@ import { prepareSummaryResult } from '../story-summary/generate/summary-result.j
 import { projectFloorChanges } from '../story-summary/floor-summary.js';
 import { readSummaryPackageData, prepareImportedSummary } from '../story-summary/data/summary-import.js';
 import { applyCharacterAliasUpdates, canonicalizeIncrementalSummaryData } from '../story-summary/data/character-aliases.js';
-import { editMemoryBatch, restoreMaintenance } from '../story-summary/maintenance/domain.js';
 
 const scene = { id: 'scene', kind: 'scene', location: '渡口', situation: '等待船只', participants: ['阿林'], tension: '', pendingBeat: '信使回来' };
 test('shared profiles separate social roles, physical state, mood, competence and actual possession', t => {
@@ -70,18 +69,6 @@ test('suspense book shows every open clue and authoritative closures, and clears
     assert.match(parent.textContent, /第 5–7 楼/);
     snapshot.invalidFrom = 4; view.show(world); assert.doesNotMatch(parent.textContent, /密信/);
     view.reset(); assert.equal(parent.textContent, '');
-});
-test('existing maintenance can correct knowledge and close plans atomically, and undo its correction', () => {
-    const before = { json: { storyRecords: start() }, atoms: [] };
-    const result = editMemoryBatch(before, [
-        { collection: 'storyRecords', key: 'p1', kind: 'edit', patch: { status: 'done', reason: '已送达' } },
-        { collection: 'storyRecords', key: 'k1', kind: 'edit', patch: { certainty: 'known', content: '信使仍在送信', evidence: '收到信使回信' } },
-    ], 3);
-    assert.equal(result.memory.json.storyRecords.find(record => record.id === 'p1').status, 'done');
-    assert.deepEqual(restoreMaintenance(result.memory, [{ operations: result.results.map(item => ({ changes: item.changes })) }]), before);
-    assert.throws(() => editMemoryBatch(before, [{ collection: 'storyRecords', key: 'p1', kind: 'edit', patch: { status: 'done' } }], 3));
-    assert.throws(() => editMemoryBatch(before, [{ collection: 'storyRecords', key: 'clock', kind: 'edit', patch: { presence: 'present' } }], 3));
-    assert.equal(before.json.storyRecords.find(record => record.id === 'p1').status, 'open');
 });
 test('one summary validates observations, preserves IDs on reschedule/closure and undoes the entire batch', () => {
     const before = { storyRecords: start() };

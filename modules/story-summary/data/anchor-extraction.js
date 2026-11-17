@@ -1,5 +1,5 @@
 import { assertMemoryWritable, commitSummaryMemory, publishSummaryMemory, readSummaryMemory } from './memory-commit.js';
-import { sameMemory } from '../maintenance/domain.js';
+import { sameMemory } from './memory-json.js';
 import { getContext } from '../../../../../../extensions.js';
 
 // A short-lived extraction draft. No timers and no partial writes during model requests.

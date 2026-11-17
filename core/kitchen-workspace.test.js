@@ -35,7 +35,8 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     assert.equal(document.querySelectorAll('[role="tab"]').length, 6);
     assert.equal(document.querySelector('[role="tab"]').textContent, '主角');
     assert.equal(document.querySelector('[aria-selected="true"]').textContent, '剧情');
-    assert.equal(document.querySelector('[data-route="clues"]').textContent, '剧情线');
+    assert.equal(document.querySelector('[data-route="clues"]'), null);
+    assert.equal(document.querySelector('[data-route="proofreading"]'), null);
     await workspace.open('memory');
     await setImmediate();
     assert.deepEqual(calls, ['memory']);
@@ -101,14 +102,8 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     assert.equal(getKitchenMount('summaries'), getKitchenMount('memory'));
     await workspace.open('suspense');
     assert.equal(document.querySelector('[aria-selected="true"]').textContent, '剧情');
-    assert.equal(document.querySelector('[data-route="clues"]').textContent, '剧情线');
     assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '悬念');
     assert.notEqual(getKitchenMount('suspense'), getKitchenMount('memory'));
-    await workspace.open('proofreading');
-    assert.equal(document.querySelector('[aria-selected="true"]').textContent, '剧情');
-    assert.equal(document.querySelector('[data-route="clues"]').textContent, '剧情线');
-    assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '校对');
-    assert.equal(getKitchenMount('proofreading'), getKitchenMount('memory'));
     await workspace.open('recall');
     assert.equal(document.querySelector('[aria-selected="true"]').textContent, '剧情');
     assert.equal(document.querySelector('.tk-subnav [aria-pressed="true"]').textContent, '召回');

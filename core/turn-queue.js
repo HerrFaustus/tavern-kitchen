@@ -23,22 +23,30 @@ export function createTurnQueue({ read, tasks, complete, execute, status = () =>
         const current = () => active === job && read().owner === job.owner && !signal.aborted;
         const interrupted = new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), {once: true}));
         const work = async () => {
-            for (let floor = 0; current() && floor <= read().end; floor++) {
+            const limitFor = (snapshot, group) => (group === 'simulation'
+                ? (snapshot.simulationEnd ?? snapshot.end)
+                : (snapshot.updateEnd ?? snapshot.end));
+            const maxEnd = () => {
+                const snapshot = read();
+                return Math.max(snapshot.simulationEnd ?? snapshot.end ?? -1, snapshot.updateEnd ?? snapshot.end ?? -1);
+            };
+            for (let floor = 0; current() && floor <= maxEnd(); floor++) {
                 const { chat } = read();
                 if (!isNarrativeReply(chat[floor])) continue;
                 const start = chat[floor - 1]?.is_user ? floor - 1 : floor;
                 const source = captureRangeSource(chat, start, floor);
-                const guard = () => {
-                    signal.throwIfAborted();
-                    if (!current() || floor > read().end || !isRangeSourceCurrent(source, read().chat)) throw new Error('聊天或选定回复已改变');
-                };
                 const steps = tasks();
-                for (const group of ['update', 'simulation', 'review', 'chapter']) {
+                for (const group of ['simulation', 'update', 'chapter']) {
+                    if (floor > limitFor(read(), group)) continue;
                     const pending = steps.filter(step => step.group === group && !complete(source, step));
                     if (!pending.length) continue;
                     const check = () => {
-                        guard();
-                        if (pending.some(step => !tasks().some(live => live.key === step.key))) throw new Error('功能已关闭');
+                        signal.throwIfAborted();
+                        const live = read();
+                        if (!current() || floor > limitFor(live, group) || !isRangeSourceCurrent(source, live.chat)) {
+                            throw new Error('聊天或选定回复已改变');
+                        }
+                        if (pending.some(step => !tasks().some(item => item.key === step.key))) throw new Error('功能已关闭');
                         return true;
                     };
                     try {

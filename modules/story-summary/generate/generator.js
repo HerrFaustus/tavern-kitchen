@@ -14,8 +14,6 @@ import {
 } from "../data/store.js";
 import { commitSummaryMemory, readSummaryMemory, waitForMemoryCommit, getMemoryCommitState } from '../data/memory-commit.js';
 import { memorySaveError } from '../data/memory-copy.js';
-import { panelEnabled } from '../../../core/panel-policy.js';
-import { plotLinePrompt, readPlotLines } from '../../story-state/plot-lines.js';
 import { prepareMemoryTags } from '../data/memory-tags.js';
 import { SUMMARY_FEEDBACK_COPY } from '../feedback-copy.js';
 import { summaryFailureReason } from '../summary-failure.js';
@@ -29,9 +27,7 @@ import { applyTextFilterRules } from '../data/text-filter-rules.js';
 import { getTextFilterRules } from '../data/config.js';
 import { memoryPolicy } from '../data/memory-policy.js';
 import { getSummarySourceEnd } from './source-boundary.js';
-import { normalizeSummaryDelayFloors } from '../data/summary-delay.js';
 import { prepareSummaryResult } from './summary-result.js';
-import { notifySummaryCommitted } from '../maintenance/notification.js';
 import { getChatIdentity } from '../data/chat-identity.js';
 import { prepareMemorySources, assertMemorySources, validateMemorySources, deliverMemorySources } from '../../world-records/turn-runtime.js';
 import { prepareInvolvement } from '../../story-state/involvement.js';
@@ -167,7 +163,7 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
     }
     const lastSummarized = store?.lastSummarizedMesId ?? -1;
     const maxPerRun = config.trigger?.maxPerRun || 100;
-    const delayFloors = normalizeSummaryDelayFloors(config.trigger?.delayFloors);
+    const delayFloors = 0;
     const filterRules = structuredClone(getTextFilterRules());
     const slice = buildIncrementalSlice(mesId, lastSummarized, maxPerRun, delayFloors, filterRules);
 
@@ -190,7 +186,6 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
     try {
         preparedSources = await prepareMemorySources(lastSummarized + 1, slice.endMesId, { unified: true });
         raw = await generateSummary({
-            linePrompt: plotLinePrompt(store.summaryHistory, preparedSources?.updateContext?.world?.storyRecords ?? store.json?.storyRecords),
             existingSummary,
             existingFacts,
             newHistoryText: slice.text,
@@ -296,7 +291,6 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
         draw: control.draw && livePreferences?.encounterFrequency !== 'off' }, slice.endMesId,
         ambientContext.world.storyRecords.filter(record => record.kind === 'situation').map(record => record.id), ambientContext.world.entities);
     Object.assign(next.storySummary.summaryHistory.at(-1), { ...(involvement.length && { involvement }), ...(ambient && { ambient }), summary: narrativeSummary,
-        ...((decoded.plotLines?.length && panelEnabled('clues')) ? {plotLines:readPlotLines(decoded.plotLines,narrativeSummary)} : {}),
         memoryTags, ...(!preparedSources && { roundSource }), ...(worldUpdate && { worldUpdate }) });
 
     onProgress?.({ stage: 'saving' });
@@ -326,9 +320,6 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
 
     onProgress?.({ stage: 'followup' });
     xbLog.info(MODULE_ID, `总结完成，已更新至 ${slice.endMesId + 1} 楼`);
-    if (!signal?.aborted && getChatIdentity(getContext()) === targetIdentity) {
-        notifySummaryCommitted({ chatId: targetChatId, identity: targetIdentity, start: lastSummarized + 1, cutoff: slice.endMesId });
-    }
 
     if (parsed.factUpdates?.length) {
         xbLog.info(MODULE_ID, `Facts 更新: ${parsed.factUpdates.length} 条`);

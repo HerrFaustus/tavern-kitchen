@@ -31,7 +31,7 @@ function syncNativeControls(target) {
 export const KITCHEN_TABS = [['overview', '主角'], ['world', '世界'], ['memory', '剧情'], ['planner', '编剧'], ['settings', '设置'], ['data', '数据']];
 export const KITCHEN_ROUTES = {
     overview: [['overview', '主角']],
-    memory: [['memory', '总结'], ['recall', '召回'], ['suspense', '悬念'], ['clues', '剧情线'], ['proofreading', '校对']],
+    memory: [['memory', '总结'], ['recall', '召回'], ['suspense', '悬念']],
     world: [['people', '人物'], ['map', '地图'], ['situation', '局势'], ['opening', '世界生成']],
     planner: [['planner', '编剧']],
     settings: [['settings', 'API'], ['settings-memory', '剧情与召回'], ['settings-world', '世界与推演']],
@@ -49,7 +49,7 @@ const routeAliases = new Map([
 const canonicalRoute = id => routeAliases.get(id) || id;
 const parentOf = id => KITCHEN_TABS.find(([key]) => KITCHEN_ROUTES[key].some(([route]) => route === id))?.[0];
 const worldTabs = new Set(['map', 'agent-api', 'settings']);
-const memoryTabs = new Set(['data', 'memory', 'recall', 'proofreading', 'situation', 'people', 'relations', 'settings-memory']);
+const memoryTabs = new Set(['data', 'memory', 'recall', 'situation', 'people', 'relations', 'settings-memory']);
 export const getKitchenMount = id => workspace?.getMount(id) ?? null;
 export const openKitchenTab = id => workspace?.open(id);
 export const closeKitchenWorkspace = () => workspace?.close();

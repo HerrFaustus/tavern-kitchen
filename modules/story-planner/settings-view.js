@@ -1,6 +1,5 @@
 const ENTITY_GROUPS = [
     ['characters', '人物'],
-    ['plotLines', '剧情线'],
     ['situations', '局势'],
 ];
 const NOTE_PARTS = [

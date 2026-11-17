@@ -29,7 +29,7 @@ const shims = {
     'extensions.js': 'export const getContext = () => globalThis.__keylessGroupTest.context;',
     'debug-core.js': 'export const xbLog = { isEnabled: () => false, info() {}, warn() {}, error() {}, debug() {} };',
     'modules/story-summary/data/config.js': 'export const getVectorConfig = () => globalThis.__keylessGroupTest.vectorConfig; export const getTextFilterRules = () => [];',
-    'modules/story-summary/data/store.js': 'export const getPublishedSummaryStore = () => globalThis.__keylessGroupTest.store; export const isFloorMemoryOmitted = () => false;',
+    'modules/story-summary/data/store.js': 'export const getPublishedSummaryStore = () => globalThis.__keylessGroupTest.store; export const getReadOnlyPublishedSummaryStore = () => globalThis.__keylessGroupTest.store; export const isFloorMemoryOmitted = () => false;',
     'modules/text-api/call-stats.js': 'export const featureCalls = { start: () => () => {} };',
 };
 

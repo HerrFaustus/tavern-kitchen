@@ -1,4 +1,4 @@
-﻿// ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
 // Story Summary - Chunk Builder
 // 标准 RAG chunking: ~200 tokens per chunk
 // ═══════════════════════════════════════════════════════════════════════════
@@ -22,8 +22,11 @@ import {
 } from '../llm/embedding-failure.js';
 import { xbLog } from '../../../../core/debug-core.js';
 import { chunkMessage as chunkRawMessage } from './chunk-text.js';
-import { isFloorMemoryOmitted } from '../../data/store.js';
-const chunkMessage = (floor, message) => isFloorMemoryOmitted(floor) ? [] : chunkRawMessage(floor, message);
+import { floorRecallMessage } from '../../data/turn-bounds.js';
+import { getReadOnlyPublishedSummaryStore, isFloorMemoryOmitted } from '../../data/store.js';
+const chunkMessage = (floor, message) => isFloorMemoryOmitted(floor)
+    ? []
+    : chunkRawMessage(floor, floorRecallMessage(floor, message, getReadOnlyPublishedSummaryStore()));
 import { inputDigest } from '../utils/vector-input-digest.js';
 import { createAbortError } from '../../../../shared/common/abort-utils.js';
 import { trackVectorActivity } from '../runtime/vector-activity.js';

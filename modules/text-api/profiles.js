@@ -3,8 +3,8 @@ import { normalizeAgentSettings, DEFAULT_MODEL_CONFIGS } from '../agent-core/con
 import { resolveApiBaseUrl } from '../../shared/common/openai-url-utils.js';
 
 export const PROFILE_FEATURES = Object.freeze({
-    summary: '总结', planner: '编剧', memory: '校对',
-    world: '世界与地图后台', opening:'世界生成', l0: '召回语义整理', embedding: '向量嵌入', rerank: '召回重排',
+    summary: '总结', planner: '编剧',
+    world: '后台推演', opening: '世界生成', l0: '召回语义整理', embedding: '向量嵌入', rerank: '召回重排',
 });
 export function acceptsProfile(feature, preset) {
     const kind = preset.kind || 'text';
@@ -30,7 +30,7 @@ export function upgradeProfiles(settings, agent, vector = {}) {
         next.presets.push(createPreset(id, unique('后台 · ' + name), {
             ...config, provider: preset.provider, temperature: config.sendTemperature === false ? null : config.temperature,
         }));
-        if (name === old.currentPresetName) next.bindings.world = next.bindings.memory = id;
+        if (name === old.currentPresetName) next.bindings.world = next.bindings.summary = id;
         for (const [provider, alternate] of Object.entries(preset.modelConfigs)) {
             if (provider === preset.provider) continue;
             const defaults = DEFAULT_MODEL_CONFIGS[provider];

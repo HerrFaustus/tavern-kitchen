@@ -23,6 +23,7 @@ const shims = {
 };
 const bundled = await build({
     stdin: { resolveDir: root, contents: `export * from './modules/story-summary/vector/retrieval/raw-recall.js';
+        export { floorRecallMessage } from './modules/story-summary/data/turn-bounds.js';
         export { chunkMessage } from './modules/story-summary/vector/pipeline/chunk-text.js';
         export { db, metaTable, chunkVectorsTable, eventVectorsTable, stateVectorsTable } from './modules/story-summary/data/db.js';` },
     bundle: true, write: false, format: 'esm', platform: 'node',
@@ -133,4 +134,42 @@ test('summary-only injection keeps character relevance without retrieving old pr
     assert.deepEqual(result.chunks, []);
     assert.deepEqual(result.focusCharacters, ['Alice']);
     assert.equal(host.embeddings.length, 0);
+});
+
+test('raw recall indexes settled floor background prose via floorRecallMessage and excludes unsettled future simulations', async () => {
+    host.store = {
+        lastSummarizedMesId: 1,
+        json: {},
+        summaryHistory: [],
+        floorSimulations: {
+            1: { floor: 1, text: 'secretgate hidden behind cellar' },
+            3: { floor: 3, text: 'futureplot unsettled secret' },
+        },
+    };
+    const settledMsg = mod.floorRecallMessage(1, host.context.chat[1], host.store);
+    const unsettledMsg = mod.floorRecallMessage(3, host.context.chat[3], host.store);
+    assert.match(settledMsg.mes, /\[后台正文\]/);
+    assert.match(settledMsg.mes, /secretgate hidden behind cellar/);
+    assert.doesNotMatch(unsettledMsg.mes, /futureplot/);
+
+    const chunk = mod.chunkMessage(1, settledMsg)[0];
+    await mod.chunkVectorsTable.put({
+        chatId: 'raw-test',
+        chunkId: chunk.chunkId,
+        fingerprint: 'test:model',
+        sourceHash: inputDigest('chunk', chunk.text),
+        vector: new Float32Array([1, 0]).buffer,
+        dims: 2,
+    });
+    const matched = await mod.recallRawMemory({ ...config, embeddingApi: {} }, {
+        hiddenThrough: 1,
+        queryOverride: 'secretgate',
+    });
+    assert.ok(matched.chunks.some(c => c.floor === 1 && c.text.includes('secretgate hidden behind cellar')));
+
+    const leaked = await mod.recallRawMemory({ ...config, embeddingApi: {} }, {
+        hiddenThrough: 3,
+        queryOverride: 'futureplot',
+    });
+    assert.equal(leaked.chunks.some(c => c.text.includes('futureplot')), false);
 });

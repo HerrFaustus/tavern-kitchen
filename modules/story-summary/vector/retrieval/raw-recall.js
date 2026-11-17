@@ -2,6 +2,7 @@ import { getContext } from '../../../../../../../extensions.js';
 import { getPublishedSummaryStore } from '../../data/store.js';
 import { memoryTagsByFloor } from '../../data/memory-tags.js';
 import { captureRangeSource, isRangeSourceCurrent, messageCandidates } from '../../data/turn-source.js';
+import { floorRecallMessage } from '../../data/turn-bounds.js';
 import { chunkMessage } from '../pipeline/chunk-text.js';
 import { cleanRecallMessageText } from '../utils/text-filter.js';
 import { getTokenizerSnapshot, injectEntities } from '../utils/tokenizer.js';
@@ -16,19 +17,25 @@ import { throwIfSignalAborted } from '../../../../shared/common/abort-utils.js';
 import { recordRecallFallback, recordRecallObservation, recordRecallRuntimeProgress } from '../../recall-diagnostics.js';
 
 export async function recallRawMemory(vectorConfig, { hiddenThrough, focusOnly = false, excludeLastAi = false, signal = null,
-    diagnostics, withQueryEmbedding } = {}) {
+    diagnostics, withQueryEmbedding, queryOverride = '', focusCharactersOverride = null } = {}) {
     const { chatId, chat = [] } = getContext();
     const store = getPublishedSummaryStore();
     const empty = { chunks: [], mode: 'none', reranked: false, rerankStatus: 'disabled', focusCharacters: [], stats: { documents: 0, candidates: 0 } };
     if (!chatId || !chat.length || hiddenThrough < 0) return empty;
     if (excludeLastAi && !chat.at(-1)?.is_user) hiddenThrough = Math.min(hiddenThrough, chat.length - 2);
     const queryMessages = chat.slice(0, excludeLastAi && !chat.at(-1)?.is_user ? -1 : undefined).slice(-3);
-    const query = boundRecallEmbeddingSegment(queryMessages.map(message => `${message.name || (message.is_user ? '用户' : '角色')}：${cleanRecallMessageText(message.mes || '')}`).join('\n'));
+    const rawQuery = typeof queryOverride === 'string' && queryOverride.trim()
+        ? queryOverride.trim()
+        : queryMessages.map(message => `${message.name || (message.is_user ? '用户' : '角色')}：${cleanRecallMessageText(message.mes || '')}`).join('\n');
+    const query = boundRecallEmbeddingSegment(rawQuery);
     if (!query.trim()) return empty;
     const vocabulary = getRawEntityVocabulary(store, getContext());
     injectEntities(vocabulary.lexicon, vocabulary.displayMap, vocabulary.blockedTerms);
     const tokenizer = getTokenizerSnapshot();
-    const focusCharacters = [...new Set(tokenizer.extractEntities(query))];
+    const extraFocus = Array.isArray(focusCharactersOverride)
+        ? focusCharactersOverride.map(item => String(item || '').trim()).filter(Boolean)
+        : [];
+    const focusCharacters = [...new Set([...extraFocus, ...tokenizer.extractEntities(query)])];
     const queryPreview = query.slice(0, 180);
     if (focusOnly) return { ...empty, mode: 'focus-only', reranked: false, rerankStatus: 'disabled', queryPreview, focusCharacters };
     const source = captureRangeSource(chat, 0, chat.length - 1);
@@ -41,7 +48,7 @@ export async function recallRawMemory(vectorConfig, { hiddenThrough, focusOnly =
     const omitted = new Set((store?.summaryHistory || []).filter(batch => batch.floorEntry?.omitted).map(batch => batch.floorEntry.floor));
     const tags = memoryTagsByFloor(store, chat);
     const documents = chat.slice(0, hiddenThrough + 1).flatMap((message, floor) => omitted.has(floor) ? []
-        : chunkMessage(floor, message).map(chunk => ({ ...chunk, tags: tags.get(floor) || [], candidate: messageCandidates(message).selected })));
+        : chunkMessage(floor, floorRecallMessage(floor, message, store)).map(chunk => ({ ...chunk, tags: tags.get(floor) || [], candidate: messageCandidates(message).selected })));
     if (!documents.length) return empty;
     const normalizedQuery = query.normalize('NFKC').toLowerCase();
     const tagTerms = [...new Set([...tags.values()].flat())].filter(term => normalizedQuery.includes(term.normalize('NFKC').toLowerCase()));

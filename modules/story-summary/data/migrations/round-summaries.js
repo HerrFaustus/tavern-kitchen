@@ -1,6 +1,6 @@
 import { createSummaryBaseline } from '../summary-history.js';
 import { applySummaryUndo } from '../summary-undo.js';
-import { restoreMaintenance } from '../../maintenance/domain.js';
+import { restoreLegacyMaintenance as restoreMaintenance } from '../legacy-maintenance.js';
 import { parseEventRange } from '../../vector/retrieval/temporal-turn-carrier.js';
 
 // Project the old ledger at every reversible boundary. A later edit to an old

@@ -17,25 +17,26 @@ const migrated = () => upgradeProfiles(migrateLegacySettings({}), legacyAgent, {
 });
 test('three Agent bindings preserve conflicting legacy choices until saved, and an explicit clear survives reopening', () => {
     const config = migrated(), id = config.bindings.world;
-    config.bindings.opening = null;
-    assert.equal(resolveFeaturePreset(config,'opening').id,id);
+    config.bindings.opening = 'summary-default';
+    assert.equal(resolveFeaturePreset(config, 'opening').id, 'summary-default');
     const previous = structuredClone(config);
     assert.equal(readAgentBinding(config, 'update').conflict, true);
     assert.deepEqual(config, previous);
     const unified = applyPresetAction(config, 'library', {type:'bind-agent', agent:'update', id});
     assert.equal(readAgentBinding(unified,'update').id,id);
-    for (const consumer of ['summary','memory','opening']) assert.equal(resolveFeaturePreset(unified,consumer).id,id);
+    for (const consumer of ['summary', 'opening']) assert.equal(resolveFeaturePreset(unified, consumer).id, id);
     const cleared = applyPresetAction(unified,'library',{type:'bind-agent',agent:'update',id:''});
     assert.throws(() => resolveFeaturePreset(cleared,'opening'));
     assert.equal(readAgentBinding(cleared,'simulation').id,id);
     assert.throws(() => applyPresetAction(config,'library',{type:'bind-agent',agent:'update',id:config.bindings.embedding}));
 });
 
-test('upgrade keeps old profiles, binds each former consumer, and is idempotent', () => {
+test('upgrade keeps old profiles, binds update and simulation consumers, and is idempotent', () => {
     const settings = migrated();
-    assert.equal(settings.bindings.summary, 'summary-default');
+    assert.equal(settings.bindings.summary, 'agent-1');
+    assert.equal(settings.bindings.world, 'agent-1');
     assert.equal(resolveFeaturePreset(settings, 'world').model, 'old-model');
-    assert.equal(resolveFeaturePreset(settings, 'memory').apiKey, 'fake-secret');
+    assert.equal(resolveFeaturePreset(settings, 'summary').apiKey, 'fake-secret');
     assert.equal(resolveFeaturePreset(settings, 'embedding').model, 'embed-old');
     assert.deepEqual(upgradeProfiles(settings, {}), settings);
     assert.equal(resolveAgentProfile(settings, 'world').sendTemperature, false);

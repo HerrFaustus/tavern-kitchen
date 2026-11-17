@@ -67,3 +67,43 @@ test('a stale chat or active host generation cannot start paid maintenance', asy
     const busy = fixture({ isHostGenerating: () => true }); await busy.ui.maybeRunDelayedVectorMaintenance('current');
     assert.deepEqual(busy.calls, ['scheduled']);
 });
+
+test('reconcileSettledFloorChunks rewinds indexed raw chunks when settled floor has simulation prose and skips missing ones', async () => {
+    const ops = [];
+    let meta = { chatId: 'current', lastChunkFloor: 3 };
+    let store = {
+        lastSummarizedMesId: 1,
+        floorSimulations: {
+            1: { floor: 1, text: '后厨暗门悄然合拢。' },
+            2: { floor: 2, text: '   ' },
+        },
+    };
+    const api = entry(['reconcileSettledFloorChunks'], {
+        getPublishedSummaryStore: () => store,
+        getContext: () => ({ chatId: 'current' }),
+        removeDocumentsByFloor: (floor, chatId) => ops.push(['remove-doc', floor, chatId]),
+        getMeta: async () => meta,
+        runVectorWriteTask: async (_opts, run) => { ops.push(['task', _opts.kind]); return await run(); },
+        VECTOR_WRITE_SCOPES: { CONSISTENCY: 'consistency' },
+        deleteChunksAtFloor: async (chatId, floor) => ops.push(['delete-chunks', chatId, floor]),
+        updateMeta: async (chatId, patch) => { meta = { ...meta, ...patch }; ops.push(['update-meta', chatId, patch]); },
+        getVectorConfig: () => ({ enabled: true }),
+        scheduleAutoL0Backfill: (delay, chatId) => ops.push(['schedule-backfill', delay, chatId]),
+        AUTO_L0_BACKFILL_DELAY_MS: 5000,
+    });
+
+    await api.reconcileSettledFloorChunks(1);
+    assert.deepEqual(structuredClone(ops), [
+        ['remove-doc', 1, 'current'],
+        ['task', 'settle-floor-sim-chunks'],
+        ['delete-chunks', 'current', 1],
+        ['update-meta', 'current', { lastChunkFloor: 0 }],
+        ['schedule-backfill', 5000, 'current'],
+    ]);
+    assert.equal(meta.lastChunkFloor, 0);
+
+    ops.length = 0;
+    await api.reconcileSettledFloorChunks(2);
+    await api.reconcileSettledFloorChunks(0);
+    assert.deepEqual(ops, []);
+});
