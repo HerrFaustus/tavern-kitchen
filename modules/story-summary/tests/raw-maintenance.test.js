@@ -68,7 +68,7 @@ test('a stale chat or active host generation cannot start paid maintenance', asy
     assert.deepEqual(busy.calls, ['scheduled']);
 });
 
-test('reconcileSettledFloorChunks rewinds indexed raw chunks when settled floor has simulation prose and skips missing ones', async () => {
+test('reconcileSettledFloorChunks hides settled floors before sim-chunk rewinds and refreshes pre-send stats', async () => {
     const ops = [];
     let meta = { chatId: 'current', lastChunkFloor: 3 };
     let store = {
@@ -80,7 +80,11 @@ test('reconcileSettledFloorChunks rewinds indexed raw chunks when settled floor 
     };
     const api = entry(['reconcileSettledFloorChunks'], {
         getPublishedSummaryStore: () => store,
-        getContext: () => ({ chatId: 'current' }),
+        getContext: () => ({ chatId: 'current', chat: [{}, {}, {}, {}] }),
+        refreshEntityLexiconAndWarmup: () => ops.push(['warmup']),
+        applyHideState: async options => ops.push(['hide', options]),
+        sendFrameBaseData: async (_store, totalFloors) => ops.push(['base', totalFloors]),
+        frameReady: false,
         removeDocumentsByFloor: (floor, chatId) => ops.push(['remove-doc', floor, chatId]),
         getMeta: async () => meta,
         runVectorWriteTask: async (_opts, run) => { ops.push(['task', _opts.kind]); return await run(); },
@@ -92,8 +96,11 @@ test('reconcileSettledFloorChunks rewinds indexed raw chunks when settled floor 
         AUTO_L0_BACKFILL_DELAY_MS: 5000,
     });
 
+    // No open frame: still hide and warm up before touching vector chunks.
     await api.reconcileSettledFloorChunks(1);
     assert.deepEqual(structuredClone(ops), [
+        ['warmup'],
+        ['hide', { full: false }],
         ['remove-doc', 1, 'current'],
         ['task', 'settle-floor-sim-chunks'],
         ['delete-chunks', 'current', 1],
@@ -102,8 +109,22 @@ test('reconcileSettledFloorChunks rewinds indexed raw chunks when settled floor 
     ]);
     assert.equal(meta.lastChunkFloor, 0);
 
+    // An open summary page receives fresh header counters after the hide settles.
+    api.frameReady = true;
     ops.length = 0;
     await api.reconcileSettledFloorChunks(2);
+    assert.deepEqual(structuredClone(ops), [
+        ['warmup'],
+        ['hide', { full: false }],
+        ['base', 4],
+    ]);
+
+    // A settled floor whose simulation text is blank still completes hiding.
+    ops.length = 0;
     await api.reconcileSettledFloorChunks(0);
-    assert.deepEqual(ops, []);
+    assert.deepEqual(structuredClone(ops), [
+        ['warmup'],
+        ['hide', { full: false }],
+        ['base', 4],
+    ]);
 });

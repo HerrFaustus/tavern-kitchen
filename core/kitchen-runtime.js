@@ -1,6 +1,4 @@
 import { floorTasks, installFloorHost } from './floor-host.js';
-import { getUpdateAndSimulationBounds } from '../modules/story-summary/data/turn-bounds.js';
-import { isRangeSourceCurrent } from '../modules/story-summary/data/turn-source.js';
 import { createKitchenCards } from '../modules/kitchen-data/card.js';
 import { createArchiveCleanup } from '../modules/kitchen-data/archive-cleanup.js';
 // 酒馆后厨 0.1 — Based on LittleWhiteBox by biex.
@@ -216,22 +214,6 @@ async function startWorld() {
     removeWorldGeneration = installWorldAuthorityGeneration({ getContext, prepare: (query, type) => {
         const tasks = floorTasks(settings).map(step => step.key).filter(key => !['memory','chapter'].includes(key));
         return tasks.length ? worldArchive.prepareInjection(query, type, tasks) : '';
-    }, prepareSimulation: type => {
-        const snapshot = memory?.getFloorSummarySnapshot?.(true);
-        const store = snapshot?.store, chat = snapshot?.chat || [];
-        if (!snapshot?.enabled || !store || !chat.length || snapshot.invalidFrom != null || store.summaryInvalid || store.sourceRollbackFromFloor != null) return '';
-        const ceiling = ['swipe', 'regenerate'].includes(type) ? chat.length - 2 : chat.length - 1;
-        if (ceiling < 0) return '';
-        const { simulationEnd, updateEnd } = getUpdateAndSimulationBounds(chat, ceiling);
-        if (simulationEnd < 0 || simulationEnd <= updateEnd || simulationEnd <= (store.lastSummarizedMesId ?? -1)) return '';
-        const sim = store.floorSimulations?.[simulationEnd];
-        const simText = typeof sim?.text === 'string' ? sim.text.trim() : '';
-        if (!simText) return '';
-        const candidate = chat[simulationEnd]?.swipe_id ?? 0;
-        if (sim.candidate != null && sim.candidate !== candidate) return '';
-        const start = Number.isInteger(sim.start) ? sim.start : (chat[simulationEnd - 1]?.is_user ? simulationEnd - 1 : simulationEnd);
-        if (!isRangeSourceCurrent({ start, end: simulationEnd, digest: sim.digest }, chat)) return '';
-        return `[以下为紧邻上轮正文的只读后台延伸（非主楼原文，严禁复述或当成玩家行动）]\n${simText}\n[后台延伸结束：请作为已自然衔接上述背景的叙述者续写]`;
     }, onError: showError });
     stopWorld = () => {
         worldArchive.initialize?.cancel?.();

@@ -104,6 +104,10 @@ function publish(documentsToRender = documents) {
  * A blocking error stays until a newer successful/running status replaces it.
  */
 export function showAgentNotice({ message = '', level = 'info', agent = null, error = null, retry = null, pinned = level === 'error', recoveryRoute = null, timeoutMs = pinned ? 0 : 6000 } = {}) {
+    // A hard-block error owns the strip until the user retries/resolves it or
+    // explicitly dismisses it. Background info notices must not replace it.
+    const blocking = currentNotice?.pinned && currentNotice.level === 'error' && dismissedSequence !== currentNotice.id;
+    if (blocking && !pinned && level === 'info') return null;
     const id = ++noticeSequence;
     currentNotice = { id, message: String(message || '后厨正在处理'), level, agent, error, retry, pinned, recoveryRoute };
     if (dismissedSequence !== id) dismissedSequence = 0;

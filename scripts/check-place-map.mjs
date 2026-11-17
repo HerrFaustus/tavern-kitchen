@@ -115,7 +115,7 @@ const server = http.createServer((req,res)=>{
 });
 await new Promise(ready=>server.listen(0,'127.0.0.1',ready));
 const child=spawn(process.env.CHROMIUM_BIN || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
-    ['--headless','--disable-extensions','--no-first-run','--user-data-dir='+path.join(temp,'profile'),'http://127.0.0.1:'+server.address().port],{windowsHide:true,stdio:'ignore'});
+    ['--headless','--disable-gpu','--disable-crash-reporter','--no-sandbox','--disable-extensions','--no-first-run','--user-data-dir='+path.join(temp,'profile'),'http://127.0.0.1:'+server.address().port],{windowsHide:true,stdio:'ignore'});
 child.on('error',reject);
 const timeout=setTimeout(()=>reject(new Error('Browser timed out')),30000);
 try {

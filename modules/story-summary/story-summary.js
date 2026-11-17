@@ -1358,11 +1358,24 @@ function buildFramePayload(store) {
     const valid = !store?.summaryInvalid && store?.sourceInvalidFromFloor == null && store?.sourceRollbackFromFloor == null
         && firstInvalidMemorySource(store, getContext().chat) == null;
     const entities = (authority?.entities || []).map(({id,kind,name,aliases,fields}) => ({id,kind,name,aliases,fields}));
+    const context = getContext(), chat = context.chat || [];
+    const rounds = valid ? timelineRounds(store) : [];
+    const lastSummarized = store?.lastSummarizedMesId ?? -1;
+    // WHY: a pre-send settlement pushes SUMMARY_FULL_DATA while the summary page
+    // may be open; header counters must follow the same boundary as the ledger.
+    const stats = {
+        totalFloors: chat.length,
+        summarizedUpTo: lastSummarized + 1,
+        roundCount: rounds.length,
+        pendingFloors: chat.length - lastSummarized - 1,
+        hiddenCount: chat.reduce((count, message) => count + Number(!!message?.is_system), 0),
+    };
     return {
+        stats,
         entities, branchId: authority?.branchId || '',
-        playerName: getContext().name1 || '',
-        chatId: getContext().chatId || '',
-        rounds: valid ? timelineRounds(store) : [],
+        playerName: context.name1 || '',
+        chatId: context.chatId || '',
+        rounds,
         characters: {
             main: json.characters?.main || [],
             relationships: extractRelationshipsFromFacts(facts),
@@ -3449,11 +3462,17 @@ export async function saveFloorSimulation(source, check, update) {
 }
 export async function reconcileSettledFloorChunks(floor) {
     if (!Number.isInteger(floor) || floor < 0) return;
+    const chatId = getContext()?.chatId;
+    if (!chatId) return;
+    // WHY: the pre-send settlement must hide the floor it just summarized before
+    // the next prompt is assembled, otherwise the model receives both the fresh
+    // summary and the original prose for the same floor.
+    refreshEntityLexiconAndWarmup();
+    await applyHideState({ full: false });
+    if (frameReady) await sendFrameBaseData(getPublishedSummaryStore(), (getContext().chat || []).length);
     const store = getPublishedSummaryStore();
     const sim = store?.floorSimulations?.[floor];
     if (!sim || typeof sim.text !== 'string' || !sim.text.trim()) return;
-    const chatId = getContext()?.chatId;
-    if (!chatId) return;
     removeDocumentsByFloor(floor, chatId);
     const meta = await getMeta(chatId);
     if ((meta?.lastChunkFloor ?? -1) >= floor) {

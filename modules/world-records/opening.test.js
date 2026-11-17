@@ -4,8 +4,9 @@ import { IDBFactory } from 'fake-indexeddb';
 import { createWorldStorage } from './storage.js';
 import { createWorldService } from './service.js';
 import { collectOpening, openingMessages } from './opening-input.js';
-import { initializeOpening, OPENING } from './opening.js';
+import { initializeOpening, parseOpening, OPENING } from './opening.js';
 import { openingOperations } from './opening-projection.js';
+import { emptyWorld } from './domain.js';
 import { readWorldMap } from './map-commands.js';
 import { buildAuthorityContext } from './authority.js';
 
@@ -79,3 +80,60 @@ test('old chat initialization does not reset live positions or create active ope
     assert.ok(state.sources[OPENING].rows.some(row=>row.kind==='position'));
 });
 
+
+
+test('route rows keep the model channel name apart from the source fragment title', () => {
+    const batch = [{ id: 'p1', text: '北门经石阶通往钟楼。', label: '港城书 · 城门', key: 'port' }];
+    const rows = parseOpening(JSON.stringify([
+        { part: 'p1', quote: '北门', kind: 'place', name: '北门', value: '城门', scale: 'building' },
+        { part: 'p1', quote: '钟楼', kind: 'place', name: '钟楼', value: '塔楼', scale: 'building' },
+        { part: 'p1', quote: '北门经石阶通往钟楼', kind: 'route', name: '北门', value: '钟楼', field: 'stairs', label: '石阶通道' },
+    ]), batch);
+    assert.equal(rows[2].label, '港城书 · 城门');
+    assert.equal(rows[2].routeLabel, '石阶通道');
+    assert.equal(rows[2].key, 'port');
+
+    const projected = openingOperations(emptyWorld('w1', 'b1', '测试'), rows,
+        { fingerprint: 'f1', player: '旅人', oldChat: false, allowMap: true, commandId: 'c1' });
+    const map = projected.find(operation => operation.type === 'module' && operation.module === 'map').value;
+    assert.equal(map.atlas.links.length, 1);
+    assert.equal(map.atlas.links[0].label, '石阶通道');
+    assert.equal(map.atlas.links[0].kind, 'stairs');
+});
+
+test('a route without a model label never borrows the source fragment title for its map link', () => {
+    const batch = [{ id: 'p1', text: '北门经石阶通往钟楼。', label: '港城书 · 城门', key: 'port' }];
+    const rows = parseOpening(JSON.stringify([
+        { part: 'p1', quote: '北门', kind: 'place', name: '北门', value: '城门' },
+        { part: 'p1', quote: '钟楼', kind: 'place', name: '钟楼', value: '塔楼' },
+        { part: 'p1', quote: '北门经石阶通往钟楼', kind: 'route', name: '北门', value: '钟楼', field: 'path' },
+    ]), batch);
+    assert.equal(rows[2].routeLabel, '');
+    const projected = openingOperations(emptyWorld('w2', 'b2', '测试'), rows,
+        { fingerprint: 'f2', player: '旅人', oldChat: false, allowMap: true, commandId: 'c2' });
+    const map = projected.find(operation => operation.type === 'module' && operation.module === 'map').value;
+    assert.equal(map.atlas.links.length, 1);
+    assert.equal(map.atlas.links[0].label, undefined);
+});
+
+test('route-only openings still prepare the map before projection', async () => {
+    const service = createWorldService({ storage: createWorldStorage({ indexedDB: new IDBFactory() }), getIdentity: () => 'route-chat' });
+    let prepared = 0;
+    await initializeOpening({
+        readInput: async () => ({ player: '旅人', inputs: [{ key: 'port', label: '港城书 · 城门', text: '北门经石阶通往钟楼。' }] }),
+        service,
+        write: async messages => {
+            const [source] = JSON.parse(messages[1].content).sources;
+            return JSON.stringify([
+                { part: source.part, quote: '北门', kind: 'place', name: '北门', value: '城门' },
+                { part: source.part, quote: '钟楼', kind: 'place', name: '钟楼', value: '塔楼' },
+                { part: source.part, quote: '北门经石阶通往钟楼', kind: 'route', name: '北门', value: '钟楼', field: 'stairs', label: '石阶通道' },
+            ]);
+        },
+        guard: () => true,
+        project: openingOperations,
+        oldChat: false,
+        prepareMap: async () => { prepared++; return true; },
+    });
+    assert.equal(prepared, 1);
+});

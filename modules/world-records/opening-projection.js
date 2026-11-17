@@ -168,8 +168,11 @@ export function openingOperations(state, rows, {fingerprint,player,oldChat,allow
         if (!from || !to || from.location.key === to.location.key) continue;
         const id = idFor('link',from.location.key,to.location.key);
         if (map.atlas.links.some(link => link.id === id)) continue;
+        // WHY: row.label is the source-fragment title; only the model-provided
+        // channel name (routeLabel) may become a map link label.
+        const linkLabel = row.routeLabel ?? (row.key ? '' : row.label);
         map.atlas.links.push({id,from:from.location.key,to:to.location.key,
-            kind:linkKinds.has(row.field) ? row.field : 'path',bidirectional:true,...(row.label ? {label:row.label} : {})});
+            kind:linkKinds.has(row.field) ? row.field : 'path',bidirectional:true,...(linkLabel ? {label:linkLabel} : {})});
         links.push(id);
     }
     for (const row of deferredRelations.filter(item => item.kind === 'person')) {

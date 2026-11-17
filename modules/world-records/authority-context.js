@@ -1,4 +1,5 @@
 import { isRangeSourceCurrent } from '../story-summary/data/turn-source.js';
+import { currentTurns } from './turn-ledger.js';
 import { UPDATE_PREFIX } from './update-context.js';
 import { ambientRecords } from '../story-state/ambient.js';
 import { situationViewRecords } from '../story-state/situation-history.js';
@@ -14,6 +15,16 @@ export function worldAuthorityForContext(context) {
 export function worldFieldSource(world, context, request) {
     const result = { key: request.key, chatId: context.chatId, branchId: world?.branchId || '' };
     if (!world || request.chatId !== result.chatId || request.branchId !== result.branchId || typeof request.key !== 'string') return result;
+    // A summary card's origin floor reads the live message, but only while the
+    // narrative turn that produced it still matches the current branch source.
+    if (Number.isInteger(request.floor)) {
+        const turn = currentTurns(world).find(item => item.source.start <= request.floor && item.source.end >= request.floor);
+        const message = context.chat?.[request.floor];
+        if (turn && message && isRangeSourceCurrent(turn.source, context.chat)) {
+            Object.assign(result, { floor: request.floor, name: message.name || '', text: message.mes });
+        }
+        return result;
+    }
     const receipt = world.receipts?.find(r => r.origin?.effectId === request.key);
     if (receipt) {
         const turn = Object.values(world.sources || {}).find(row => row.id === receipt.origin.sourceId);

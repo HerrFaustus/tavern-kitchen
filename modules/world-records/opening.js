@@ -35,7 +35,8 @@ export function parseOpening(text, batch) {
             || typeof row.value !== 'string' || !row.value.trim() || row.value.length > 1200) throw new Error('开局条目缺少可核对的原文或字段无效');
         const clean = value => typeof value === 'string' ? value.trim() : '';
         return { part:part.id, scope:clean(row.scope), kind: row.kind, name: row.name.trim(), value: row.value.trim(), quote, key: part.key,
-            label: part.label, owner:validName(row.owner) && resolveSourceQuote(quote, row.owner) ? row.owner : '',
+            label: part.label, routeLabel: clean(row.label).slice(0, 160),
+            owner:validName(row.owner) && resolveSourceQuote(quote, row.owner) ? row.owner : '',
             importance: resolveSourceQuote(quote, row.importance) || '', field: clean(row.field), parent: clean(row.parent), scale: clean(row.scale),
             aliases: Array.isArray(row.aliases) ? row.aliases.filter(validName).map(clean) : [] };
     });
@@ -94,7 +95,7 @@ export async function initializeOpening({ readInput, service, write, project, gu
         if (remaining.length) state = (await service.commit(service.command(state,remaining,'暂存开局资料'),{guard:current})).state;
         for (const p of batch) entries.set(p.id,state.sources[OPENING_PART+p.id].rows);
     }
-    const needsMap = parts.some(p => entries.get(p.id).some(row => ['place','position','feature'].includes(row.kind)));
+    const needsMap = parts.some(p => entries.get(p.id).some(row => ['place','position','feature','route'].includes(row.kind)));
     let allowMap = true;
     if (prepareMap && !state.modules?.map && needsMap) {
         check();

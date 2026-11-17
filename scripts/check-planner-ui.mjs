@@ -130,7 +130,7 @@ const server = http.createServer((req, res) => {
     res.end(req.url === '/frame' ? frame : html);
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-const edge = spawn(browser, ['--headless', '--disable-gpu', '--disable-extensions', '--no-first-run',
+const edge = spawn(browser, ['--headless', '--disable-gpu', '--disable-crash-reporter', '--no-sandbox', '--disable-extensions', '--no-first-run',
     '--user-data-dir=' + path.join(temp, 'profile'), 'http://127.0.0.1:' + server.address().port],
     { stdio: 'ignore', windowsHide: true });
 edge.on('error', reject);

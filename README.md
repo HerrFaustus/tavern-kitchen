@@ -2,7 +2,7 @@
 
 酒馆后厨（Tavern Kitchen）是一个 SillyTavern 扩展。系统以**零手工调整、极简自动流**为核心，每次正文回复后自动维护世界状态、非形式化「后台正文」延伸、剧情摘要与创作札记，并把已确认状态与最近/召回原文提供给下一次续写。
 
-`0.2.37` 已完成构建、9 组无头浏览器界面回归与 ZIP 安装包实机复验（构建 `b62f7f53026cabc17129`，`release/tavern-kitchen-0.2.37.zip`）。宿主生成角色正文；每条回复完成后只跑推演，玩家发送下一轮前强制总结上一楼并完成结构化写库，任何缺失、启动或总结失败都会中止发送并在输入框上方 Agent 横栏要求重试。每份聊天维护单一世界时间线。[成品规则](最终项目目标.md) · [验收记录](docs/validation.json) · [版本历史](历史更新记录.md)
+`0.2.37` 已完成构建、9 组无头浏览器界面回归与 ZIP 安装包实机复验（构建 `f85a3ad8297ead6d8b83`，`release/tavern-kitchen-0.2.37.zip`）。宿主生成角色正文；每条回复完成后只跑推演，玩家发送下一轮前强制总结上一楼并完成结构化写库，任何缺失、启动或总结失败都会中止发送并在输入框上方 Agent 横栏要求重试。每份聊天维护单一世界时间线。[成品规则](最终项目目标.md) · [验收记录](docs/validation.json) · [版本历史](历史更新记录.md)
 
 ## 安装与开始
 
@@ -36,7 +36,7 @@
 
 - **生成即推演，发送前总结（无滞后）**：每条已选定叙事 AI 回复完成后，只由推演 Agent（`simulation`）生成楼尾后台正文；玩家发送 `normal` / `continue` / `group` 前，拦截器锁定队列并由总结 Agent（兼容绑定键 `update`）结算上一段（配对玩家发言 + 上一楼 AI 回复 + 该楼后台正文），随后放行正文。`swipe` / `regenerate` 跳过待替换楼。失败、缺绑定、启动未就绪或拦截器异常一律中止发送，不静默放行。[双边界定义](modules/story-summary/data/turn-bounds.js) · [队列调度](core/turn-queue.js) · [楼层宿主](core/floor-host.js)
 - **每楼独立推演后台正文（`simulationEnd`）**：推演 Agent 在每条最新叙事 AI 回复完成后独立调用一次，产出非形式化的「后台正文」延伸（未满足特定人物/局势条件时输出风味/琐碎见闻，满足条件时写幕后动向），单独存入 `floorSimulations` 并绑定候选与原文指纹，**不直接写结构化总结或世界账本**；最新楼 Swipe 或重生成时自动作废重推，零 `worldArchive` 冲突。升级前已完成更新结算的历史旧楼不追溯补跑推演。[后台正文生成](modules/world-records/turn-processing.js)
-- **正文注入深度与召回切片**：生成下一条正文前，已完成结算的权威世界状态固定按 `depth = 2`（当未结最新楼存在时）注入，最新未更新楼刚产出的「后台正文」按 `depth = 1` 紧贴注入作为主楼正文延伸。某楼结算至 `updateEnd` 后，其 `[主楼 + 后台正文]` 一并纳入词法与向量原文切片供 `raw-recall` 检索；未结算楼的新鲜后台正文不提前进入历史召回索引。总结落库后会取消旧召回预取并按新状态重建。[正文注入宿主](modules/world-records/generation-host.js) · [原文召回](modules/story-summary/vector/retrieval/raw-recall.js)
+- **正文注入深度与召回切片**：生成下一条正文前，刚在发送前完成结算的权威世界状态按 `depth = 1` 紧贴注入（`swipe` 替换当前最新回复时按 `depth = 2` 注入在待替换回复之前），不再滞后挂起未结算草稿。某楼结算后，其 `[主楼 + 后台正文]` 一并纳入词法与向量原文切片供 `raw-recall` 检索；未结算楼的新鲜后台正文不提前进入历史召回索引。总结落库后会取消旧召回预取并按新状态重建。[正文注入宿主](modules/world-records/generation-host.js) · [原文召回](modules/story-summary/vector/retrieval/raw-recall.js)
 - **楼尾只读双框与默认全隐藏**：每条叙事 AI 回复底部统一挂载上下双框：上方「更新框」显示总结与状态变更（最新楼显示「发送下一轮前总结」），下方「推演框」显示该楼「后台正文」及必要错误重试，全前端推演统一收敛至此。设置默认 `hideSummarized: true` 与 `keepVisibleCount: 0`（从旧版默认 `5` 自动迁移为 `0`）。[楼尾双框投影](modules/story-summary/floor-summary.js) · [配置与迁移](modules/story-summary/data/config.js)
 - **自动分层压缩**：原独立校对模块与 `memory` 模型槽位已移除。[`summary-layers.js`](modules/story-summary/data/summary-layers.js) (`minDepth = 0`) 与 [`chapter-processing.js`](core/chapter-processing.js) 在发送前结算中由总结 Agent 自动推进 `L0 → L1(stage) → L2(chapter) → L3+` 压缩，并在生成新 `L2` 章节后标记待编剧状态触发 `planner.onChapter()`。
 
@@ -62,7 +62,7 @@ node scripts/check-versions.mjs
 node scripts/check-installation.mjs release/tavern-kitchen-0.2.37.zip > release/install-verification.json
 ```
 
-- 本版已通过本地 `node scripts/quality.mjs`（含 ESLint `--max-warnings 0`、版本/边界/乱码/相对导入/退役变量检查）、`node scripts/typecheck.mjs`、`node scripts/build.mjs`、`node scripts/check-project.mjs`、`node scripts/check.mjs`（含 `1419` 项单元测试 0 失败 0 跳过与 `node scripts/check-runtime.mjs` `result=PASS`）、`9` 组无头浏览器界面回归（`node scripts/check-ui.mjs`）、`python3 scripts/package.py`、`node scripts/check-versions.mjs` 及 `node scripts/check-installation.mjs release/tavern-kitchen-0.2.37.zip` 最终 ZIP 复装验真。
+- 本版已通过本地 `node scripts/quality.mjs`（含 ESLint `--max-warnings 0`、版本/边界/乱码/相对导入/退役变量检查）、`node scripts/typecheck.mjs`、`node scripts/build.mjs`、`node scripts/check-project.mjs`、`node scripts/check.mjs`（含 `1437` 项单元测试 0 失败 0 跳过与 `node scripts/check-runtime.mjs` `result=PASS`）、`9` 组无头浏览器界面回归（`node scripts/check-ui.mjs`）、`python3 scripts/package.py`、`node scripts/check-versions.mjs` 及 `node scripts/check-installation.mjs release/tavern-kitchen-0.2.37.zip` 最终 ZIP 复装验真。
 - 真实酒馆宿主与在线模型的长程游玩不在自动化验收范围内。[验收凭据](docs/validation.json)
 
 ## 署名与许可

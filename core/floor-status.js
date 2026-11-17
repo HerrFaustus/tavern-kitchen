@@ -7,7 +7,7 @@ export async function preflightOrderedFloorAgents({ floor, checkAgent, render, a
         await checkAgent('simulation');
     } catch (error) {
         render({ floor, message: error.message, error });
-        abort?.();
+        abort?.(true);
         if (throwOnRequired) throw error;
         return false;
     }

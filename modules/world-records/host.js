@@ -29,7 +29,7 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
     const sourceIdentity = () => storyIdentityKey(captureStoryIdentity(getContext()));
     const identity = (branch = getMemorySnapshot()?.store?.dataBranch) => { const story = sourceIdentity(); return story ? JSON.stringify([getAccountId(), story, ...(branch ? [branch] : [])]) : ''; };
     const storage = createWorldStorage();
-    let authority, recoveryPanel, latestState = null;
+    let authority, recoveryPanel, latestState = null, views;
     const service = createWorldService({ storage, getIdentity: identity, isSourceCurrent: turn => !!turn
         && isRangeSourceCurrent(turn.source, getContext().chat || [])
         && getSummarySourceEnd(getContext().chat, turn.source.end) >= turn.source.end,
@@ -43,6 +43,9 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
         if (owner === identity()) {
             latestState = state;
             if (isVisible('data')) recoveryPanel?.noteChange(state);
+            // WHY: the workspace keeps these read-only pages open while a send
+            // settlement commits a new world version; redraw them in place.
+            refreshVisibleViews(state);
         }
         authority?.publish(state, owner);
         publishWorldBridgeState(sourceIdentity(), owner, state);
@@ -106,7 +109,7 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
         content.append(title, text);
         return new context.Popup(content, context.POPUP_TYPE.TEXT).show().catch(onError);
     }};
-    const views = { overview: protagonist, suspense: createSuspenseBook(bookOptions) };
+    views = { overview: protagonist, suspense: createSuspenseBook(bookOptions) };
     let disposed = false, scheduled = false, epoch = 0;
     const frameBindings = new Map();
     function attachFrameMount(key, frame, mount) {
@@ -132,6 +135,17 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
         const context = getContext(), chat = context.chat || [], snapshot = getMemorySnapshot();
         return { chat, snapshot, end: getSummarySourceEnd(chat, chat.length - 1) };
     };
+    // Read-only pages redraw from the committed projection; a page may already be
+    // the active workspace route before its frame mount has run once.
+    function refreshVisibleViews(state) {
+        for (const [route, view] of Object.entries(views || {})) {
+            if (!isVisible(route) || view.isEditing()) continue;
+            const mount = typeof getMount === 'function' ? getMount(route) : null;
+            if (!mount) continue;
+            view.mount(mount);
+            if (state) view.show(state); else view.empty();
+        }
+    }
     const observationDigest = value => memoryDigest({ source: value.end >= 0 ? captureRangeSource(value.chat, 0, value.end) : null, length: value.chat.length,
         end: value.end, enabled: !!value.snapshot?.enabled, invalidFrom: value.snapshot?.invalidFrom ?? null, history: value.snapshot?.store?.summaryHistory || [] });
     async function sync() {
@@ -221,11 +235,11 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
         return { available: !!snapshot?.enabled, identity: sourceIdentity(), label: '剧情记忆', records: snapshot?.invalidFrom === undefined ? memoryRecords(snapshot?.store) : [] };
     });
     const unsubscribe = subscribeWorldSources(() => {
-        if (scheduled || disposed || !active() || ordered) return;
+        if (scheduled || disposed || !active()) return;
         scheduled = true;
         queueMicrotask(() => {
             scheduled = false;
-            sync().then(state => { if (state) for (const [route, view] of Object.entries(views)) if (isVisible(route) && !view.isEditing()) view.show(state); }).catch(error => onError(error));
+            sync().then(state => refreshVisibleViews(state)).catch(error => onError(error));
         });
     });
     const noteStore = createNoteStore();

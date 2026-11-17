@@ -27,7 +27,12 @@ export function floorTasks(settings) {
 export function installFloorHost({ settings, getContext, memory, archive, planner, workspace }) {
     let streamStart = null, failure, batch = 0, openingGate = null;
     const retrySend = () => document.querySelector('#send_but')?.click();
-    const notifyFailure = (message, error) => showAgentNotice({ level:'error', message, error, pinned:true, retry:retrySend });
+    const notifyFailure = (message, error) => {
+        // WHY: a later empty-queue kick must not erase a blocking failure: the
+        // latch also suppresses status(null) until the user retries or settings change.
+        failure = { message, error };
+        showAgentNotice({ level:'error', message, error, pinned:true, retry:retrySend });
+    };
     async function ensureOpening(type) {
         if (!OPENING_GATE_TYPES.has(type || 'normal')) return true;
         const ctx = getContext();
@@ -116,14 +121,14 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
     const replacingTypes = new Set(['swipe', 'regenerate']);
     registerGenerateInterceptor('ordered-floors', async (_chat, _size, abort, type) => {
         if (!['normal','continue','regenerate','swipe','group'].includes(type || 'normal')) return;
-        if (!await ensureOpening(type)) { abort(); return; }
+        if (!await ensureOpening(type)) { abort(true); return; }
         const floor = Math.max(0, (getContext().chat || []).length - 1);
         if (!await preflightOrderedFloorAgents({ floor, checkAgent: requireAgent, render, abort })) return;
         // Replaced floors are never settled here: the selected swipe will be
         // simulated and summarized on the following new send.
         if (replacingTypes.has(type || 'normal')) return;
         let aborted = false;
-        await queue.beforeGeneration(() => { aborted = true; abort(); });
+        await queue.beforeGeneration((immediately = true) => { aborted = true; abort(immediately); });
         if (aborted) return;
     }, 0);
     events.on(event_types.GENERATION_STARTED, (type,_params,dry) => {

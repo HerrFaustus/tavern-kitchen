@@ -1,15 +1,16 @@
-import { isPersonalAgenda, parseStoryUpdates } from '../story-state/records.js';
+import { parseStoryUpdates } from '../story-state/records.js';
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
 
 const check = (ok, message) => { if (!ok) throw new Error(`世界剧情状态：${message}`); };
 const qualified = new Set(['rumor', 'belief', 'intention', 'hypothesis']);
-// WHY: suspense, situation and clock are visible story threads, not truth claims.
-// A qualified or uncertain thread stays in the working set with its nature recorded
-// (`_nature`) instead of disappearing into the candidate list that has no UI.
-export const isCurrentStoryProposal = proposal => proposal.nature === 'established_fact' || !proposal.record.remove
-    && (proposal.record.kind === 'knowledge' && qualified.has(proposal.nature)
-        || isPersonalAgenda(proposal.record) && proposal.nature === 'intention'
-        || ['suspense', 'situation', 'clock'].includes(proposal.record.kind) && qualified.has(proposal.nature));
+// WHY: every valid story record the summarizer emits is a visible current record
+// when its nature is established or qualified (rumor/belief/intention/hypothesis),
+// including removals. Only historical creative proposals/unclassified claims stay
+// in candidates; otherwise uncertain plans, goals and person presences vanish into
+// a list that has no UI.
+export const isCurrentStoryProposal = proposal => proposal.nature === 'established_fact'
+    || (['person', 'knowledge', 'plan', 'goal', 'situation', 'clock', 'suspense'].includes(proposal.record.kind)
+        && qualified.has(proposal.nature));
 export function validateWorldStoryState(value) {
     check(value?.version === 1 && Number.isSafeInteger(value.revision) && value.revision >= 1
         && Array.isArray(value.records) && Array.isArray(value.candidates) && value.records.length + value.candidates.length <= 20000, '结构无效');

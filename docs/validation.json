@@ -2,8 +2,8 @@
   "version": "0.2.37",
   "status": "passed",
   "validated_on": "2026-11-18",
-  "build_id": "b62f7f53026cabc17129",
-  "product": "酒馆后厨 Tavern 扩展，本地安装包（发送前总结、同酒馆主 API 与统一 Agent 横栏）",
+  "build_id": "f85a3ad8297ead6d8b83",
+  "product": "酒馆后厨 Tavern 扩展，本地安装包（发送前总结、同酒馆主 API、统一 Agent 横栏与发前隐藏/实时视图收口）",
   "environment": {
     "node": "24.22.3",
     "pnpm": "11.25.0",
@@ -101,9 +101,9 @@
     },
     {
       "id": 8,
-      "title": "全仓静态检查、类型校验、1419 项测试、9 组无头界面回归与安装包复验",
+      "title": "全仓静态检查、类型校验、1437 项测试、9 组无头界面回归与安装包复验",
       "status": "passed",
-      "expected": "quality.mjs、eslint (--max-warnings 0)、typecheck.mjs、check-project.mjs、build.mjs、test.mjs (1419/1419)、check-runtime.mjs、9 组 check-ui.mjs、package.py、check-versions.mjs 与 check-installation.mjs (0.2.37 zip) 全数通过。",
+      "expected": "quality.mjs、eslint (--max-warnings 0)、typecheck.mjs、check-project.mjs、build.mjs、test.mjs (1437/1437)、check-runtime.mjs、9 组 check-ui.mjs、package.py、check-versions.mjs 与 check-installation.mjs (0.2.37 zip) 全数通过。",
       "commands": [
         "pnpm build",
         "pnpm check",
@@ -113,6 +113,60 @@
         "python3 scripts/package.py",
         "node scripts/check-versions.mjs",
         "node scripts/check-installation.mjs release/tavern-kitchen-0.2.37.zip"
+      ]
+    },
+    {
+      "id": 9,
+      "title": "发前总结落库后立即隐藏已总结楼层并刷新总结页统计",
+      "status": "passed",
+      "expected": "SUMMARY_FULL_DATA 载荷携带 totalFloors / summarizedUpTo / roundCount / pendingFloors / hiddenCount；reconcileSettledFloorChunks 在 !sim 早退前先 refreshEntityLexiconAndWarmup() 并 await applyHideState({full:false})，frameReady 时补推 SUMMARY_BASE_DATA，使发前结算后上一楼按 hideSummarized / keepVisibleCount 置 is_system=true，当轮 Prompt 不再重复收到原文与摘要。",
+      "commands": [
+        "node --import tsx --test modules/story-summary/tests/frame-stats.test.js modules/story-summary/tests/raw-maintenance.test.js"
+      ]
+    },
+    {
+      "id": 10,
+      "title": "主角/悬念页实时刷新与局势页原楼追溯",
+      "status": "passed",
+      "expected": "ordered 世界下 onChanged 与 subscribeWorldSources 均对可见 overview / suspense 视图调用 show(state) 或 empty()，移除阻断只读视图刷新的 || ordered；局势卡片传入 openSource，经 archive-view.openFloorSource 与 WORLD_FIELD_SOURCE {floor} 回读当前轮次覆盖的原文，来源失效时不展示。",
+      "commands": [
+        "node --import tsx --test modules/world-records/live-views.test.js modules/world-records/floor-source.test.js modules/story-summary/tests/situation-source.test.js"
+      ]
+    },
+    {
+      "id": 11,
+      "title": "硬拦截报错常驻钉死与 abort(true) 统一",
+      "status": "passed",
+      "expected": "notifyFailure 同步设置 failure，使后续空闲队列 kick 不再 status(null) 冲掉阻塞报错；showAgentNotice 在未收起的 pinned error 期间忽略非阻塞 info 覆盖；floor-host、floor-status 与 generate 拦截器所有中止分支统一传 abort(true)。",
+      "commands": [
+        "node --import tsx --test core/agent-status.test.js core/floor-host.test.js"
+      ]
+    },
+    {
+      "id": 12,
+      "title": "开局 route 通道名称与资料分片标题分离",
+      "status": "passed",
+      "expected": "parseOpening 保留 label 供来源追溯并新增 routeLabel；needsMap 纳入 route；opening-projection 构建 map.atlas.links 时优先使用 routeLabel，缺少模型通道名时不回退资料分片标题。",
+      "commands": [
+        "node --import tsx --test modules/world-records/opening.test.js"
+      ]
+    },
+    {
+      "id": 13,
+      "title": "剧情记录不再掉入无 UI 的 candidates 黑洞",
+      "status": "passed",
+      "expected": "person / knowledge / plan / goal / situation / clock / suspense 在 established_fact 或 rumor / belief / intention / hypothesis 下均写入当前记录（保留 _nature），带限定性质的 remove 也正常结案；仅历史 creative_proposal / unclassified 仍留在 candidates。",
+      "commands": [
+        "node --import tsx --test modules/world-records/story-candidates.test.js modules/world-records/proposal-review.test.js"
+      ]
+    },
+    {
+      "id": 14,
+      "title": "README 注入深度对齐与 prepareSimulation 死代码清理",
+      "status": "passed",
+      "expected": "README 说明发前结算后的权威世界状态按 depth=1 紧贴注入、swipe 按 depth=2 注入待替换回复之前；kitchen-runtime 不再传入恒返回空串的 prepareSimulation，generation-host 保留可选参数兼容且默认不注入模拟扩展。",
+      "commands": [
+        "node --import tsx --test modules/world-records/generation-host.test.js modules/world-records/dual-axis.test.js"
       ]
     }
   ],
@@ -124,8 +178,8 @@
     "final_zip_readback": "release/install-verification.json"
   },
   "final_verification": {
-    "build_id": "b62f7f53026cabc17129",
-    "unit_tests": "1419/1419",
+    "build_id": "f85a3ad8297ead6d8b83",
+    "unit_tests": "1437/1437",
     "ui_suites": 9,
     "zip_checksum": "OK",
     "installation": "passed",

@@ -86,6 +86,15 @@ export function createSummaryArchive({ getData, hasChat, getSelectedCharacter, o
         }
     }
 
+    function openFloorSource(floor) {
+        if (!Number.isInteger(floor) || floor < 0) return;
+        sourceKey = `floor:${floor}`;
+        $('archive-detail-title').textContent = `第 ${floor + 1} 楼原文`;
+        $('archive-detail-body').textContent = '正在读取原楼…';
+        openDialog(detail);
+        postMsg('WORLD_FIELD_SOURCE', { key: sourceKey, floor, chatId: getData().chatId, branchId: getData().branchId });
+    }
+
     function showEvent(event) {
         detailEventId = event.id;
         $('archive-detail-title').textContent = ARCHIVE_COPY.eventDetail;
@@ -290,7 +299,7 @@ export function createSummaryArchive({ getData, hasChat, getSelectedCharacter, o
             if (!detail.open || !sourceKey || result.key !== sourceKey || result.chatId !== data.chatId || result.branchId !== data.branchId) return;
             $('archive-detail-body').textContent = result.text == null ? '当前分支无法核对这条原文。' : '第 ' + (result.floor + 1) + ' 楼 · ' + result.name + '\n\n' + result.text;
         },
-        closeDialogs, reset, switchView, timelineEvents, timelineItem, refreshIndexes, refreshRoster,
+        closeDialogs, reset, switchView, timelineEvents, timelineItem, refreshIndexes, refreshRoster, openFloorSource,
         hasTimelineFilter: () => !!role,
         isPeopleVisible: () => view === 'people',
         isStoryVisible: () => view === 'story',

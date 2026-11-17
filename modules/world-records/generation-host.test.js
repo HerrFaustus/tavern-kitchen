@@ -32,6 +32,9 @@ export {registerGenerateInterceptor,unregisterGenerateInterceptor} from './share
     assert.deepEqual(order, ['before', 'world', 'memory']);
     assert.equal(prompts.tavernKitchenWorldAuthority.value, '已确认：金币70');
     assert.equal(prompts.tavernKitchenWorldAuthority.depth, 1);
+    // 0.2.37 settles the latest floor before generation, so no separate simulation
+    // extension is injected; the optional hook stays available for direct callers.
+    assert.equal(prompts.tavernKitchenSimulationExtension, undefined);
     await globalThis.tavernKitchenGenerateInterceptor([], 0, value => aborted.push(value), 'quiet');
     assert.equal(reads, 1); assert.equal(prompts.tavernKitchenWorldAuthority, undefined);
     await globalThis.tavernKitchenGenerateInterceptor([], 0, value => aborted.push(value), 'normal');

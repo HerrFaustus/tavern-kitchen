@@ -1380,7 +1380,8 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
                 const group = document.createElement('div');
                 group.dataset.situationGroup = scenery ? 'scenery' : 'affairs';
                 const filtered = records.filter(record => record.kind !== 'situation' || scenery === ['scenery','encounter'].includes(record.flavor));
-                renderThreads(group, filtered, ['situation'], Infinity, { title });
+                renderThreads(group, filtered, ['situation'], Infinity, { title,
+                    openSource: floor => archiveView.openFloorSource(floor) });
                 situations.append(group);
             }
             container.before(situations);
