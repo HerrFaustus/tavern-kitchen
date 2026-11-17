@@ -4,6 +4,7 @@ import { captureRangeSource, isRangeSourceCurrent } from '../data/turn-source.js
 
 import { getContext } from "../../../../../../extensions.js";
 import { xbLog } from "../../../core/debug-core.js";
+import { showAgentNotice } from "../../../core/agent-status.js";
 import {
     addSummarySnapshot,
     getFacts,
@@ -366,7 +367,7 @@ export async function runSummaryGeneration(mesId, config, callbacks = {}, runtim
         : `摘要与 ${worldUpdate.proposals.length} 条世界提案已保存。`
         : `总结完成，已保存至 ${slice.endMesId + 1} 楼`);
     if (config.trigger?.notifyOnComplete) {
-        window.toastr?.success(SUMMARY_FEEDBACK_COPY.summaryCompleted(slice.endMesId + 1));
+        showAgentNotice({ level: 'success', message: SUMMARY_FEEDBACK_COPY.summaryCompleted(slice.endMesId + 1) });
     }
     return result;
 }

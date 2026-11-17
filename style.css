@@ -12,6 +12,35 @@
 #top-settings-holder > #tk-topbar { order: 2147483647; }
 #tk-topbar .tk-topbar-toggle { border: 0; padding: 0; margin: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
 #tk-topbar button:focus-visible { outline: 2px solid var(--SmartThemeQuoteColor); outline-offset: 3px; }
+
+/* One flat Agent strip spanning #form_sheld directly above #send_form. */
+#tk-agent-status { flex: 0 0 auto; width: 100%; max-width: 100%; box-sizing: border-box; margin: 0; padding: 4px 6px 0; color: var(--SmartThemeBodyColor); }
+#tk-agent-status[hidden] { display: none !important; }
+#tk-agent-status .tk-agent-strip { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; box-sizing: border-box; padding: 5px 10px; border: 1px solid var(--SmartThemeBorderColor); border-inline-start: 3px solid var(--SmartThemeQuoteColor); border-radius: 6px; background: var(--SmartThemeBlurTintColor); color: var(--SmartThemeBodyColor); font: inherit; font-size: .9em; line-height: 1.45; }
+#tk-agent-status .tk-agent-strip.is-success { border-inline-start-color: var(--SmartThemeSuccessColor, var(--SmartThemeQuoteColor)); }
+#tk-agent-status .tk-agent-strip.is-warning { border-inline-start-color: var(--SmartThemeWarningColor, var(--SmartThemeQuoteColor)); }
+#tk-agent-status .tk-agent-strip.is-error { border-inline-start-color: var(--SmartThemeErrorColor, var(--SmartThemeQuoteColor)); background: var(--SmartThemeChatTintColor, var(--SmartThemeBlurTintColor)); font-weight: 500; }
+#tk-agent-status .tk-agent-strip-indicator { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--SmartThemeQuoteColor); }
+#tk-agent-status .tk-agent-strip.is-success .tk-agent-strip-indicator { background: var(--SmartThemeSuccessColor, var(--SmartThemeQuoteColor)); }
+#tk-agent-status .tk-agent-strip.is-warning .tk-agent-strip-indicator { background: var(--SmartThemeWarningColor, var(--SmartThemeQuoteColor)); }
+#tk-agent-status .tk-agent-strip.is-error .tk-agent-strip-indicator { background: var(--SmartThemeErrorColor, var(--SmartThemeQuoteColor)); }
+#tk-agent-status .tk-agent-strip.is-info .tk-agent-strip-indicator { animation: tk-agent-pulse 1.4s ease-in-out infinite; }
+#tk-agent-status .tk-agent-strip-message { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+#tk-agent-status .tk-agent-strip-actions { display: inline-flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px; margin-inline-start: auto; }
+#tk-agent-status .tk-agent-strip-actions .menu_button { flex: 0 0 auto; width: auto; min-height: 24px; margin: 0; padding: 2px 8px; font-size: .86em; line-height: 1.3; white-space: nowrap; }
+#tk-agent-status .tk-agent-strip-dismiss { opacity: .78; }
+#tk-agent-status .tk-agent-strip-dismiss:hover { opacity: 1; }
+@keyframes tk-agent-pulse { 50% { opacity: .35; transform: scale(.8); } }
+@media (max-width: 360px) {
+    #tk-agent-status { padding: 3px 3px 0; }
+    #tk-agent-status .tk-agent-strip { flex-wrap: wrap; gap: 5px 7px; padding: 5px 8px; font-size: .86em; }
+    #tk-agent-status .tk-agent-strip-message { flex: 1 1 calc(100% - 15px); }
+    #tk-agent-status .tk-agent-strip-actions { flex: 1 1 100%; justify-content: flex-start; margin-inline-start: 0; }
+    #tk-agent-status .tk-agent-strip-actions .menu_button { flex: 1 1 auto; justify-content: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+    #tk-agent-status .tk-agent-strip.is-info .tk-agent-strip-indicator { animation: none; }
+}
 /* Match the host's right gutter on desktop and its single-column drawer on mobile. */
 #tk-workspace { font: inherit; }
 #tk-workspace.openDrawer { display: flex; flex-direction: column; overflow: hidden; }

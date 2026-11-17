@@ -176,8 +176,6 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
     let panelConfigLoad = { status: 'loading', error: '' };
     let settingsOpenedWithServerConfig = false;
     const pendingConfigSaveRequests = new Map();
-    let orphanScanResult = null;
-    const selectedOrphanIds = new Set();
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Messaging
@@ -1032,97 +1030,6 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
         detailEl.append(chunksWrap);
     }
 
-
-    function setOrphanBusy(busy, message) {
-        if ($('btn-scan-orphans')) $('btn-scan-orphans').disabled = busy;
-        if ($('orphan-scan-status') && message != null) $('orphan-scan-status').textContent = message;
-        if (busy) {
-            if ($('btn-backup-orphans')) $('btn-backup-orphans').disabled = true;
-            if ($('btn-clean-orphans')) $('btn-clean-orphans').disabled = true;
-        } else {
-            syncOrphanActionButtons();
-        }
-    }
-
-    function getSelectedOrphanItems() {
-        if (!orphanScanResult?.items) return [];
-        return orphanScanResult.items.filter(item => item.status !== 'live' && selectedOrphanIds.has(item.id));
-    }
-
-    function syncOrphanActionButtons() {
-        const hasSelected = getSelectedOrphanItems().length > 0;
-        if ($('btn-backup-orphans')) $('btn-backup-orphans').disabled = !hasSelected;
-        if ($('btn-clean-orphans')) $('btn-clean-orphans').disabled = !hasSelected;
-    }
-
-    function renderOrphanList(result) {
-        const listEl = $('orphan-scan-list');
-        if (!listEl) return;
-        listEl.replaceChildren();
-        const actionable = (result?.items || []).filter(item => item.status !== 'live');
-        if (!actionable.length) {
-            listEl.hidden = true;
-            return;
-        }
-        listEl.hidden = false;
-        for (const item of actionable) {
-            const label = document.createElement('label');
-            label.className = 'orphan-scan-item';
-
-            const box = document.createElement('input');
-            box.type = 'checkbox';
-            box.checked = selectedOrphanIds.has(item.id);
-            box.onchange = () => {
-                if (box.checked) selectedOrphanIds.add(item.id);
-                else selectedOrphanIds.delete(item.id);
-                syncOrphanActionButtons();
-            };
-
-            const meta = document.createElement('div');
-            meta.className = 'orphan-scan-meta';
-
-            const titleLine = document.createElement('div');
-            titleLine.className = 'orphan-scan-title';
-            const badge = document.createElement('span');
-            badge.className = `orphan-badge ${item.status === 'orphan' ? 'is-orphan' : 'is-unknown'}`;
-            badge.textContent = item.status === 'orphan' ? '确定孤儿' : '未核验';
-            const titleText = document.createTextNode(item.title || item.id);
-            titleLine.append(badge, titleText);
-
-            const detailLine = document.createElement('div');
-            detailLine.className = 'orphan-scan-detail';
-            detailLine.textContent = item.detail || '';
-
-            meta.append(titleLine, detailLine);
-            label.append(box, meta);
-            listEl.append(label);
-        }
-    }
-
-    function handleOrphanMessage(d) {
-        if (d.type === 'ARCHIVE_ORPHAN_EXPORT_RESULT') {
-            setOrphanBusy(false, d.message || (d.success ? '备份已导出' : '备份导出失败'));
-            return;
-        }
-        if (!d.success) {
-            setOrphanBusy(false, `扫描或清理失败：${d.message || '未知错误'}`);
-            return;
-        }
-        orphanScanResult = d.result || { items: [], summary: { orphanCount: 0, unknownCount: 0, liveCount: 0 } };
-        selectedOrphanIds.clear();
-        for (const item of orphanScanResult.items || []) {
-            // DO NOT 默认勾选未核验或仍在使用的数据
-            if (item.status === 'orphan') selectedOrphanIds.add(item.id);
-        }
-        renderOrphanList(orphanScanResult);
-        const s = orphanScanResult.summary || { orphanCount: 0, unknownCount: 0, liveCount: 0 };
-        const summaryMsg = `扫描完成：确定孤儿 ${s.orphanCount} 项 · 未核验 ${s.unknownCount} 项 · 使用中 ${s.liveCount} 项`;
-        const finalMsg = d.type === 'ARCHIVE_ORPHAN_CLEANUP_RESULT' && d.message
-            ? `${d.message}（${summaryMsg}）`
-            : summaryMsg;
-        setOrphanBusy(false, finalMsg);
-    }
-
     // ═══════════════════════════════════════════════════════════════════════════
     // Message Handler
     // ═══════════════════════════════════════════════════════════════════════════
@@ -1141,11 +1048,6 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
                 $('kitchen-card-status').textContent = d.message;
                 $('btn-export-kitchen-card').disabled = $('btn-import-kitchen-card').disabled = false;
                 if (d.success) postMsg('KITCHEN_CARD_INFO');
-                break;
-            case 'ARCHIVE_ORPHAN_SCAN_RESULT':
-            case 'ARCHIVE_ORPHAN_EXPORT_RESULT':
-            case 'ARCHIVE_ORPHAN_CLEANUP_RESULT':
-                handleOrphanMessage(d);
                 break;
             case 'KITCHEN_MEMORY_VIEW': {
                 const modal = $('settings-modal');
@@ -1338,37 +1240,6 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
             } catch (error) { $('kitchen-card-status').textContent = error.message; }
             finally { event.target.value = ''; }
         };
-
-        if ($('btn-scan-orphans')) {
-            $('btn-scan-orphans').onclick = () => {
-                setOrphanBusy(true, '正在扫描本地数据库与 SillyTavern 聊天列表…');
-                postMsg('ARCHIVE_ORPHAN_SCAN');
-            };
-        }
-        if ($('btn-backup-orphans')) {
-            $('btn-backup-orphans').onclick = () => {
-                const items = getSelectedOrphanItems();
-                if (!items.length) return;
-                setOrphanBusy(true, `正在导出 ${items.length} 项备份…`);
-                postMsg('ARCHIVE_ORPHAN_EXPORT', { items });
-            };
-        }
-        if ($('btn-clean-orphans')) {
-            $('btn-clean-orphans').onclick = async () => {
-                const items = getSelectedOrphanItems();
-                if (!items.length) return;
-                const lines = items.map(item => `• [${item.status === 'orphan' ? '孤儿' : '未核验'}] ${item.title} (${item.detail})`);
-                const confirmed = await showConfirm(
-                    '确认清理选中数据库记录',
-                    `以下 ${items.length} 项将被永久清理（不可撤销，建议先点「导出所选备份」）：\n${lines.join('\n')}`,
-                    '确认清理',
-                    '取消'
-                );
-                if (!confirmed) return;
-                setOrphanBusy(true, `正在清理 ${items.length} 项本地数据…`);
-                postMsg('ARCHIVE_ORPHAN_CLEANUP', { items });
-            };
-        }
 
         // Settings workspace (设置 → 剧情与召回)
         $('settings-cancel').onclick = () => {

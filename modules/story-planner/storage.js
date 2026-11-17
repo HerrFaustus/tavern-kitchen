@@ -128,20 +128,6 @@ export function createNoteStore() {
                 req.onerror = () => reject(req.error);
             });
         },
-        async exportByOwners(owners = []) {
-            if (!owners.length) return [];
-            const store = (await db()).transaction('notes').objectStore('notes');
-            const out = [];
-            for (const owner of new Set(owners)) {
-                const rows = await new Promise((resolve, reject) => {
-                    const req = store.index('owner').getAll(owner);
-                    req.onsuccess = () => resolve(req.result || []);
-                    req.onerror = () => reject(req.error);
-                });
-                out.push(...rows);
-            }
-            return out;
-        },
         async deleteByOwners(owners = []) {
             const targets = new Set(owners.filter(Boolean));
             if (!targets.size) return 0;

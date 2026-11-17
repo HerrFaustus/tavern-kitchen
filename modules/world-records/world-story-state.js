@@ -2,9 +2,14 @@ import { isPersonalAgenda, parseStoryUpdates } from '../story-state/records.js';
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
 
 const check = (ok, message) => { if (!ok) throw new Error(`世界剧情状态：${message}`); };
+const qualified = new Set(['rumor', 'belief', 'intention', 'hypothesis']);
+// WHY: suspense, situation and clock are visible story threads, not truth claims.
+// A qualified or uncertain thread stays in the working set with its nature recorded
+// (`_nature`) instead of disappearing into the candidate list that has no UI.
 export const isCurrentStoryProposal = proposal => proposal.nature === 'established_fact' || !proposal.record.remove
-    && (proposal.record.kind === 'knowledge' && ['belief', 'rumor', 'hypothesis'].includes(proposal.nature)
-        || isPersonalAgenda(proposal.record) && proposal.nature === 'intention');
+    && (proposal.record.kind === 'knowledge' && qualified.has(proposal.nature)
+        || isPersonalAgenda(proposal.record) && proposal.nature === 'intention'
+        || ['suspense', 'situation', 'clock'].includes(proposal.record.kind) && qualified.has(proposal.nature));
 export function validateWorldStoryState(value) {
     check(value?.version === 1 && Number.isSafeInteger(value.revision) && value.revision >= 1
         && Array.isArray(value.records) && Array.isArray(value.candidates) && value.records.length + value.candidates.length <= 20000, '结构无效');
@@ -18,7 +23,10 @@ export function validateWorldStoryState(value) {
             && ['established_fact', 'rumor', 'belief', 'intention', 'hypothesis', 'creative_proposal', 'unclassified'].includes(entry.nature)
             && typeof entry.eventId === 'string', '来源或版本无效');
     }
-    check(value.records.every(entry => isCurrentStoryProposal(entry)) && value.candidates.every(entry => !isCurrentStoryProposal(entry)), '候选不能混入当前剧情状态');
+    // WHY: 0.2.37 broadened the current-set rule. Older archives may still hold
+    // previously shelved suspense/situation candidates; accept them for backward
+    // compatibility while every newly written record must satisfy the rule.
+    check(value.records.every(entry => isCurrentStoryProposal(entry)), '候选不能混入当前剧情状态');
     return value;
 }
 

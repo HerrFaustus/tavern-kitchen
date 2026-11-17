@@ -1,4 +1,4 @@
-import { createPreset, resolveFeaturePreset, HOST_PROVIDER, HOST_BINDING } from './model.js';
+import { createPreset, resolveFeaturePreset, HOST_BINDING } from './model.js';
 import { normalizeAgentSettings, DEFAULT_MODEL_CONFIGS } from '../agent-core/config.js';
 import { resolveApiBaseUrl } from '../../shared/common/openai-url-utils.js';
 
@@ -11,7 +11,7 @@ export function acceptsProfile(feature, preset) {
     if (['embedding', 'rerank'].includes(feature)) return kind === feature && preset.provider === 'openai-compatible';
     if (kind !== 'text') return false;
     if (feature === 'l0') return preset.provider === 'openai-compatible';
-    return feature === 'summary' || preset.provider !== HOST_PROVIDER;
+    return ['summary', 'opening', 'world', 'planner'].includes(feature);
 }
 export function assertProfileBinding(feature, preset) {
     if (!acceptsProfile(feature, preset)) throw new Error('此配置的接口类型不适用于' + (PROFILE_FEATURES[feature] || feature));

@@ -1,5 +1,6 @@
 import { getKitchenMount, openKitchenTab, closeKitchenWorkspace, bindKitchenFrame } from '../../core/kitchen-workspace.js';
 import { pruneOrphanFloorWork } from '../../core/upgrade-selfcheck.js';
+import { showAgentNotice } from '../../core/agent-status.js';
 import { refreshFloorSummaries } from './floor-summary.js';
 import { getUpdateAndSimulationBounds } from './data/turn-bounds.js';
 import { floorCoverageEnd, isFloorEntryCurrent } from './inline/ledger.js';
@@ -141,8 +142,6 @@ import {
     clearAllChunks,
     clearChatData,
     getStorageStats,
-    listChatStorageStats,
-    exportChatMemoryRecords,
 } from "./vector/storage/chunk-store.js";
 
 import {
@@ -498,27 +497,6 @@ const ROLE_MAP = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 工具：执行斜杠命令
-// ═══════════════════════════════════════════════════════════════════════════
-
-async function executeSlashCommand(command) {
-    try {
-        const executeCmd =
-            window.executeSlashCommands ||
-            window.executeSlashCommandsOnChatInput ||
-            (typeof SillyTavern !== "undefined" && SillyTavern.getContext()?.executeSlashCommands);
-
-        if (executeCmd) {
-            await executeCmd(command);
-        } else if (typeof window.STscript === "function") {
-            await window.STscript(command);
-        }
-    } catch (e) {
-        xbLog.error(MODULE_ID, `执行命令失败: ${command}`, e);
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
 // 生成状态管理
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -718,7 +696,7 @@ async function sendAnchorStatsToFrame() {
 }
 
 async function handleAnchorGenerateNow() {
-    await executeSlashCommand('/echo severity=info 场景信息已并入每轮独立整理；旧锚点仅供历史查看，不再单独生成。');
+    showAgentNotice({ message: '场景信息已并入每轮独立整理；旧锚点仅供历史查看，不再单独生成。' });
 }
 async function handleAnchorGenerate() {
     return handleAnchorGenerateNow();
@@ -793,7 +771,7 @@ async function generateVectorsNow(vectorCfg, targetChatId, writeSession) {
     });
     if (isCancelled() || result.cancelled) return;
     if (!result.success) {
-        if (shouldNotifyMemoryFailure(result.error ?? result)) await executeSlashCommand('/echo severity=warning 原文向量未全部完成，可稍后补齐缺漏。');
+        if (shouldNotifyMemoryFailure(result.error ?? result)) showAgentNotice({ level: 'warning', message: '原文向量未全部完成，可稍后补齐缺漏。', pinned: true });
     } else xbLog.info(MODULE_ID, '原文向量重建完成；历史场景和事件向量未改动');
     await sendVectorStatsToFrame();
 }
@@ -802,7 +780,7 @@ async function repairVectorsNow(vectorCfg, targetChatId, writeSession) {
     const isCancelled = () => getContext()?.chatId !== targetChatId || !isVectorWriteSessionCurrent(writeSession);
     if (isCancelled() || !vectorCfg?.enabled) return;
     if (!isVectorApiConfigured(vectorCfg.embeddingApi)) {
-        await executeSlashCommand('/echo severity=info 当前使用关键词检索；配置向量模型后可补齐原文向量。');
+        showAgentNotice({ message: '当前使用关键词检索；配置向量模型后可补齐原文向量。' });
         return;
     }
     const result = await repairMissingChunks({
@@ -811,14 +789,14 @@ async function repairVectorsNow(vectorCfg, targetChatId, writeSession) {
         onProgress: (current, total) => postToFrame({ type: 'VECTOR_GEN_PROGRESS', phase: '原文', current, total }),
     });
     if (isCancelled() || result.cancelled) return;
-    if (result.success) await executeSlashCommand('/echo severity=info 原文向量缺漏已补齐');
-    else if (shouldNotifyMemoryFailure(result.error ?? result)) await executeSlashCommand('/echo severity=warning 原文向量补齐未完成，请检查模型、API 或存储后重试。');
+    if (result.success) showAgentNotice({ level: 'success', message: '原文向量缺漏已补齐' });
+    else if (shouldNotifyMemoryFailure(result.error ?? result)) showAgentNotice({ level: 'warning', message: '原文向量补齐未完成，请检查模型、API 或存储后重试。', error: result.error, pinned: true });
 }
 
 async function handleGenerateVectors(mode = 'rebuild') {
     if (guard.isAnyRunning('anchor', 'vector')) {
         postToFrame({ type: 'VECTOR_GEN_PROGRESS', current: -1, total: 0 });
-        await executeSlashCommand('/echo severity=info 向量或锚点任务正在运行，请稍后再试');
+        showAgentNotice({ message: '向量或锚点任务正在运行，请稍后再试' });
         return;
     }
     const release = guard.acquire('vector');
@@ -845,7 +823,7 @@ async function handleGenerateVectors(mode = 'rebuild') {
     } catch (error) {
         xbLog.error(MODULE_ID, '向量任务失败', error);
         if (!shouldNotifyMemoryFailure(error)) return;
-        await executeSlashCommand('/echo severity=error 向量任务未完成，请检查 API 或存储后重试');
+        showAgentNotice({ level: 'error', message: '向量任务未完成，请检查 API 或存储后重试', error, pinned: true });
     } finally {
         release();
         postToFrame({ type: 'VECTOR_GEN_PROGRESS', current: -1, total: 0 });
@@ -1685,7 +1663,7 @@ const hideState = createHideStateController({
             ? '读取向量隐藏边界失败，已按有效总结边界恢复原文'
             : stage === 'save' ? memorySaveError(error) : '更新楼层显隐失败';
         xbLog.error(MODULE_ID, message, error);
-        if (stage !== 'save' || shouldNotifyMemoryFailure(error, getMemoryCommitState())) window.toastr?.warning(message, '总结');
+        if (stage !== 'save' || shouldNotifyMemoryFailure(error, getMemoryCommitState())) showAgentNotice({ level: 'warning', message, error, pinned: true });
     },
 });
 
@@ -1777,7 +1755,7 @@ async function updateFrameStatsAfterSummary(store, execution) {
 
 function reportMemorySaveFailure(error) {
     const message = memorySaveError(error);
-    if (shouldNotifyMemoryFailure(error, getMemoryCommitState())) window.toastr?.error(message);
+    if (shouldNotifyMemoryFailure(error, getMemoryCommitState())) showAgentNotice({ level: 'error', message, error, pinned: true });
     postToFrame({ type: 'SUMMARY_ERROR', message });
     postToFrame({ type: 'SUMMARY_FULL_DATA', payload: buildFramePayload(readPublishedSummaryMemory().storySummary) });
     notifyStorySummaryChatState();
@@ -1824,49 +1802,6 @@ async function handleFrameMessage(event) {
                 postToFrame({ type: 'SUMMARY_STATUS', statusText: '' });
             }
             break;
-
-        case 'ARCHIVE_ORPHAN_SCAN':
-        case 'ARCHIVE_ORPHAN_EXPORT':
-        case 'ARCHIVE_ORPHAN_CLEANUP':
-            observeBackgroundTask((async () => {
-                try {
-                    if (!archiveCleanup) throw new Error('跨库清理模块尚未就绪，请重试');
-                    if (data.type === 'ARCHIVE_ORPHAN_SCAN') {
-                        const result = await archiveCleanup.scanOrphanArchives();
-                        postToFrame({ type: 'ARCHIVE_ORPHAN_SCAN_RESULT', success: true, result });
-                        return;
-                    }
-                    const items = Array.isArray(data.items) ? data.items : [];
-                    if (data.type === 'ARCHIVE_ORPHAN_EXPORT') {
-                        const backup = await archiveCleanup.exportArchiveBackup(items);
-                        const url = URL.createObjectURL(new Blob([JSON.stringify(backup)], { type: 'application/json' }));
-                        const link = document.createElement('a');
-                        link.href = url;
-                        link.download = `后厨孤儿数据备份-${new Date().toISOString().slice(0, 10)}.json`;
-                        link.click();
-                        setTimeout(() => URL.revokeObjectURL(url), 1000);
-                        postToFrame({ type: 'ARCHIVE_ORPHAN_EXPORT_RESULT', success: true, message: `已导出 ${items.length} 项备份` });
-                        return;
-                    }
-                    const cleaned = await archiveCleanup.cleanupSelectedArchives(items);
-                    const result = await archiveCleanup.scanOrphanArchives();
-                    postToFrame({
-                        type: 'ARCHIVE_ORPHAN_CLEANUP_RESULT',
-                        success: true,
-                        cleaned,
-                        result,
-                        message: `已清理 世界档案 ${cleaned.worldIdentities} 份、悬空分支 ${cleaned.danglingBranches} 条、编剧札记 ${cleaned.notes} 份、向量缓存 ${cleaned.memoryChats} 项`,
-                    });
-                } catch (error) {
-                    const actionType = data.type === 'ARCHIVE_ORPHAN_SCAN'
-                        ? 'ARCHIVE_ORPHAN_SCAN_RESULT'
-                        : data.type === 'ARCHIVE_ORPHAN_EXPORT'
-                            ? 'ARCHIVE_ORPHAN_EXPORT_RESULT'
-                            : 'ARCHIVE_ORPHAN_CLEANUP_RESULT';
-                    postToFrame({ type: actionType, success: false, message: error?.message || String(error) });
-                }
-            })(), { source: import.meta.url, operation: 'archive-cleanup' });
-            break;
         case 'WORLD_FIELD_SOURCE': {
             const ctx = getContext(), world = worldAuthorityForContext(ctx);
             postToFrame({type:'WORLD_FIELD_SOURCE_RESULT', payload:worldFieldSource(world, ctx, data)});
@@ -1896,7 +1831,7 @@ async function handleFrameMessage(event) {
             const bounds = getUpdateAndSimulationBounds(ctx.chat);
             const hasRunner = typeof floorRunner !== 'undefined' && floorRunner;
             if (bounds.updateEnd < 0 && !hasRunner) {
-                postToFrame({ type: "SUMMARY_STATUS", statusText: "等待下一楼回复完成后再总结" });
+                postToFrame({ type: "SUMMARY_STATUS", statusText: "等待最新回复完成后再总结" });
                 notifySummaryState();
                 break;
             }
@@ -1932,7 +1867,7 @@ async function handleFrameMessage(event) {
                 xbLog.warn(MODULE_ID, SUMMARY_FEEDBACK_COPY.vectorConfigFailed, error);
                 if (getContext()?.chatId === targetChatId) {
                     postToFrame({ type: 'VECTOR_GEN_PROGRESS', current: -1, total: 0 });
-                    toastr.error(SUMMARY_FEEDBACK_COPY.vectorConfigFailed, SUMMARY_FEEDBACK_COPY.title);
+                    showAgentNotice({ level: 'error', message: SUMMARY_FEEDBACK_COPY.vectorConfigFailed, error, pinned: true });
                 }
                 break;
             }
@@ -2724,7 +2659,7 @@ async function commitMemoryPrompt(prepared, signal) {
         )
     ) {
         try {
-            await executeSlashCommand(`/echo severity=warning ${prepared.notice.message}`);
+            showAgentNotice({ level: 'warning', message: prepared.notice.message, pinned: true });
         } catch (error) {
             xbLog.warn(MODULE_ID, '显示剧情记忆召回提示失败', error);
         }
@@ -3408,8 +3343,6 @@ export function configureKitchenCards(adapter) { kitchenCards = adapter; }
 export function configureArchiveCleanup(adapter) { archiveCleanup = adapter; }
 export function archiveMemoryStore() {
     return {
-        listChatStorageStats,
-        exportChatMemoryRecords,
         clearChatData,
     };
 }
@@ -3483,6 +3416,14 @@ export async function inspectCurrentVectorStatusForUpgrade() {
     }
     return await inspectRawVectorStatus(chatId, [...chat], vectorCfg);
 }
+// WHY: settled summaries change the recall boundary and its indexed background prose.
+// Drop any speculative or already-joined recall slot so the next Generate recomputes
+// against the new lastSummarizedMesId instead of reusing a stale prompt.
+function refreshRecallAfterSettlement() {
+    recallReuse.invalidate();
+    cancelActiveRecall('memory-data-changed');
+    clearExtensionPrompt();
+}
 export async function saveFloorWork(source, check, update) {
     check(); await waitForMemoryCommit(); check();
     const chatId = getContext().chatId, previous = readSummaryMemory(), next = structuredClone(previous);
@@ -3491,7 +3432,9 @@ export async function saveFloorWork(source, check, update) {
     if (entry.digest !== source.digest) throw new Error('本楼来源已变化，请先在数据页预览恢复');
     update(entry,store);
     await commitSummaryMemory(chatId,next,{previous,validate:check});
+    refreshRecallAfterSettlement();
     if (isStorySummaryEnabledForCurrentChat()) notifySummaryState();
+    if (frameReady) postToFrame({ type: 'SUMMARY_FULL_DATA', payload: buildFramePayload(getPublishedSummaryStore()) });
 }
 export async function saveFloorSimulation(source, check, update) {
     check(); await waitForMemoryCommit(); check();
@@ -3500,7 +3443,9 @@ export async function saveFloorSimulation(source, check, update) {
     const simulations = (store.floorSimulations ??= {});
     simulations[source.end] = update(simulations[source.end], store);
     await commitSummaryMemory(chatId, next, { previous, validate: check });
+    refreshRecallAfterSettlement();
     if (isStorySummaryEnabledForCurrentChat()) notifySummaryState();
+    if (frameReady) postToFrame({ type: 'SUMMARY_FULL_DATA', payload: buildFramePayload(getPublishedSummaryStore()) });
 }
 export async function reconcileSettledFloorChunks(floor) {
     if (!Number.isInteger(floor) || floor < 0) return;

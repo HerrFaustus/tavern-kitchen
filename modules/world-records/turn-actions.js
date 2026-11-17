@@ -2,8 +2,14 @@ import { memoryDigest } from '../story-summary/data/memory-policy.js';
 import { protagonistIdentity } from '../story-state/protagonist-identity.js';
 import { applyWorldStoryProposal } from './world-story-state.js';
 import { parseStoryUpdates } from '../story-state/records.js';
+import { createEmptyMapDomain } from '../xiaobai-os/domains/map/state.js';
 import { invariant } from './domain.js';
 import { resolveSourceQuote } from './json-response.js';
+
+const mapScales = new Set(['world','region','city','district','building','floor','room','outdoor']);
+const mapLinkKinds = new Set(['door','stairs','elevator','path','road','portal','passage']);
+const mapLocationFields = ['location','所在地','位置','当前地点'];
+const normName = value => String(value ?? '').trim().normalize('NFKC').toLowerCase();
 
 export const taskDefinitions = {
     memory: ['逐楼摘要', '交付 summary（本轮经过，非空文本，综合主楼正文与同楼后台正文）及 memoryTags（characters、locations、times、keywords 短文本数组）。'],
@@ -18,7 +24,7 @@ export const taskDefinitions = {
 const fieldTasks = {
     overview: ['person', 'item'],
     people: ['person', 'organization', 'item'],
-    places: ['place'],
+    places: ['place', 'route'],
 };
 
 const storyTasks = {
@@ -28,7 +34,11 @@ const storyTasks = {
     suspense: ['suspense'],
 };
 
-export const actionProtocol = `返回 JSON。每项变化在 changes 数组中给出 task、group（相互依赖的变化共用）、floor（从零计）、quote（本轮逐字依据，常规记录可出自当楼主正文、紧邻玩家发言或同楼后台正文）、nature（established_fact/belief/intention/rumor/hypothesis）。不明确的标 uncertain:true。type=create 用 ref（本组临时名）、kind、name；type=set 用 target、field、value；引用实体的值写 {entityId:编号或临时名}。type=story 用 record，含稳定 id 和 kind（person、plan、goal、situation、knowledge、suspense、clock），人物用 name/presence，认知用 person/content，事项用 title/description/status/holders。沿用已存在的实体编号。无变化返回空数组。`;
+export const actionProtocol = `返回 JSON 对象。summary 写本轮摘要；memoryTags 写 characters、locations、times、keywords 短文本数组；buckets 按 overview、people、places、situation、suspense 分桶，每个桶内是变化数组。也可把所有变化放进 changes 数组并用 task 标明所属桶，两种写法择一。
+每个变化给出 task、group（相互依赖的变化共用）、floor（0 起始，省略时按本轮末楼）、quote（能核对时写本轮逐字依据；普通人物/地点/局势/悬念允许省略）、nature（established_fact/belief/intention/rumor/hypothesis）、uncertain（不确定时 true）。
+type=create 用 ref（本组临时名）、kind、name；type=set 用 target、field、value；引用实体写 {entityId:编号或临时名}。type=story 用 record，含稳定 id 和 kind（person、plan、goal、situation、knowledge、suspense、clock）；已有事项优先沿用名册中的 p1/s1 短编号作为 id。type=link 用 from、to、kind（door/stairs/elevator/path/road/portal/passage）、label、bidirectional，只用于连接两个地点。主角买卖只能用 type=trade，并给 direction、item、counterparty、quantity、price、paymentQuote（主楼正文或紧邻玩家发言的逐字付款依据）；后台正文不能触发交易或扣款。
+示范：{"summary":"……","memoryTags":{"characters":["店主"],"locations":["酒馆"],"times":["黄昏"],"keywords":["钥匙"]},"buckets":{"people":[{"task":"people","group":"g1","floor":1,"quote":"店主递出铜钥匙","nature":"established_fact","type":"create","ref":"shop","kind":"person","name":"店主"},{"task":"people","group":"g1","type":"set","target":"shop","field":"当前情绪","value":"警惕"}],"places":[{"task":"places","type":"create","ref":"yard","kind":"place","name":"后院","scale":"outdoor","parent":"青竹酒馆"},{"task":"places","type":"link","from":"青竹酒馆","to":"后院","kind":"door","label":"后门"}],"situation":[{"task":"situation","type":"story","record":{"id":"gate-watch","kind":"situation","title":"城门盘查","description":"守卫逐人验看路引","status":"open","reason":""}}],"suspense":[{"task":"suspense","type":"story","record":{"id":"s1","kind":"suspense","title":"钥匙的来历","description":"店主不愿说明铜钥匙来自何处","status":"open","reason":""}}]}}
+无变化时 buckets 为空对象或返回空数组。`;
 
 const chineseDigits = '零一二三四五六七八九';
 function numeral(value) {
@@ -57,17 +67,30 @@ function involvesHero(source, hero, playerName) {
     });
 }
 
+export function actionRows(result) {
+    if (Array.isArray(result?.changes)) return result.changes;
+    if (result?.buckets && typeof result.buckets === 'object' && !Array.isArray(result.buckets)) {
+        return Object.entries(result.buckets).flatMap(([task, rows]) =>
+            Array.isArray(rows) ? rows.map(row => row && typeof row === 'object' && !row.task ? { ...row, task } : row) : []);
+    }
+    return [];
+}
+
 function evidence(change, source, backgroundSource = null) {
-    const mainText = source.messages.find(row => row.floor === change.floor)?.text;
+    const floor = Number.isInteger(change?.floor) ? change.floor : source.end;
+    const mainText = source.messages.find(row => row.floor === floor)?.text;
     const mainQuote = resolveSourceQuote(mainText, change?.quote, { maxLength: 1200 });
-    if (mainQuote) return mainQuote;
+    if (mainQuote) return { floor, quote:mainQuote };
     // WHY: Protagonist trades / coin deductions remain strictly confined to main prose + adjacent user input,
     // while general facts/events treat settled floor background prose as same-class floor material.
-    if (change?.type !== 'trade' && backgroundSource && backgroundSource.floor === change.floor) {
+    if (change?.type !== 'trade' && backgroundSource) {
         const bgQuote = resolveSourceQuote(backgroundSource.text, change?.quote, { maxLength: 1200 });
-        if (bgQuote) return bgQuote;
+        if (bgQuote) return { floor: backgroundSource.floor, quote:bgQuote };
     }
-    invariant(false, '引文无法在本轮核对');
+    // Ordinary world changes no longer require a verbatim quote or a zero-based floor number.
+    // Trades keep the hard evidence gate below; other rows receive a readable provenance label.
+    if (change?.type === 'trade') invariant(false, '引文无法在本轮核对');
+    return { floor, quote:'' };
 }
 
 function findQuoteAcrossFloor(raw, source, backgroundSource = null) {
@@ -95,9 +118,86 @@ export function turnActionGroups(changes, keys) {
     return [...groups.entries()].map(([id, rows]) => ({ id, rows }));
 }
 
-export function turnOperations(state, rows, { source, backgroundSource = null, playerName, effectId, commandId, omitted = [] }) {
+export function turnOperations(state, rows, { source, backgroundSource = null, playerName, effectId, commandId, omitted = [], storyRefs = {} }) {
     const entities = [...state.entities], operations = [], refs = new Map();
     const { hero } = protagonistIdentity(entities, playerName);
+    const map = structuredClone(state.modules?.map || createEmptyMapDomain());
+    let mapDirty = false;
+    const placeBinding = entity => {
+        for (const binding of entity?.bindings || []) {
+            if (typeof binding !== 'string' || !binding.startsWith('["map","place:')) continue;
+            let parsed;
+            try { parsed = JSON.parse(binding); } catch { continue; }
+            const key = parsed[1];
+            if (typeof key === 'string' && key.startsWith('place:')) return key.slice(6);
+        }
+        return '';
+    };
+    const ensureLocation = entity => {
+        if (!entity || entity.kind !== 'place') return null;
+        const bound = placeBinding(entity);
+        let location = map.atlas.locations.find(item => item.key === bound);
+        if (!location) location = map.atlas.locations.find(item => normName(item.name) === normName(entity.name));
+        if (!location) {
+            const base = 'loc:' + entity.id;
+            let key = base, suffix = 2;
+            while (map.atlas.locations.some(item => item.key === key)) key = base + ':' + suffix++;
+            location = { key, name:entity.name, scale:'outdoor', status:'mentioned' };
+            map.atlas.locations.push(location);
+            mapDirty = true;
+        }
+        const binding = JSON.stringify(['map','place:'+location.key]);
+        if (!(entity.bindings || []).includes(binding)) {
+            entity.bindings = [...(entity.bindings || []), binding];
+            operations.push({ type:'bind', entityId:entity.id, binding });
+        }
+        return location;
+    };
+    const anchorActor = (entity, location) => {
+        if (!entity || !location || entity.kind !== 'person') return;
+        const existing = (entity.bindings || []).find(binding => typeof binding === 'string' && binding.startsWith('["map","actor:'));
+        let actorKey = '';
+        if (existing) { try { actorKey = JSON.parse(existing)[1].slice(6); } catch { actorKey = ''; } }
+        if (!actorKey) actorKey = normName(entity.name) === normName(playerName) ? 'player' : 'actor:' + entity.id;
+        const actor = map.atlas.actors.find(item => item.actorKey === actorKey);
+        if (actor) actor.locationKey = location.key;
+        else map.atlas.actors.push({ actorKey, displayName:entity.name, locationKey:location.key });
+        const binding = JSON.stringify(['map','actor:'+actorKey]);
+        if (!(entity.bindings || []).includes(binding)) {
+            entity.bindings = [...(entity.bindings || []), binding];
+            operations.push({ type:'bind', entityId:entity.id, binding });
+        }
+        mapDirty = true;
+    };
+    const updatePlace = (entity, field, value) => {
+        const location = ensureLocation(entity);
+        if (!location) return;
+        if (['parent','上级地点'].includes(field)) {
+            const target = value?.entityId ? entities.find(item => item.id === value.entityId) : null;
+            const targetLocation = target?.kind === 'place' ? ensureLocation(target) : null;
+            if (targetLocation && targetLocation.key !== location.key) location.parent = targetLocation.key;
+        } else if (['description','描述','简介'].includes(field)) {
+            location.brief = String(value ?? '').replace(/\s+/gu, ' ').slice(0, 2000);
+        } else if (['scale','类型'].includes(field)) {
+            if (mapScales.has(value)) location.scale = value;
+        } else if (['通行状态','通行'].includes(field)) {
+            const text = String(value ?? '').trim();
+            if (text) {
+                const cleaned = location.brief?.replace(/(?:^|；)通行状态：[^；]*/u, '') || '';
+                location.brief = [cleaned, '通行状态：' + text].filter(Boolean).join('；');
+            }
+        } else if (/^特征[/:：]/u.test(field)) {
+            const name = field.replace(/^特征[/:：]/u, '').trim();
+            if (name && value != null) {
+                const features = location.features ??= [];
+                const feature = features.find(item => (typeof item === 'string' ? item : item.name) === name);
+                if (typeof feature === 'string') features[features.indexOf(feature)] = { name, description:String(value) };
+                else if (feature) feature.description = String(value);
+                else features.push({ name, description:String(value) });
+            }
+        }
+        mapDirty = true;
+    };
     const resolve = (ref, allowedKinds = null) => {
         const mappedId = refs.get(ref);
         let candidates = mappedId
@@ -123,14 +223,16 @@ export function turnOperations(state, rows, { source, backgroundSource = null, p
     let storyTouched = false;
     const story = { ...state, modules: { ...state.modules } };
     for (const row of [...rows].sort((a, b) => Number(b.type === 'create') - Number(a.type === 'create'))) {
-        const quote = evidence(row, source, backgroundSource);
-        const label = quote;
-        const provenance = { module: 'turn-update', key: effectId, label: '第 ' + (row.floor + 1) + ' 楼 · ' + label,
-            task: row.task, proof: { floor: row.floor, quote } };
+        const proof = evidence(row, source, backgroundSource);
+        const quote = proof.quote;
+        const label = quote || [row.name, row.record?.title, row.field].filter(value => typeof value === 'string' && value.trim()).join(' · ') || '本轮记录';
+        const provenance = { module: 'turn-update', key: effectId, label: '第 ' + (proof.floor + 1) + ' 楼 · ' + label,
+            task: row.task, ...(quote ? { proof: { floor: proof.floor, quote } } : {}) };
         const allowed = fieldTasks[row.task] || [];
         if (row.type === 'create') {
             invariant(allowed.includes(row.kind) && row.ref && !refs.has(row.ref) && typeof row.name === 'string' && row.name.trim(), '新对象的类型或临时引用无效');
-            invariant(Boolean(resolveSourceQuote(quote, row.name)), '原文未确认新对象称呼');
+            if (row.kind === 'item') invariant(Boolean(resolveSourceQuote(quote, row.name)), '原文未确认新对象称呼');
+            invariant(row.kind !== 'route', '地点通道请使用 type=link');
             const rawImportance = typeof row.importance === 'string' ? row.importance.trim() : '';
             const importance = rawImportance ? findQuoteAcrossFloor(rawImportance, source, backgroundSource) : null;
             if (row.kind === 'item' && row.task !== 'overview') invariant(Boolean(importance), '物品缺少可核对的剧情意义');
@@ -140,8 +242,13 @@ export function turnOperations(state, rows, { source, backgroundSource = null, p
             const shouldCreate = !matching.length;
             refs.set(row.ref, id);
             if (shouldCreate) {
-                entities.push({ id, kind: row.kind, name: row.name, aliases: [], fields: {} });
+                const created = { id, kind: row.kind, name: row.name, aliases: [], fields: {}, bindings: [] };
+                entities.push(created);
                 operations.push({ type: 'create', id, kind: row.kind, name: row.name, source: provenance });
+                if (row.kind === 'place') {
+                    const location = ensureLocation(created);
+                    if (location && mapScales.has(row.scale)) location.scale = row.scale;
+                }
                 const createNature = row.uncertain
                     ? (row.nature && row.nature !== 'established_fact' ? row.nature : 'hypothesis')
                     : (row.nature || 'established_fact');
@@ -175,9 +282,25 @@ export function turnOperations(state, rows, { source, backgroundSource = null, p
             }
             operations.push({ type: 'purchase', heroId: hero.id, buyerId: row.direction === 'buy' ? hero.id : peer.id,
                 sellerId: row.direction === 'buy' ? peer.id : hero.id, itemId: item.id, quantity: row.quantity ?? 1, price, source: provenance });
+        } else if (row.type === 'link') {
+            invariant(row.task === 'places', '通道只能写在地点记录');
+            const from = resolve(row.from, ['place']), to = resolve(row.to, ['place']);
+            invariant(from.id !== to.id, '通道两端必须是不同地点');
+            const fromLocation = ensureLocation(from), toLocation = ensureLocation(to);
+            const kind = mapLinkKinds.has(row.kind) ? row.kind : 'path';
+            invariant(fromLocation && toLocation, '通道端点缺少地图地点');
+            const id = 'link:' + memoryDigest([fromLocation.key, toLocation.key, kind, row.label || '']);
+            if (!map.atlas.links.some(link => link.id === id)) {
+                map.atlas.links.push({ id, from:fromLocation.key, to:toLocation.key, kind, bidirectional:row.bidirectional !== false,
+                    ...(typeof row.label === 'string' && row.label.trim() ? { label:row.label.trim().slice(0,160) } : {}) });
+            }
+            mapDirty = true;
         } else if (row.type === 'story') {
             invariant(storyTasks[row.task]?.includes(row.record?.kind), '该功能不能改写这类剧情记录');
-            const record = parseStoryUpdates([row.record], { requireHolders: true })[0];
+            const inputRecord = row.record && typeof row.record === 'object'
+                ? { ...row.record, ...(storyRefs[row.record.id] ? { id:storyRefs[row.record.id] } : {}) }
+                : row.record;
+            const record = parseStoryUpdates([inputRecord], { requireHolders: true })[0];
             const storyNature = row.uncertain
                 ? (row.nature && row.nature !== 'established_fact' ? row.nature : 'hypothesis')
                 : (row.nature || 'established_fact');
@@ -202,6 +325,11 @@ export function turnOperations(state, rows, { source, backgroundSource = null, p
                     || rows.some(action => action.target === row.target && ['保管人', '使用人', '归还条件', '剧情意义', '物证'].includes(action.field));
                 invariant(important, '物品缺少剧情意义');
             }
+            if (entity.kind === 'place') updatePlace(entity, field, value);
+            else if (entity.kind === 'person' && mapLocationFields.includes(field) && value?.entityId) {
+                const place = entities.find(item => item.id === value.entityId);
+                if (place?.kind === 'place') anchorActor(entity, ensureLocation(place));
+            }
             const nature = row.uncertain
                 ? (row.nature && row.nature !== 'established_fact' ? row.nature : 'hypothesis')
                 : (row.nature || 'established_fact');
@@ -211,5 +339,6 @@ export function turnOperations(state, rows, { source, backgroundSource = null, p
         }
     }
     if (storyTouched) operations.push({ type: 'module', module: 'story', value: story.modules.story });
+    if (mapDirty) operations.push({ type: 'module', module: 'map', value: { ...map, revision: state.version + 1 } });
     return operations;
 }

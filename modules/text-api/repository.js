@@ -1,6 +1,6 @@
 import { TEXT_API_SETTINGS_KEY as KEY, createPreset, assertSettings, applyPresetAction } from './model.js';
 import { migrateLegacySettings, withoutLegacySummaryApi, withoutLegacyPlannerApi } from './migration.js';
-import { upgradeProfiles, assertProfileBinding } from './profiles.js';
+import { upgradeProfiles, assertProfileBinding, PROFILE_FEATURES } from './profiles.js';
 import { TEXT_API_COPY as COPY } from './copy.js';
 
 const SUMMARY_KEY = 'storySummaryPanelConfig';
@@ -82,12 +82,15 @@ export function createTextApiRepository({ common, planner, local, agent }) {
             let next;
             await common.updateAndSave(draft => {
                 next = applyPresetAction(draft[KEY], feature, action);
+                if (action.type === 'select-host' && ['embedding', 'rerank', 'l0'].includes(feature)) {
+                    throw new Error('向量嵌入与重排需要独立的 API 配置');
+                }
                 if (next.profilesVersion) {
                     for (const [consumer, id] of Object.entries(next.bindings)) {
-                        if (id == null || id === '@host') continue;
+                        // Legacy retired bindings (for example `memory`) are retained as data but cannot block a save.
+                        if (id == null || id === '@host' || !Object.hasOwn(PROFILE_FEATURES, consumer)) continue;
                         assertProfileBinding(consumer, next.presets.find(p => p.id === id));
                     }
-                    if (action.type === 'select-host' && feature !== 'summary') throw new Error('此模块需要独立的 API 配置');
                 }
                 draft[KEY] = next;
             }, { silent: false });

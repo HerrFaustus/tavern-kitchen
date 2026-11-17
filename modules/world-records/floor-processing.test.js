@@ -70,6 +70,8 @@ test('100 floors stop at reply 20, reuse confirmed work on reopen and release on
     while(f.errors.length<2) await setImmediate();
     assert.equal(generated,0);assert.equal(f.requests.filter(([,p])=>p.increment.end>39).length,0);
     f.fail=-1;await f.queue.settle();await owner;
+    // Fail-closed beforeGeneration aborts the blocked sends; a fresh send after recovery proceeds.
+    assert.equal(generated,0);await generate();
     assert.equal(generated,1);assert.equal(f.store().summaryHistory.length,50);assert.equal(f.store().lastSummarizedMesId,99);
     for(const [,p] of f.requests) {assert.equal(p.increment.messages.length,2);assert.ok(p.background.summaries.every(n=>n.end<p.increment.start));}
     const before=f.requests.length;await f.queue.settle();assert.equal(f.requests.length,before);
@@ -213,7 +215,7 @@ test('a later enabled update task replays in floor order without replaying a set
     assert.equal((await f.service.read()).entities.find(e => e.id === 'hero').fields.coins.value, 8);
 });
 
-test('the three agents keep simulation per-floor, lag update by 1 floor, auto-compress L2 and feed StoryPlanner without plotLines', async t => {
+test('the three agents settle simulation and summary through the latest floor, auto-compress L2 and feed StoryPlanner without plotLines', async t => {
     const f = fixture(t, [
         '我递出五金币。', '店主收下五金币，交出铜铃。',
         '我去东桥看看。', '东桥守卫正盘查行人。',
@@ -223,7 +225,7 @@ test('the three agents keep simulation per-floor, lag update by 1 floor, auto-co
     await f.service.commit(f.service.command(setup, [{ type: 'create', id: 'far', kind: 'person', name: '远方船夫',
         source: { module: 'manual', key: 'far', label: '城外船夫' } }], '城外人物'));
     f.keys = ['memory', 'overview', 'places', 'simulation', 'chapter'];
-    f.bounds = () => ({ simulationEnd: 3, updateEnd: 1 });
+    f.bounds = () => ({ simulationEnd: 3, updateEnd: 3 });
     f.store().json = { storyRecords: [{ id: 'east', kind: 'situation', title: '东桥警戒', scope: '东桥', description: '守卫在东桥查验行人', status: 'open', _addedAt: 0 }] };
     const wire = [], notes = [];
     featureCalls.clear();
@@ -253,8 +255,8 @@ test('the three agents keep simulation per-floor, lag update by 1 floor, auto-co
         }
         return {
             summary: `第 ${floor + 1} 楼已买下铜铃。`,
-            changes: [{ task: 'overview', type: 'trade', direction: 'buy', counterparty: 'shop', item: 'bell',
-                price: 5, paymentQuote: '收下五金币', floor, quote: '交出铜铃' }],
+            changes: floor === 1 ? [{ task: 'overview', type: 'trade', direction: 'buy', counterparty: 'shop', item: 'bell',
+                price: 5, paymentQuote: '收下五金币', floor, quote: '交出铜铃' }] : [],
         };
     });
 
@@ -279,6 +281,7 @@ test('the three agents keep simulation per-floor, lag update by 1 floor, auto-co
     // Manually seed a closed L2 chapter node on floor 1 once update completes, so chapter task runs planner immediately
     let failSave = true;
     f.onUpdateSettled = floor => {
+        if (floor !== 1) return;
         const batch = f.store().summaryHistory?.find(b => b.endMesId === floor);
         if (batch && !batch.compressionNodes) {
             batch.compressionNodes = [{
@@ -314,7 +317,7 @@ test('the three agents keep simulation per-floor, lag update by 1 floor, auto-co
     await f.queue.settle();
     await f.queue.settle();
 
-    assert.equal(f.store().lastSummarizedMesId, 1); // lag-1 updateEnd strictly stopped at floor 1
+    assert.equal(f.store().lastSummarizedMesId, 3); // no lag: the latest completed floor is settled
     assert.ok(f.store().floorSimulations[1]?.text);
     assert.ok(f.store().floorSimulations[3]?.text); // per-floor simulation ran through latest floor 3
     assert.equal((await writer.inspect()).state, 'ready');
@@ -324,13 +327,13 @@ test('the three agents keep simulation per-floor, lag update by 1 floor, auto-co
     assert.equal('plotLines' in (notes[0].chapter.entities || {}), false);
     const stats = featureCalls.snapshot();
     assert.equal(stats.tasks.simulation, 2);
-    assert.equal(stats.tasks.update, 1);
+    assert.equal(stats.tasks.update, 2);
     assert.equal(stats.tasks.planner, 1);
     assert.equal(planNextCompression([], { minDepth: 0 }), null);
-    assert.equal(current().cutoff, 1);
+    assert.equal(current().cutoff, 3);
 });
 
-test('the county key retains ownership on a first handover and invalid trade degrades with warning instead of halting queue', async t => {
+test('the county key retains ownership on a first handover while an invalid trade fails the floor closed', async t => {
     const f = fixture(t, ['这把钥匙先放你这儿', '新来的守卫阿棠接过县衙的库房钥匙，答应明早交还。']);
     const before = await f.service.ensure(), source = { module: 'manual', key: 'county', label: '县衙档案' };
     await f.service.commit(f.service.command(before, [{ type: 'create', id: 'county', kind: 'organization', name: '县衙', source }], '建立县衙'));
@@ -349,13 +352,13 @@ test('the county key retains ownership on a first handover and invalid trade deg
     sale.keys = ['memory', 'overview'];
     sale.reply = () => ({ summary: '已确认本轮对白', changes: [{ type: 'trade', task: 'overview', item: 'bell', counterparty: 'shop', direction: 'buy',
         price: 4, paymentQuote: '收下五金币', floor: 1, quote: '交出铜铃' }] });
-    await sale.queue.settle();
+    await assert.rejects(sale.queue.settle(), /成交价/);
     assert.equal(sale.store().summaryHistory[0].summary, '已确认本轮对白');
-    assert.match(sale.store().floorWork[1].warnings[0].reason, /成交价/);
+    assert.equal(sale.store().floorWork[1].warnings, undefined);
     assert.equal((await sale.service.read()).entities.find(e => e.id === 'hero').fields.coins.value, 10);
 });
 
-test('counted goods cannot oversell, partial purchase settles cleanly, and oversell warns as noop', async t => {
+test('counted goods cannot oversell while a partial purchase settles cleanly', async t => {
     const f = fixture(t, ['我付五金币。', '店主收下五金币，交出两只铜铃。']);
     const seeded = await seed(f, true);
     await f.service.commit(f.service.command(seeded, [{ type: 'set', entityId: 'bell', field: '数量', value: 3, source: { module: 'manual', key: 'lot', label: '三只铜铃' } }], '清点物品'));
@@ -369,22 +372,20 @@ test('counted goods cannot oversell, partial purchase settles cleanly, and overs
     f.chat.push({ is_user: true, name: '主角', send_date: 'sell-u', mes: '我要全卖掉。' }, { name: '店主', send_date: 'sell-a', mes: '店主收下三只铜铃，我实收三金币。' });
     f.reply = () => ({ changes: [{ task: 'overview', type: 'trade', counterparty: 'shop', item: trade.transferredItemId, direction: 'sell', price: 3,
         floor: 3, quantity: 3, quote: '收下三只铜铃', paymentQuote: '实收三金币' }] });
-    await f.queue.settle();
+    await assert.rejects(f.queue.settle(), /库存不足/);
     const blocked = await f.service.read();
     assert.equal(blocked.entities.find(e => e.id === 'hero').fields.coins.value, 5);
     assert.equal(blocked.receipts.filter(r => r.trades).length, 1);
-    assert.match(f.store().floorWork[3].warnings[0].reason, /库存不足/);
 });
 
-test('a sale between the shopkeeper and boatman degrades with warning instead of debiting protagonist', async t => {
+test('a sale between the shopkeeper and boatman fails closed instead of debiting protagonist', async t => {
     const f = fixture(t, ['我在旁边看。', '船夫递出五金币，店主收下五金币，交给船夫铜铃。']);
     await seed(f, true);
     f.keys = ['overview'];
     f.reply = () => ({ changes: [{ task: 'overview', type: 'trade', counterparty: 'shop', item: 'bell', direction: 'buy', price: 5,
         floor: 1, quote: '交给船夫铜铃', paymentQuote: '收下五金币' }] });
-    await f.queue.settle();
+    await assert.rejects(f.queue.settle(), /未确认主角/);
     const state = await f.service.read();
     assert.equal(state.entities.find(e => e.id === 'hero').fields.coins.value, 10);
     assert.equal(state.receipts.filter(r => r.trades).length, 0);
-    assert.match(f.store().floorWork[1].warnings[0].reason, /未确认主角/);
 });

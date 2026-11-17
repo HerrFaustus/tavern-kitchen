@@ -141,16 +141,18 @@ try {
         const observed = await page.evaluate(async()=>{
             for (const type of ['normal','continue','swipe','group']) await fixture.generate(type);
             await fixture.eventSource.emit(fixture.event_types.CHAT_CHANGED);
-            return { generated:fixture.generated, writes:fixture.writes, storySummary:fixture.chat_metadata?.extensions?.TavernKitchen?.storySummary, prompts:Object.keys(fixture.extension_prompts),
+            // The first-send opening gate persists the per-chat skip before the missing-binding abort.
+            const writes = fixture.writes; fixture.writes = 0;
+            return { generated:fixture.generated, writes, storySummary:fixture.chat_metadata?.extensions?.TavernKitchen?.storySummary, prompts:Object.keys(fixture.extension_prompts),
                 panels: Object.keys(fixture.extension_settings.TavernKitchen?.panels || {}),
                 floorControls:document.querySelectorAll('#tk-floor-status').length,
                 worldRecords:(await fixture.storedRows('TavernKitchen_WorldArchive','branches')).reduce((sum,b)=>sum+(b.entities?.length||0)+(b.receipts?.length||0)+(b.events?.length||0),0),
                 notes:(await fixture.storedRows('TavernKitchen.StoryPlanner','notes')).length };
         });
-        assert.deepEqual(observed,{generated:0,writes:0,storySummary:{},prompts:[],panels:[],floorControls:1,worldRecords:0,notes:0});
+        assert.deepEqual(observed,{generated:0,writes:1,storySummary:{},prompts:[],panels:[],floorControls:1,worldRecords:0,notes:0});
         assert.equal(uninstalled.generated, 4);
         assert.deepEqual(failures,[]);
-        const missing=page.getByRole('alert').filter({hasText:'请先在设置中配置更新agent'});
+        const missing=page.getByRole('alert').filter({hasText:'请先在设置中配置总结agent'});
         await missing.waitFor();
         await missing.getByRole('button',{name:'前往设置'}).click();
         await page.waitForFunction(()=>document.querySelector('#tk-workspace')?.classList.contains('openDrawer'));
@@ -162,7 +164,7 @@ try {
         const picker = api.getByLabel('选择连接',{exact:true});
         await picker.selectOption({label:'自定义连接'});
         const presetIds = {};
-        for(const [agent,label] of [['update','更新'],['simulation','推演'],['planner','编剧']]) {
+        for(const [agent,label] of [['update','总结'],['simulation','推演'],['planner','编剧']]) {
             if(agent !== 'update'){
                 page.once('dialog',dialog=>dialog.accept(label+'测试连接'));
                 await api.getByRole('button',{name:'新建',exact:true}).click();
@@ -190,8 +192,8 @@ try {
         }
         failConnection=false;
         assert.deepEqual(modelCalls.map(call=>call.model),['stub-update','stub-simulation','stub-planner']);
-        await api.getByLabel('更新 Agent',{exact:true}).selectOption(presetIds.update);
-        await api.getByRole('status').filter({hasText:'已保存更新 Agent'}).waitFor();
+        await api.getByLabel('总结 Agent',{exact:true}).selectOption(presetIds.update);
+        await api.getByRole('status').filter({hasText:'已保存总结 Agent'}).waitFor();
         await page.waitForFunction(()=>!!fixture.chat_metadata.extensions?.TavernKitchen?.storySummary?.floorSimulations?.[1],undefined,{timeout:10000});
         assert.equal(modelCalls.length,4);
         assert.equal(modelCalls.at(-1).model,'stub-simulation');
@@ -212,10 +214,9 @@ try {
             delete document.body.dataset.generating;
             await fixture.eventSource.emit(fixture.event_types.GENERATION_ENDED);
         });
-        await page.waitForFunction(()=>fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorWork?.[1]?.done.includes('overview')
-            && !!fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorSimulations?.[3]);
+        // Generation no longer summarizes the replied floor; only per-floor simulation runs here.
+        await page.waitForFunction(()=>!!fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorSimulations?.[3]);
         const connectionTests=modelCalls.slice(0,3).map(call=>call.model);
-        await page.waitForFunction(()=>!document.querySelector('#tk-floor-status')?.textContent?.trim()&&fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorWork?.[1]?.done.includes('suspense'));
         await page.evaluate(() => {
             const chat=Array.from({length:100},(_,i)=>({mes:'虚构清河问答 '+i,is_user:i%2===0,name:i%2===0?'旅人':'店主',send_date:'test-'+i}));
             localStorage.setItem('chat',JSON.stringify(chat));localStorage.setItem('metadata','{}');localStorage.setItem('fixtureChatId','百楼旧事');
@@ -223,21 +224,24 @@ try {
         const start=modelCalls.length;
         failFloor=39;
         await page.reload();
-        await page.getByRole('button',{name:'重试本楼'}).waitFor({timeout:90000});
+        await page.getByRole('button',{name:'重试',exact:true}).waitFor({timeout:90000});
         assert.match(await page.locator('#tk-floor-status').innerText(),/第 40 楼/);
         await page.evaluate(()=>{ window.interrupted=fixture.generate('group'); });
         await page.waitForTimeout(50);
         assert.equal(await page.evaluate(()=>fixture.generated),0);
         await page.reload();
-        await page.getByRole('button',{name:'重试本楼'}).waitFor({timeout:30000});
-        await page.evaluate(()=>{window.waitForGeneration=fixture.generate('continue');});
+        await page.getByRole('button',{name:'重试',exact:true}).waitFor({timeout:30000});
+        // Fail-closed: a blocked backlog aborts the pending send with the draft preserved.
+        const blockedGeneration = page.evaluate(()=>fixture.generate('continue'));
         assert.equal(await page.evaluate(()=>fixture.generate('normal')),false);
+        assert.equal(await blockedGeneration,false);
         assert.equal(await page.evaluate(()=>fixture.generated),0);
         failFloor=null;
-        await page.getByRole('button',{name:'重试本楼'}).click();
+        await page.getByRole('button',{name:'重试',exact:true}).click();
+        const retriedGeneration = page.evaluate(()=>fixture.generate('continue'));
+        assert.equal(await retriedGeneration,true);
         await page.waitForFunction(()=>fixture.generated===1,undefined,{timeout:120000});
-        assert.equal(await page.evaluate(()=>window.waitForGeneration),true);
-        assert.equal(await page.evaluate(()=>Object.values(fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorWork).filter(row=>row.done.includes('overview')).length),49);
+        assert.equal(await page.evaluate(()=>Object.values(fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorWork).filter(row=>row.done.includes('overview')).length),50);
         assert.ok(await page.evaluate(()=>!!fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorSimulations?.[99]));
         const backlog=modelCalls.slice(start).filter(r=>r.floor!=null).map(r=>r.floor);
         assert.equal(modelCalls.slice(start).some(r=>r.kind==='review'),false);
@@ -288,8 +292,10 @@ try {
                 {name:'店主',mes:'店门外风铃轻响。',send_date:'store-bell'});
             await fixture.eventSource.emit(fixture.event_types.MESSAGE_RECEIVED,5);
         });
-        await page.waitForFunction(()=>fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorWork?.[3]?.done.includes('overview')
-            && !!fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorSimulations?.[5]);
+        await page.waitForFunction(()=>!!fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorSimulations?.[5]);
+        // Summary is forced by the next send, not by the reply itself.
+        await page.evaluate(async()=>{ await fixture.generate('normal'); });
+        await page.waitForFunction(()=>fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorWork?.[3]?.done.includes('overview'));
         const toggle=page.getByRole('button',{name:'酒馆后厨',exact:true}).first();
         if(!await page.locator('#tk-workspace.openDrawer').count()) await toggle.click();
         await page.locator('#tk-tab-data').click();
@@ -312,6 +318,8 @@ try {
         assert.match(await recovery.innerText(),/旅人.*coins|金币/);
         await recovery.getByRole('button',{name:'确认恢复'}).click();
         await recovery.getByText(/已原位恢复到第/).waitFor();
+        // Recovery invalidates the floor; the next send re-settles it against the selected swipe.
+        await page.evaluate(async()=>{ await fixture.generate('normal'); });
         await page.waitForFunction(()=>fixture.chat_metadata.extensions.TavernKitchen.storySummary.floorWork?.[3]?.source.messages.at(-1).text==='十枚才卖。');
         const quote=await exportCard();
         assert.equal(value(quote,'hero','coins'),10);assert.equal(value(quote,'shop','coins'),37);assert.equal(value(quote,'bell','owner').entityId,'shop');

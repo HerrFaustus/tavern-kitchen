@@ -22,7 +22,7 @@ interface MapActivation {
 
 interface MapControllerDependencies {
     map: MapService;
-    settings: Pick<XiaobaiOsSettingsRepository, 'read' | 'setMapAutoMaintenance' | 'setMapProjection' | 'subscribe'>;
+    settings: Pick<XiaobaiOsSettingsRepository, 'read' | 'subscribe'>;
     maintenance: Pick<
         MaintenanceRunner,
         'startManual' | 'startRebuild' | 'cancelRequested' | 'invalidateAutomatic' | 'getStatus' | 'subscribeStatus'
@@ -151,18 +151,6 @@ export function createMapController({
             const adoption = await map.adoptServerState();
             assertSameActivation(current, payload);
             return { adoption: adoption.status, state: emitState(current) };
-        }
-        if (message.type === 'map/set-auto-maintenance') {
-            if (typeof payload.enabled !== 'boolean') { throw new TypeError('地图自动维护开关无效'); }
-            await settings.setMapAutoMaintenance(payload.enabled);
-            assertSameActivation(current, payload);
-            return emitState(current);
-        }
-        if (message.type === 'map/set-projection') {
-            if (typeof payload.enabled !== 'boolean') { throw new TypeError('invalid_map_projection'); }
-            await settings.setMapProjection(payload.enabled);
-            assertSameActivation(current, payload);
-            return emitState(current);
         }
         if (message.type === 'map/maintain-once' || message.type === 'map/rebuild') {
             throw new Error('地点与人物位置已由统一后厨队列（simulation）自动维护。');

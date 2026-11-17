@@ -144,6 +144,16 @@ test('planning allows key-less local endpoints with baseUrl and model, while rej
     assert.doesNotThrow(() => assertPlannerPresetReady({ ...snapshot, apiKey: ' key ' }));
     assert.throws(() => assertPlannerPresetReady({ ...snapshot, baseUrl: '' }));
     assert.throws(() => assertPlannerPresetReady({ ...snapshot, model: ' ' }));
-    assert.throws(() => assertPlannerPresetReady({ ...snapshot, provider: HOST_PROVIDER }));
+    assert.doesNotThrow(() => assertPlannerPresetReady({ ...snapshot, provider: HOST_PROVIDER }));
     assert.equal(resolveFeaturePreset(next, 'summary').id, 'summary-default');
+});
+
+test('repository accepts host for every text Agent and rejects host for vector consumers', async () => {
+    const f = fixture({ common: { [KEY]: migrateLegacySettings(legacy) } });
+    const repository = f.create();
+    for (const [agent, feature] of [['update', 'summary'], ['simulation', 'world'], ['planner', 'planner']]) {
+        const saved = await repository.mutate('library', { type: 'bind-agent', agent, id: '@host' });
+        assert.equal(saved.bindings[feature], '@host');
+    }
+    await assert.rejects(repository.mutate('embedding', { type: 'select-host' }), /独立的 API/);
 });

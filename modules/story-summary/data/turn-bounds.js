@@ -3,10 +3,11 @@ import { beforeRecentTurns } from './narrative-window.js';
 import { isNarrativeReply } from './turn-source.js';
 
 /**
- * Compute lag-1 update boundary and independent per-floor simulation boundary.
- * WHY: `0.2.36` settles structured world state & summaries one narrative AI floor behind
- * the latest reply (`updateEnd`), while Simulation runs up to the latest completed narrative
- * AI reply (`simulationEnd`) without touching structured archives.
+ * Compute the settled simulation/summary boundary.
+ * WHY: `0.2.37` retires the lag-1 update window. A finished AI reply is simulated
+ * immediately, while its summary is settled before the next `normal` / `continue` /
+ * `group` send (see `createTurnQueue.beforeGeneration`). Both bounds therefore
+ * point at the latest completed narrative reply.
  */
 export function getUpdateAndSimulationBounds(chat, requestedEnd = undefined) {
     if (!Array.isArray(chat) || !chat.length) {
@@ -18,8 +19,7 @@ export function getUpdateAndSimulationBounds(chat, requestedEnd = undefined) {
         return { stableEnd: -1, simulationEnd: -1, updateEnd: -1 };
     }
     const simulationEnd = beforeRecentTurns(chat, stableEnd, 0);
-    const updateEnd = beforeRecentTurns(chat, stableEnd, 1);
-    return { stableEnd, simulationEnd, updateEnd };
+    return { stableEnd, simulationEnd, updateEnd: simulationEnd };
 }
 
 /**

@@ -22,7 +22,7 @@ function fixture(overrides = {}) {
         sendVectorStatsToFrame: async () => calls.push('stats'),
         clearAllChunks: async () => calls.push('clear-raw'), clearChunkDocuments() {}, updateMeta: async () => calls.push('meta'),
         getEngineFingerprint: () => 'test', postToFrame() {}, executeSlashCommand: async () => calls.push('notice'),
-        shouldNotifyMemoryFailure: () => true, MODULE_ID: 'raw',
+        shouldNotifyMemoryFailure: () => true, MODULE_ID: 'raw', showAgentNotice: () => {},
         xbLog: { info() {}, warn() {}, error: (...args) => errors.push(args) },
         // Any regression to a paid retired channel fails this contract.
         getAnchorStats: () => assert.fail('legacy anchor inspection'), incrementalExtractAtoms: () => assert.fail('extra semantic call'),

@@ -156,17 +156,6 @@
             <input id="kitchen-card-file" type="file" accept=".json,application/json" hidden>
         </section>
         <section id="world-recovery" hidden aria-label="世界版本与恢复"></section>
-        <section id="archive-cleanup" aria-label="跨库孤儿数据排查与清理">
-            <h4>本地数据库排查（世界 / 札记 / 向量）</h4>
-            <p class="setting-hint">扫描本地 IndexedDB 中的孤儿存档与未核验缓存（活跃聊天及离线无法核验项不会默认勾选）。</p>
-            <div id="archive-cleanup-actions">
-                <button class="btn" id="btn-scan-orphans" type="button">扫描孤儿数据</button>
-                <button class="btn" id="btn-backup-orphans" type="button" disabled>导出所选备份</button>
-                <button class="btn btn-danger" id="btn-clean-orphans" type="button" disabled>清理所选</button>
-            </div>
-            <p id="orphan-scan-status" role="status"></p>
-            <div id="orphan-scan-list" class="orphan-scan-list" hidden></div>
-        </section>
     </div>
     </section>
 

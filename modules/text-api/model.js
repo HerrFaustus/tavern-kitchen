@@ -10,13 +10,14 @@ export const HOST_BINDING = '@host';
 export const HOST_PROVIDER = 'sillytavern-current';
 
 export const AGENT_BINDINGS = Object.freeze({
-    update: { name: '更新', features: ['summary', 'opening'] },
+    update: { name: '总结', features: ['summary', 'opening'] },
     simulation: { name: '推演', features: ['world'] },
     planner: { name: '编剧', features: ['planner'] },
 });
 
 export function usableAgentConnection(preset) {
-    return !!preset && (preset.kind || 'text') === 'text' && preset.provider !== HOST_PROVIDER && !!preset.model?.trim() && !!preset.baseUrl?.trim();
+    if (preset === HOST_BINDING) return true;
+    return !!preset && (preset.kind || 'text') === 'text' && (preset.provider === HOST_PROVIDER || (!!preset.model?.trim() && !!preset.baseUrl?.trim()));
 }
 
 export function featureBinding(settings, key) {
@@ -30,8 +31,9 @@ export function readAgentBinding(settings, agent) {
     const { features } = AGENT_BINDINGS[agent];
     const ids = features.map(key => featureBinding(settings, key));
     const distinct = [...new Set(ids)];
-    const preset = distinct.length === 1 && settings.presets.find(item => item.id === distinct[0]);
-    const id = usableAgentConnection(preset, agent) ? preset.id : '';
+    const selected = distinct.length === 1 ? distinct[0] : null;
+    const preset = selected && settings.presets.find(item => item.id === selected);
+    const id = selected === HOST_BINDING ? HOST_BINDING : usableAgentConnection(preset, agent) ? preset.id : '';
     return { id, previous: ids, conflict: !id && ids.some(Boolean) };
 }
 
@@ -93,7 +95,7 @@ export function applyPresetAction(settings, feature, action) {
     const index = next.presets.findIndex(preset => preset.id === action.id);
     if (action.type === 'bind-agent') {
         const group = Object.hasOwn(AGENT_BINDINGS, action.agent) && AGENT_BINDINGS[action.agent];
-        if (feature !== 'library' || !group || (action.id && !usableAgentConnection(next.presets[index], action.agent))) throw new Error('请选择已填写地址和模型的独立文本连接');
+        if (feature !== 'library' || !group || (action.id && action.id !== HOST_BINDING && !usableAgentConnection(next.presets[index]))) throw new Error('请选择「同酒馆主 API」或已填写地址和模型的文本连接');
         for (const key of group.features) next.bindings[key] = action.id || null;
         if (action.agent === 'update') next.openingInheritsWorld = false;
         return next;

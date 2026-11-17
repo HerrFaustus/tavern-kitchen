@@ -2,7 +2,7 @@ import { invariant } from './domain.js';
 
 export function normalizeArchiveStorageError(error, fallbackMessage) {
     if (error?.name === 'QuotaExceededError' || error?.code === 22 || error?.cause?.name === 'QuotaExceededError') {
-        return Object.assign(new Error('浏览器本地存储空间已满，无法保存档案。请先在「数据」中清理无用聊天或导出备份。', { cause: error }), { code: 'quota_exceeded' });
+        return Object.assign(new Error('浏览器本地存储空间已满，无法保存档案。请删除无用聊天或导出后厨卡备份以释放空间。', { cause: error }), { code: 'quota_exceeded' });
     }
     return error || new Error(fallbackMessage);
 }
@@ -131,28 +131,6 @@ export function createWorldStorage({ indexedDB = globalThis.indexedDB, name = 'T
                     bindings,
                 });
                 tx.onerror = () => reject(tx.error);
-            });
-        },
-        async exportIdentities(identities = [], branchIds = []) {
-            const db = await open();
-            const wanted = new Set(identities);
-            const wantedBranches = new Set(branchIds);
-            return new Promise((resolve, reject) => {
-                const tx = db.transaction(['branches', 'owners'], 'readonly');
-                const ownersReq = tx.objectStore('owners').getAll();
-                const branchesStore = tx.objectStore('branches');
-                const exported = [];
-                tx.onerror = () => reject(tx.error);
-                ownersReq.onsuccess = () => {
-                    for (const row of ownersReq.result || []) {
-                        if (wanted.has(row.identity)) wantedBranches.add(row.branchId);
-                    }
-                    for (const id of wantedBranches) {
-                        const req = branchesStore.get(id);
-                        req.onsuccess = () => { if (req.result) exported.push(req.result); };
-                    }
-                };
-                tx.oncomplete = () => resolve(exported);
             });
         },
         async deleteIdentities(identities = [], orphanBranchIds = []) {

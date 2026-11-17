@@ -164,20 +164,6 @@ html.tk-embedded:is([data-kitchen-view="data"],[data-kitchen-view="recall"]) :is
 #data-controls { margin-block: 12px; }
 #kitchen-card-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 16px; }
 #world-recovery { margin: 0 0 16px; }
-#archive-cleanup { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--bdr); }
-#archive-cleanup h4 { margin: 0 0 6px; font-size: .94rem; }
-#archive-cleanup-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
-#orphan-scan-status { margin: 6px 0; font-size: .84rem; color: var(--txt2); }
-.orphan-scan-list { display: grid; gap: 6px; margin-top: 8px; }
-.orphan-scan-item { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border: 1px solid var(--bdr); border-radius: 6px; background: var(--bg2); }
-.orphan-scan-item input { margin-top: 3px; flex-shrink: 0; }
-.orphan-scan-meta { display: grid; gap: 2px; min-width: 0; }
-.orphan-scan-title { font-size: .86rem; font-weight: 600; color: var(--txt); overflow-wrap: anywhere; }
-.orphan-scan-detail { font-size: .78rem; color: var(--txt2); overflow-wrap: anywhere; }
-.orphan-badge { display: inline-block; margin-inline-end: 6px; padding: 1px 6px; border-radius: 4px; font-size: .74rem; border: 1px solid var(--bdr); }
-.orphan-badge.is-orphan { color: #ef4444; border-color: #ef444466; }
-.orphan-badge.is-unknown { color: #f59e0b; border-color: #f59e0b66; }
-.orphan-badge.is-live { color: var(--txt2); }
 .tk-world-history > summary { cursor: pointer; }
 .tk-world-history-field { display: flex; flex-direction: column; gap: 4px; margin: 10px 0 5px; }
 .tk-world-history-field[hidden] { display: none; }

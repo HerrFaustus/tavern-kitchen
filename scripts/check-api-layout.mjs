@@ -54,7 +54,7 @@ try {
     }, presets);
     const selector = page.getByLabel('选择连接');
     const settings = page.locator('.text-api-configuration');
-    await page.getByLabel('更新 Agent').waitFor();
+    await page.getByLabel('总结 Agent').waitFor();
     assert.ok(await selector.isHidden());
     await page.getByText('编辑连接',{exact:true}).click();
     await selector.waitFor();

@@ -3,7 +3,6 @@ import type { MapBrowseFilter, MapBrowseKind } from './map-browse.js';
 export const MAP_PROJECTION_COPY = {
     label: '投影地图', empty: '还没有地图',
     description: '将地图投影到最后一个AI楼层末尾显示。',
-    enabled: '地图投影已开启。', disabled: '地图投影已关闭。',
     views: { world: '世界', region: '地区', scene: '场景' },
     options: '地图显示选项', location: '回到当前位置',
     loadFailed: '地图投影加载失败，请刷新页面重试。',

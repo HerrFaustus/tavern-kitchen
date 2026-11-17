@@ -70,7 +70,12 @@ async function dispatch(chat, contextSize, abort, type) {
                 const result = await entry.handler(chat, contextSize, wrappedAbort, type, runContext);
                 runContext.results.set(id, result);
             } catch (error) {
+                // WHY: a broken gate must never let the host continue generating.
+                // The handler owns its user-facing notice; here we only guarantee
+                // that an unexpected exception still aborts this dispatch.
                 xbLog.warn(MODULE_ID, `interceptor handler failed: ${id}`, error);
+                notifyObservers('handler-error', id, type, dispatchRun, error);
+                wrappedAbort(true);
             } finally {
                 notifyObservers('handler-end', id, type, dispatchRun);
             }

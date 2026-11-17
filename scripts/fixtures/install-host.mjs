@@ -25,7 +25,7 @@ export function startFixture() {
         saveMetadata:async()=>{ fixture.writes++; localStorage.setItem('metadata', JSON.stringify(chat_metadata)); },
     };
     ctx.POPUP_TYPE = {INPUT:'input',CONFIRM:'confirm'};
-    ctx.POPUP_RESULT = {AFFIRMATIVE:true};
+    ctx.POPUP_RESULT = {AFFIRMATIVE:true,NEGATIVE:false};
     ctx.Popup = class {
         constructor(text,type,initial){ Object.assign(this,{text,type,initial}); }
         show(){ return this.type === 'input' ? window.prompt(this.text.textContent,this.initial) : window.confirm(this.text.textContent); }

@@ -35,7 +35,7 @@ function extractBriefJson(messages) {
     return JSON.parse(msg.content.slice(msg.content.indexOf('{')));
 }
 
-test('0.2.36: lag-1 updateEnd exempts latest simulation floor, swipe avoids rollback conflict, and pre-upgrade floors are not retro-backfilled', async t => {
+test('0.2.37: simulation reaches the latest completed floor while pre-upgrade floors are not retro-backfilled', async t => {
     const chat = makeChat();
     const { service } = await setupWorld(t, chat);
 
@@ -61,7 +61,7 @@ test('0.2.36: lag-1 updateEnd exempts latest simulation floor, swipe avoids roll
     };
 
     const bounds = getUpdateAndSimulationBounds(chat);
-    assert.equal(bounds.updateEnd, 1);
+    assert.equal(bounds.updateEnd, 3);
     assert.equal(bounds.simulationEnd, 3);
     assert.equal(bounds.stableEnd, 3);
     assert.equal(firstInvalidMemorySource(store, chat), null);
@@ -98,7 +98,8 @@ test('0.2.36: lag-1 updateEnd exempts latest simulation floor, swipe avoids roll
         },
     });
 
-    await queue.settle();
+    // Post-generation kick settles simulation only; summaries wait for the next send.
+    await queue.settle({ update: false });
     // Even with frequency === 'off', simulation runs once on latest floor 3 and NEVER retro-backfills floor 1.
     assert.equal(calls.length, 1);
     assert.equal(calls[0].feature, 'world');
@@ -113,12 +114,12 @@ test('0.2.36: lag-1 updateEnd exempts latest simulation floor, swipe avoids roll
     chat[3].mes = chat[3].swipes[1];
     assert.equal(firstInvalidMemorySource(store, chat), null);
     queue.invalidate();
-    await queue.settle();
+    await queue.settle({ update: false });
     assert.equal(calls.length, 2);
     assert.equal(store.floorSimulations[3].candidate, 1);
 });
 
-test('0.2.36: joint [main + settled background] update accepts general facts from background while rejecting background-only trade without halting queue', async t => {
+test('joint [main + settled background] update accepts general facts from background while rejecting background-only trade', async t => {
     const chat = makeChat();
     const initialSource = { module: 'manual', key: 'seed', label: '开局设定' };
     const { service } = await setupWorld(t, chat, [
@@ -157,18 +158,14 @@ test('0.2.36: joint [main + settled background] update accepts general facts fro
             },
         },
     };
-    // Advance one more completed pair so floor 3 falls into lag-1 updateEnd!
-    chat.push(
-        { is_user: true, name: '旅人', mes: '出门看看。', send_date: 'u4' },
-        { is_user: false, name: '叙述者', mes: '街道清晨冷清。', swipe_id: 0, swipes: ['街道清晨冷清。'], swipe_info: [{ send_date: 'a5-0' }] },
-    );
+    // Settle only through the simulated floor 3; later replies are not part of this assertion.
     await service.syncTurns(chat);
 
     let updateBrief = null;
     const settledFloors = [];
     const queue = createFloorProcessing({
         read: () => {
-            const b = getUpdateAndSimulationBounds(chat);
+            const b = getUpdateAndSimulationBounds(chat, 3);
             return { owner: 'story-0236', playerName: '旅人', chat, end: b.stableEnd, updateEnd: b.updateEnd, simulationEnd: b.simulationEnd };
         },
         tasks: () => [
@@ -209,17 +206,6 @@ test('0.2.36: joint [main + settled background] update accepts general facts fro
                             quote: '东桥守卫贴出木牌',
                             nature: 'established_fact',
                         },
-                        {
-                            task: 'overview',
-                            type: 'trade',
-                            direction: 'buy',
-                            counterparty: 'shop',
-                            item: 'bell',
-                            price: 5,
-                            floor: 3,
-                            quote: '买下铜铃',
-                            paymentQuote: '付给杂货摊5金币',
-                        },
                     ],
                 }),
             };
@@ -234,9 +220,76 @@ test('0.2.36: joint [main + settled background] update accepts general facts fro
     const finalState = await service.read();
     // General `places` fact evidenced in background IS committed cleanly.
     assert.equal(finalState.entities.find(e => e.id === 'bridge').fields['告示'].value, '贴出木牌');
-    // Background-only `trade` must NEVER change hero's coins and settles without halting queue!
-    assert.equal(finalState.entities.find(e => e.id === 'hero').fields.coins.value, 10);
     assert.ok(store.floorWork[3].done.includes('suspense'));
+});
+
+test('background-only protagonist trade fails the floor closed and never deducts coins', async t => {
+    const chat = makeChat();
+    const initialSource = { module: 'manual', key: 'seed', label: '开局设定' };
+    const { service } = await setupWorld(t, chat, [
+        { type: 'create', id: 'hero', name: '旅人', kind: 'person', source: initialSource },
+        { type: 'set', entityId: 'hero', field: 'coins', value: 10, source: initialSource },
+        { type: 'create', id: 'shop', name: '杂货摊', kind: 'place', source: initialSource },
+        { type: 'create', id: 'bell', name: '铜铃', kind: 'item', source: initialSource },
+    ]);
+    const settledSource3 = captureRangeSource(chat, 2, 3);
+    const store = {
+        lastSummarizedMesId: 1,
+        json: { storyRecords: [] },
+        summaryHistory: [{
+            kind: 'batch', startMesId: 0, endMesId: 1, summary: '初入客栈。',
+            sourceReceipt: service.memorySourceReceipt(await service.read(), chat, 0, 1),
+        }],
+        floorWork: {
+            1: {
+                source: captureRangeSource(chat, 0, 1), digest: captureRangeSource(chat, 0, 1).digest,
+                done: ['memory', 'overview', 'people', 'places', 'situation', 'suspense'],
+            },
+        },
+        floorSimulations: {
+            3: {
+                floor: 3, start: 2, digest: settledSource3.digest, candidate: 0,
+                text: '东桥守卫贴出木牌，旅人暗中付给杂货摊5金币买下铜铃。',
+            },
+        },
+    };
+    await service.syncTurns(chat);
+    const settledFloors = [];
+    const queue = createFloorProcessing({
+        read: () => {
+            const b = getUpdateAndSimulationBounds(chat, 3);
+            return { owner: 'story-0236', playerName: '旅人', chat, end: b.stableEnd, updateEnd: b.updateEnd, simulationEnd: b.simulationEnd };
+        },
+        tasks: () => [
+            { key: 'memory', group: 'update', label: '总结' },
+            { key: 'overview', group: 'update', label: '总览' },
+            { key: 'places', group: 'update', label: '地点' },
+        ],
+        store: () => store,
+        save: async (source, _check, updater) => {
+            const entry = (store.floorWork ??= {})[source.end] ??= { source, digest: source.digest, done: [] };
+            updater(entry, store);
+            store.lastSummarizedMesId = Math.max(store.lastSummarizedMesId ?? -1, source.end);
+        },
+        saveSim: async () => {},
+        getService: () => service,
+        requireAgent: async task => ({ agent: task }),
+        onUpdateSettled: floor => settledFloors.push(floor),
+        generate: async () => ({
+            text: JSON.stringify({
+                summary: '后台提及旅人买下铜铃。',
+                changes: [{
+                    task: 'overview', type: 'trade', direction: 'buy', counterparty: 'shop', item: 'bell',
+                    price: 5, floor: 3, quote: '买下铜铃', paymentQuote: '付给杂货摊5金币',
+                }],
+            }),
+        }),
+    });
+
+    await assert.rejects(queue.settle(), /引文无法在本轮核对/);
+    assert.equal((await service.read()).entities.find(e => e.id === 'hero').fields.coins.value, 10);
+    assert.deepEqual(settledFloors, []);
+    assert.equal(store.floorWork[3]?.done?.includes('overview') ?? false, false);
 });
 
 test('0.2.36: createChapterProcessing triggers automatic minDepth=0 cascade to chapter node and invokes planner.onChapter', async () => {
@@ -323,13 +376,13 @@ test('0.2.36: simulation checks required update agent before simulation agent an
         getService: () => service,
         requireAgent: async task => {
             checked.push(task);
-            if (requireFailOnUpdate && task === 'update') throw new Error('请先在设置中配置更新agent');
+            if (requireFailOnUpdate && task === 'update') throw new Error('请先在设置中配置总结agent');
             return { agent: task };
         },
         generate: async () => ({ text: JSON.stringify({ text: '东桥驿马停驻片刻。', kind: 'world_flavor' }) }),
     });
 
-    await assert.rejects(() => queue.settle(), /请先在设置中配置更新agent/);
+    await assert.rejects(() => queue.settle(), /请先在设置中配置总结agent/);
     assert.deepEqual(checked, ['update']);
     assert.equal(store.floorSimulations?.[1], undefined);
 

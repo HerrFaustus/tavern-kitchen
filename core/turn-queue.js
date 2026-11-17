@@ -12,23 +12,30 @@ export function createTurnQueue({ read, tasks, complete, execute, status = () =>
         status(null);
         wake();
     }
-    function settle() {
+    function settle({ update = true } = {}) {
         const initial = read();
         if (!initial.owner || !tasks().length) return Promise.resolve();
-        if (active?.owner === initial.owner) return active.promise;
+        if (active?.owner === initial.owner) {
+            // A full job already covers a simulation-only request; a simulation job
+            // must yield to the pre-send request so the latest reply is summarized.
+            if (active.update || !update) return active.promise;
+            return active.promise.then(() => settle({ update:true }));
+        }
         invalidate();
         const controller = new AbortController(), { signal } = controller;
-        const job = { owner: initial.owner, controller };
+        const job = { owner: initial.owner, controller, update };
         active = job;
         const current = () => active === job && read().owner === job.owner && !signal.aborted;
         const interrupted = new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), {once: true}));
         const work = async () => {
+            const groups = update ? ['simulation', 'update', 'chapter'] : ['simulation'];
             const limitFor = (snapshot, group) => (group === 'simulation'
                 ? (snapshot.simulationEnd ?? snapshot.end)
                 : (snapshot.updateEnd ?? snapshot.end));
             const maxEnd = () => {
                 const snapshot = read();
-                return Math.max(snapshot.simulationEnd ?? snapshot.end ?? -1, snapshot.updateEnd ?? snapshot.end ?? -1);
+                return update ? Math.max(snapshot.simulationEnd ?? snapshot.end ?? -1, snapshot.updateEnd ?? snapshot.end ?? -1)
+                    : (snapshot.simulationEnd ?? snapshot.end ?? -1);
             };
             for (let floor = 0; current() && floor <= maxEnd(); floor++) {
                 const { chat } = read();
@@ -36,7 +43,7 @@ export function createTurnQueue({ read, tasks, complete, execute, status = () =>
                 const start = chat[floor - 1]?.is_user ? floor - 1 : floor;
                 const source = captureRangeSource(chat, start, floor);
                 const steps = tasks();
-                for (const group of ['simulation', 'update', 'chapter']) {
+                for (const group of groups) {
                     if (floor > limitFor(read(), group)) continue;
                     const pending = steps.filter(step => step.group === group && !complete(source, step));
                     if (!pending.length) continue;
@@ -56,7 +63,7 @@ export function createTurnQueue({ read, tasks, complete, execute, status = () =>
                         check();
                         if (pending.some(step => !complete(source, step))) throw new Error('保存尚未确认，请读回后重试');
                     } catch (error) {
-                        if (current()) { blocked = { floor, message: error.message, error }; status(blocked); }
+                        if (current()) { blocked = { floor, message: error.message, error, group }; status(blocked); }
                         throw error;
                     }
                 }
@@ -76,14 +83,14 @@ export function createTurnQueue({ read, tasks, complete, execute, status = () =>
             const ticket = { owner: read().owner, abort };
             waiting = ticket;
             try {
-                while (waiting === ticket && read().owner === ticket.owner && tasks().length) {
-                    if (blocked) { await new Promise(resolve => { resume = resolve; }); continue; }
-                    try { await settle(); break; }
-                    catch { if (!blocked && !active && !tasks().length) break; }
-                }
+                // WHY: pre-send settlement is fail closed. A blocked summary or world
+                // write must abort this generation and leave the draft for the Agent
+                // strip's retry action instead of holding the send indefinitely.
+                await settle();
                 if (waiting === ticket && read().owner !== ticket.owner) abort(true);
-            } catch { if (waiting === ticket) abort(true); }
-            finally { if (waiting === ticket) waiting = null; }
+            } catch {
+                if (waiting === ticket) abort(true);
+            } finally { if (waiting === ticket) waiting = null; }
         },
     };
 }

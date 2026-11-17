@@ -66,14 +66,14 @@ test('enabling retrieval preserves legacy flat API selections and explicit provi
     }
 });
 
-test('manual panel requests respect lag-1 updateEnd and cannot restore retired delay or per-run settings', async () => {
+test('manual panel requests settle through the latest completed floor and cannot restore retired delay or per-run settings', async () => {
     let request;
     const host = entry(['handleFrameMessage'], { isTrustedMessage: () => true, document: { getElementById: () => ({}) }, isStorySummaryEnabledForCurrentChat: () => true,
         currentMesId: null, getContext: () => ({ chatId: 'fixture', chat: Array.from({ length: 10 }, () => ({ mes: '回复' })) }),
         postToFrame: () => {},
         handleManualGenerate: async (floor, config) => { request = { floor, config }; } });
     await host.handleFrameMessage({ data: { type: 'REQUEST_GENERATE', config: { trigger: { delayFloors: 9, maxPerRun: 1, role: 'user' } } } });
-    assert.equal(request.floor, 8); assert.equal(request.config.trigger.delayFloors, 0);
+    assert.equal(request.floor, 9); assert.equal(request.config.trigger.delayFloors, 0);
     assert.equal(request.config.trigger.maxPerRun, 100); assert.equal(request.config.trigger.role, 'user');
 });
 

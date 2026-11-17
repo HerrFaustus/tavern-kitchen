@@ -221,12 +221,11 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
             const state = readAgentBinding(settings, key);
             const help = state.conflict ? group.features.map((feature, index) =>
                 PROFILE_FEATURES[feature] + ' · ' + previousName(state.previous[index])).join('，') : '';
-            const selector = bindingRow(bindings, group.name + ' Agent', state.id, settings.presets.filter(preset => usableAgentConnection(preset, key)).map(option),
+            const choices = [{ value: HOST_BINDING, label: '同酒馆主 API' },
+                ...settings.presets.filter(preset => usableAgentConnection(preset)).map(option)];
+            const selector = bindingRow(bindings, group.name + ' Agent', state.id, choices,
                 id => ({ mutation: { type: 'bind-agent', agent: key, id } }), help);
             selector.dataset.agentBinding = key;
-            if (!settings.presets.some(preset => usableAgentConnection(preset, key))) {
-                selector.parentElement.append(element('small', '在「编辑连接」填写地址和模型。'));
-            }
         }
         for (const key of ['embedding', 'rerank']) {
             bindingRow(recall, PROFILE_FEATURES[key], settings.bindings[key] || '', profileChoices(settings, key),
@@ -247,8 +246,9 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
         if (!library) {
             configuration = fields;
             fields.replaceChildren();
+            const textFeature = ['summary', 'opening', 'world', 'planner'].includes(feature);
             const choices = [{ value: '', label: COPY.unset, disabled: true },
-                ...(feature === 'summary' ? [{ value: HOST_BINDING, label: '跟随酒馆主 API' }] : []), ...profileChoices(settings, feature)];
+                ...(textFeature ? [{ value: HOST_BINDING, label: '同酒馆主 API' }] : []), ...profileChoices(settings, feature)];
             const selector = select(choices, settings.bindings[feature], value => {
                 mutate(value === HOST_BINDING ? { type: 'select-host' } : { type: 'select', id: value })
                     .catch(error => { selector.value = settings.bindings[feature] || ''; feedback(error.message, true); });

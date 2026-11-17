@@ -7,7 +7,9 @@ import { createFloorProcessing } from '../modules/world-records/turn-processing.
 import { taskDefinitions } from '../modules/world-records/turn-actions.js';
 import { generateFeatureText } from '../modules/text-api/host.js';
 import { createChapterProcessing } from './chapter-processing.js';
-import { preflightOrderedFloorAgents, renderFloorStatus, resolveFailureRoute } from './floor-status.js';
+import { preflightOrderedFloorAgents, resolveFailureRoute } from './floor-status.js';
+import { askOpening, openingGateNeeded, OPENING_GATE_TYPES, OPENING_SKIP_KEY } from './opening-gate.js';
+import { clearAgentNotice, showAgentNotice } from './agent-status.js';
 
 export { preflightOrderedFloorAgents, resolveFailureRoute };
 
@@ -23,7 +25,54 @@ export function floorTasks(settings) {
 }
 
 export function installFloorHost({ settings, getContext, memory, archive, planner, workspace }) {
-    let streamStart = null, statusNode, failure, batch = 0;
+    let streamStart = null, failure, batch = 0, openingGate = null;
+    const retrySend = () => document.querySelector('#send_but')?.click();
+    const notifyFailure = (message, error) => showAgentNotice({ level:'error', message, error, pinned:true, retry:retrySend });
+    async function ensureOpening(type) {
+        if (!OPENING_GATE_TYPES.has(type || 'normal')) return true;
+        const ctx = getContext();
+        if (!ctx?.chat?.length) return true;
+        const world = archive();
+        if (!world?.service || typeof world.initialize !== 'function') {
+            notifyFailure('世界档案尚未就绪，本轮未发送。输入已保留，请稍后重试。', new Error('世界档案尚未就绪'));
+            return false;
+        }
+        let state;
+        try { state = await world.service.read(); }
+        catch (error) {
+            notifyFailure(`读取世界档案失败，本轮未发送：${error?.message || error}。输入已保留。`, error);
+            return false;
+        }
+        if (!openingGateNeeded(state, ctx)) return true;
+        if (!openingGate) openingGate = (async () => {
+            try {
+                const outcome = await askOpening({
+                    context: ctx,
+                    initialize: () => world.initialize({ manual:true }),
+                    saveSkip: async () => {
+                        if (!ctx.chatMetadata) throw new Error('当前聊天不支持保存跳过标记');
+                        ctx.chatMetadata[OPENING_SKIP_KEY] = true;
+                        if (typeof ctx.saveMetadata !== 'function') throw new Error('当前酒馆无法保存跳过标记，请完成世界初始化');
+                        await ctx.saveMetadata();
+                    },
+                    onProgress: message => showAgentNotice({ message, pinned:true }),
+                });
+                if (outcome === 'cancel') {
+                    notifyFailure('已取消世界初始化，本轮未发送，输入已保留。需要重试时点击「重试」。', new Error('世界初始化已取消'));
+                    return false;
+                }
+                if (outcome === 'initialized') {
+                    const id = showAgentNotice({ message:'世界初始化完成，继续发送…', pinned:true });
+                    setTimeout(() => clearAgentNotice(id), 3000);
+                }
+                return true;
+            } catch (error) {
+                notifyFailure(`世界初始化失败，本轮未发送：${error?.message || error}。输入已保留。`, error);
+                return false;
+            } finally { openingGate = null; }
+        })();
+        return openingGate;
+    }
     const read = () => {
         const ctx = getContext(), chat = ctx.chat || [];
         const requestedEnd = Math.min(chat.length - 1, streamStart ?? Infinity);
@@ -43,27 +92,36 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
         writeChapter:(source, signal) => planner().onChapter(signal, source.end)});
     function render(info) {
         failure = info?.error ? info : null;
-        statusNode?.remove();
-        statusNode = renderFloorStatus({
-            doc: document,
-            info,
-            hasChat: (getContext().chat || []).length > 0,
-            onRetry: () => queue.settle(),
-            onOpenAgent: agent => workspace.visitBinding(agent),
-            onOpenRecovery: route => workspace.open(route),
+        if (!info) { clearAgentNotice(); return; }
+        const hasChat = (getContext().chat || []).length > 0;
+        showAgentNotice({
+            message: hasChat && Number.isInteger(info.floor) ? `第 ${info.floor + 1} 楼 · ${info.message}` : info.message,
+            level: info.error ? 'error' : 'info',
+            agent: info.agent || null,
+            error: info.error || null,
+            retry: info.error ? () => queue.settle({ update: info.group !== 'simulation' }) : null,
+            recoveryRoute: info.error ? resolveFailureRoute(info.error) : null,
+            pinned: !!info.error,
         });
-        if (statusNode) (document.querySelector('#send_form') || document.querySelector('#tk-workspace'))?.prepend(statusNode);
     }
     const queue = createFloorProcessing({ read, tasks:() => floorTasks(settings), store:() => memory.getPublishedSummaryStore() || {},
         save: memory.saveFloorWork, saveSim: memory.saveFloorSimulation, getService: () => archive().service, requireAgent, generate:generateFeatureText,
         chapter, onUpdateSettled: floor => memory.reconcileSettledFloorChunks?.(floor), status:render });
-    const kick = () => { const ticket=++batch; queueMicrotask(() => { if (ticket === batch && !failure && archive() && streamStart === null) queue.settle().catch(error => { if (error.name !== 'AbortError' && !failure) console.warn('[TavernKitchen] 逐楼处理已中断',error); }); }); };
-    const settingsChanged = () => { failure = null; statusNode?.remove(); statusNode = null; queue.invalidate(); kick(); };
+    // WHY: a finished reply immediately gets its background simulation only.
+    // The structured summary is settled before the next new send so a swipe or
+    // regenerate never replaces the latest floor after it was already summarized.
+    const kick = () => { const ticket=++batch; queueMicrotask(() => { if (ticket === batch && !failure && archive() && streamStart === null) queue.settle({ update:false }).catch(error => { if (error.name !== 'AbortError' && !failure) console.warn('[TavernKitchen] 逐楼处理已中断',error); }); }); };
+    const settingsChanged = () => { failure = null; clearAgentNotice(); queue.invalidate(); kick(); };
     const events = createModuleEvents('ordered-floors');
+    const replacingTypes = new Set(['swipe', 'regenerate']);
     registerGenerateInterceptor('ordered-floors', async (_chat, _size, abort, type) => {
         if (!['normal','continue','regenerate','swipe','group'].includes(type || 'normal')) return;
+        if (!await ensureOpening(type)) { abort(); return; }
         const floor = Math.max(0, (getContext().chat || []).length - 1);
         if (!await preflightOrderedFloorAgents({ floor, checkAgent: requireAgent, render, abort })) return;
+        // Replaced floors are never settled here: the selected swipe will be
+        // simulated and summarized on the following new send.
+        if (replacingTypes.has(type || 'normal')) return;
         let aborted = false;
         await queue.beforeGeneration(() => { aborted = true; abort(); });
         if (aborted) return;
@@ -88,8 +146,7 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
         // clearing that stale error once on summary-saved lets floor processing either settle or advance to world-conflict recovery.
         if (failure?.message?.includes('原文或候选已改变')) {
             failure = null;
-            statusNode?.remove();
-            statusNode = null;
+            clearAgentNotice();
         }
         kick();
     };
@@ -102,8 +159,7 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
         await preflightOrderedFloorAgents({ floor, checkAgent: requireAgent, render, throwOnRequired: true });
         if (failure) {
             failure = null;
-            statusNode?.remove();
-            statusNode = null;
+            clearAgentNotice();
             queue.invalidate();
         }
         await queue.settle();
@@ -135,8 +191,7 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
             await worldService.rewind(world.version, targetVersion);
         }
         failure = null;
-        statusNode?.remove();
-        statusNode = null;
+        clearAgentNotice();
         queue.invalidate();
         await queue.settle();
     }

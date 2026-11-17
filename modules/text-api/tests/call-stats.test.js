@@ -49,17 +49,19 @@ test('session totals outlive 100 recent details and clearing excludes outstandin
 
 test('feature generation and the API page share scrubbed success, failure and abort diagnostics', async () => {
     const mocks = {
-        'script.js': 'export const getRequestHeaders=()=>({});',
+        'script.js': 'export const getRequestHeaders=()=>({}); export const main_api="openai-compatible";',
+        'openai.js': 'export const oai_settings={}; export const getChatCompletionModel=()=>"";',
+        'secrets.js': 'export const findSecret=()=>""; export const SECRET_KEYS={};',
         'repository.js': 'export const getTextApiRepository=()=>{throw Error("repository unavailable")};',
         'streaming-generation.js': 'export const streamingGeneration={startRawGeneration:()=>({completion:"OK"})};',
-        'tavern-import.js': 'export const importCurrentTavernApi=()=>{};',
+        'tavern-import.js': 'export const importCurrentTavernApi=()=>{}; export const snapshotTavernApi=()=>{throw Error("不是聊天补全")};',
         'provider-config.js': 'export const createAgentAdapter=config=>({chat:()=>{throw Error("HTTP 403 "+config.apiKey+" "+encodeURIComponent(config.apiKey))}});',
     };
     const bundle = await build({ stdin: { contents:
         'export {generateFeatureText} from "./modules/text-api/host.js"; export {handleProfileRequest} from "./modules/text-api/profile-service.js";', resolveDir: process.cwd() },
     bundle: true, write: false, platform: 'node', format: 'esm',
     plugins: [{ name: 'local-provider', setup(api) {
-        api.onResolve({ filter: /(?:script|repository|streaming-generation|tavern-import|provider-config)\.js$/ }, args => {
+        api.onResolve({ filter: /(?:script|repository|streaming-generation|tavern-import|provider-config|openai|secrets)\.js$/ }, args => {
             const path = args.path.split('/').pop();
             return Object.hasOwn(mocks, path) ? { path, namespace: 'fixture' } : null;
         });

@@ -40,8 +40,6 @@ export interface XiaobaiOsSettingsRepository {
     prepare: () => Promise<XiaobaiOsSettings>;
     read: () => XiaobaiOsSettings | null;
     setEnabled: (enabled: boolean) => Promise<XiaobaiOsSettings>;
-    setMapAutoMaintenance: (enabled: boolean) => Promise<XiaobaiOsSettings>;
-    setMapProjection: (enabled: boolean) => Promise<XiaobaiOsSettings>;
     setEncounterFrequency: (frequency: NonNullable<WorldSettings['encounterFrequency']>) => Promise<XiaobaiOsSettings>;
     setWorldPreference: (key: Exclude<keyof WorldSettings, 'encounterFrequency'>, enabled: boolean) => Promise<XiaobaiOsSettings>;
     subscribe: (listener: (settings: XiaobaiOsSettings) => void) => () => void;
@@ -225,24 +223,6 @@ export function createSettingsRepository(adapter: XiaobaiOsSettingsAdapter): Xia
         });
     }
 
-    function setMapAutoMaintenance(enabled: boolean): Promise<XiaobaiOsSettings> {
-        if (typeof enabled !== 'boolean') {
-            throw new TypeError('map auto-maintenance must be a boolean');
-        }
-        return mutate((next) => {
-            next.apps.map.autoMaintenance = enabled;
-            return next;
-        });
-    }
-
-    function setMapProjection(enabled: boolean): Promise<XiaobaiOsSettings> {
-        if (typeof enabled !== 'boolean') { throw new TypeError('invalid_map_projection'); }
-        return mutate(next => {
-            next.apps.map.projectToChat = enabled;
-            return next;
-        });
-    }
-
     function setWorldPreference(key: Exclude<keyof WorldSettings, 'encounterFrequency'>, enabled: boolean): Promise<XiaobaiOsSettings> {
         if (key !== 'subscribed' && key !== 'peopleEvolution' && key !== 'sceneryEvolution') { throw new TypeError('invalid World preference'); }
         if (typeof enabled !== 'boolean') { throw new TypeError('World preference must be a boolean'); }
@@ -274,8 +254,6 @@ export function createSettingsRepository(adapter: XiaobaiOsSettingsAdapter): Xia
         prepare,
         read,
         setEnabled,
-        setMapAutoMaintenance,
-        setMapProjection,
         setWorldPreference,
         setEncounterFrequency: (frequency: NonNullable<WorldSettings['encounterFrequency']>) => mutate(next => {
             next.apps.world.encounterFrequency = frequency;

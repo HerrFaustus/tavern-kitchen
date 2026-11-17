@@ -1,5 +1,5 @@
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
-import { parseStoryUpdates } from '../story-state/records.js';
+import { parseStoryUpdates, storyDate } from '../story-state/records.js';
 import { createEmptyMapDomain } from '../xiaobai-os/domains/map/state.js';
 import { isPrivateStoryField } from './authority.js';
 import { OPENING } from './opening.js';
@@ -7,6 +7,9 @@ import { OPENING } from './opening.js';
 const idFor = (...parts) => 'opening-' + memoryDigest(parts).slice(0,32);
 const norm = name => name.trim().normalize('NFKC').toLowerCase();
 const scales = new Set(['world','region','city','district','building','floor','room','outdoor']);
+const linkKinds = new Set(['door','stairs','elevator','path','road','portal','passage']);
+const relationPrefixes = ['关系身份/', '关系身份:', '关系:'];
+const locationFields = new Set(['location','所在地','位置','当前地点']);
 const personFields = new Set(['外貌','体型','衣着','性格','身份','职务','阵营','身体状况','当前情绪','能力与专长']);
 const sourceOf = row => ({module:OPENING,key:row.key,label:row.label});
 
@@ -19,9 +22,10 @@ export function openingOperations(state, rows, {fingerprint,player,oldChat,allow
     // Only replace the opening's own cartography while no later map edit exists.
     if (!oldChat && old?.mapVersion && originalMap?.revision === old.mapVersion) {
         map.atlas.locations = map.atlas.locations.filter(item => !old.places.includes(item.key));
+        map.atlas.links = map.atlas.links.filter(item => !(old.links || []).includes(item.id));
         map.atlas.actors = map.atlas.actors.filter(item => !old.actors.includes(item.actorKey));
     }
-    const places = [], actors = [];
+    const places = [], links = [], actors = [];
     const positions = new Map();
     for (const row of rows.filter(item => item.kind === 'position')) {
         const key = norm(row.name);
@@ -83,6 +87,22 @@ export function openingOperations(state, rows, {fingerprint,player,oldChat,allow
         const parent = row.parent && place(row.parent,row);
         if (parent && p.e !== parent.e) field(p.e,'parent',{entityId:parent.e.id},row);
     }
+    function anchor(e, p, row) {
+        if (map.atlas.actors.some(a => norm(a.displayName) === norm(e.name))) return;
+        const actorKey = norm(player) === norm(e.name) ? 'player' : idFor('actor',e.id);
+        if (map.atlas.actors.some(a => a.actorKey === actorKey)) return;
+        map.atlas.actors.push({actorKey,displayName:e.name,locationKey:p.location.key}); actors.push(actorKey);
+        bind(e,'actor:'+actorKey);
+    }
+    function appendStory(row, record) {
+        const id = record.id;
+        if (story.records.some(item => item.record.id === id || (record.title && item.record.title === record.title && item.record.kind === record.kind))) return;
+        const previous = state.modules?.story?.records.find(item => item.record.id === id);
+        const source = sourceOf(row);
+        const unchanged = previous && memoryDigest([previous.record,previous.source]) === memoryDigest([record,source]);
+        story.records.push(unchanged ? previous : {key:id,record,version,eventId:'event:'+commandId,start:0,end:0,nature:'established_fact',source});
+    }
+    const deferredOwners = [], deferredLocations = [], deferredRelations = [], clockRows = [];
     for (const row of rows) {
         if (row.kind === 'feature') {
             const p = place(row.parent,row);
@@ -90,16 +110,18 @@ export function openingOperations(state, rows, {fingerprint,player,oldChat,allow
                 const features = p.location.features ??= [];
                 if (!features.some(f => f.name === row.name)) features.push({name:row.name,description:row.value.replace(/\s+/gu,' ')});
             }
+        } else if (row.kind === 'route') {
+            deferredRelations.push(row);
         } else if (['person','lore','organization','item'].includes(row.kind)) {
             const isWalletField = row.kind === 'person' && ['coins','金币','余额','钱包'].includes(row.field);
             if (isWalletField && norm(row.name) !== norm(player)) continue;
             if (row.kind === 'item' && !row.importance && (!row.owner || norm(row.owner) !== norm(player))) continue;
+            const relationPrefix = relationPrefixes.find(prefix => String(row.field || '').startsWith(prefix));
+            if (row.kind === 'person' && relationPrefix) { deferredRelations.push(row); continue; }
+            if (row.kind === 'person' && locationFields.has(row.field)) { deferredLocations.push(row); continue; }
             const e = entity(row.kind === 'lore' ? 'subject' : row.kind,row.name,row);
             if (row.kind === 'item' && row.importance) field(e,'剧情意义',row.importance,row);
-            if (row.kind === 'item' && row.owner) {
-                const owners=entities.filter(person=>['person','organization'].includes(person.kind) && [person.name,...person.aliases].includes(row.owner));
-                if(owners.length===1) field(e,'owner',{entityId:owners[0].id},row);
-            }
+            if (row.kind === 'item' && row.owner) deferredOwners.push({e,row});
             if (isWalletField) {
                 const parsedCoins = typeof row.value === 'number'
                     ? (Number.isSafeInteger(row.value) && row.value >= 0 ? row.value : null)
@@ -118,22 +140,52 @@ export function openingOperations(state, rows, {fingerprint,player,oldChat,allow
             const p = place(row.value,row), e = entity('person',row.name,row);
             if (!p || !e) continue;
             field(e,'location',{entityId:p.e.id},row);
-            if (!map.atlas.actors.some(a => norm(a.displayName) === norm(e.name))) {
-                const actorKey = norm(player) === norm(e.name) ? 'player' : idFor('actor',e.id);
-                if (map.atlas.actors.some(a => a.actorKey === actorKey)) continue;
-                map.atlas.actors.push({actorKey,displayName:e.name,locationKey:p.location.key}); actors.push(actorKey);
-                bind(e,'actor:'+actorKey);
-            }
-        } else if (['situation','scenery'].includes(row.kind) && !oldChat) {
+            anchor(e,p,row);
+        } else if (['situation','scenery','suspense'].includes(row.kind) && !oldChat) {
             const id = idFor(row.kind,norm(row.name));
-            if (story.records.some(item => item.record.id === id || item.record.title === row.name)) continue;
-            const [record] = parseStoryUpdates([{kind:'situation',id,title:row.name,description:row.value,status:'open',scope:row.scope,
+            const [record] = parseStoryUpdates([{kind:row.kind === 'suspense' ? 'suspense' : 'situation',id,title:row.name,description:row.value,status:'open',reason:'',scope:row.scope,
                 ...(row.kind === 'scenery' ? {flavor:'scenery'} : {})}]);
-            const previous = state.modules?.story?.records.find(item => item.record.id === id);
-            const source = sourceOf(row);
-            const unchanged = previous && memoryDigest([previous.record,previous.source]) === memoryDigest([record,source]);
-            story.records.push(unchanged ? previous : {key:id,record,version,eventId:'event:'+commandId,start:0,end:0,nature:'established_fact',source});
+            appendStory(row,record);
+        } else if (row.kind === 'clock' && !oldChat) {
+            clockRows.push(row);
         }
+    }
+    // WHY: entity creation order inside one batch is arbitrary, so cross-record
+    // references (owner, relationship, route, current place) resolve only after
+    // every named object exists.
+    for (const {e,row} of deferredOwners) {
+        const owners = entities.filter(person => ['person','organization'].includes(person.kind) && [person.name,...person.aliases].includes(row.owner));
+        if (owners.length === 1) field(e,'owner',{entityId:owners[0].id},row);
+    }
+    for (const row of deferredLocations) {
+        const e = entity('person',row.name,row), p = place(row.value,row);
+        if (!e || !p) continue;
+        field(e,'location',{entityId:p.e.id},row);
+        if (!oldChat) anchor(e,p,row);
+    }
+    for (const row of deferredRelations.filter(item => item.kind === 'route')) {
+        const from = place(row.name,row), to = place(row.value,row);
+        if (!from || !to || from.location.key === to.location.key) continue;
+        const id = idFor('link',from.location.key,to.location.key);
+        if (map.atlas.links.some(link => link.id === id)) continue;
+        map.atlas.links.push({id,from:from.location.key,to:to.location.key,
+            kind:linkKinds.has(row.field) ? row.field : 'path',bidirectional:true,...(row.label ? {label:row.label} : {})});
+        links.push(id);
+    }
+    for (const row of deferredRelations.filter(item => item.kind === 'person')) {
+        const prefix = relationPrefixes.find(item => String(row.field || '').startsWith(item));
+        const targetName = row.field.slice(prefix.length).trim();
+        const e = entity('person',row.name,row);
+        const hits = entities.filter(person => person.id !== e?.id && ['person','subject'].includes(person.kind)
+            && [person.name,...person.aliases].some(name => norm(name) === norm(targetName)));
+        if (!e || hits.length !== 1 || !row.value.trim()) continue;
+        field(e, '关系身份/' + hits[0].id, { entityId:hits[0].id, role:row.value.trim() }, row);
+    }
+    if (!oldChat && clockRows.length) {
+        const row = clockRows.at(-1), raw = row.value.trim();
+        const record = { id:'clock', kind:'clock', label:raw && raw !== row.name ? `${row.name} · ${raw}` : row.name,
+            ...(storyDate(raw) ? { date:raw } : {}) };
+        appendStory(row,record);
     }
     // Pass 2: project non-public secret/rumor/condition claims after core entities exist so secrets attach cleanly to named persons.
     // WHY: Keeping private claims out of established fields prevents NPC public prompts from leaking secrets/untriggered conditions.
@@ -196,7 +248,7 @@ export function openingOperations(state, rows, {fingerprint,player,oldChat,allow
     const changedMap = allowMap && memoryDigest(map) !== memoryDigest(originalMap || createEmptyMapDomain());
     if (changedMap) operations.push({type:'module',module:'map',value:{...map,revision:version}});
     if (memoryDigest(story.records) !== memoryDigest(state.modules?.story?.records || [])) operations.push({type:'module',module:'story',value:{...story,revision:version}});
-    operations.push({type:'source',module:OPENING,snapshot:{fingerprint,rows,places,actors,mapVersion:changedMap ? version : originalMap?.revision || 0}});
+    operations.push({type:'source',module:OPENING,snapshot:{fingerprint,rows,places,links,actors,mapVersion:changedMap ? version : originalMap?.revision || 0}});
     return operations;
 }
 

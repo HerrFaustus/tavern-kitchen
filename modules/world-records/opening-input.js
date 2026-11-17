@@ -32,9 +32,9 @@ export async function collectOpening(ctx, { globals, extraBooks, chatBook, loadB
             add(['card',card.avatar,field], `角色卡 · ${card.name} · ${field}`, data[field] || card[field]);
         }
         for (const book of [data.extensions?.world, ...extraBooks(card)].filter(Boolean)) books.add(book);
-        if (!data.extensions?.world && data.character_book?.entries) {
+        if (data.character_book?.entries) {
             for (const [key, entry] of Object.entries(data.character_book.entries)) {
-                if (entry.enabled !== false) add(['embedded',card.avatar,key], `内嵌世界书 · ${entry.comment || key}`, entry.content);
+                if (!entry?.disable && entry?.enabled !== false) add(['embedded',card.avatar,key], `内嵌世界书 · ${entry.comment || key}`, entry.content);
             }
         }
     }
@@ -42,7 +42,7 @@ export async function collectOpening(ctx, { globals, extraBooks, chatBook, loadB
         const book = await loadBook(name);
         if (!book?.entries) throw new Error(`读取世界书「${name}」失败`);
         for (const [key, entry] of Object.entries(book.entries)) {
-            if (entry.disable) continue;
+            if (entry?.disable || entry?.enabled === false) continue;
             const keys = [...(Array.isArray(entry.key) ? entry.key : []),...(Array.isArray(entry.keysecondary) ? entry.keysecondary : [])];
             add(['book',name,key], [name,entry.comment || key,keys.join('、')].filter(Boolean).join(' · '), entry.content);
         }

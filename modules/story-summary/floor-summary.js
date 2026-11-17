@@ -174,19 +174,19 @@ function buildUpdateViewState(snapshot, floor, bounds) {
             warnings,
         };
     }
-    if (bounds.updateEnd < 0 || floor > bounds.updateEnd) {
+    if (bounds.updateEnd < 0 || floor >= bounds.updateEnd) {
         return {
             status: 'waiting',
-            statusLabel: '待下一楼后总结',
-            preview: '等待下一楼回复完成后总结',
-            bodyNotice: '等待下一楼回复完成后总结本楼，并同步合并本楼后台正文与世界状态变化。',
+            statusLabel: '发送下一轮前总结',
+            preview: '发送下一轮消息前自动完成总结',
+            bodyNotice: '发送下一轮消息前会自动总结本楼，并同步合并本楼后台正文与世界状态变化。',
         };
     }
     return {
         status: 'pending',
         statusLabel: '待补齐',
         preview: '当前楼层尚待总结更新',
-        bodyNotice: '该楼层尚待更新 Agent 处理，请等待队列完成或在底部操作栏点击重试/补齐。',
+        bodyNotice: '该楼层尚待总结 Agent 处理，请等待队列完成或在底部操作栏点击重试/补齐。',
     };
 }
 

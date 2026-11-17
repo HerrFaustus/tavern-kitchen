@@ -131,11 +131,12 @@ export function storyRecordText(record) {
     if (record.kind === 'clock') return record.label;
     if (record.kind === 'person') return `${record.name} · ${PRESENCE[record.presence]}${record.note ? `：${record.note}` : ''}`;
     if (record.kind === 'knowledge') return `${record.person} · ${BELIEFS[record.certainty]}：${record.content}（依据：${record.evidence}）${record.learnedAt ? ` · ${record.learnedAt}` : ''}`;
-    if (record.kind === 'situation') return [record.title, THREAD_STATUS[record.status], record.description,
+    const title = storyQualifier(record) + record.title;
+    if (record.kind === 'situation') return [title, THREAD_STATUS[record.status], record.description,
         Array.isArray(record._knownBy) && '已知情人物：' + (record._knownBy.join('、') || '尚无已知情人物') + '。其他人物须在场观察或收到消息。',
         ...Object.entries(SITUATION_FIELDS).filter(([key]) => record[key]).map(([key, label]) => label + '：' + record[key]),
         record.due && '期限：' + record.due, record.reason && '结案原因：' + record.reason].filter(Boolean).join('；');
-    return [`${record.title} · ${THREAD_STATUS[record.status]}${record.description ? `：${record.description}` : ''}`,record.holders?.length && '持有人：' + record.holders.join('、'),
+    return [`${title} · ${THREAD_STATUS[record.status]}${record.description ? `：${record.description}` : ''}`,record.holders?.length && '持有人：' + record.holders.join('、'),
         record.conditions && '条件约束：' + record.conditions, record.statusNote && '当前进展：' + record.statusNote, record.due && '期限：' + record.due, record.reason && '原因：' + record.reason].filter(Boolean).join('；');
 }
 export function storyContextGroups(records = [], focus = [], { protagonistNames = [], presentNames = [] } = {}) {
@@ -165,6 +166,13 @@ export function storyContextLines(records, focus, options) {
     const { priority, other } = storyContextGroups(records, focus, options);
     return [...priority, ...other];
 }
+const NATURE_LABELS = { rumor: '传闻', belief: '角色认知', intention: '意图', hypothesis: '推测', creative_proposal: '创作候选', unclassified: '待确认' };
+/** Marks qualified story threads so views and prompts never present them as settled facts. */
+export function storyQualifier(record) {
+    const nature = record?._nature;
+    return nature && nature !== 'intention' && NATURE_LABELS[nature] ? `【${NATURE_LABELS[nature]}】` : '';
+}
+
 export const CHARACTER_RECORD_RULES = `人物按后续剧情需要建档。先问：下次认错此人、忘记他做过什么或忘记东西在他手上，会不会造成剧情错误？
 一次性叫卖、路过、围观或无后续的一句应答，有叙事价值时只写进本轮总结。同场、同区域、有名字或被召回本身都不是建档理由。勿为此单发 newCharacters、人物实体、人物状态、事实或牵涉提案。
 出现须跨轮追踪的后果时当轮建档，例如保管关键物件、欠债、约定、持续阻碍或协助、掌握后续关键消息；能明确辨认且再次产生实质影响也可建档。没有姓名可用能区分此人的稳定称呼。以北门守卫代管银钥匙为例，先记可辨身份、银钥匙由谁保管、何时须归还；有原文依据才记地点，勿凭职业补写性格、相貌、能力或动机。

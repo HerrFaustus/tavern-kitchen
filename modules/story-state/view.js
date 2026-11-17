@@ -1,5 +1,5 @@
 import { nameKey, protagonistIdentity } from './protagonist-identity.js';
-import { isPersonalAgenda, projectPersonalAgendas, availableStoryRecords, characterStoryState, PRESENCE, BELIEFS, THREAD_STATUS, SITUATION_FIELDS, STORY_KINDS, storyRecordText, relativeStoryTime } from './records.js';
+import { isPersonalAgenda, projectPersonalAgendas, availableStoryRecords, characterStoryState, PRESENCE, BELIEFS, THREAD_STATUS, SITUATION_FIELDS, STORY_KINDS, storyRecordText, relativeStoryTime, storyQualifier } from './records.js';
 import { FIELD_LABELS } from '../world-records/domain.js';
 import { importantPossession, PERSON_FIELDS, PERSON_SECTIONS, POSSESSION_ROLES, RELATION_PREFIX } from '../world-records/person-fields.js';
 import { worldStoryRecords } from '../world-records/world-story-state.js';
@@ -48,7 +48,7 @@ export function renderThreads(parent, records, kinds = ['plan', 'suspense', 'sit
             const row = el(kind === 'situation' ? 'article' : 'details');
             if (kind !== 'situation') row.className = 'inline-drawer tk-thread-drawer';
             row.dataset.recordId = record.id;
-            const head = el(kind === 'situation' ? 'h5' : 'summary', `${record.title} · ${THREAD_STATUS[record.status]}`, kind === 'situation' ? undefined : 'inline-drawer-header');
+            const head = el(kind === 'situation' ? 'h5' : 'summary', `${storyQualifier(record)}${record.title} · ${THREAD_STATUS[record.status]}`, kind === 'situation' ? undefined : 'inline-drawer-header');
             if (kind === 'suspense' && Number.isInteger(record._addedAt)) head.append(' ', source(record));
             row.append(head);
             const body = kind === 'situation' ? row : el('div', undefined, 'inline-drawer-content');

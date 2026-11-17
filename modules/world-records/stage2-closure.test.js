@@ -13,7 +13,8 @@ import { initializeOpening } from './opening.js';
 import { buildAuthorityContext } from './authority.js';
 import { turnOperations } from './turn-actions.js';
 import { createFloorProcessing } from './turn-processing.js';
-import { renderFloorStatus, resolveFailureRoute } from '../../core/floor-status.js';
+import { resolveFailureRoute } from '../../core/floor-status.js';
+import { clearAgentNotice, configureAgentStatusActions, installAgentStatus, showAgentNotice } from '../../core/agent-status.js';
 import { createWorldRecoveryPanel } from './recovery-panel.js';
 
 const testSource = { module: 'manual', key: 'stage2', label: 'Stage 2 人工测试' };
@@ -239,7 +240,7 @@ test('turnOperations filters kinds, detects ambiguity, auto-downgrades uncertain
         ],
     };
 
-    // Ambiguity detection throws cleanly so turn-processing can skip with warning + verified_noop
+    // Ambiguity detection throws cleanly so turn-processing can fail the floor closed.
     assert.throws(
         () => turnOperations(state, [{ task: 'people', type: 'set', target: '林氏', field: '身份', value: '掌柜', quote: '林氏收下五金币', floor: 1 }], { source, playerName: '主角', effectId: 'ef1', commandId: 'c1' }),
         err => err.ambiguity?.ref === '林氏' && err.ambiguity?.candidates.length === 2,
@@ -265,15 +266,13 @@ test('turnOperations filters kinds, detects ambiguity, auto-downgrades uncertain
         /交易依据存在疑问/,
     );
 
-    // Direct coins mutation remains blocked and non-verbatim quotes rejected
-    assert.throws(
-        () => turnOperations(
-            state,
-            [{ task: 'people', type: 'set', target: 'jade', field: 'description', value: '双鱼纹玉佩', quote: '不存在的原文', floor: 1 }],
-            { source, playerName: '主角', effectId: 'ef5', commandId: 'c5' },
-        ),
-        /引文无法在本轮核对/,
+    // Ordinary world fields no longer require a verbatim quote; trades keep their hard evidence gate.
+    const relaxed = turnOperations(
+        state,
+        [{ task: 'people', type: 'set', target: 'jade', field: 'description', value: '双鱼纹玉佩', quote: '不存在的原文', floor: 1 }],
+        { source, playerName: '主角', effectId: 'ef5', commandId: 'c5' },
     );
+    assert.equal(relaxed.find(op => op.type === 'set' && op.field === 'description').source.proof, undefined);
     assert.throws(
         () => turnOperations(
             state,
@@ -284,7 +283,7 @@ test('turnOperations filters kinds, detects ambiguity, auto-downgrades uncertain
     );
 });
 
-test('turn-processing warns and emits verified_noop without halting queue, and floor-status exposes zero manual review cards', async t => {
+test('turn-processing fails the floor closed on ambiguous changes while floor-status exposes zero manual review cards', async t => {
     const chat = [
         { is_user: true, name: '主角', send_date: 'u1', mes: '我看向林氏。' },
         { is_user: false, name: '旁白', send_date: 'a1', mes: '林氏整理好茶具。' },
@@ -301,11 +300,6 @@ test('turn-processing warns and emits verified_noop without halting queue, and f
     ], '初始化'));
 
     let storeObj = {};
-    const warns = [];
-    const originalWarn = console.warn;
-    console.warn = (...args) => warns.push(args);
-    t.after(() => { console.warn = originalWarn; });
-
     const queue = createFloorProcessing({
         read: () => ({ owner: 'queue-s2', playerName: '主角', chat, end: 1 }),
         store: () => storeObj,
@@ -329,34 +323,46 @@ test('turn-processing warns and emits verified_noop without halting queue, and f
         status: () => {},
     });
 
-    await queue.settle();
+    await assert.rejects(queue.settle(), /歧义|多个同称/);
     const entry = storeObj.floorWork[1];
-    assert.deepEqual(entry.done, ['people']);
-    assert.equal(entry.warnings?.length, 1);
-    assert.ok(warns.some(args => String(args[0]).includes('自动跳过')));
+    assert.equal(entry.done.includes('people'), false);
+    assert.equal(entry.warnings, undefined);
+    assert.ok(entry.pending && Object.keys(entry.pending).length === 1);
     const updated = await service.read();
-    assert.ok(updated.events.some(e => e.title === '自动跳过歧义变化'));
+    assert.equal(updated.events.some(e => e.title === '自动跳过歧义变化'), false);
+    assert.equal(updated.entities.filter(entity => entity.name === '林氏').length, 2);
     assert.equal(resolveFailureRoute({ message: '世界版本冲突' }), 'world');
     assert.equal(resolveFailureRoute({ message: '原文来源不一致' }), 'data');
 
-    const { document } = createDom();
+    const { document } = createDom('<html><body><div id="form_sheld"><form id="send_form"></form></div></body></html>');
+    const stop = installAgentStatus(document);
     let retries = 0, agents = 0, recoveries = 0;
-    const node = renderFloorStatus({
-        doc: document,
-        info: { floor: 1, message: '请求失败', error: { message: '网络错误' } },
-        hasChat: true,
-        onRetry: () => { retries += 1; },
+    configureAgentStatusActions({
         onOpenAgent: () => { agents += 1; },
         onOpenRecovery: () => { recoveries += 1; },
     });
+    showAgentNotice({
+        message: '第 2 楼 · 请求失败',
+        level: 'error',
+        error: { message: '网络错误' },
+        retry: () => { retries += 1; },
+        timeoutMs: 0,
+    });
+    const node = document.querySelector('#tk-floor-status');
+    assert.equal(document.querySelectorAll('#tk-agent-status').length, 1);
+    assert.equal(node.parentElement.id, 'tk-agent-status');
+    assert.equal(node.parentElement.parentElement.id, 'form_sheld');
+    assert.equal(node.parentElement.nextElementSibling.id, 'send_form');
     assert.equal(node.querySelector('.tk-review-card'), null);
     assert.equal(node.querySelectorAll('select, input, form').length, 0);
-    [...node.querySelectorAll('button')].find(b => b.textContent === '重试本楼').click();
+    [...node.querySelectorAll('button')].find(b => b.textContent === '重试').click();
     [...node.querySelectorAll('button')].find(b => b.textContent === '查看恢复').click();
     await setImmediate();
     assert.equal(retries, 1);
     assert.equal(recoveries, 1);
     assert.equal(agents, 0);
+    clearAgentNotice();
+    stop();
 });
 
 test('recovery panel previews Schema 4 deletions without crashing and compensates World DB if restoreMemory fails', async t => {

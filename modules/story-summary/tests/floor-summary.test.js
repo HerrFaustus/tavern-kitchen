@@ -73,7 +73,7 @@ test('projectFloorSimulation distinguishes ready, pending, candidate-switched an
     assert.notEqual(source1.digest, source3.digest);
 });
 
-test('stacked read-only update & simulation floor boxes stay idempotent, XSS-safe, honor lag-1 and hide pre-upgrade sims', async t => {
+test('stacked read-only update & simulation floor boxes stay idempotent, XSS-safe, wait for send-time summary and hide pre-upgrade sims', async t => {
     const html = '<html><body><div id="chat">'
         + '<div class="mes" mesid="0"><div class="mes_text">user1</div></div>'
         + '<div class="mes" mesid="1"><div class="mes_text">reply1</div></div>'
@@ -128,11 +128,11 @@ test('stacked read-only update & simulation floor boxes stay idempotent, XSS-saf
     floor1.querySelector('.tk-fp-head-action')?.click();
     assert.deepEqual(opened, [1]);
 
-    // Latest floor 3 waits lag-1 for update box, auto-opens ready simulation box below it
+    // Latest floor 3 waits for the next send to settle its summary, auto-opens ready simulation box below it
     const update3 = floor3.querySelector('[data-tk-box="update"]');
     const sim3 = floor3.querySelector('[data-tk-box="simulation"]');
     assert.ok(update3 && sim3);
-    assert.match(update3.textContent, /待下一楼后总结/);
+    assert.match(update3.textContent, /发送下一轮前总结/);
     assert.equal(sim3.open, true);
     assert.match(sim3.textContent, /风吹过码头，茶摊熄了灯/);
 

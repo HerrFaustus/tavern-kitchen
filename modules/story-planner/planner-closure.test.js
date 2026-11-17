@@ -11,7 +11,8 @@ import {
 } from './notes.js';
 import { createPlannerSettings } from './settings-view.js';
 import { emptyWorld } from '../world-records/domain.js';
-import { preflightOrderedFloorAgents, renderFloorStatus } from '../../core/floor-status.js';
+import { preflightOrderedFloorAgents } from '../../core/floor-status.js';
+import { clearAgentNotice, configureAgentStatusActions, installAgentStatus, showAgentNotice } from '../../core/agent-status.js';
 import { requireAgent } from '../../core/panel-controls.js';
 import { captureRangeSource } from '../story-summary/data/turn-source.js';
 
@@ -343,26 +344,20 @@ test('9A.6: preflightOrderedFloorAgents blocks missing required agents and warns
     assert.equal(rendered[0].agent, 'planner');
     assert.match(rendered[0].message, /编剧agent.*正文继续/);
 
-    const { document } = parseHTML('<!doctype html><html><body></body></html>');
+    const { document } = parseHTML('<!doctype html><html><body><div id="form_sheld"><form id="send_form"></form></div></body></html>');
+    const stop = installAgentStatus(document);
     let openedAgent = null;
-    const statusEl = renderFloorStatus({
-        doc: document,
-        info: rendered[0],
-        hasChat: true,
-        entry: null,
-        readOwner: () => 'o',
-        isCurrentFailure: () => false,
-        onRetry: () => {},
-        onOpenAgent: agent => { openedAgent = agent; },
-        onOpenRecovery: () => {},
-        onSaveFloorWork: async () => {},
-    });
+    configureAgentStatusActions({ onOpenAgent: agent => { openedAgent = agent; }, onOpenRecovery: () => {} });
+    showAgentNotice({ message: rendered[0].message, agent: rendered[0].agent, timeoutMs: 0 });
+    const statusEl = document.querySelector('#tk-floor-status');
     assert.equal(statusEl.getAttribute('role'), 'status');
     const gotoBtn = [...statusEl.querySelectorAll('button')].find(b => b.textContent === '前往设置');
     assert.ok(gotoBtn);
     gotoBtn.click();
     await setImmediate();
     assert.equal(openedAgent, 'planner');
+    clearAgentNotice();
+    stop();
 
     // Missing required `update` agent must still fail closed and abort.
     const missingUpdateConfig = {

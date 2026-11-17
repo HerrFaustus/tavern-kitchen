@@ -13,6 +13,7 @@ import { EXT_ID } from './constants.js';
 import { buildEntryUrl } from './build-assets.js';
 import { usePanelSettings } from './panel-policy.js';
 import { requireAgent } from './panel-controls.js';
+import { configureAgentStatusActions, showAgentNotice } from './agent-status.js';
 import { createExtensionDrawer } from './extension-drawer.js';
 import { createDefaultXiaobaiOsSettings, prepareXiaobaiOsSettings, initXiaobaiOs, cleanupXiaobaiOs, setXiaobaiOsEnabled, mountWorldSettings, openXiaobaiOs } from '../modules/xiaobai-os/index.js';
 import { createOpeningHost } from '../modules/world-records/opening-host.js';
@@ -57,7 +58,7 @@ async function runStartupUpgradeSelfCheck() {
             if (!notifiedUpgradeSelfChecks.has(noticeKey)) {
                 notifiedUpgradeSelfChecks.add(noticeKey);
                 console.warn('[TavernKitchen] 升级自检发现需要人工处理的项:', report.notices);
-                globalThis.toastr?.warning?.(report.notices.join('\n'), '酒馆后厨 · 升级自检提示');
+                showAgentNotice({ level: 'warning', message: `升级自检：${report.notices.join('；')}`, timeoutMs: 12000 });
             }
         }
         return report;
@@ -91,7 +92,7 @@ async function requireFeatures() {
 
 function showError(error) {
     console.error('[TavernKitchen]', error);
-    window.toastr?.error(error?.message || '后厨操作失败，请查看控制台。');
+    showAgentNotice({ level: 'error', message: error?.message || '后厨操作失败，请重试。', error, pinned: true });
 }
 
 async function loadBridge(entry, id) {
@@ -244,6 +245,10 @@ async function startWorld() {
 export async function startKitchen(workspace) {
     requireTurnRuntime();
     kitchen = workspace;
+    configureAgentStatusActions({
+        onOpenAgent: agent => kitchen.visitBinding(agent),
+        onOpenRecovery: route => { Promise.resolve(kitchen.open(route)).catch(showError); },
+    });
     try {
     await prepareXiaobaiOsSettings();
     if (!settings.xiaobaiOs?.enabled) await setXiaobaiOsEnabled(true);

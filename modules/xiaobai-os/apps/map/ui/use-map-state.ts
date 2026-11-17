@@ -1,9 +1,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, toRaw } from 'vue';
 import type { XiaobaiOsAppProps } from '../../../shell/app-contract.js';
 import type { MapClientState } from '../types.js';
-import { MAP_PROJECTION_COPY } from './map-copy.js';
 
-type Action = 'refresh' | 'settings' | 'projection' | 'maintain' | 'rebuild' | 'adopt';
+type Action = 'refresh' | 'maintain' | 'rebuild' | 'adopt';
 function record(value: unknown): value is Record<string, unknown> {return !!value && typeof value === 'object' && !Array.isArray(value);}
 function maintaining(state: MapClientState): boolean {return state.maintenanceStatus === 'maintaining' || state.maintenanceStatus === 'rebuilding';}
 
@@ -51,7 +50,6 @@ export function useMapState(props: XiaobaiOsAppProps) {
         const text = error instanceof Error ? error.message : String(error);
         if (text.includes('聊天已切换')) {return '聊天已切换，请重新打开地图。';}
         if (action === 'adopt') {return '已保存版本暂时加载不了，当前修改还在，请稍后重试。';}
-        if (action === 'settings' || action === 'projection') {return '设置未能保存，请重试。';}
         return '地图操作未完成，请稍后重试。';
     }
     async function request(endpoint: string, action: Action, extra: Record<string, unknown> = {}): Promise<boolean> {
@@ -72,8 +70,6 @@ export function useMapState(props: XiaobaiOsAppProps) {
                 localMessage.value = result.message;
             }
             if (action === 'refresh' && state.value.status === 'ready') {localMessage.value = '已加载保存的地图。';}
-            if (action === 'settings') {localMessage.value = state.value.autoMaintenance ? '自动更新已开启。' : '自动更新已关闭。';}
-            if (action === 'projection') {localMessage.value = state.value.projectToChat ? MAP_PROJECTION_COPY.enabled : MAP_PROJECTION_COPY.disabled;}
             if (action === 'adopt' && record(result) && result.adoption === 'adopted') {localMessage.value = '已使用当前聊天里保存的 OS 存档。';}
             return true;
         } catch (error) {
@@ -106,8 +102,6 @@ export function useMapState(props: XiaobaiOsAppProps) {
         dismissNotice: () => {localMessage.value = ''; localError.value = false;},
         refresh: () => {if (!busy.value && !requiresConfirmation.value) {return request('map/refresh', 'refresh');}},
         adopt: () => {if (!busy.value) {return request('map/adopt-server-state', 'adopt');}},
-        setAuto: (enabled: boolean) => request('map/set-auto-maintenance', 'settings', { enabled }),
-        setProjection: (enabled: boolean) => request('map/set-projection', 'projection', { enabled }),
         update: () => {if (!disabledReason.value && state.value.map) {return request('map/maintain-once', 'maintain');}},
         rebuild: () => {if (!disabledReason.value) {return request('map/rebuild', 'rebuild');}},
     };

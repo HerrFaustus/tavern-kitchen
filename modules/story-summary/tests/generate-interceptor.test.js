@@ -102,15 +102,17 @@ test('a quiet dispatch cannot abort an overlapping foreground dispatch', async (
     assert.equal(calls, 2);
 });
 
-test('dispatcher isolates a failed handler', async () => {
+test('a failed handler aborts the dispatch instead of continuing', async () => {
     const calls = [];
+    const abortCalls = [];
     register('test-error-a', () => {
         throw new Error('expected test failure');
     });
     register('test-error-b', () => calls.push('b'));
 
-    await globalThis.tavernKitchenGenerateInterceptor([], 0, () => {}, 'normal');
-    assert.deepEqual(calls, ['b']);
+    await globalThis.tavernKitchenGenerateInterceptor([], 0, value => abortCalls.push(value), 'normal');
+    assert.deepEqual(calls, []);
+    assert.deepEqual(abortCalls, [true]);
 });
 
 test('abort true is sticky and stops remaining handlers', async () => {

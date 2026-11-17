@@ -138,7 +138,7 @@ try {
         await binding.waitFor();
         await page.waitForFunction(() => globalThis.document.querySelector('iframe[title="API"]').contentDocument.activeElement?.dataset.agentBinding === 'simulation');
         assert.equal(await frame.getByLabel('编剧 Agent').inputValue(),'p');
-        assert.match(await frame.getByLabel('更新 Agent').locator('..').innerText(),/旧世界连接/);
+        assert.match(await frame.getByLabel('总结 Agent').locator('..').innerText(),/旧世界连接/);
         assert.ok(await frame.getByLabel('选择连接').isHidden());
         await page.getByRole('button',{name:'返回局势'}).click();
         await waitForReturnFocus();
@@ -161,8 +161,8 @@ try {
         assert.equal(await page.locator('#tk-world-inject-to-story').count(), 0);
         await page.getByRole('button',{name:'API',exact:true}).click();
         assert.equal(await binding.inputValue(),'p');
-        await frame.getByLabel('更新 Agent').selectOption('p');
-        await frame.getByRole('status').filter({hasText:'已保存更新 Agent'}).waitFor();
+        await frame.getByLabel('总结 Agent').selectOption('p');
+        await frame.getByRole('status').filter({hasText:'已保存总结 Agent'}).waitFor();
         for (const [size,dark] of [[16,true],[20,false]]) {
             await page.evaluate(({size,dark}) => {
                 globalThis.document.body.style.fontSize = size + 'px';

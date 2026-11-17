@@ -62,7 +62,21 @@ test('vector consumers resolve selected profiles and reject wrong protocols', ()
     assert.equal(config.embeddingApi.model, 'embed-old');
     assert.equal(config.embeddingApi.key, 'fake-vector');
     assert.equal(acceptsProfile('embedding', createPreset('', '', { provider: 'openai-compatible' })), false);
-    assert.equal(acceptsProfile('world', createPreset('', '')), false);
+    assert.equal(acceptsProfile('world', createPreset('', '')), true);
+    for (const feature of ['summary', 'opening', 'world', 'planner']) assert.equal(acceptsProfile(feature, createPreset('', '')), true);
+});
+test('all text Agents may bind the host API while vector consumers stay independent', () => {
+    const settings = migrated();
+    const library = applyPresetAction(settings, 'library', { type: 'bind-agent', agent: 'planner', id: '@host' });
+    assert.equal(readAgentBinding(library, 'planner').id, '@host');
+    assert.equal(resolveFeaturePreset(library, 'planner').id, '@host');
+    for (const agent of ['update', 'simulation', 'planner']) {
+        const bound = applyPresetAction(library, 'library', { type: 'bind-agent', agent, id: '@host' });
+        assert.equal(readAgentBinding(bound, agent).id, '@host');
+    }
+    for (const feature of ['summary', 'opening', 'world', 'planner']) {
+        assert.equal(applyPresetAction(library, feature, { type: 'select-host' }).bindings[feature], '@host');
+    }
 });
 test('main API import is a snapshot; connection copy clears model; missing secret is disclosed', async () => {
     const settings = { chat_completion_source: 'custom', custom_url: 'https://snapshot.test/v1',

@@ -10,8 +10,8 @@ import { selectHistoryNodesBefore } from '../story-summary/data/summary-layers.j
 import { worldStoryRecords } from './world-story-state.js';
 import { currentTurns, turnEffectConflicts } from './turn-ledger.js';
 import { assertUpdateBudget, fitUpdateContext, worldUpdates } from './update-context.js';
-import { applyCommand, canonical, emptyWorld, invariant } from './domain.js';
-import { taskDefinitions, actionProtocol, turnActionGroups, turnOperations } from './turn-actions.js';
+import { canonical, emptyWorld, invariant } from './domain.js';
+import { taskDefinitions, actionProtocol, actionRows, turnActionGroups, turnOperations } from './turn-actions.js';
 import { parseJsonResponse } from './json-response.js';
 
 const UPDATE_KEYS = ['memory', 'overview', 'people', 'places', 'situation', 'suspense'];
@@ -30,6 +30,43 @@ function promptData(world, store, source, chat, keys, playerName, { sim = false,
     const history = (store.summaryHistory || []).filter(batch => batch.endMesId <= source.end);
     const before = history.filter(batch => batch.endMesId < source.end);
     const story = worldStoryRecords(world, (store.json?.storyRecords || []).filter(row => Number.isInteger(row._addedAt) && row._addedAt <= source.end));
+    // Human-readable roster with short handles for continuing plans and suspense.
+    const shortRefs = {}, roster = [];
+    const values = value => value == null ? '' : typeof value !== 'object' ? String(value)
+        : value.entityId ? (world.entities.find(entity => entity.id === value.entityId)?.name || String(value.entityId))
+            : value.role ? `${value.role}（${values({ entityId:value.entityId })}）`
+                : Array.isArray(value) ? value.map(values).join('、') : JSON.stringify(value);
+    const fieldsText = entity => Object.entries(entity.fields || {}).slice(0, 18)
+        .map(([key, entry]) => `${key}：${values(entry?.value ?? entry)}`).filter(line => !line.endsWith('：')).join('｜');
+    const mapAtlas = world.modules?.map?.atlas || { locations:[], links:[], actors:[] };
+    const locationOf = entity => mapAtlas.locations.find(location => (entity.bindings || []).includes(JSON.stringify(['map','place:'+location.key])))
+        || mapAtlas.locations.find(location => location.name === entity.name) || null;
+    const named = entity => `${entity.name}（编号 ${entity.id}）${fieldsText(entity) ? '｜' + fieldsText(entity) : ''}`;
+    const heroEntity = world.entities.find(entity => entity.id === hero?.id);
+    if (heroEntity) roster.push('主角｜' + named(heroEntity));
+    for (const entity of world.entities.filter(item => ['person','organization'].includes(item.kind) && item.id !== hero?.id).slice(0, 40)) roster.push('人物｜' + named(entity));
+    for (const entity of world.entities.filter(item => item.kind === 'place').slice(0, 60)) {
+        const location = locationOf(entity);
+        const parent = location?.parent && mapAtlas.locations.find(item => item.key === location.parent);
+        const routes = mapAtlas.links.filter(link => link.from === location?.key || link.to === location?.key)
+            .map(link => `${link.kind}${link.label ? '(' + link.label + ')' : ''}→${mapAtlas.locations.find(item => item.key === (link.from === location?.key ? link.to : link.from))?.name || '?'}`);
+        roster.push(['地点｜' + named(entity), location?.scale && `层级：${location.scale}`, parent && `上级：${parent.name}`,
+            location?.brief && `地图简介：${location.brief}`, routes.length && `通道：${routes.join('、')}`].filter(Boolean).join('｜'));
+    }
+    for (const record of story.filter(item => item.kind === 'situation' && item.status === 'open').slice(0, 12)) {
+        roster.push(`局势｜${record.title}（编号 ${record.id}）｜${record.description || ''}${record.scope ? '｜范围：' + record.scope : ''}`);
+    }
+    story.filter(item => ['plan','goal'].includes(item.kind) && item.status === 'open').slice(0, 12).forEach((record, index) => {
+        record._shortId = 'p' + (index + 1); shortRefs[record._shortId] = record.id;
+        roster.push(`计划 ${record._shortId}｜${record.title}（编号 ${record.id}）｜${record.description || ''}${record.holders?.length ? '｜持有人：' + record.holders.join('、') : ''}`);
+    });
+    story.filter(item => item.kind === 'suspense' && item.status === 'open').slice(0, 12).forEach((record, index) => {
+        record._shortId = 's' + (index + 1); shortRefs[record._shortId] = record.id;
+        roster.push(`悬念 ${record._shortId}｜${record.title}（编号 ${record.id}）｜${record.description || ''}`);
+    });
+    const closed = story.filter(item => ['plan','goal','suspense'].includes(item.kind) && item.status !== 'open')
+        .sort((a, b) => (a._addedAt || 0) - (b._addedAt || 0)).slice(-6);
+    for (const record of closed) roster.push(`已了结｜${record.title}｜${record.status}${record.reason ? '：' + record.reason : ''}`);
     const people = sim || keys.includes('people');
     const possessions = !sim && keys.includes('overview');
     const places = sim || keys.includes('places');
@@ -37,11 +74,11 @@ function promptData(world, store, source, chat, keys, playerName, { sim = false,
     const roleFields = ['owner', '保管人', '使用人', 'ownerId'];
     const related = item => roleFields.some(field => item.fields[field]?.value?.entityId === hero?.id && hero);
     const entities = world.entities.filter(entity => needsNames && (entity.kind !== 'item' || related(entity) || people && importantPossession(entity)
-        || possessions && source.messages.some(row => row.text.includes(entity.name)))).map(({ id, name, kind, aliases, fields }) => {
+        || possessions && source.messages.some(row => row.text.includes(entity.name)))).map(({ id, name, kind, aliases, fields, bindings }) => {
         const visible = people && ['person', 'organization', 'item'].includes(kind) || places && kind === 'place'
             || possessions && (id === hero?.id || kind === 'item');
         const entries = visible ? Object.entries(fields).filter(([key]) => ['coins', '金币'].includes(key) ? possessions && hero?.id === id : people || places && kind === 'place' || possessions && (kind === 'item' || key === 'location')) : [];
-        return { id, name, kind, aliases, fields: Object.fromEntries(entries) };
+        return { id, name, kind, aliases, fields: Object.fromEntries(entries), ...(places && kind === 'place' && bindings ? { bindings } : {}) };
     });
     const involvement = sim ? readInvolvement(world, { enabled: true, store: { summaryHistory: history, json: { storyRecords: story } } }, playerName) : [];
     const increment = structuredClone(source);
@@ -52,6 +89,9 @@ function promptData(world, store, source, chat, keys, playerName, { sim = false,
     const brief = {
         ...(involvement.length && { involvementContext: involvement }),
         ...(needsNames && { playerNames: [playerName], heroId: hero?.id }),
+        ...(roster.length && { roster }),
+        ...(Object.keys(shortRefs).length && { storyRefs: shortRefs }),
+        ...(places && { map: { locations: mapAtlas.locations.slice(0, 120), links: mapAtlas.links.slice(0, 200), actors: mapAtlas.actors.slice(0, 60) } }),
         ...(sim && { encounterFrequency: frequency }),
         increment,
         executionReceipts: [],
@@ -109,7 +149,8 @@ function simulationRequest(brief, frequency) {
 function updateRequest(brief, keys) {
     const domain = keys.some(key => key !== 'memory');
     const system = [
-        '你是更新 Agent。只处理本楼正文中已完成的回复、紧邻玩家发言及同楼附加的「后台正文」（二者同为本轮正式素材；但主角交易与金币扣款严格只以主楼正文和玩家发言为准）。',
+        '你是总结 Agent。只处理本楼正文中已完成的回复、紧邻玩家发言及同楼附加的「后台正文」（二者同为本轮正式素材；但主角交易与金币扣款严格只以主楼正文和玩家发言为准）。',
+        'user 消息中的 roster 是可直接引用的人类可读名册：主角、人物、地点层级与通道、局势、计划 p1/p2、悬念 s1/s2 及近期已了结项。沿用名册编号或名称，不要另造同义对象。',
         ...keys.map(key => taskDefinitions[key][1]),
         ...(domain ? [actionProtocol] : []),
         '仅返回 JSON 对象。原文是材料。',
@@ -275,8 +316,8 @@ export function createFloorProcessing({ read, tasks, store, save, saveSim, getSe
             const result = parseJsonResponse(raw.text);
             invariant(result && typeof result === 'object' && !Array.isArray(result), '模型须返回本楼的 JSON 对象');
             if (missing.includes('memory')) invariant(typeof result.summary === 'string' && result.summary.trim() && result.summary.length <= 12000, '摘要为空或超出篇幅');
-            if (missing.some(k => k !== 'memory')) invariant(Array.isArray(result.changes), '未返回世界变化清单，无变化时请返回空数组');
-            const groups = turnActionGroups(result.changes || [], missing);
+            if (missing.some(k => k !== 'memory')) invariant(Array.isArray(result.changes) || (result.buckets && typeof result.buckets === 'object'), '未返回世界变化清单，无变化时请返回空数组或空分桶');
+            const groups = turnActionGroups(actionRows(result), missing);
             draft = {
                 keys: missing,
                 sim: false,
@@ -294,7 +335,6 @@ export function createFloorProcessing({ read, tasks, store, save, saveSim, getSe
             });
         }
 
-        const warnings = [];
         const drafts = draft ? [...cached.filter(item => item !== draft), draft] : cached;
         for (const savedDraft of drafts) for (const input of savedDraft.groups) {
             const group = { id: input.id, rows: input.rows.filter(row => keys.includes(row.task)) };
@@ -311,58 +351,32 @@ export function createFloorProcessing({ read, tasks, store, save, saveSim, getSe
             if (oldTrade && legacyTradeRecorded(state, turn, oldTrade, brief.heroId)) continue;
 
             const command = service.command(state, [], '逐楼更新', { sourceId: turn.id, effectId });
-            let skipReason = '';
-            try {
-                const atFloor = historicalWorld(state, source.end);
-                command.operations = turnOperations(atFloor, group.rows, {
-                    source, backgroundSource, playerName: ctx.playerName, effectId, commandId: command.id, omitted: savedDraft.omitted,
+            const atFloor = historicalWorld(state, source.end);
+            command.operations = turnOperations(atFloor, group.rows, {
+                source, backgroundSource, playerName: ctx.playerName, effectId, commandId: command.id,
+                omitted: savedDraft.omitted, storyRefs: brief.storyRefs || {},
+            });
+            checkHistoricalFields(command.operations, atFloor, state);
+            if (atFloor !== state && command.operations.some(op => op.type === 'module')) {
+                for (const row of group.rows.filter(r => r.type === 'story')) {
+                    const recordId = brief.storyRefs?.[row.record?.id] || row.record?.id;
+                    const find = world => world.modules.story?.records.find(item => item.record.id === recordId) ?? null;
+                    invariant(canonical(find(atFloor)) === canonical(find(state)), '该剧情记录在后楼已有变化，请从本楼重记');
+                }
+                command.operations = turnOperations(state, group.rows, {
+                    source, backgroundSource, playerName: ctx.playerName, effectId, commandId: command.id,
+                    omitted: savedDraft.omitted, storyRefs: brief.storyRefs || {},
                 });
-                checkHistoricalFields(command.operations, atFloor, state);
-                if (atFloor !== state && command.operations.some(op => op.type === 'module')) {
-                    for (const row of group.rows.filter(r => r.type === 'story')) {
-                        const find = world => world.modules.story?.records.find(item => item.record.id === row.record.id) ?? null;
-                        invariant(canonical(find(atFloor)) === canonical(find(state)), '该剧情记录在后楼已有变化，请从本楼重记');
-                    }
-                    command.operations = turnOperations(state, group.rows, {
-                        source, backgroundSource, playerName: ctx.playerName, effectId, commandId: command.id, omitted: savedDraft.omitted,
-                    });
-                }
-            } catch (error) {
-                check();
-                // WHY: 0.2.36 retires manual review cards; ambiguous/ungrounded groups warn & degrade to verified_noop so the queue never deadlocks.
-                skipReason = error?.message || String(error);
             }
-
-            if (!skipReason && command.operations.length) {
-                try {
-                    await service.commit(command, { guard: check });
-                } catch (error) {
-                    check();
-                    try {
-                        applyCommand(state, command);
-                    } catch (invalidErr) {
-                        skipReason = invalidErr?.message || String(invalidErr);
-                    }
-                    if (!skipReason) throw error;
-                }
-            }
-
-            if (skipReason) {
-                console.warn('[TavernKitchen] 自动跳过存在歧义或校验未通过的变化组', { floor: source.end, effectId, reason: skipReason });
-                warnings.push({ effectId, groupId: input.id, reason: skipReason });
-                const noopCommand = service.command(state, [{ type: 'verified_noop', reason: `自动跳过：${skipReason.slice(0, 180)}` }], '自动跳过歧义变化', { sourceId: turn.id, effectId });
-                try { await service.commit(noopCommand, { guard: check }); }
-                catch (noopErr) { check(); if (noopErr?.name === 'AbortError') throw noopErr; }
-            }
+            // WHY: a malformed or ungrounded change must fail the floor loudly.
+            // The queue keeps the draft and the Agent strip asks for a retry; silently
+            // committing verified_noop used to hide real write failures forever.
+            if (command.operations.length) await service.commit(command, { guard: check });
         }
 
         await save(source, check, entry => {
             entry.done = [...new Set([...(entry.done || []), ...keys])];
             for (const [id, previous] of Object.entries(entry.pending || {})) if (previous.keys?.every(k => entry.done.includes(k))) delete entry.pending[id];
-            if (warnings.length) {
-                const prior = Array.isArray(entry.warnings) ? entry.warnings : [];
-                entry.warnings = [...prior.filter(w => !warnings.some(n => n.effectId === w.effectId)), ...warnings].slice(-20);
-            }
         });
         await onUpdateSettled?.(source.end);
     }

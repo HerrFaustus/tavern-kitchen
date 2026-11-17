@@ -10,7 +10,7 @@ test('enabling a module checks only its own Agent without writing or starting a 
     const repository = async () => ({load:async () => settings});
     await requireAgent('simulation', repository);
     await requireAgent(panelAgent('map'), repository);
-    await assert.rejects(requireAgent(panelAgent('places'), repository), {message:'请先在设置中配置更新agent'});
+    await assert.rejects(requireAgent(panelAgent('places'), repository), {message:'请先在设置中配置总结agent'});
     await assert.rejects(requireAgent(panelAgent('planner'), repository), {message:'请先在设置中配置编剧agent'});
     usePanelSettings({panels:{map:false}}); assert.equal(panelEnabled('map'),true); usePanelSettings({});
 });

@@ -46,7 +46,6 @@ module.exports = {
         es6: true,
     },
     globals: {
-        toastr: 'readonly',
         Fuse: 'readonly',
         globalThis: 'readonly',
         SillyTavern: 'readonly',
