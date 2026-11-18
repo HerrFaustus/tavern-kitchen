@@ -253,7 +253,7 @@ export async function startKitchen(workspace) {
     // WHY: 2A retires main-reply <kitchen_summary> extraction and bypass generation;
     // panel summarizeFloor routes single-floor rerun through floorHost when installed.
     const panels = installFloorSummaries({ getSnapshot: memory.getFloorSummarySnapshot,
-        summarizeFloor: floor => (floorHost ? floorHost.rerunFloor(floor) : memory.summarizeFloorOnDemand(floor)),
+        summarizeFloor: floor => (floorHost ? floorHost.summarizeFloor(floor) : memory.summarizeFloorOnDemand(floor)),
         openMemory: floor => memory.openStoryMemory(floor) });
     const floorEvents = createModuleEvents('kitchen-floor-summaries');
     floorEvents.on(event_types.CHAT_CHANGED, panels.reset);

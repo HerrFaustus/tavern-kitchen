@@ -3256,7 +3256,7 @@ export function getWorldMemorySnapshot() {
     return {...snapshot,store:snapshot.store || {},enabled:isXiaobaiMasterEnabled() && Boolean(getContext()?.chatId)};
 }
 export function getFloorSummarySnapshot(readWorld = false) {
-    const chat = getContext().chat || [];
+    const context = getContext(), chat = context.chat || [];
     const store = panelEnabled('memory') || readWorld && chat_metadata?.extensions?.[EXT_ID]?.storySummary ? getPublishedSummaryStore() : null;
     const invalid = Array.isArray(store?.summaryHistory) && store.summaryHistory.find(batch => batch?.floorEntry && !isFloorEntryCurrent(batch.floorEntry, chat));
     const sourceInvalid = firstInvalidMemorySource(store, chat);
@@ -3267,6 +3267,10 @@ export function getFloorSummarySnapshot(readWorld = false) {
         enabled: isXiaobaiMasterEnabled() && isStorySummaryEnabledForCurrentChat(),
         chat,
         store,
+        // WHY: getWorldMemorySnapshot passes readWorld=true when world-records reads identity/authority;
+        // calling worldAuthorityForContext in that branch re-enters authority.read() and overflows the stack.
+        // DO NOT: resolve worldAuthorityForContext when readWorld is true.
+        world: readWorld ? null : worldAuthorityForContext(context),
         bounds: getUpdateAndSimulationBounds(chat),
         invalidFrom: Number.isFinite(invalidFrom) ? invalidFrom : undefined,
         keepVisibleTurns: getSummaryPanelConfig().ui?.keepVisibleCount ?? 0,
@@ -3346,6 +3350,7 @@ export async function summarizeFloorOnDemand(floor) {
 }
 export function invalidateWorldContext() {
     if (isStorySummaryEnabledForCurrentChat()) cancelRecallAndClearPrompt('world-state-changed');
+    refreshFloorSummaries();
     if (frameReady) postToFrame({ type: 'SUMMARY_FULL_DATA', payload: buildFramePayload(getPublishedSummaryStore()) });
 }
 
@@ -3446,6 +3451,7 @@ export async function saveFloorWork(source, check, update) {
     update(entry,store);
     await commitSummaryMemory(chatId,next,{previous,validate:check});
     refreshRecallAfterSettlement();
+    refreshFloorSummaries();
     if (isStorySummaryEnabledForCurrentChat()) notifySummaryState();
     if (frameReady) postToFrame({ type: 'SUMMARY_FULL_DATA', payload: buildFramePayload(getPublishedSummaryStore()) });
 }
@@ -3457,6 +3463,7 @@ export async function saveFloorSimulation(source, check, update) {
     simulations[source.end] = update(simulations[source.end], store);
     await commitSummaryMemory(chatId, next, { previous, validate: check });
     refreshRecallAfterSettlement();
+    refreshFloorSummaries();
     if (isStorySummaryEnabledForCurrentChat()) notifySummaryState();
     if (frameReady) postToFrame({ type: 'SUMMARY_FULL_DATA', payload: buildFramePayload(getPublishedSummaryStore()) });
 }

@@ -11,7 +11,7 @@ import { worldStoryRecords } from './world-story-state.js';
 import { currentTurns, turnEffectConflicts } from './turn-ledger.js';
 import { assertUpdateBudget, fitUpdateContext, worldUpdates } from './update-context.js';
 import { canonical, emptyWorld, invariant } from './domain.js';
-import { taskDefinitions, actionProtocol, actionRows, turnActionGroups, turnOperations } from './turn-actions.js';
+import { taskDefinitions, actionProtocol, actionRows, hasActionBuckets, turnActionGroups, turnOperations } from './turn-actions.js';
 import { parseJsonResponse } from './json-response.js';
 
 const UPDATE_KEYS = ['memory', 'overview', 'people', 'places', 'situation', 'suspense'];
@@ -316,7 +316,7 @@ export function createFloorProcessing({ read, tasks, store, save, saveSim, getSe
             const result = parseJsonResponse(raw.text);
             invariant(result && typeof result === 'object' && !Array.isArray(result), '模型须返回本楼的 JSON 对象');
             if (missing.includes('memory')) invariant(typeof result.summary === 'string' && result.summary.trim() && result.summary.length <= 12000, '摘要为空或超出篇幅');
-            if (missing.some(k => k !== 'memory')) invariant(Array.isArray(result.changes) || (result.buckets && typeof result.buckets === 'object'), '未返回世界变化清单，无变化时请返回空数组或空分桶');
+            if (missing.some(k => k !== 'memory')) invariant(hasActionBuckets(result) || typeof result.summary === 'string', '未返回世界变化清单，无变化时请返回空数组或空分桶');
             const groups = turnActionGroups(actionRows(result), missing);
             draft = {
                 keys: missing,
@@ -335,43 +335,55 @@ export function createFloorProcessing({ read, tasks, store, save, saveSim, getSe
             });
         }
 
+        const groupPriority = group => (group.rows.some(row => row.task === 'places' && row.type === 'create') ? 0
+            : group.rows.some(row => row.type === 'create') ? 1
+                : group.rows.some(row => row.type === 'link') ? 2
+                    : 3);
         const drafts = draft ? [...cached.filter(item => item !== draft), draft] : cached;
-        for (const savedDraft of drafts) for (const input of savedDraft.groups) {
-            const group = { id: input.id, rows: input.rows.filter(row => keys.includes(row.task)) };
-            if (!group.rows.length) continue;
-            const effectId = groupEffect(source, group);
-            state = await service.read(); check();
-            if (state.receipts.some(r => r.origin?.sourceId === turn.id && r.origin.effectId === effectId)) continue;
-            if (staleDraft(state, savedDraft, source, turn)) {
-                const pending = Object.entries(store().floorWork[source.end].pending).find(([, item]) => item.basis === savedDraft.basis && resultKey(source, item.keys) === resultKey(source, savedDraft.keys));
-                if (pending) await discard(pending[0]);
-                throw new Error('世界版本已改变，请按已确认的进度重试本楼');
-            }
-            const oldTrade = group.rows.find(row => row.type === 'trade');
-            if (oldTrade && legacyTradeRecorded(state, turn, oldTrade, brief.heroId)) continue;
-
-            const command = service.command(state, [], '逐楼更新', { sourceId: turn.id, effectId });
-            const atFloor = historicalWorld(state, source.end);
-            command.operations = turnOperations(atFloor, group.rows, {
-                source, backgroundSource, playerName: ctx.playerName, effectId, commandId: command.id,
-                omitted: savedDraft.omitted, storyRefs: brief.storyRefs || {},
-            });
-            checkHistoricalFields(command.operations, atFloor, state);
-            if (atFloor !== state && command.operations.some(op => op.type === 'module')) {
-                for (const row of group.rows.filter(r => r.type === 'story')) {
-                    const recordId = brief.storyRefs?.[row.record?.id] || row.record?.id;
-                    const find = world => world.modules.story?.records.find(item => item.record.id === recordId) ?? null;
-                    invariant(canonical(find(atFloor)) === canonical(find(state)), '该剧情记录在后楼已有变化，请从本楼重记');
+        for (const savedDraft of drafts) {
+            const sharedRefs = new Map();
+            for (const input of [...savedDraft.groups].sort((a, b) => groupPriority(a) - groupPriority(b))) {
+                const group = { id: input.id, rows: input.rows.filter(row => keys.includes(row.task)) };
+                if (!group.rows.length) continue;
+                const effectId = groupEffect(source, group);
+                state = await service.read(); check();
+                if (state.receipts.some(r => r.origin?.sourceId === turn.id && r.origin.effectId === effectId)) continue;
+                if (staleDraft(state, savedDraft, source, turn)) {
+                    const pending = Object.entries(store().floorWork[source.end].pending).find(([, item]) => item.basis === savedDraft.basis && resultKey(source, item.keys) === resultKey(source, savedDraft.keys));
+                    if (pending) await discard(pending[0]);
+                    throw new Error('世界版本已改变，请按已确认的进度重试本楼');
                 }
-                command.operations = turnOperations(state, group.rows, {
+                const oldTrade = group.rows.find(row => row.type === 'trade');
+                if (oldTrade && legacyTradeRecorded(state, turn, oldTrade, brief.heroId)) continue;
+
+                const command = service.command(state, [], '逐楼更新', { sourceId: turn.id, effectId });
+                const atFloor = historicalWorld(state, source.end);
+                const groupRefs = new Map(sharedRefs);
+                command.operations = turnOperations(atFloor, group.rows, {
                     source, backgroundSource, playerName: ctx.playerName, effectId, commandId: command.id,
-                    omitted: savedDraft.omitted, storyRefs: brief.storyRefs || {},
+                    omitted: savedDraft.omitted, storyRefs: brief.storyRefs || {}, refs: groupRefs,
                 });
+                checkHistoricalFields(command.operations, atFloor, state);
+                if (atFloor !== state && command.operations.some(op => op.type === 'module')) {
+                    for (const row of group.rows.filter(r => r.type === 'story')) {
+                        const recordId = brief.storyRefs?.[row.record?.id] || row.record?.id;
+                        const find = world => world.modules.story?.records.find(item => item.record.id === recordId) ?? null;
+                        invariant(canonical(find(atFloor)) === canonical(find(state)), '该剧情记录在后楼已有变化，请从本楼重记');
+                    }
+                    const retryRefs = new Map(sharedRefs);
+                    command.operations = turnOperations(state, group.rows, {
+                        source, backgroundSource, playerName: ctx.playerName, effectId, commandId: command.id,
+                        omitted: savedDraft.omitted, storyRefs: brief.storyRefs || {}, refs: retryRefs,
+                    });
+                    for (const [k, v] of retryRefs) sharedRefs.set(k, v);
+                } else {
+                    for (const [k, v] of groupRefs) sharedRefs.set(k, v);
+                }
+                // WHY: a malformed or ungrounded change must fail the floor loudly.
+                // The queue keeps the draft and the Agent strip asks for a retry; silently
+                // committing verified_noop used to hide real write failures forever.
+                if (command.operations.length) await service.commit(command, { guard: check });
             }
-            // WHY: a malformed or ungrounded change must fail the floor loudly.
-            // The queue keeps the draft and the Agent strip asks for a retry; silently
-            // committing verified_noop used to hide real write failures forever.
-            if (command.operations.length) await service.commit(command, { guard: check });
         }
 
         await save(source, check, entry => {

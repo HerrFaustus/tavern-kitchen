@@ -389,3 +389,44 @@ test('a sale between the shopkeeper and boatman fails closed instead of debiting
     assert.equal(state.entities.find(e => e.id === 'hero').fields.coins.value, 10);
     assert.equal(state.receipts.filter(r => r.trades).length, 0);
 });
+
+test('summary outputs with top-level buckets, string places, cross-group refs, skipped opening hero and relaxed story fields still commit to world modules', async t => {
+    const f = fixture(t, ['我走进青竹酒馆，把门后的石阶打量了一番。', '店主阿青在青竹酒馆里招呼你，院后石阶通往藏书阁。']);
+    f.keys = ['memory', 'overview', 'people', 'places', 'situation', 'suspense'];
+    // No seed(): user skipped opening initialization so state.entities starts empty.
+    f.reply = () => ({
+        summary: '主角进入青竹酒馆，店主阿青在场，发现了通往藏书阁的石阶。',
+        memoryTags: { characters: ['阿青'], locations: ['青竹酒馆', '藏书阁'], times: [], keywords: ['石阶'] },
+        // Top-level buckets (without `buckets:` wrapper) + `g_people` ordered before `g_places` + string location/parent/links + omitted story status/id.
+        people: [
+            { group: 'g_people', type: 'create', ref: 'qing', kind: 'person', name: '阿青' },
+            { group: 'g_people', type: 'set', target: 'qing', field: '所在地', value: '青竹酒馆' },
+            { group: 'g_people', type: 'set', target: '主角', field: '当前地点', value: '青竹酒馆' },
+            { group: 'g_people', type: 'story', kind: 'plan', title: '查探藏书阁', description: '找机会上石阶查看' },
+        ],
+        places: [
+            { group: 'g_places', type: 'create', ref: 'inn', kind: 'place', name: '青竹酒馆', scale: 'building' },
+            { group: 'g_places', type: 'link', from: 'inn', to: '藏书阁', kind: 'stairs', label: '后院石阶' },
+        ],
+        situation: [
+            { type: 'story', kind: 'situation', title: '酒馆营业中', description: '夜客渐多' },
+        ],
+        suspense: [
+            { type: 'story', kind: 'suspense', title: '藏书阁为何锁门', description: '阿青未说明原因' },
+        ],
+    });
+    await f.queue.settle();
+    const world = await f.service.read();
+    const inn = world.entities.find(e => e.name === '青竹酒馆');
+    const attic = world.entities.find(e => e.name === '藏书阁');
+    const qing = world.entities.find(e => e.name === '阿青');
+    const hero = world.entities.find(e => e.name === '主角');
+    assert.ok(inn && attic && qing && hero);
+    assert.equal(qing.fields.location?.value?.entityId, inn.id);
+    assert.equal(hero.fields.location?.value?.entityId, inn.id);
+    assert.equal(world.modules.map.atlas.links.length, 1);
+    assert.equal(world.modules.map.atlas.links[0].label, '后院石阶');
+    assert.ok(world.modules.map.atlas.actors.some(a => a.displayName === '阿青'));
+    assert.ok(world.modules.map.atlas.actors.some(a => a.actorKey === 'player'));
+    assert.equal(world.modules.story.records.length, 3);
+});

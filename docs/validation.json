@@ -1,9 +1,9 @@
 {
-  "version": "0.2.37",
+  "version": "0.2.38",
   "status": "passed",
-  "validated_on": "2026-11-18",
-  "build_id": "f85a3ad8297ead6d8b83",
-  "product": "酒馆后厨 Tavern 扩展，本地安装包（发送前总结、同酒馆主 API、统一 Agent 横栏与发前隐藏/实时视图收口）",
+  "validated_on": "2026-11-19",
+  "build_id": "d168163e6faf2dcfcf13",
+  "product": "酒馆后厨 Tavern 扩展，本地安装包（常驻 Agent 待命横栏、楼末手动总结按钮与世界变更同步、真实模型容错写回）",
   "environment": {
     "node": "24.22.3",
     "pnpm": "11.25.0",
@@ -28,8 +28,8 @@
       "node scripts/check-ui.mjs",
       "python3 scripts/package.py",
       "node scripts/check-versions.mjs",
-      "(cd release && shasum -a 256 -c tavern-kitchen-0.2.37.zip.sha256)",
-      "node scripts/check-installation.mjs release/tavern-kitchen-0.2.37.zip > release/install-verification.json"
+      "(cd release && shasum -a 256 -c tavern-kitchen-0.2.38.zip.sha256)",
+      "node scripts/check-installation.mjs release/tavern-kitchen-0.2.38.zip > release/install-verification.json"
     ]
   },
   "acceptance": [
@@ -101,9 +101,9 @@
     },
     {
       "id": 8,
-      "title": "全仓静态检查、类型校验、1437 项测试、9 组无头界面回归与安装包复验",
+      "title": "全仓静态检查、类型校验、1441 项测试、9 组无头界面回归与安装包复验",
       "status": "passed",
-      "expected": "quality.mjs、eslint (--max-warnings 0)、typecheck.mjs、check-project.mjs、build.mjs、test.mjs (1437/1437)、check-runtime.mjs、9 组 check-ui.mjs、package.py、check-versions.mjs 与 check-installation.mjs (0.2.37 zip) 全数通过。",
+      "expected": "quality.mjs、eslint (--max-warnings 0)、typecheck.mjs、check-project.mjs、build.mjs、test.mjs (1441/1441)、check-runtime.mjs、9 组 check-ui.mjs、package.py、check-versions.mjs 与 check-installation.mjs (0.2.38 zip) 全数通过。",
       "commands": [
         "pnpm build",
         "pnpm check",
@@ -112,7 +112,7 @@
         "node scripts/check-ui.mjs",
         "python3 scripts/package.py",
         "node scripts/check-versions.mjs",
-        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.37.zip"
+        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.38.zip"
       ]
     },
     {
@@ -168,22 +168,49 @@
       "commands": [
         "node --import tsx --test modules/world-records/generation-host.test.js modules/world-records/dual-axis.test.js"
       ]
+    },
+    {
+      "id": 15,
+      "title": "输入框上方 Agent 横栏常驻待命",
+      "status": "passed",
+      "expected": "agent-status 挂载后常驻显示待命条（is-idle，role=status），空闲或收起报错后展示已总结/待总结楼数及「手动总结 / 打开后厨」快捷入口；pinned error 在未收起期间继续抵抗常规 info 覆盖；GENERATION_STOPPED 同步清空 streamStart 并拉起队列。",
+      "commands": [
+        "node --import tsx --test core/agent-status.test.js core/floor-host.test.js"
+      ]
+    },
+    {
+      "id": 16,
+      "title": "楼末更新框对接世界模块与「手动总结」按钮（含防互调递归）",
+      "status": "passed",
+      "expected": "floor-summary 新增 worldChangesForFloor 直接从 world.sources + world.events 投影本楼变更，未总结楼显示「手动总结 / 立即手动总结本楼」保留已有后台推演正文并结算，已总结尾楼支持基于 turnById 精确重跑与 worldService.rewind(world, targetVersion) 回退；getFloorSummarySnapshot 在 readWorld=true 分支跳过 worldAuthorityForContext，彻底消除与 getWorldMemorySnapshot 的栈溢出递归。",
+      "commands": [
+        "node --import tsx --test modules/story-summary/tests/floor-summary.test.js core/floor-host.test.js"
+      ]
+    },
+    {
+      "id": 17,
+      "title": "总结模型输出容错与世界实体写回补强",
+      "status": "passed",
+      "expected": "turn-actions 与 turn-processing 支持顶层分桶、中英别名字段、字符串地名/持有者、跨组引用、places/create 优先排序、item 全楼匹配、宽松 story 规范化及跳过开局后的主角自动定位/建档，主角实付交易与后台正文禁扣款护栏继续严格执行。",
+      "commands": [
+        "node --import tsx --test modules/world-records/floor-processing.test.js modules/world-records/stage2-closure.test.js modules/world-records/json-response.test.js modules/world-records/release-0236-closure.test.js"
+      ]
     }
   ],
   "artifacts": {
-    "zip": "release/tavern-kitchen-0.2.37.zip",
-    "checksum": "release/tavern-kitchen-0.2.37.zip.sha256",
+    "zip": "release/tavern-kitchen-0.2.38.zip",
+    "checksum": "release/tavern-kitchen-0.2.38.zip.sha256",
     "manifest": "release/release-info.json",
     "acceptance": "docs/validation.json",
     "final_zip_readback": "release/install-verification.json"
   },
   "final_verification": {
-    "build_id": "f85a3ad8297ead6d8b83",
-    "unit_tests": "1437/1437",
+    "build_id": "d168163e6faf2dcfcf13",
+    "unit_tests": "1441/1441",
     "ui_suites": 9,
     "zip_checksum": "OK",
     "installation": "passed",
-    "installation_notes": "ZIP 解压后由真实清单入口启动：未安装/全关时零请求零写入且缺绑定被拦截；三类 Agent 绑定与失败连接提示正常；发前总结 50 楼与第 40 楼阻塞重试通过；旧档升级、后厨卡导入导出、交易与来源恢复回归通过。"
+    "installation_notes": "ZIP 解压后由真实清单入口启动：未安装/全关时零请求零写入且缺绑定被拦截；常驻待命条与三类 Agent 绑定/失败重试正常；发前总结 50 楼与第 40 楼阻塞重试通过；旧档升级、后厨卡导入导出、交易与来源恢复回归通过。"
   },
   "limitations": [
     "单元测试、运行时与无头浏览器回归在本地（http://kitchen.test 桩域、fake-indexeddb 与本地模型桩）执行；SillyTavern、TauriTavern 与在线模型长程游玩不在自动化验收范围。",

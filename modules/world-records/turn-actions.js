@@ -5,6 +5,7 @@ import { parseStoryUpdates } from '../story-state/records.js';
 import { createEmptyMapDomain } from '../xiaobai-os/domains/map/state.js';
 import { invariant } from './domain.js';
 import { resolveSourceQuote } from './json-response.js';
+import { RELATION_PREFIX } from './person-fields.js';
 
 const mapScales = new Set(['world','region','city','district','building','floor','room','outdoor']);
 const mapLinkKinds = new Set(['door','stairs','elevator','path','road','portal','passage']);
@@ -34,10 +35,38 @@ const storyTasks = {
     suspense: ['suspense'],
 };
 
+const BUCKET_ALIASES = {
+    overview: 'overview', protagonist: 'overview', hero: 'overview', items: 'overview', 主角: 'overview', 主角物品栏: 'overview',
+    people: 'people', characters: 'people', npcs: 'people', person: 'people', 人物: 'people', 人物与重要物品: 'people',
+    places: 'places', map: 'places', locations: 'places', place: 'places', 地点: 'places', 地图: 'places', 地点记录: 'places',
+    situation: 'situation', situations: 'situation', world: 'situation', affairs: 'situation', scenery: 'situation', 局势: 'situation', 局势记录: 'situation',
+    suspense: 'suspense', suspenses: 'suspense', mysteries: 'suspense', 悬念: 'suspense',
+};
+
+const STORY_KIND_SET = new Set(['person', 'plan', 'goal', 'situation', 'knowledge', 'suspense', 'clock']);
+const THREAD_KINDS = new Set(['plan', 'goal', 'situation', 'suspense']);
+const STATUS_ALIASES = {
+    open: 'open', active: 'open', ongoing: 'open', pending: 'open', 未结: 'open', 未解决: 'open', 进行中: 'open', 持续: 'open', 开启: 'open',
+    done: 'done', closed: 'done', resolved: 'done', completed: 'done', 已完成: 'done', 已解决: 'done', 已达成: 'done', 已结: 'done', 已了结: 'done',
+    cancelled: 'cancelled', canceled: 'cancelled', dropped: 'cancelled', 已取消: 'cancelled', 放弃: 'cancelled',
+    failed: 'failed', 已失败: 'failed', 失败: 'failed',
+};
+const PRESENCE_ALIASES = {
+    present: 'present', 在场: 'present', 同在: 'present', 当前在场: 'present',
+    nearby: 'nearby', 附近: 'nearby', 同区域: 'nearby', 邻近: 'nearby',
+    away: 'away', absent: 'away', 离场: 'away', 离开: 'away', 不在场: 'away',
+    unknown: 'unknown', 未知: 'unknown',
+};
+const BELIEF_ALIASES = {
+    known: 'known', 已知: 'known', 确认: 'known', 亲见: 'known',
+    believed: 'believed', 相信: 'believed', 误解: 'believed', 以为: 'believed', 听说: 'believed',
+    uncertain: 'uncertain', 怀疑: 'uncertain', 不确定: 'uncertain', 猜测: 'uncertain',
+};
+
 export const actionProtocol = `返回 JSON 对象。summary 写本轮摘要；memoryTags 写 characters、locations、times、keywords 短文本数组；buckets 按 overview、people、places、situation、suspense 分桶，每个桶内是变化数组。也可把所有变化放进 changes 数组并用 task 标明所属桶，两种写法择一。
 每个变化给出 task、group（相互依赖的变化共用）、floor（0 起始，省略时按本轮末楼）、quote（能核对时写本轮逐字依据；普通人物/地点/局势/悬念允许省略）、nature（established_fact/belief/intention/rumor/hypothesis）、uncertain（不确定时 true）。
 type=create 用 ref（本组临时名）、kind、name；type=set 用 target、field、value；引用实体写 {entityId:编号或临时名}。type=story 用 record，含稳定 id 和 kind（person、plan、goal、situation、knowledge、suspense、clock）；已有事项优先沿用名册中的 p1/s1 短编号作为 id。type=link 用 from、to、kind（door/stairs/elevator/path/road/portal/passage）、label、bidirectional，只用于连接两个地点。主角买卖只能用 type=trade，并给 direction、item、counterparty、quantity、price、paymentQuote（主楼正文或紧邻玩家发言的逐字付款依据）；后台正文不能触发交易或扣款。
-示范：{"summary":"……","memoryTags":{"characters":["店主"],"locations":["酒馆"],"times":["黄昏"],"keywords":["钥匙"]},"buckets":{"people":[{"task":"people","group":"g1","floor":1,"quote":"店主递出铜钥匙","nature":"established_fact","type":"create","ref":"shop","kind":"person","name":"店主"},{"task":"people","group":"g1","type":"set","target":"shop","field":"当前情绪","value":"警惕"}],"places":[{"task":"places","type":"create","ref":"yard","kind":"place","name":"后院","scale":"outdoor","parent":"青竹酒馆"},{"task":"places","type":"link","from":"青竹酒馆","to":"后院","kind":"door","label":"后门"}],"situation":[{"task":"situation","type":"story","record":{"id":"gate-watch","kind":"situation","title":"城门盘查","description":"守卫逐人验看路引","status":"open","reason":""}}],"suspense":[{"task":"suspense","type":"story","record":{"id":"s1","kind":"suspense","title":"钥匙的来历","description":"店主不愿说明铜钥匙来自何处","status":"open","reason":""}}]}}
+示范：{"summary":"……","memoryTags":{"characters":["店主"],"locations":["酒馆"],"times":["黄昏"],"keywords":["钥匙"]},"buckets":{"people":[{"task":"people","group":"g1","floor":1,"quote":"店主递出铜钥匙","nature":"established_fact","type":"create","ref":"shop","kind":"person","name":"店主"},{"task":"people","group":"g1","floor":1,"quote":"店主递出铜钥匙","type":"set","target":"shop","field":"当前情绪","value":"警惕"}],"places":[{"task":"places","type":"create","ref":"yard","kind":"place","name":"后院","scale":"outdoor","parent":"青竹酒馆"},{"task":"places","type":"link","from":"青竹酒馆","to":"后院","kind":"door","label":"后门"}],"situation":[{"task":"situation","type":"story","record":{"id":"gate-watch","kind":"situation","title":"城门盘查","description":"守卫逐人验看路引","status":"open","reason":""}}],"suspense":[{"task":"suspense","type":"story","record":{"id":"s1","kind":"suspense","title":"钥匙的来历","description":"店主不愿说明铜钥匙来自何处","status":"open","reason":""}}]}}
 无变化时 buckets 为空对象或返回空数组。`;
 
 const chineseDigits = '零一二三四五六七八九';
@@ -67,13 +96,60 @@ function involvesHero(source, hero, playerName) {
     });
 }
 
-export function actionRows(result) {
-    if (Array.isArray(result?.changes)) return result.changes;
-    if (result?.buckets && typeof result.buckets === 'object' && !Array.isArray(result.buckets)) {
-        return Object.entries(result.buckets).flatMap(([task, rows]) =>
-            Array.isArray(rows) ? rows.map(row => row && typeof row === 'object' && !row.task ? { ...row, task } : row) : []);
+function canonicalTaskName(raw, fallback = '') {
+    const key = normName(raw);
+    return BUCKET_ALIASES[key] || (typeof raw === 'string' ? raw.trim() : '') || fallback;
+}
+
+function normalizeActionRow(raw, fallbackTask = '') {
+    if (!raw || typeof raw !== 'object') return raw;
+    const row = { ...raw };
+    if (!row.type) {
+        if (row.record || STORY_KIND_SET.has(row.kind)) row.type = 'story';
+        else if (row.from && row.to) row.type = 'link';
+        else if (row.target && row.field) row.type = 'set';
+        else if (row.ref && row.kind && row.name) row.type = 'create';
     }
-    return [];
+    let task = canonicalTaskName(row.task, fallbackTask);
+    if (row.type === 'link') task = 'places';
+    else if (row.type === 'trade') task = 'overview';
+    else if (row.type === 'create' && row.kind === 'place') task = 'places';
+    else if (row.type === 'create' && row.kind === 'organization') task = 'people';
+    else if (row.type === 'set' && ['parent', '上级地点', 'scale', '类型', '通行状态', '通行'].includes(row.field)) task = 'places';
+    else if (row.type === 'story') {
+        const storyKind = (row.record && typeof row.record === 'object' ? row.record.kind : row.kind);
+        if (storyKind === 'situation' || storyKind === 'clock') task = 'situation';
+        else if (storyKind === 'suspense') task = 'suspense';
+        else if (storyKind === 'knowledge' || storyKind === 'person') task = 'people';
+        else if (storyKind === 'plan' || storyKind === 'goal') task = ['overview', 'people'].includes(task) ? task : 'people';
+    }
+    row.task = task;
+    return row;
+}
+
+export function hasActionBuckets(result) {
+    if (!result || typeof result !== 'object') return false;
+    if (Array.isArray(result.changes)) return true;
+    if (result.buckets && typeof result.buckets === 'object' && !Array.isArray(result.buckets)) return true;
+    return Object.keys(result).some(key => Object.hasOwn(BUCKET_ALIASES, normName(key)) && Array.isArray(result[key]));
+}
+
+export function actionRows(result) {
+    if (Array.isArray(result?.changes)) return result.changes.map(row => normalizeActionRow(row));
+    const bucketObj = result?.buckets && typeof result.buckets === 'object' && !Array.isArray(result.buckets)
+        ? result.buckets
+        : (result && typeof result === 'object' && !Array.isArray(result) ? result : null);
+    if (!bucketObj) return [];
+    const rows = [];
+    for (const [key, list] of Object.entries(bucketObj)) {
+        const bucketTask = BUCKET_ALIASES[normName(key)];
+        if (result?.buckets !== bucketObj && !bucketTask) continue;
+        if (!Array.isArray(list)) continue;
+        for (const row of list) {
+            if (row && typeof row === 'object') rows.push(normalizeActionRow(row, bucketTask || key));
+        }
+    }
+    return rows;
 }
 
 function evidence(change, source, backgroundSource = null) {
@@ -106,6 +182,55 @@ function findQuoteAcrossFloor(raw, source, backgroundSource = null) {
     return null;
 }
 
+function normalizeStoryInput(row, { hero, playerName, quote }) {
+    const raw = row.record && typeof row.record === 'object' ? { ...row.record } : { ...row };
+    const kind = typeof raw.kind === 'string' ? raw.kind.trim() : '';
+    if (kind === 'clock') {
+        raw.id = 'clock';
+        if (!raw.label && (raw.title || raw.value || raw.text)) raw.label = String(raw.title || raw.value || raw.text).trim();
+        if (raw.date == null) raw.date = '';
+    }
+    if (!raw.id || typeof raw.id !== 'string' || !raw.id.trim()) {
+        const seed = raw.title || raw.name || raw.content || raw.label || raw.description || JSON.stringify(raw);
+        raw.id = `${kind || 'story'}:${memoryDigest([seed]).slice(0, 12)}`;
+    }
+    if (kind === 'person') {
+        if (!raw.name && raw.title) raw.name = raw.title;
+        raw.presence = PRESENCE_ALIASES[normName(raw.presence)] || (raw.presence ? String(raw.presence).trim() : 'present');
+        if (raw.note == null) raw.note = typeof raw.description === 'string' ? raw.description : '';
+    } else if (kind === 'knowledge') {
+        raw.certainty = BELIEFS_FIX(raw.certainty);
+        if (!raw.evidence || typeof raw.evidence !== 'string' || !raw.evidence.trim()) {
+            raw.evidence = quote || (typeof raw.note === 'string' && raw.note.trim()) || (typeof raw.description === 'string' && raw.description.trim()) || '本轮正文';
+        }
+        if (raw.learnedAt == null) raw.learnedAt = '';
+    } else if (THREAD_KINDS.has(kind)) {
+        if (!raw.title && raw.name) raw.title = raw.name;
+        if (raw.description == null) raw.description = typeof raw.title === 'string' ? raw.title : '';
+        if (kind === 'plan' || kind === 'goal') {
+            if (!Array.isArray(raw.holders) || !raw.holders.length) {
+                const candidateHolder = [raw.holder, row.target, row.person, hero?.name, playerName, '主角']
+                    .find(value => typeof value === 'string' && value.trim());
+                raw.holders = [candidateHolder.trim()];
+            }
+            if (!String(raw.description || '').trim() && raw.title) raw.description = raw.title;
+        }
+        if (!raw.remove) {
+            raw.status = STATUS_ALIASES[normName(raw.status)] || (raw.status ? String(raw.status).trim() : 'open');
+            if (raw.status !== 'open' && (!raw.reason || !String(raw.reason).trim())) {
+                raw.reason = String(raw.statusNote || raw.description || '剧情已结案').trim();
+            }
+            if (raw.reason == null) raw.reason = '';
+            if (raw.due == null) raw.due = '';
+        }
+    }
+    return raw;
+}
+
+function BELIEFS_FIX(value) {
+    return BELIEF_ALIASES[normName(value)] || (typeof value === 'string' && value.trim() ? value.trim() : 'known');
+}
+
 export function turnActionGroups(changes, keys) {
     invariant(Array.isArray(changes) && changes.length <= 200, '本轮变化清单无效');
     const groups = new Map();
@@ -118,9 +243,9 @@ export function turnActionGroups(changes, keys) {
     return [...groups.entries()].map(([id, rows]) => ({ id, rows }));
 }
 
-export function turnOperations(state, rows, { source, backgroundSource = null, playerName, effectId, commandId, omitted = [], storyRefs = {} }) {
-    const entities = [...state.entities], operations = [], refs = new Map();
-    const { hero } = protagonistIdentity(entities, playerName);
+export function turnOperations(state, rows, { source, backgroundSource = null, playerName, effectId, commandId, omitted = [], storyRefs = {}, refs: sharedRefs = null }) {
+    const entities = [...state.entities], operations = [], refs = sharedRefs instanceof Map ? sharedRefs : new Map();
+    let { hero } = protagonistIdentity(entities, playerName);
     const map = structuredClone(state.modules?.map || createEmptyMapDomain());
     let mapDirty = false;
     const placeBinding = entity => {
@@ -198,17 +323,65 @@ export function turnOperations(state, rows, { source, backgroundSource = null, p
         }
         mapDirty = true;
     };
-    const resolve = (ref, allowedKinds = null) => {
-        const mappedId = refs.get(ref);
+    const ensureHero = provenance => {
+        if (hero) return hero;
+        const displayName = typeof playerName === 'string' && playerName.trim() ? playerName.trim() : '主角';
+        const existing = entities.find(e => e.kind === 'person' && [e.name, ...(e.aliases || [])].some(n => normName(n) === normName(displayName) || normName(n) === '主角'));
+        if (existing) { hero = existing; return hero; }
+        const id = 'object:' + memoryDigest([state.worldId, effectId, 'protagonist', displayName]);
+        const aliases = displayName !== '主角' ? ['主角'] : [];
+        hero = { id, kind: 'person', name: displayName, aliases, fields: {}, bindings: [] };
+        entities.push(hero);
+        operations.push({ type: 'create', id, kind: 'person', name: displayName, ...(aliases.length ? { aliases } : {}), source: provenance });
+        return hero;
+    };
+    const matchEntities = (ref, allowedKinds = null) => {
+        const raw = typeof ref === 'string' ? ref.trim() : '';
+        if (!raw) return [];
+        const mappedId = refs.get(raw);
         let candidates = mappedId
             ? entities.filter(e => e.id === mappedId)
-            : entities.filter(e => e.id === ref || [e.name, ...(e.aliases || [])].includes(ref));
+            : entities.filter(e => e.id === raw || [e.name, ...(e.aliases || [])].includes(raw));
+        if (!candidates.length) {
+            const rosterMatch = raw.match(/^(.*?)\s*[（(]编号\s*([^）)]+)[）)]\s*$/u);
+            if (rosterMatch) {
+                const [, labelName, idHint] = rosterMatch;
+                candidates = entities.filter(e => e.id === idHint.trim());
+                if (!candidates.length && labelName.trim()) {
+                    candidates = entities.filter(e => [e.name, ...(e.aliases || [])].includes(labelName.trim()));
+                }
+            }
+        }
         if (allowedKinds?.length) {
             const narrowed = candidates.filter(e => allowedKinds.includes(e.kind));
             if (narrowed.length) candidates = narrowed;
         }
+        return candidates;
+    };
+    const isHeroAlias = ref => {
+        const key = normName(ref);
+        return Boolean(key) && (['主角', 'player', 'hero'].includes(key) || (playerName && key === normName(playerName)));
+    };
+    const resolve = (ref, allowedKinds = null, { provenance = null, autoPlace = false } = {}) => {
+        const candidates = matchEntities(ref, allowedKinds);
         if (candidates.length === 1 && !omitted.includes(candidates[0].id)) {
             return candidates[0];
+        }
+        if (!candidates.length && provenance && (!allowedKinds || allowedKinds.includes('person')) && isHeroAlias(ref)) {
+            return ensureHero(provenance);
+        }
+        if (!candidates.length && autoPlace && provenance && typeof ref === 'string') {
+            const cleanName = ref.replace(/\s*[（(]编号\s*[^）)]+[）)]\s*$/u, '').trim();
+            if (cleanName && cleanName.length <= 120 && !['__proto__', 'prototype', 'constructor'].includes(cleanName)) {
+                const id = 'object:' + memoryDigest([state.worldId, effectId, 'auto-place', cleanName]);
+                const created = { id, kind: 'place', name: cleanName, aliases: [], fields: {}, bindings: [] };
+                entities.push(created);
+                refs.set(ref, id);
+                refs.set(cleanName, id);
+                operations.push({ type: 'create', id, kind: 'place', name: cleanName, source: provenance });
+                ensureLocation(created);
+                return created;
+            }
         }
         const selectable = candidates.filter(e => !omitted.includes(e.id));
         const error = new Error('对象不唯一或字段未提供');
@@ -231,10 +404,11 @@ export function turnOperations(state, rows, { source, backgroundSource = null, p
         const allowed = fieldTasks[row.task] || [];
         if (row.type === 'create') {
             invariant(allowed.includes(row.kind) && row.ref && !refs.has(row.ref) && typeof row.name === 'string' && row.name.trim(), '新对象的类型或临时引用无效');
-            if (row.kind === 'item') invariant(Boolean(resolveSourceQuote(quote, row.name)), '原文未确认新对象称呼');
+            const bgFloorAllowed = row.task === 'overview' ? null : backgroundSource;
+            if (row.kind === 'item') invariant(Boolean(resolveSourceQuote(quote, row.name) || findQuoteAcrossFloor(row.name, source, bgFloorAllowed)), '原文未确认新对象称呼');
             invariant(row.kind !== 'route', '地点通道请使用 type=link');
             const rawImportance = typeof row.importance === 'string' ? row.importance.trim() : '';
-            const importance = rawImportance ? findQuoteAcrossFloor(rawImportance, source, backgroundSource) : null;
+            const importance = rawImportance ? (findQuoteAcrossFloor(rawImportance, source, backgroundSource) || rawImportance.slice(0, 400)) : null;
             if (row.kind === 'item' && row.task !== 'overview') invariant(Boolean(importance), '物品缺少可核对的剧情意义');
             const matching = entities.filter(e => e.kind === row.kind && [e.name, ...(e.aliases || [])].includes(row.name));
             invariant(matching.length <= 1, '有多个同称对象，已跳过歧义创建');
@@ -248,6 +422,13 @@ export function turnOperations(state, rows, { source, backgroundSource = null, p
                 if (row.kind === 'place') {
                     const location = ensureLocation(created);
                     if (location && mapScales.has(row.scale)) location.scale = row.scale;
+                    if (typeof row.parent === 'string' && row.parent.trim()) {
+                        const parentEntity = resolve(row.parent.trim(), ['place'], { provenance, autoPlace: true });
+                        if (parentEntity.id !== created.id) {
+                            updatePlace(created, 'parent', { entityId: parentEntity.id });
+                            operations.push({ type: 'set', entityId: id, field: 'parent', value: { entityId: parentEntity.id }, source: provenance });
+                        }
+                    }
                 }
                 const createNature = row.uncertain
                     ? (row.nature && row.nature !== 'established_fact' ? row.nature : 'hypothesis')
@@ -284,7 +465,8 @@ export function turnOperations(state, rows, { source, backgroundSource = null, p
                 sellerId: row.direction === 'buy' ? peer.id : hero.id, itemId: item.id, quantity: row.quantity ?? 1, price, source: provenance });
         } else if (row.type === 'link') {
             invariant(row.task === 'places', '通道只能写在地点记录');
-            const from = resolve(row.from, ['place']), to = resolve(row.to, ['place']);
+            const from = resolve(row.from, ['place'], { provenance, autoPlace: true });
+            const to = resolve(row.to, ['place'], { provenance, autoPlace: true });
             invariant(from.id !== to.id, '通道两端必须是不同地点');
             const fromLocation = ensureLocation(from), toLocation = ensureLocation(to);
             const kind = mapLinkKinds.has(row.kind) ? row.kind : 'path';
@@ -296,10 +478,11 @@ export function turnOperations(state, rows, { source, backgroundSource = null, p
             }
             mapDirty = true;
         } else if (row.type === 'story') {
-            invariant(storyTasks[row.task]?.includes(row.record?.kind), '该功能不能改写这类剧情记录');
-            const inputRecord = row.record && typeof row.record === 'object'
-                ? { ...row.record, ...(storyRefs[row.record.id] ? { id:storyRefs[row.record.id] } : {}) }
-                : row.record;
+            const rawStory = normalizeStoryInput(row, { hero, playerName, quote });
+            invariant(storyTasks[row.task]?.includes(rawStory?.kind), '该功能不能改写这类剧情记录');
+            const inputRecord = rawStory && typeof rawStory === 'object'
+                ? { ...rawStory, ...(storyRefs[rawStory.id] ? { id:storyRefs[rawStory.id] } : {}) }
+                : rawStory;
             const record = parseStoryUpdates([inputRecord], { requireHolders: true })[0];
             const storyNature = row.uncertain
                 ? (row.nature && row.nature !== 'established_fact' ? row.nature : 'hypothesis')
@@ -309,14 +492,25 @@ export function turnOperations(state, rows, { source, backgroundSource = null, p
             storyTouched = true;
         } else {
             invariant(row.type === 'set' && typeof row.field === 'string', '不支持的变化类型');
-            const entity = resolve(row.target, allowed), field = row.field;
+            const entity = resolve(row.target, allowed, { provenance, autoPlace: row.task === 'places' });
+            let field = row.field.trim();
+            if (['location', '所在地', '位置', '当前地点'].includes(field)) field = 'location';
+            else if (['parent', '上级地点'].includes(field)) field = 'parent';
+            else if (['owner', '归属'].includes(field)) field = 'owner';
+            else if (['description', '描述', '简介'].includes(field)) field = 'description';
             invariant(allowed.includes(entity.kind) && !['coins', '金币', '余额', '钱包'].includes(field), '钱包变动须通过主角交易核算');
             invariant(row.task !== 'overview' || entity.kind === 'item' || entity.id === hero?.id, '物品栏只维护主角的收支');
-            const valueKinds = ['location', 'parent', '所在地', '上级地点'].includes(field) ? ['place']
-                : ['owner', '归属', '保管人', '使用人'].includes(field) || field.startsWith('关系:') ? ['person', 'organization']
+            const valueKinds = ['location', 'parent'].includes(field) ? ['place']
+                : ['owner', '保管人', '使用人'].includes(field) || field.startsWith('关系:') || field.startsWith(RELATION_PREFIX) ? ['person', 'organization']
                     : null;
-            const value = row.value?.entityId ? { entityId: resolve(row.value.entityId, valueKinds).id } : row.value;
-            if (row.task === 'overview' && ['owner', '归属', '保管人', '使用人'].includes(field)) {
+            const autoPlace = ['location', 'parent'].includes(field);
+            let value = row.value;
+            if (row.value?.entityId) {
+                value = { entityId: resolve(row.value.entityId, valueKinds, { provenance, autoPlace }).id, ...(row.value.role ? { role: row.value.role } : {}) };
+            } else if (typeof row.value === 'string' && row.value.trim() && ['location', 'parent', 'owner', '保管人', '使用人'].includes(field)) {
+                value = { entityId: resolve(row.value.trim(), valueKinds, { provenance, autoPlace }).id };
+            }
+            if (row.task === 'overview' && ['owner', '保管人', '使用人'].includes(field)) {
                 invariant(hero && [value?.entityId, entity.fields[field]?.value?.entityId, entity.fields.owner?.value?.entityId].includes(hero.id), '该项交接与主角无关');
             }
             if (entity.kind === 'item' && row.task === 'people') {
@@ -324,6 +518,18 @@ export function turnOperations(state, rows, { source, backgroundSource = null, p
                     || rows.some(action => action.type === 'create' && action.importance && refs.get(action.ref) === entity.id)
                     || rows.some(action => action.target === row.target && ['保管人', '使用人', '归还条件', '剧情意义', '物证'].includes(action.field));
                 invariant(important, '物品缺少剧情意义');
+            }
+            if (field.startsWith(RELATION_PREFIX) || field.startsWith('关系:')) {
+                const targetRef = field.startsWith(RELATION_PREFIX) ? field.slice(RELATION_PREFIX.length) : field.slice(3).trim();
+                const peer = targetRef ? matchEntities(targetRef, ['person'])[0] : null;
+                const roleText = typeof value === 'string' ? value.trim() : typeof value?.role === 'string' ? value.role.trim() : '';
+                if (peer && peer.id !== entity.id && roleText && !peer.fields?.[RELATION_PREFIX + entity.id]?.value?.entityId) {
+                    field = RELATION_PREFIX + peer.id;
+                    value = { entityId: peer.id, role: roleText.slice(0, 200) };
+                } else if (field.startsWith(RELATION_PREFIX) && (!peer || peer.id === entity.id || peer.fields?.[RELATION_PREFIX + entity.id]?.value?.entityId === entity.id)) {
+                    field = `关系:${peer?.name || targetRef || '对象'}`;
+                    value = roleText || JSON.stringify(value ?? '');
+                }
             }
             if (entity.kind === 'place') updatePlace(entity, field, value);
             else if (entity.kind === 'person' && mapLocationFields.includes(field) && value?.entityId) {

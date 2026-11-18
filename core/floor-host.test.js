@@ -45,7 +45,8 @@ const shims = {
         };`,
     'core/agent-status.js': `
         export const showAgentNotice = notice => { globalThis.__fh.notices.push(notice); return globalThis.__fh.notices.length; };
-        export const clearAgentNotice = id => { globalThis.__fh.clears.push(id ?? null); };`,
+        export const clearAgentNotice = id => { globalThis.__fh.clears.push(id ?? null); };
+        export const setAgentIdleStatus = status => { (globalThis.__fh.idleStatuses ??= []).push(status); };`,
 };
 
 async function loadFloorHost() {
@@ -164,4 +165,57 @@ test('the pre-send queue interrupt forwards the host abort flag instead of swall
     await interceptor([], 0, value => aborts.push(value), 'normal');
     // The callback runs without an argument; the default must be the immediate abort.
     assert.deepEqual(aborts, [true]);
+});
+
+test('summarizeFloor settles unsettled floors without wiping simulation prose and rewinds world state properly on rerun', async t => {
+    const f = harness();
+    const { installFloorHost } = await loadFloorHost();
+    let store = {
+        lastSummarizedMesId: -1,
+        summaryHistory: [],
+        floorSimulations: { 1: { floor: 1, text: '已有推演正文' } },
+    };
+    const rewinds = [], resets = [];
+    const worldSnapshot = { worldId: 'w1', branchId: 'b1', version: 3, sources: { 'turn:t1': { id: 't1', source: { end: 1 } } },
+        events: [{ version: 1, origin: { sourceId: 't1' }, effects: [] }, { version: 2, origin: { sourceId: 't1' }, effects: [] }] };
+    const host = installFloorHost({
+        settings: { xiaobaiOs: { apps: { world: {} } } },
+        getContext: () => ({ chatId: 'c1', name1: '主角', chat: [
+            { is_user: true, mes: '进门。' },
+            { is_user: false, mes: '店主看过来。', send_date: 'a1' },
+        ] }),
+        memory: {
+            getPublishedSummaryStore: () => store,
+            saveFloorWork: async () => {},
+            saveFloorSimulation: async () => {},
+            reconcileSettledFloorChunks: async () => {},
+            resetFloorForRerun: async floor => { resets.push(floor); },
+        },
+        archive: () => ({ service: {
+            read: async () => worldSnapshot,
+            rewind: async (expected, version) => { rewinds.push({ expected, version }); },
+        }, initialize: async () => {} }),
+        planner: () => ({ onChapter: async () => {} }),
+        workspace: { open() {} },
+    });
+    t.after(() => { host.dispose(); f.restore(); });
+
+    assert.match(f.state.idleStatuses.at(-1).message, /已总结 0 楼，待总结 1 楼/);
+    assert.ok(f.state.idleStatuses.at(-1).actions.some(a => a.label === '手动总结'));
+
+    await host.summarizeFloor(1);
+    assert.deepEqual(resets, []);
+    assert.equal(f.state.queueCalls.some(c => c[0] === 'settle'), true);
+
+    // Settled floor reruns and passes full world object (not world.version) to worldService.rewind.
+    store = {
+        lastSummarizedMesId: 1,
+        summaryHistory: [{ kind: 'batch', previousEndMesId: -1, endMesId: 1, summary: '已总结' }],
+        floorWork: { 1: { done: ['memory', 'overview', 'people', 'places', 'situation', 'suspense'] } },
+    };
+    await host.summarizeFloor(1);
+    assert.deepEqual(resets, [1]);
+    assert.equal(rewinds.length, 1);
+    assert.equal(rewinds[0].expected, worldSnapshot);
+    assert.equal(rewinds[0].version, 0);
 });

@@ -48,7 +48,7 @@ const shims = {
     'modules/story-summary/vector/llm/siliconflow.js': 'export const embed=(texts)=>globalThis.__memoryStorageTest.embed(texts);',
     'modules/story-summary/vector/llm/atom-extraction.js': 'export const extractAtomsForRound=()=>{throw Error("unexpected anchor request");};',
     'shared/common/async-errors.js': 'export const observeBackgroundTask=task=>globalThis.__memoryStorageTest.background.push(Promise.resolve(task).catch(error=>{globalThis.__memoryStorageTest.backgroundErrors.push(error);}));',
-    'core/agent-status.js': 'export const showAgentNotice=notice=>globalThis.__memoryStorageTest.notices.push(notice?.message ?? String(notice)); export const clearAgentNotice=()=>{}; export const installAgentStatus=()=>()=>{}; export const configureAgentStatusActions=()=>{};',
+    'core/agent-status.js': 'export const showAgentNotice=notice=>globalThis.__memoryStorageTest.notices.push(notice?.message ?? String(notice)); export const clearAgentNotice=()=>{}; export const setAgentIdleStatus=()=>{}; export const installAgentStatus=()=>()=>{}; export const configureAgentStatusActions=()=>{};',
     'modules/story-summary/vector/retrieval/recall.js': 'export const recallMemory=(...args)=>globalThis.__memoryStorageTest.recall(...args); export const hydrateDirectEvidence=()=>{throw Error("unexpected hydration");}; export const releaseDirectEvidenceContext=async()=>{};',
     'modules/story-summary/vector/retrieval/raw-recall.js': 'import { getPublishedSummaryStore } from "./modules/story-summary/data/store.js"; export const recallRawMemory=()=>globalThis.__memoryStorageTest.recall(getPublishedSummaryStore()?.json?.events || []);',
 };

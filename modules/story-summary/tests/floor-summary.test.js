@@ -149,3 +149,78 @@ test('stacked read-only update & simulation floor boxes stay idempotent, XSS-saf
     await setTimeout(120);
     assert.equal(document.querySelectorAll('.tk-floor-summary').length, 0);
 });
+
+test('floor update box exposes 手动总结 button for unsettled floors and renders world module changes once settled', async t => {
+    const html = '<html><body><div id="chat">'
+        + '<div class="mes" mesid="0"><div class="mes_text">user1</div></div>'
+        + '<div class="mes" mesid="1"><div class="mes_text">reply1</div></div>'
+        + '</div></body></html>';
+    const { document, window } = parseHTML(html);
+    const chat = [
+        { is_user: true, mes: '走进酒馆' },
+        { is_user: false, mes: '掌柜擦拭柜台。', send_date: 'r1' },
+    ];
+    let snapshot = {
+        enabled: true,
+        chat,
+        store: { lastSummarizedMesId: -1, summaryHistory: [], floorSimulations: {} },
+        world: null,
+    };
+    const triggered = [];
+    let failManual = true;
+    const panel = installFloorSummaries({
+        documentTarget: document,
+        Observer: window.MutationObserver,
+        getSnapshot: () => snapshot,
+        summarizeFloor: async floor => {
+            triggered.push(floor);
+            if (failManual) throw new Error('测试手动总结失败');
+            snapshot = {
+                ...snapshot,
+                store: {
+                    lastSummarizedMesId: 1,
+                    summaryHistory: [{ kind: 'batch', previousEndMesId: -1, endMesId: 1, summary: '走进青竹酒馆并认识了掌柜。' }],
+                    floorSimulations: {},
+                },
+                world: {
+                    entities: [
+                        { id: 'shop', kind: 'person', name: '掌柜' },
+                        { id: 'inn', kind: 'place', name: '青竹酒馆' },
+                    ],
+                    sources: { 'turn:t1': { id: 't1', kind: 'narrative_turn', status: 'current', source: { start: 0, end: 1 } } },
+                    events: [{
+                        id: 'ev1',
+                        origin: { sourceId: 't1', effectId: 'ef1' },
+                        effects: [
+                            { type: 'entity', id: 'shop', before: null, after: { id: 'shop', kind: 'person', name: '掌柜', fields: {} } },
+                            { type: 'entity', id: 'shop', delta: true, before: { fields: {} }, after: { fields: { location: { value: { entityId: 'inn' } } } } },
+                            { type: 'module', id: 'story', after: { records: [{ eventId: 'ev1', record: { id: 's1', kind: 'suspense', title: '柜台下的木匣', status: 'open' } }] } },
+                        ],
+                    }],
+                },
+            };
+        },
+        openMemory() {},
+    });
+    t.after(panel.dispose);
+    await setTimeout(120);
+
+    const headBtn = document.querySelector('.tk-floor-summary[data-floor="1"] .tk-fp-summarize-btn');
+    assert.ok(headBtn);
+    assert.equal(headBtn.textContent, '手动总结');
+
+    headBtn.click();
+    await setTimeout(120);
+    assert.deepEqual(triggered, [1]);
+    assert.match(document.querySelector('.tk-floor-summary[data-floor="1"] .tk-fp-error').textContent, /测试手动总结失败/);
+
+    failManual = false;
+    document.querySelector('.tk-floor-summary[data-floor="1"] .tk-fp-summarize-btn').click();
+    await setTimeout(120);
+    const box = document.querySelector('.tk-floor-summary[data-floor="1"] [data-tk-box="update"]');
+    assert.match(box.textContent, /走进青竹酒馆并认识了掌柜/);
+    assert.match(box.textContent, /本楼变更（3）/);
+    assert.match(box.textContent, /人物 · 新增：掌柜/);
+    assert.match(box.textContent, /人物 · 更新：掌柜 所在地 → 青竹酒馆/);
+    assert.match(box.textContent, /悬念 · 记录：柜台下的木匣/);
+});

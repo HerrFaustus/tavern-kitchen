@@ -1,14 +1,27 @@
 const HOST_ID = 'tk-agent-status';
 const STATUS_ID = 'tk-floor-status';
+const DEFAULT_IDLE_MESSAGE = '后厨待命 · 发送下一轮前自动总结并更新世界';
 
 let actions = { onOpenAgent: () => {}, onOpenRecovery: () => {} };
 let currentNotice = null;
 let noticeSequence = 0;
 let dismissedSequence = 0;
+let idleStatus = { message: DEFAULT_IDLE_MESSAGE, actions: [] };
+let idleVersion = 0;
 const documents = new Set();
 
 export function configureAgentStatusActions(next = {}) {
     actions = { ...actions, ...next };
+}
+
+/** Update the permanent standby bar shown whenever no alert/running notice owns the strip. */
+export function setAgentIdleStatus({ message = DEFAULT_IDLE_MESSAGE, actions: idleActions = [] } = {}) {
+    idleStatus = {
+        message: String(message || DEFAULT_IDLE_MESSAGE),
+        actions: Array.isArray(idleActions) ? idleActions.filter(item => item && typeof item.callback === 'function' && item.label) : [],
+    };
+    idleVersion++;
+    if (!currentNotice || dismissedSequence === currentNotice.id) publish();
 }
 
 /** Mount a single full-width strip immediately above the host chat form. */
@@ -27,8 +40,8 @@ export function installAgentStatus(documentTarget = document) {
             if (host.parentElement?.moveBefore) host.parentElement.moveBefore(host, form);
             else form.before(host);
         }
-        host.hidden = !currentNotice || dismissedSequence === currentNotice.id;
-        if (currentNotice && !host.childElementCount) renderNotice(doc, host, currentNotice);
+        if (host.hidden) host.hidden = false;
+        if (!host.childElementCount) renderCurrent(doc, host);
         return host;
     };
     mount();
@@ -55,6 +68,34 @@ function errorRoute(error) {
     const message = String(error?.message || error || '');
     if (/世界|冲突|版本|分支|后楼|conflict|version|branch/i.test(message)) return 'world';
     return 'data';
+}
+
+function renderIdle(doc, host) {
+    const existing = host.querySelector(`#${STATUS_ID}`);
+    if (existing?.dataset.noticeId === 'idle' && existing?.dataset.idleVersion === String(idleVersion)) {
+        if (host.hidden) host.hidden = false;
+        return;
+    }
+    const node = doc.createElement('div');
+    node.id = STATUS_ID;
+    node.className = 'tk-agent-strip is-idle';
+    node.dataset.noticeId = 'idle';
+    node.dataset.idleVersion = String(idleVersion);
+    node.setAttribute('role', 'status');
+    const indicator = doc.createElement('span');
+    indicator.className = 'tk-agent-strip-indicator';
+    indicator.setAttribute('aria-hidden', 'true');
+    const title = doc.createElement('span');
+    title.className = 'tk-agent-strip-message';
+    title.textContent = idleStatus.message;
+    const controls = doc.createElement('span');
+    controls.className = 'tk-agent-strip-actions';
+    node.append(indicator, title, controls);
+    for (const item of idleStatus.actions) {
+        appendButton(doc, controls, item.label, item.callback, item.className || '');
+    }
+    host.replaceChildren(node);
+    if (host.hidden) host.hidden = false;
 }
 
 function renderNotice(doc, host, notice) {
@@ -84,24 +125,28 @@ function renderNotice(doc, host, notice) {
     }
     appendButton(doc, controls, '收起', () => {
         dismissedSequence = notice.id;
-        host.hidden = true;
+        renderIdle(doc, host);
     }, 'tk-agent-strip-dismiss');
     host.replaceChildren(node);
-    host.hidden = dismissedSequence === notice.id;
+    if (host.hidden) host.hidden = false;
+}
+
+function renderCurrent(doc, host) {
+    if (currentNotice && dismissedSequence !== currentNotice.id) renderNotice(doc, host, currentNotice);
+    else renderIdle(doc, host);
 }
 
 function publish(documentsToRender = documents) {
     for (const doc of documentsToRender) {
         const host = doc.getElementById(HOST_ID);
         if (!host) continue;
-        if (!currentNotice) { host.replaceChildren(); host.hidden = true; continue; }
-        renderNotice(doc, host, currentNotice);
+        renderCurrent(doc, host);
     }
 }
 
 /**
- * Consolidate non-blocking feedback and blocking failures in the same Agent strip.
- * A blocking error stays until a newer successful/running status replaces it.
+ * Consolidate non-blocking feedback, blocking failures and the permanent standby
+ * status in the same Agent strip above `#send_form`.
  */
 export function showAgentNotice({ message = '', level = 'info', agent = null, error = null, retry = null, pinned = level === 'error', recoveryRoute = null, timeoutMs = pinned ? 0 : 6000 } = {}) {
     // A hard-block error owns the strip until the user retries/resolves it or

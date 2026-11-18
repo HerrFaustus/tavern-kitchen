@@ -25,6 +25,9 @@
 #tk-agent-status .tk-agent-strip.is-warning .tk-agent-strip-indicator { background: var(--SmartThemeWarningColor, var(--SmartThemeQuoteColor)); }
 #tk-agent-status .tk-agent-strip.is-error .tk-agent-strip-indicator { background: var(--SmartThemeErrorColor, var(--SmartThemeQuoteColor)); }
 #tk-agent-status .tk-agent-strip.is-info .tk-agent-strip-indicator { animation: tk-agent-pulse 1.4s ease-in-out infinite; }
+#tk-agent-status .tk-agent-strip.is-idle { border-inline-start-color: var(--SmartThemeBorderColor); }
+#tk-agent-status .tk-agent-strip.is-idle .tk-agent-strip-indicator { background: var(--SmartThemeEmColor, var(--SmartThemeQuoteColor)); opacity: .7; }
+#tk-agent-status .tk-agent-strip.is-idle .tk-agent-strip-message { color: var(--SmartThemeEmColor, var(--SmartThemeBodyColor)); }
 #tk-agent-status .tk-agent-strip-message { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 #tk-agent-status .tk-agent-strip-actions { display: inline-flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px; margin-inline-start: auto; }
 #tk-agent-status .tk-agent-strip-actions .menu_button { flex: 0 0 auto; width: auto; min-height: 24px; margin: 0; padding: 2px 8px; font-size: .86em; line-height: 1.3; white-space: nowrap; }
@@ -126,6 +129,9 @@
 .tk-fp-drawer:not(.is-open) .tk-fp-body { visibility: hidden; }
 .tk-fp-body { padding-top: 12px; }
 .tk-fp-notice { margin: 0 0 10px; padding: 6px 10px; background: var(--SmartThemeChatTintColor); border-radius: 5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tk-fp-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.tk-fp-actions .menu_button { width: auto; min-height: 26px; margin: 0; padding: 3px 10px; font-size: 12px; }
+.tk-fp-error { border-inline-start: 3px solid var(--SmartThemeErrorColor, var(--SmartThemeQuoteColor)); color: var(--SmartThemeErrorColor, var(--SmartThemeBodyColor)); margin-top: 8px; }
 .tk-fp-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; }
 .tk-fp-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--SmartThemeChatTintColor); color: var(--SmartThemeQuoteColor); border: 1px solid transparent; padding: 3px 10px; border-radius: 16px; font-size: 11.5px; max-width: 100%; overflow-wrap: anywhere; }
 .tk-fp-chip:hover:not(:disabled) { border-color: var(--SmartThemeQuoteColor); }
