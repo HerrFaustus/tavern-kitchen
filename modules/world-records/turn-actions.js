@@ -1,16 +1,30 @@
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
 import { protagonistIdentity } from '../story-state/protagonist-identity.js';
 import { applyWorldStoryProposal } from './world-story-state.js';
-import { parseStoryUpdates } from '../story-state/records.js';
+import { parseStoryUpdates, storyDate } from '../story-state/records.js';
 import { createEmptyMapDomain } from '../xiaobai-os/domains/map/state.js';
 import { invariant } from './domain.js';
 import { resolveSourceQuote } from './json-response.js';
 import { RELATION_PREFIX } from './person-fields.js';
 
 const mapScales = new Set(['world','region','city','district','building','floor','room','outdoor']);
+const MAP_SCALE_ALIASES = {
+    world: 'world', 世界: 'world',
+    region: 'region', 区域: 'region', 大区: 'region',
+    city: 'city', 城市: 'city', 城镇: 'city',
+    district: 'district', 地区: 'district', 街区: 'district', 城区: 'district',
+    building: 'building', 建筑: 'building',
+    floor: 'floor', 楼层: 'floor',
+    room: 'room', 房间: 'room', 室内: 'room', indoor: 'room',
+    outdoor: 'outdoor', 室外: 'outdoor', 户外: 'outdoor',
+};
 const mapLinkKinds = new Set(['door','stairs','elevator','path','road','portal','passage']);
-const mapLocationFields = ['location','所在地','位置','当前地点'];
+const mapLocationFields = ['location', '所在地', '所在位置', '位置', '当前地点', '当前位置', '所处位置', '地点'];
+const IMPORTANCE_FIELDS = ['importance', '剧情意义', '重要性', '归还条件', '归还约定', '物证', 'description', '描述', '简介', '保管人', '使用人', 'owner', '归属'];
 const normName = value => String(value ?? '').trim().normalize('NFKC').toLowerCase();
+const entityRef = ref => (typeof ref === 'string' ? ref.trim()
+    : ref && typeof ref === 'object' ? String(ref.entityId ?? ref.id ?? ref.ref ?? ref.name ?? '').trim() : '');
+const normalizeScale = value => MAP_SCALE_ALIASES[normName(value)] || (mapScales.has(value) ? value : '');
 
 export const taskDefinitions = {
     memory: ['逐楼摘要', '交付 summary（本轮经过，非空文本，综合主楼正文与同楼后台正文）及 memoryTags（characters、locations、times、keywords 短文本数组）。'],
@@ -187,8 +201,12 @@ function normalizeStoryInput(row, { hero, playerName, quote }) {
     const kind = typeof raw.kind === 'string' ? raw.kind.trim() : '';
     if (kind === 'clock') {
         raw.id = 'clock';
-        if (!raw.label && (raw.title || raw.value || raw.text)) raw.label = String(raw.title || raw.value || raw.text).trim();
+        if (!raw.label && (raw.title || raw.value || raw.text || raw.date)) raw.label = String(raw.title || raw.value || raw.text || raw.date).trim();
         if (raw.date == null) raw.date = '';
+        else if (typeof raw.date === 'string' && raw.date.trim()) {
+            const cleaned = raw.date.trim().replace(/[年/]/gu, '-').replace(/月/gu, '-').replace(/日.*$/u, '').replace(/(^|-)(\d)(?=-|$)/gu, '$10$2');
+            raw.date = storyDate(cleaned) !== null ? cleaned : '';
+        }
     }
     if (!raw.id || typeof raw.id !== 'string' || !raw.id.trim()) {
         const seed = raw.title || raw.name || raw.content || raw.label || raw.description || JSON.stringify(raw);
@@ -199,6 +217,8 @@ function normalizeStoryInput(row, { hero, playerName, quote }) {
         raw.presence = PRESENCE_ALIASES[normName(raw.presence)] || (raw.presence ? String(raw.presence).trim() : 'present');
         if (raw.note == null) raw.note = typeof raw.description === 'string' ? raw.description : '';
     } else if (kind === 'knowledge') {
+        raw.person = entityRef(raw.person) || entityRef(row.target) || hero?.name || playerName || '主角';
+        if (!raw.content && (raw.title || raw.description)) raw.content = String(raw.title || raw.description).trim();
         raw.certainty = BELIEFS_FIX(raw.certainty);
         if (!raw.evidence || typeof raw.evidence !== 'string' || !raw.evidence.trim()) {
             raw.evidence = quote || (typeof raw.note === 'string' && raw.note.trim()) || (typeof raw.description === 'string' && raw.description.trim()) || '本轮正文';
@@ -208,8 +228,9 @@ function normalizeStoryInput(row, { hero, playerName, quote }) {
         if (!raw.title && raw.name) raw.title = raw.name;
         if (raw.description == null) raw.description = typeof raw.title === 'string' ? raw.title : '';
         if (kind === 'plan' || kind === 'goal') {
+            if (Array.isArray(raw.holders)) raw.holders = raw.holders.map(entityRef).filter(Boolean);
             if (!Array.isArray(raw.holders) || !raw.holders.length) {
-                const candidateHolder = [raw.holder, row.target, row.person, hero?.name, playerName, '主角']
+                const candidateHolder = [entityRef(raw.holder), entityRef(row.target), entityRef(row.person), hero?.name, playerName, '主角']
                     .find(value => typeof value === 'string' && value.trim());
                 raw.holders = [candidateHolder.trim()];
             }
@@ -231,6 +252,80 @@ function BELIEFS_FIX(value) {
     return BELIEF_ALIASES[normName(value)] || (typeof value === 'string' && value.trim() ? value.trim() : 'known');
 }
 
+function referencedKeys(row) {
+    if (!row || typeof row !== 'object') return [];
+    const out = [];
+    for (const candidate of [row.target, row.from, row.to, row.parent, row.item, row.counterparty, row.value?.entityId ? row.value : null]) {
+        const ref = entityRef(candidate);
+        if (ref) out.push(ref);
+    }
+    return out;
+}
+
+function orderPlaceCreates(rows) {
+    const places = rows.filter(r => r.type === 'create' && r.kind === 'place');
+    const others = rows.filter(r => !(r.type === 'create' && r.kind === 'place'));
+    const byRef = new Map(places.filter(r => r.ref).map(r => [r.ref, r]));
+    const ordered = [], visited = new Set();
+    const visit = row => {
+        if (visited.has(row)) return;
+        visited.add(row);
+        const parentKey = entityRef(row.parent);
+        if (parentKey && byRef.has(parentKey)) visit(byRef.get(parentKey));
+        ordered.push(row);
+    };
+    for (const row of places) visit(row);
+    others.sort((a, b) => Number(b.type === 'create') - Number(a.type === 'create'));
+    return [...ordered, ...others];
+}
+
+export function reconcileActionGroups(rawGroups, keys, existingCreators = null) {
+    const creators = new Map(), nameCounts = new Map(), nameCreators = new Map();
+    if (existingCreators) {
+        for (const [k, v] of existingCreators) creators.set(k, v);
+    }
+    for (const group of rawGroups) {
+        for (const row of group.rows || []) {
+            if (row?.type !== 'create' || !row.ref) continue;
+            creators.set(row.ref, { groupId: group.id, kind: row.kind });
+            const nk = normName(row.name);
+            if (nk) {
+                nameCounts.set(nk, (nameCounts.get(nk) || 0) + 1);
+                nameCreators.set(nk, { groupId: group.id, kind: row.kind });
+            }
+        }
+    }
+    const creatorOf = key => {
+        if (!key) return null;
+        if (creators.has(key)) return creators.get(key);
+        const nk = normName(key);
+        return nk && nameCounts.get(nk) === 1 ? nameCreators.get(nk) : null;
+    };
+    const primaryGroups = [], deferredGroups = [];
+    for (const group of rawGroups) {
+        const primary = [], deferred = [];
+        for (const rawRow of group.rows || []) {
+            const row = normalizeActionRow(rawRow, rawRow?.task);
+            if (!keys.includes(row?.task)) continue;
+            const hasForeignRef = row.type !== 'create' && referencedKeys(row).some(ref => {
+                const owner = creatorOf(ref);
+                return owner && owner.groupId !== group.id;
+            });
+            if (hasForeignRef) deferred.push(row);
+            else primary.push(row);
+        }
+        if (primary.length) primaryGroups.push({ id: group.id, rows: primary });
+        if (deferred.length) {
+            deferredGroups.push({
+                id: primary.length ? `${group.id}:deps` : group.id,
+                rows: deferred,
+                ...(primary.length ? { deferred: true } : {}),
+            });
+        }
+    }
+    return [...primaryGroups, ...deferredGroups];
+}
+
 export function turnActionGroups(changes, keys) {
     invariant(Array.isArray(changes) && changes.length <= 200, '本轮变化清单无效');
     const groups = new Map();
@@ -240,10 +335,10 @@ export function turnActionGroups(changes, keys) {
         if (!groups.has(group)) groups.set(group, []);
         groups.get(group).push(row);
     }
-    return [...groups.entries()].map(([id, rows]) => ({ id, rows }));
+    return reconcileActionGroups([...groups.entries()].map(([id, rows]) => ({ id, rows })), keys);
 }
 
-export function turnOperations(state, rows, { source, backgroundSource = null, playerName, effectId, commandId, omitted = [], storyRefs = {}, refs: sharedRefs = null }) {
+export function turnOperations(state, rows, { source, backgroundSource = null, playerName, effectId, commandId, omitted = [], storyRefs = {}, refs: sharedRefs = null, allRows = null }) {
     const entities = [...state.entities], operations = [], refs = sharedRefs instanceof Map ? sharedRefs : new Map();
     let { hero } = protagonistIdentity(entities, playerName);
     const map = structuredClone(state.modules?.map || createEmptyMapDomain());
@@ -302,9 +397,10 @@ export function turnOperations(state, rows, { source, backgroundSource = null, p
             const targetLocation = target?.kind === 'place' ? ensureLocation(target) : null;
             if (targetLocation && targetLocation.key !== location.key) location.parent = targetLocation.key;
         } else if (['description','描述','简介'].includes(field)) {
-            location.brief = String(value ?? '').replace(/\s+/gu, ' ').slice(0, 2000);
+            location.brief = String(value ?? '').replace(/\s+/gu, ' ').slice(0, 1200);
         } else if (['scale','类型'].includes(field)) {
-            if (mapScales.has(value)) location.scale = value;
+            const scale = normalizeScale(value);
+            if (scale) location.scale = scale;
         } else if (['通行状态','通行'].includes(field)) {
             const text = String(value ?? '').trim();
             if (text) {
@@ -336,7 +432,7 @@ export function turnOperations(state, rows, { source, backgroundSource = null, p
         return hero;
     };
     const matchEntities = (ref, allowedKinds = null) => {
-        const raw = typeof ref === 'string' ? ref.trim() : '';
+        const raw = entityRef(ref);
         if (!raw) return [];
         const mappedId = refs.get(raw);
         let candidates = mappedId
@@ -359,19 +455,20 @@ export function turnOperations(state, rows, { source, backgroundSource = null, p
         return candidates;
     };
     const isHeroAlias = ref => {
-        const key = normName(ref);
+        const key = normName(entityRef(ref));
         return Boolean(key) && (['主角', 'player', 'hero'].includes(key) || (playerName && key === normName(playerName)));
     };
     const resolve = (ref, allowedKinds = null, { provenance = null, autoPlace = false } = {}) => {
-        const candidates = matchEntities(ref, allowedKinds);
+        const rawRef = entityRef(ref);
+        const candidates = matchEntities(rawRef, allowedKinds);
         if (candidates.length === 1 && !omitted.includes(candidates[0].id)) {
             return candidates[0];
         }
-        if (!candidates.length && provenance && (!allowedKinds || allowedKinds.includes('person')) && isHeroAlias(ref)) {
+        if (!candidates.length && provenance && (!allowedKinds || allowedKinds.includes('person')) && isHeroAlias(rawRef)) {
             return ensureHero(provenance);
         }
-        if (!candidates.length && autoPlace && provenance && typeof ref === 'string') {
-            const cleanName = ref.replace(/\s*[（(]编号\s*[^）)]+[）)]\s*$/u, '').trim();
+        if (!candidates.length && autoPlace && provenance && rawRef) {
+            const cleanName = rawRef.replace(/\s*[（(]编号\s*[^）)]+[）)]\s*$/u, '').trim();
             if (cleanName && cleanName.length <= 120 && !['__proto__', 'prototype', 'constructor'].includes(cleanName)) {
                 const id = 'object:' + memoryDigest([state.worldId, effectId, 'auto-place', cleanName]);
                 const created = { id, kind: 'place', name: cleanName, aliases: [], fields: {}, bindings: [] };
@@ -395,7 +492,8 @@ export function turnOperations(state, rows, { source, backgroundSource = null, p
     };
     let storyTouched = false;
     const story = { ...state, modules: { ...state.modules } };
-    for (const row of [...rows].sort((a, b) => Number(b.type === 'create') - Number(a.type === 'create'))) {
+    const siblingPool = Array.isArray(allRows) && allRows.length ? allRows : rows;
+    for (const row of orderPlaceCreates(rows)) {
         const proof = evidence(row, source, backgroundSource);
         const quote = proof.quote;
         const label = quote || [row.name, row.record?.title, row.field].filter(value => typeof value === 'string' && value.trim()).join(' · ') || '本轮记录';
@@ -403,15 +501,21 @@ export function turnOperations(state, rows, { source, backgroundSource = null, p
             task: row.task, ...(quote ? { proof: { floor: proof.floor, quote } } : {}) };
         const allowed = fieldTasks[row.task] || [];
         if (row.type === 'create') {
-            invariant(allowed.includes(row.kind) && row.ref && !refs.has(row.ref) && typeof row.name === 'string' && row.name.trim(), '新对象的类型或临时引用无效');
+            const matching = entities.filter(e => e.kind === row.kind && [e.name, ...(e.aliases || [])].includes(row.name));
+            invariant(matching.length <= 1, '有多个同称对象，已跳过歧义创建');
+            const alreadyMappedSame = row.ref && refs.has(row.ref) && matching[0]?.id === refs.get(row.ref);
+            invariant(allowed.includes(row.kind) && row.ref && (!refs.has(row.ref) || alreadyMappedSame) && typeof row.name === 'string' && row.name.trim(), '新对象的类型或临时引用无效');
             const bgFloorAllowed = row.task === 'overview' ? null : backgroundSource;
             if (row.kind === 'item') invariant(Boolean(resolveSourceQuote(quote, row.name) || findQuoteAcrossFloor(row.name, source, bgFloorAllowed)), '原文未确认新对象称呼');
             invariant(row.kind !== 'route', '地点通道请使用 type=link');
             const rawImportance = typeof row.importance === 'string' ? row.importance.trim() : '';
             const importance = rawImportance ? (findQuoteAcrossFloor(rawImportance, source, backgroundSource) || rawImportance.slice(0, 400)) : null;
-            if (row.kind === 'item' && row.task !== 'overview') invariant(Boolean(importance), '物品缺少可核对的剧情意义');
-            const matching = entities.filter(e => e.kind === row.kind && [e.name, ...(e.aliases || [])].includes(row.name));
-            invariant(matching.length <= 1, '有多个同称对象，已跳过歧义创建');
+            const hasSiblingImportance = row.kind === 'item' && siblingPool.some(action =>
+                action.type === 'set'
+                && IMPORTANCE_FIELDS.includes(String(action.field || '').trim())
+                && [row.ref, row.name].includes(entityRef(action.target))
+                && action.value != null && String(action.value).trim() !== '');
+            if (row.kind === 'item' && row.task !== 'overview') invariant(Boolean(importance || hasSiblingImportance), '物品缺少可核对的剧情意义');
             const id = matching[0]?.id || 'object:' + memoryDigest([state.worldId, effectId, row.ref]);
             const shouldCreate = !matching.length;
             refs.set(row.ref, id);
@@ -419,11 +523,16 @@ export function turnOperations(state, rows, { source, backgroundSource = null, p
                 const created = { id, kind: row.kind, name: row.name, aliases: [], fields: {}, bindings: [] };
                 entities.push(created);
                 operations.push({ type: 'create', id, kind: row.kind, name: row.name, source: provenance });
+                if (row.kind === 'person' && !hero && (isHeroAlias(row.name) || (playerName && normName(row.name) === normName(playerName)))) {
+                    hero = created;
+                }
                 if (row.kind === 'place') {
                     const location = ensureLocation(created);
-                    if (location && mapScales.has(row.scale)) location.scale = row.scale;
-                    if (typeof row.parent === 'string' && row.parent.trim()) {
-                        const parentEntity = resolve(row.parent.trim(), ['place'], { provenance, autoPlace: true });
+                    const scale = normalizeScale(row.scale);
+                    if (location && scale) location.scale = scale;
+                    const parentRef = entityRef(row.parent);
+                    if (parentRef) {
+                        const parentEntity = resolve(parentRef, ['place'], { provenance, autoPlace: true });
                         if (parentEntity.id !== created.id) {
                             updatePlace(created, 'parent', { entityId: parentEntity.id });
                             operations.push({ type: 'set', entityId: id, field: 'parent', value: { entityId: parentEntity.id }, source: provenance });
@@ -479,6 +588,14 @@ export function turnOperations(state, rows, { source, backgroundSource = null, p
             mapDirty = true;
         } else if (row.type === 'story') {
             const rawStory = normalizeStoryInput(row, { hero, playerName, quote });
+            const resolveLabel = token => {
+                const hit = matchEntities(token, ['person', 'organization']);
+                return hit.length === 1 ? hit[0].name : token;
+            };
+            if (rawStory && typeof rawStory === 'object') {
+                if (typeof rawStory.person === 'string') rawStory.person = resolveLabel(rawStory.person);
+                if (Array.isArray(rawStory.holders)) rawStory.holders = [...new Set(rawStory.holders.map(resolveLabel))];
+            }
             invariant(storyTasks[row.task]?.includes(rawStory?.kind), '该功能不能改写这类剧情记录');
             const inputRecord = rawStory && typeof rawStory === 'object'
                 ? { ...rawStory, ...(storyRefs[rawStory.id] ? { id:storyRefs[rawStory.id] } : {}) }
@@ -492,31 +609,36 @@ export function turnOperations(state, rows, { source, backgroundSource = null, p
             storyTouched = true;
         } else {
             invariant(row.type === 'set' && typeof row.field === 'string', '不支持的变化类型');
-            const entity = resolve(row.target, allowed, { provenance, autoPlace: row.task === 'places' });
             let field = row.field.trim();
-            if (['location', '所在地', '位置', '当前地点'].includes(field)) field = 'location';
-            else if (['parent', '上级地点'].includes(field)) field = 'parent';
-            else if (['owner', '归属'].includes(field)) field = 'owner';
+            if (mapLocationFields.includes(field)) field = 'location';
+            else if (['parent', '上级地点', '所属地点', '所属区域'].includes(field)) field = 'parent';
+            else if (['owner', '归属', '归属人', '拥有者', '持有者'].includes(field)) field = 'owner';
             else if (['description', '描述', '简介'].includes(field)) field = 'description';
-            invariant(allowed.includes(entity.kind) && !['coins', '金币', '余额', '钱包'].includes(field), '钱包变动须通过主角交易核算');
+            else if (['importance', '重要性'].includes(field)) field = '剧情意义';
+            const isLocationAnchor = row.task === 'places' && field === 'location';
+            const targetKinds = isLocationAnchor ? ['person', 'organization', 'item', 'place'] : allowed;
+            const entity = resolve(row.target, targetKinds, { provenance, autoPlace: row.task === 'places' && !isLocationAnchor });
+            invariant(targetKinds.includes(entity.kind) && !['coins', '金币', '余额', '钱包'].includes(field), '钱包变动须通过主角交易核算');
             invariant(row.task !== 'overview' || entity.kind === 'item' || entity.id === hero?.id, '物品栏只维护主角的收支');
             const valueKinds = ['location', 'parent'].includes(field) ? ['place']
                 : ['owner', '保管人', '使用人'].includes(field) || field.startsWith('关系:') || field.startsWith(RELATION_PREFIX) ? ['person', 'organization']
                     : null;
             const autoPlace = ['location', 'parent'].includes(field);
             let value = row.value;
-            if (row.value?.entityId) {
-                value = { entityId: resolve(row.value.entityId, valueKinds, { provenance, autoPlace }).id, ...(row.value.role ? { role: row.value.role } : {}) };
-            } else if (typeof row.value === 'string' && row.value.trim() && ['location', 'parent', 'owner', '保管人', '使用人'].includes(field)) {
-                value = { entityId: resolve(row.value.trim(), valueKinds, { provenance, autoPlace }).id };
+            const refValue = valueKinds && ['location', 'parent', 'owner', '保管人', '使用人'].includes(field) ? entityRef(row.value) : (row.value?.entityId ? entityRef(row.value) : '');
+            if (refValue) {
+                const resolvedId = resolve(refValue, valueKinds, { provenance, autoPlace }).id;
+                value = ['owner', 'location', 'parent'].includes(field)
+                    ? { entityId: resolvedId }
+                    : { entityId: resolvedId, ...(row.value?.role ? { role: row.value.role } : {}) };
             }
             if (row.task === 'overview' && ['owner', '保管人', '使用人'].includes(field)) {
                 invariant(hero && [value?.entityId, entity.fields[field]?.value?.entityId, entity.fields.owner?.value?.entityId].includes(hero.id), '该项交接与主角无关');
             }
             if (entity.kind === 'item' && row.task === 'people') {
                 const important = ['剧情意义', 'importance', '归还条件', '归还约定', '保管人', '使用人', '物证', '重要性'].some(key => entity.fields[key]?.value)
-                    || rows.some(action => action.type === 'create' && action.importance && refs.get(action.ref) === entity.id)
-                    || rows.some(action => action.target === row.target && ['保管人', '使用人', '归还条件', '剧情意义', '物证'].includes(action.field));
+                    || siblingPool.some(action => action.type === 'create' && action.importance && refs.get(action.ref) === entity.id)
+                    || siblingPool.some(action => entityRef(action.target) === entityRef(row.target) && IMPORTANCE_FIELDS.includes(String(action.field || '').trim()));
                 invariant(important, '物品缺少剧情意义');
             }
             if (field.startsWith(RELATION_PREFIX) || field.startsWith('关系:')) {

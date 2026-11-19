@@ -430,3 +430,66 @@ test('summary outputs with top-level buckets, string places, cross-group refs, s
     assert.ok(world.modules.map.atlas.actors.some(a => a.actorKey === 'player'));
     assert.equal(world.modules.story.records.length, 3);
 });
+
+test('wrapped entityId refs, mixed person locations inside places group, sibling item importance and cached pre-fix pending drafts commit cleanly', async t => {
+    const storyText = '你在新手引导区苏醒，新人引导者递来超维演算终端，推开纯白大门通往回廊广场。';
+    const f = fixture(t, ['开始试炼', storyText]);
+    f.keys = ['memory', 'overview', 'people', 'places', 'situation', 'suspense'];
+    const sampleBuckets = {
+        people: [
+            { task: 'people', group: 'g_pc', floor: 1, type: 'create', ref: 'pc_chen', kind: 'person', name: '主角' },
+            { task: 'people', group: 'g_guide', floor: 1, type: 'create', ref: 'npc_guide', kind: 'person', name: '新人引导者' },
+            { task: 'people', group: 'g_phone', floor: 1, type: 'create', ref: 'item_terminal', kind: 'item', name: '超维演算终端' },
+            { task: 'people', group: 'g_phone', floor: 1, type: 'set', target: 'item_terminal', field: 'importance', value: '主角主武器兼通讯终端' },
+            { task: 'people', group: 'g_phone', floor: 1, type: 'set', target: 'item_terminal', field: 'owner', value: { entityId: 'pc_chen' } },
+        ],
+        places: [
+            { task: 'places', group: 'g_map', floor: 1, type: 'create', ref: 'place_root', kind: 'place', name: '无限回廊', scale: 'region' },
+            { task: 'places', group: 'g_map', floor: 1, type: 'create', ref: 'place_guide', kind: 'place', name: '新手引导区', scale: 'indoor', parent: { entityId: 'place_root' } },
+            { task: 'places', group: 'g_map', floor: 1, type: 'create', ref: 'place_plaza', kind: 'place', name: '回廊广场', scale: 'outdoor', parent: { entityId: 'place_root' } },
+            { task: 'places', group: 'g_map', floor: 1, type: 'link', from: { entityId: 'place_guide' }, to: { entityId: 'place_plaza' }, kind: 'door', label: '纯白大门' },
+            { task: 'places', group: 'g_map', floor: 1, type: 'set', target: 'pc_chen', field: '所在位置', value: { entityId: 'place_guide' } },
+            { task: 'places', group: 'g_map', floor: 1, type: 'set', target: 'npc_guide', field: '所在位置', value: { entityId: 'place_guide' } },
+        ],
+        situation: [
+            { task: 'situation', group: 'g_clock', floor: 1, type: 'story', record: { kind: 'clock', label: '凌晨', date: '2025年5月10日' } },
+            { task: 'situation', group: 'g_goal', floor: 1, type: 'story', record: { kind: 'goal', title: '开启试炼', description: '前往回廊广场', holders: [{ entityId: 'pc_chen' }] } },
+        ],
+    };
+    f.reply = () => ({ summary: '主角获得终端并锚定在新手引导区。', buckets: sampleBuckets });
+    await f.queue.settle();
+    const world = await f.service.read();
+    const root = world.entities.find(e => e.name === '无限回廊');
+    const guideArea = world.entities.find(e => e.name === '新手引导区');
+    const item = world.entities.find(e => e.name === '超维演算终端');
+    const hero = world.entities.find(e => e.name === '主角');
+    assert.ok(root && guideArea && item && hero);
+    assert.equal(guideArea.fields.parent?.value?.entityId, root.id);
+    assert.equal(item.fields['剧情意义']?.value, '主角主武器兼通讯终端');
+    assert.equal(item.fields.owner?.value?.entityId, hero.id);
+    assert.equal(hero.fields.location?.value?.entityId, guideArea.id);
+    assert.equal(world.modules.map.atlas.locations.find(l => l.name === '新手引导区')?.scale, 'room');
+    assert.equal(world.modules.map.atlas.links[0]?.label, '纯白大门');
+    assert.equal(world.modules.story.records.find(r => r.record.kind === 'clock')?.record.date, '2025-05-10');
+    assert.deepEqual(world.modules.story.records.find(r => r.record.kind === 'goal')?.record.holders, ['主角']);
+
+    // Replay a pre-fix 0.2.38 cached pending draft containing mixed g_map + {entityId} links without calling LLM again.
+    const f2 = fixture(t, ['开始试炼', storyText]);
+    f2.keys = ['memory', 'overview', 'people', 'places', 'situation', 'suspense'];
+    await f2.service.syncTurns(f2.chat, { end: 1 });
+    const src = captureRangeSource(f2.chat, 0, 1);
+    const oldGroups = Object.entries([...sampleBuckets.people, ...sampleBuckets.places, ...sampleBuckets.situation]
+        .reduce((acc, row) => { (acc[row.group] ??= []).push(row); return acc; }, {}))
+        .map(([id, rows]) => ({ id, rows }));
+    f2.stores[f2.owner] = {
+        summaryHistory: [{ format: 2, kind: 'batch', previousEndMesId: -1, endMesId: 1, summary: '旧版已缓存摘要', roundSource: src }],
+        floorWork: { 1: { source: src, digest: src.digest, done: ['memory'], pending: { cachedKey: { keys: f2.keys, sim: false, groups: oldGroups, basis: 0, omitted: [], summary: '旧版已缓存摘要', memoryTags: { characters: [], locations: [], times: [], keywords: [] } } } } },
+    };
+    f2.reply = () => { throw new Error('不应再次调用模型'); };
+    await f2.queue.settle();
+    const replayed = await f2.service.read();
+    assert.equal(f2.requests.length, 0);
+    assert.equal(replayed.entities.find(e => e.name === '主角')?.fields.location?.value?.entityId,
+        replayed.entities.find(e => e.name === '新手引导区')?.id);
+    assert.equal(f2.stores[f2.owner].floorWork[1].done.length, 6);
+});

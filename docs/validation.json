@@ -1,9 +1,9 @@
 {
-  "version": "0.2.38",
+  "version": "0.2.39",
   "status": "passed",
   "validated_on": "2026-11-19",
-  "build_id": "d168163e6faf2dcfcf13",
-  "product": "酒馆后厨 Tavern 扩展，本地安装包（常驻 Agent 待命横栏、楼末手动总结按钮与世界变更同步、真实模型容错写回）",
+  "build_id": "c86947df502a39fb0249",
+  "product": "酒馆后厨 Tavern 扩展，本地安装包（修复真实模型 {entityId} 引用、places/people 跨组位置锚定、物品 set 意义与旧草稿重试落库）",
   "environment": {
     "node": "24.22.3",
     "pnpm": "11.25.0",
@@ -28,8 +28,8 @@
       "node scripts/check-ui.mjs",
       "python3 scripts/package.py",
       "node scripts/check-versions.mjs",
-      "(cd release && shasum -a 256 -c tavern-kitchen-0.2.38.zip.sha256)",
-      "node scripts/check-installation.mjs release/tavern-kitchen-0.2.38.zip > release/install-verification.json"
+      "(cd release && shasum -a 256 -c tavern-kitchen-0.2.39.zip.sha256)",
+      "node scripts/check-installation.mjs release/tavern-kitchen-0.2.39.zip > release/install-verification.json"
     ]
   },
   "acceptance": [
@@ -101,9 +101,9 @@
     },
     {
       "id": 8,
-      "title": "全仓静态检查、类型校验、1441 项测试、9 组无头界面回归与安装包复验",
+      "title": "全仓静态检查、类型校验、1442 项测试、9 组无头界面回归与安装包复验",
       "status": "passed",
-      "expected": "quality.mjs、eslint (--max-warnings 0)、typecheck.mjs、check-project.mjs、build.mjs、test.mjs (1441/1441)、check-runtime.mjs、9 组 check-ui.mjs、package.py、check-versions.mjs 与 check-installation.mjs (0.2.38 zip) 全数通过。",
+      "expected": "quality.mjs、eslint (--max-warnings 0)、typecheck.mjs、check-project.mjs、build.mjs、test.mjs (1442/1442)、check-runtime.mjs、9 组 check-ui.mjs、package.py、check-versions.mjs 与 check-installation.mjs (0.2.39 zip) 全数通过。",
       "commands": [
         "pnpm build",
         "pnpm check",
@@ -112,7 +112,7 @@
         "node scripts/check-ui.mjs",
         "python3 scripts/package.py",
         "node scripts/check-versions.mjs",
-        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.38.zip"
+        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.39.zip"
       ]
     },
     {
@@ -195,18 +195,27 @@
       "commands": [
         "node --import tsx --test modules/world-records/floor-processing.test.js modules/world-records/stage2-closure.test.js modules/world-records/json-response.test.js modules/world-records/release-0236-closure.test.js"
       ]
+    },
+    {
+      "id": 18,
+      "title": "修复真实模型 {entityId} 引用、places 人物位置锚定、物品 set 意义及旧草稿重分拆",
+      "status": "passed",
+      "expected": "entityRef 统一解包 link from/to、parent、owner、holders 与 knowledge.person 中的 {entityId}；reconcileActionGroups 拆分跨组依赖并在 places 中安全锚定人物 所在位置 等字段而不 autoPlace 同名地点；物品 create 认可同组/同回合 set 提供的 importance；turn-processing 重分拆已缓存旧版未提交草稿直接落库。",
+      "commands": [
+        "node --import tsx --test modules/world-records/floor-processing.test.js"
+      ]
     }
   ],
   "artifacts": {
-    "zip": "release/tavern-kitchen-0.2.38.zip",
-    "checksum": "release/tavern-kitchen-0.2.38.zip.sha256",
+    "zip": "release/tavern-kitchen-0.2.39.zip",
+    "checksum": "release/tavern-kitchen-0.2.39.zip.sha256",
     "manifest": "release/release-info.json",
     "acceptance": "docs/validation.json",
     "final_zip_readback": "release/install-verification.json"
   },
   "final_verification": {
-    "build_id": "d168163e6faf2dcfcf13",
-    "unit_tests": "1441/1441",
+    "build_id": "c86947df502a39fb0249",
+    "unit_tests": "1442/1442",
     "ui_suites": 9,
     "zip_checksum": "OK",
     "installation": "passed",

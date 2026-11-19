@@ -11,7 +11,7 @@ import { worldStoryRecords } from './world-story-state.js';
 import { currentTurns, turnEffectConflicts } from './turn-ledger.js';
 import { assertUpdateBudget, fitUpdateContext, worldUpdates } from './update-context.js';
 import { canonical, emptyWorld, invariant } from './domain.js';
-import { taskDefinitions, actionProtocol, actionRows, hasActionBuckets, turnActionGroups, turnOperations } from './turn-actions.js';
+import { taskDefinitions, actionProtocol, actionRows, hasActionBuckets, reconcileActionGroups, turnActionGroups, turnOperations } from './turn-actions.js';
 import { parseJsonResponse } from './json-response.js';
 
 const UPDATE_KEYS = ['memory', 'overview', 'people', 'places', 'situation', 'suspense'];
@@ -167,8 +167,9 @@ function groupEffect(source, group) {
     return 'turn:' + memoryDigest([source.digest, group.rows.map(row => row.task), group.id]);
 }
 
-function staleDraft(state, draft, source, turn) {
+function staleDraft(state, draft, source, turn, extraOwned = null) {
     const owned = new Set(draft.groups.map(group => groupEffect(source, group)));
+    if (extraOwned) for (const id of extraOwned) owned.add(id);
     return state.version < draft.basis || state.events.slice(draft.basis).some(event =>
         event.effects.some(change => ['entity', 'claim', 'module'].includes(change.type))
         && !(event.origin?.sourceId === turn.id && owned.has(event.origin.effectId)));
@@ -287,7 +288,7 @@ export function createFloorProcessing({ read, tasks, store, save, saveSim, getSe
             check();
         }
 
-        const cached = [];
+        const cached = [], legacyOwnedByDraft = new WeakMap(), seededRefsByDraft = new WeakMap();
         async function discard(id) {
             await save(source, check, entry => { delete entry.pending[id]; });
         }
@@ -295,7 +296,30 @@ export function createFloorProcessing({ read, tasks, store, save, saveSim, getSe
             if (previous.sim || !previous.keys.some(k => keys.includes(k))) continue;
             const splitGroup = previous.groups.some(g => g.rows.some(r => keys.includes(r.task)) && g.rows.some(r => !keys.includes(r.task)));
             if (splitGroup || staleDraft(state, previous, source, turn)) await discard(id);
-            else cached.push(previous);
+            else {
+                const legacyOwned = previous.groups.map(g => groupEffect(source, g));
+                const committedGroups = [], pendingGroups = [], committedCreators = new Map(), seededRefs = new Map();
+                for (const g of previous.groups) {
+                    const eff = groupEffect(source, g);
+                    if (state.receipts.some(r => r.origin?.sourceId === turn.id && r.origin.effectId === eff)) {
+                        committedGroups.push(g);
+                        for (const r of g.rows || []) if (r?.type === 'create' && r.ref) {
+                            committedCreators.set(r.ref, { groupId: g.id, kind: r.kind });
+                            const existing = state.entities.find(e => e.kind === r.kind && e.name === r.name);
+                            if (existing) seededRefs.set(r.ref, existing.id);
+                        }
+                    } else {
+                        pendingGroups.push(g);
+                    }
+                }
+                const normalized = pendingGroups.length
+                    ? [...committedGroups, ...reconcileActionGroups(pendingGroups, previous.keys, committedCreators)]
+                    : committedGroups;
+                const normalizedDraft = { ...previous, groups: normalized };
+                legacyOwnedByDraft.set(normalizedDraft, legacyOwned);
+                if (seededRefs.size) seededRefsByDraft.set(normalizedDraft, seededRefs);
+                cached.push(normalizedDraft);
+            }
         }
 
         const savedSim = data.floorSimulations?.[source.end];
@@ -335,20 +359,23 @@ export function createFloorProcessing({ read, tasks, store, save, saveSim, getSe
             });
         }
 
-        const groupPriority = group => (group.rows.some(row => row.task === 'places' && row.type === 'create') ? 0
-            : group.rows.some(row => row.type === 'create') ? 1
-                : group.rows.some(row => row.type === 'link') ? 2
-                    : 3);
+        const groupPriority = group => (group.deferred ? 3
+            : group.rows.some(row => row.task === 'places' && row.type === 'create') ? 0
+                : group.rows.some(row => row.type === 'create') ? 1
+                    : group.rows.some(row => row.type === 'link') ? 2
+                        : 3);
         const drafts = draft ? [...cached.filter(item => item !== draft), draft] : cached;
         for (const savedDraft of drafts) {
-            const sharedRefs = new Map();
+            const sharedRefs = new Map(seededRefsByDraft.get(savedDraft) || []);
+            const allRows = savedDraft.groups.flatMap(item => item.rows || []);
+            const legacyOwned = legacyOwnedByDraft.get(savedDraft) || null;
             for (const input of [...savedDraft.groups].sort((a, b) => groupPriority(a) - groupPriority(b))) {
                 const group = { id: input.id, rows: input.rows.filter(row => keys.includes(row.task)) };
                 if (!group.rows.length) continue;
                 const effectId = groupEffect(source, group);
                 state = await service.read(); check();
                 if (state.receipts.some(r => r.origin?.sourceId === turn.id && r.origin.effectId === effectId)) continue;
-                if (staleDraft(state, savedDraft, source, turn)) {
+                if (staleDraft(state, savedDraft, source, turn, legacyOwned)) {
                     const pending = Object.entries(store().floorWork[source.end].pending).find(([, item]) => item.basis === savedDraft.basis && resultKey(source, item.keys) === resultKey(source, savedDraft.keys));
                     if (pending) await discard(pending[0]);
                     throw new Error('世界版本已改变，请按已确认的进度重试本楼');
@@ -361,7 +388,7 @@ export function createFloorProcessing({ read, tasks, store, save, saveSim, getSe
                 const groupRefs = new Map(sharedRefs);
                 command.operations = turnOperations(atFloor, group.rows, {
                     source, backgroundSource, playerName: ctx.playerName, effectId, commandId: command.id,
-                    omitted: savedDraft.omitted, storyRefs: brief.storyRefs || {}, refs: groupRefs,
+                    omitted: savedDraft.omitted, storyRefs: brief.storyRefs || {}, refs: groupRefs, allRows,
                 });
                 checkHistoricalFields(command.operations, atFloor, state);
                 if (atFloor !== state && command.operations.some(op => op.type === 'module')) {
@@ -373,7 +400,7 @@ export function createFloorProcessing({ read, tasks, store, save, saveSim, getSe
                     const retryRefs = new Map(sharedRefs);
                     command.operations = turnOperations(state, group.rows, {
                         source, backgroundSource, playerName: ctx.playerName, effectId, commandId: command.id,
-                        omitted: savedDraft.omitted, storyRefs: brief.storyRefs || {}, refs: retryRefs,
+                        omitted: savedDraft.omitted, storyRefs: brief.storyRefs || {}, refs: retryRefs, allRows,
                     });
                     for (const [k, v] of retryRefs) sharedRefs.set(k, v);
                 } else {
