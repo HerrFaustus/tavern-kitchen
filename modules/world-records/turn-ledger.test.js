@@ -116,6 +116,36 @@ for (const mode of ['unanchored', 'duplicate-message', 'duplicate-candidate']) t
     assert.equal((await f.service.syncTurns(structuredClone(chat))).version, state.version);
 });
 
+test('multi-greeting cards sharing one send_date across distinct swipe texts stay anchored and accept legacy digests', async t => {
+    const f = fixture(t);
+    const chat = [{
+        is_user: false, name: '无限回廊', mes: '开场白一：纯白大厅',
+        send_date: '2026-11-18T18:45:47.276Z', swipe_id: 0,
+        swipes: ['开场白一：纯白大厅', '开场白二：暗红长廊', '开场白三：星海甲板'],
+        swipe_info: [
+            { send_date: '2026-11-18T18:45:47.276Z' },
+            { send_date: '2026-11-18T18:45:47.276Z' },
+            { send_date: '2026-11-18T18:45:47.276Z' },
+        ],
+    }];
+    let state = await f.service.syncTurns(chat);
+    const first = currentTurns(state)[0];
+    assert.equal(first.identity, 'anchored');
+    const executed = await f.service.commit(f.service.effectCommand(state, first.id, 'greet-init', [create('guide')], '开场落库'));
+    state = executed.state;
+    assert.equal(state.entities.some(e => e.id === 'guide'), true);
+    // Deleting an unselected alternate greeting must preserve candidate identity.
+    chat[0].swipes.splice(2, 1); chat[0].swipe_info.splice(2, 1);
+    const afterTrim = await f.service.syncTurns(structuredClone(chat));
+    assert.equal(currentTurns(afterTrim)[0].id, first.id);
+    assert.equal(afterTrim.version, state.version);
+    // Switching to another greeting creates a new candidate and flags the executed effect.
+    chat[0].swipe_id = 1; chat[0].mes = chat[0].swipes[1];
+    const switched = await f.service.syncTurns(structuredClone(chat));
+    assert.notEqual(currentTurns(switched)[0].candidateId, first.candidateId);
+    assert.equal(turnEffectConflicts(switched).length, 1);
+});
+
 test('memory is linked only after a confirmed receipt is supplied; retry does not apply world effects', async t => {
     const f = fixture(t), chat = chatFixture(); let state = await f.service.syncTurns(chat);
     state = (await f.service.commit(f.service.command(state, [create('buyer'), create('seller'), create('sword', 'item'),

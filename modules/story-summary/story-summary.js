@@ -91,7 +91,7 @@ import { formatStorySummaryL2Events } from "./prompt-events.js";
 import { projectStoryCharacters } from "./prompt-characters.js";
 import { notifyWorldSourcesChanged } from '../world-records/sources.js';
 import { prepareSummaryRecovery, summaryRecoveryScope } from '../world-records/turn-runtime.js';
-import { captureRangeSource, firstInvalidMemorySource } from './data/turn-source.js';
+import { captureRangeSource, firstInvalidMemorySource, matchesRangeDigest } from './data/turn-source.js';
 import { worldAuthorityForContext, authorityStoryStore, worldFieldSource } from '../world-records/authority-context.js';
 
 import { getSummarySourceEnd } from './generate/source-boundary.js';
@@ -3447,7 +3447,15 @@ export async function saveFloorWork(source, check, update) {
     const chatId = getContext().chatId, previous = readSummaryMemory(), next = structuredClone(previous);
     const store = next.storySummary;
     const entry = (store.floorWork ??= {})[source.end] ??= { source, digest:source.digest, done:[] };
-    if (entry.digest !== source.digest) throw new Error('本楼来源已变化，请先在数据页预览恢复');
+    if (entry.digest !== source.digest) {
+        if (!matchesRangeDigest(entry.digest, source, getContext().chat)) {
+            throw new Error('本楼来源已变化，请先在数据页预览恢复');
+        }
+        // WHY: Upgrade legacy colliding-timestamp digest on multi-greeting floors
+        // whose text is unchanged so retrying an in-flight floorWork entry succeeds in place.
+        entry.source = source;
+        entry.digest = source.digest;
+    }
     update(entry,store);
     await commitSummaryMemory(chatId,next,{previous,validate:check});
     refreshRecallAfterSettlement();

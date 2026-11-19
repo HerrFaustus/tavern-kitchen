@@ -14,16 +14,28 @@ function candidate(message, index) {
     // replaced by a continuation. They do not rename an existing dated reply.
     const anchor = sent ? ['sent', sent] : ['generated', stamp(info.gen_started), stamp(info.gen_finished), stamp(info.extra?.gen_id)];
     const anchored = !!sent || anchor.slice(1).some(Boolean);
-    return { key: memoryDigest(anchored ? ['native', ...anchor] : ['content', index, message?.swipes?.[index] ?? message?.mes ?? '']), anchored };
+    const text = String(message?.swipes?.[index] ?? (selected ? message?.mes : '') ?? '');
+    const baseKey = memoryDigest(anchored ? ['native', ...anchor] : ['content', index, text]);
+    return { key: baseKey, baseKey, anchored, text };
 }
 
 // Native candidate timestamps survive index renumbering. Imported messages may
 // lack them; retain that uncertainty rather than inventing a durable host ID.
+// WHY: Character cards with multiple alternate_greetings share one chat-creation
+// send_date across all initial swipes in TauriTavern/SillyTavern. Disambiguating
+// colliding anchored timestamps by swipe text keeps distinct greetings anchored
+// while truly identical duplicate swipes remain ambiguous.
 export function messageCandidates(message) {
-    const selected = candidate(message, message?.swipe_id ?? 0);
-    const all = Array.from({ length: Math.max(message?.swipes?.length || 0, (message?.swipe_id ?? 0) + 1) }, (_, i) => candidate(message, i));
-    return { selected: selected.key, keys: [...new Set(all.map(item => item.key))],
-        anchored: selected.anchored, ambiguous: all.filter(item => item.key === selected.key).length !== 1 };
+    const selectedIndex = message?.swipe_id ?? 0;
+    const all = Array.from({ length: Math.max(message?.swipes?.length || 0, selectedIndex + 1) }, (_, i) => candidate(message, i));
+    const baseCounts = new Map();
+    for (const item of all) if (item.anchored) baseCounts.set(item.baseKey, (baseCounts.get(item.baseKey) || 0) + 1);
+    const resolved = all.map(item => (item.anchored && baseCounts.get(item.baseKey) > 1
+        ? { ...item, key: memoryDigest(['native-text', item.baseKey, item.text]) }
+        : item));
+    const selected = resolved[selectedIndex] || candidate(message, selectedIndex);
+    return { selected: selected.key, legacySelected: selected.baseKey, keys: [...new Set(resolved.map(item => item.key))],
+        anchored: selected.anchored, ambiguous: resolved.filter(item => item.key === selected.key).length !== 1 };
 }
 
 export function captureRangeSource(chat, start, end) {
@@ -38,16 +50,42 @@ export function captureRangeSource(chat, start, end) {
 
 const sourceDigest = messages => memoryDigest(messages.map(({ floor, ...message }) => message));
 
+export function matchesRangeDigest(digest, source, chat) {
+    if (!digest || !source) return false;
+    if (digest === source.digest) return true;
+    const end = Number.isInteger(source.end) ? source.end : source.floor;
+    const range = Array.isArray(source.messages)
+        ? source
+        : (Array.isArray(chat) && Number.isInteger(source.start) && Number.isInteger(end) && end < chat.length
+            ? captureRangeSource(chat, source.start, end)
+            : null);
+    if (!range) return false;
+    const legacyDigest = sourceDigest(range.messages.map(message => {
+        const live = chat?.[message.floor];
+        const cands = live ? messageCandidates(live) : null;
+        return cands && message.candidate === cands.selected ? { ...message, candidate: cands.legacySelected } : message;
+    }));
+    return digest === legacyDigest;
+}
+
 export function isRangeSourceCurrent(source, chat) {
     if (!source || source.version !== 1 || source.end >= chat.length) return false;
     try {
         const current = captureRangeSource(chat, source.start, source.end);
         if (source.digest === current.digest) return true;
-        // Old ranges may have captured hidden prose as role=system. Validate
-        // their original receipt, then compare only that presentation change.
+        // Old ranges may have captured hidden prose as role=system or a colliding
+        // multi-greeting timestamp before native-text disambiguation. Validate
+        // their original receipt, then compare only those representation upgrades.
         validateRangeSource(source);
-        return sourceDigest(source.messages.map(message => message.role === 'system' && !chat[message.floor]?.extra?.type && !chat[message.floor]?.is_user
-            ? { ...message, role: 'assistant' } : message)) === current.digest;
+        return sourceDigest(source.messages.map((message, offset) => {
+            const live = chat[message.floor];
+            const role = message.role === 'system' && !live?.extra?.type && !live?.is_user ? 'assistant' : message.role;
+            const cands = live ? messageCandidates(live) : null;
+            const cur = current.messages[offset];
+            const candidateKey = cands && cur && message.candidate === cands.legacySelected && message.text === cur.text
+                ? cur.candidate : message.candidate;
+            return { ...message, role, candidate: candidateKey };
+        })) === current.digest;
     }
     catch { return false; }
 }

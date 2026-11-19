@@ -3,7 +3,7 @@ import { readInvolvement } from '../story-state/involvement.js';
 import { historicalWorld } from './historical.js';
 import { createTurnQueue } from '../../core/turn-queue.js';
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
-import { isRangeSourceCurrent } from '../story-summary/data/turn-source.js';
+import { isRangeSourceCurrent, matchesRangeDigest } from '../story-summary/data/turn-source.js';
 import { prepareMemoryTags } from '../story-summary/data/memory-tags.js';
 import { protagonistIdentity } from '../story-state/protagonist-identity.js';
 import { selectHistoryNodesBefore } from '../story-summary/data/summary-layers.js';
@@ -214,18 +214,19 @@ function isPreUpgradeSettledFloor(data, source, chat) {
 export function createFloorProcessing({ read, tasks, store, save, saveSim, getService, requireAgent, generate, chapter, onUpdateSettled = null, status }) {
     function complete(source, step) {
         const data = store();
+        const chat = read().chat;
         if (step.group === 'simulation') {
             const savedSim = data.floorSimulations?.[source.end];
-            if (savedSim && savedSim.digest === source.digest && typeof savedSim.text === 'string' && savedSim.text.trim()) return true;
+            if (savedSim && matchesRangeDigest(savedSim.digest, source, chat) && typeof savedSim.text === 'string' && savedSim.text.trim()) return true;
             // WHY: Never retro-backfill Simulation onto historical floors already settled before 0.2.36.
-            if (!savedSim && isPreUpgradeSettledFloor(data, source, read().chat)) return true;
+            if (!savedSim && isPreUpgradeSettledFloor(data, source, chat)) return true;
             return false;
         }
         const saved = data.floorWork?.[source.end];
-        if (saved && saved.digest !== source.digest) return false;
+        if (saved && !matchesRangeDigest(saved.digest, source, chat)) return false;
         if (step.group === 'chapter') return !chapter.pending(source, data);
         if (saved?.done?.includes(step.key)) return true;
-        if (step.key === 'memory' && !saved?.pending) return isFloorSummaryRecorded(data, source, read().chat);
+        if (step.key === 'memory' && !saved?.pending) return isFloorSummaryRecorded(data, source, chat);
         return false;
     }
 
@@ -323,7 +324,7 @@ export function createFloorProcessing({ read, tasks, store, save, saveSim, getSe
         }
 
         const savedSim = data.floorSimulations?.[source.end];
-        const backgroundSource = savedSim?.digest === source.digest && typeof savedSim.text === 'string' && savedSim.text.trim()
+        const backgroundSource = savedSim && matchesRangeDigest(savedSim.digest, source, ctx.chat) && typeof savedSim.text === 'string' && savedSim.text.trim()
             ? { floor: source.end, text: savedSim.text.trim() }
             : null;
 

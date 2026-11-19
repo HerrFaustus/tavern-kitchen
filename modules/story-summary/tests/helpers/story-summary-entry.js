@@ -7,7 +7,7 @@ import { observeBackgroundTask } from '../../../../shared/common/async-errors.js
 import { getUpdateAndSimulationBounds } from '../../data/turn-bounds.js';
 import { refreshFloorSummaries } from '../../floor-summary.js';
 import { floorCoverageEnd } from '../../inline/ledger.js';
-import { firstInvalidMemorySource } from '../../data/turn-source.js';
+import { firstInvalidMemorySource, matchesRangeDigest } from '../../data/turn-source.js';
 import { prepareMemorySources, validateMemorySources } from '../../../world-records/turn-runtime.js';
 import { worldAuthorityForContext, authorityStoryStore } from '../../../world-records/authority-context.js';
 import { getSummarySourceEnd } from '../../generate/source-boundary.js';
@@ -26,7 +26,7 @@ export function entry(names, dependencies) {
     // Existing entrypoint fixtures exercise the retained independent-summary path.
     // Main-reply behavior is tested through its controller and actual persistence separately.
     const context = vm.createContext({ panelEnabled, getSummarySourceEnd, getUpdateAndSimulationBounds, observeBackgroundTask, refreshFloorSummaries, floorCoverageEnd, SUMMARY_BATCH_FLOORS,
-        timelineRounds, summaryLayers, firstInvalidMemorySource, prepareMemorySources, validateMemorySources, worldAuthorityForContext, authorityStoryStore,
+        timelineRounds, summaryLayers, firstInvalidMemorySource, matchesRangeDigest, prepareMemorySources, validateMemorySources, worldAuthorityForContext, authorityStoryStore,
         clearRecallHistory, isVectorApiConfigured, getSummaryPanelConfig: () => ({ inlineSummary: { enabled: false } }), ...dependencies });
     vm.runInContext(declarations.filter(node => node.type === 'FunctionDeclaration' ? names.includes(node.id.name)
         : node.type === 'VariableDeclaration' && node.declarations.some(item => names.includes(item.id.name)))

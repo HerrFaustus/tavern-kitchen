@@ -1,21 +1,21 @@
-# 酒馆后厨 0.2.39
+# 酒馆后厨 0.2.40
 
 酒馆后厨（Tavern Kitchen）是一个 SillyTavern 扩展。系统以**零手工调整、极简自动流**为核心，每次正文回复后自动维护世界状态、非形式化「后台正文」延伸、剧情摘要与创作札记，并把已确认状态与最近/召回原文提供给下一次续写。
 
-`0.2.39` 已完成构建、9 组无头浏览器界面回归与 ZIP 安装包实机复验（构建 `c86947df502a39fb0249`，`release/tavern-kitchen-0.2.39.zip`），修复真实模型在 `link` / `parent` / `location` 中按 `{entityId}` 引用实体及同组 `places` 附带人物 `所在位置` 时误报「对象不唯一或字段未提供」的问题，并兼容旧版已缓存 `pending` 草稿就地重试落库。宿主生成角色正文；每条回复完成后只跑推演，玩家发送下一轮前强制总结上一楼并完成结构化写库，任何缺失、启动或总结失败都会中止发送并在输入框上方 Agent 横栏要求重试。每份聊天维护单一世界时间线。[成品规则](最终项目目标.md) · [验收记录](docs/validation.json) · [版本历史](历史更新记录.md) · [GitHub Release](https://github.com/HerrFaustus/tavern-kitchen/releases/tag/v0.2.39)
+`0.2.40` 已完成构建、9 组无头浏览器界面回归与 ZIP 安装包实机复验（构建 `c06d32f5341ebe291120`，`release/tavern-kitchen-0.2.40.zip`），修复多开场白（`alternate_greetings`）角色卡因共享建聊时间戳在第 1 楼误报「来源身份不明确，不能自动执行世界变化」的问题，并兼容旧版已缓存 0 楼摘要/推演指纹原地落库。宿主生成角色正文；每条回复完成后只跑推演，玩家发送下一轮前强制总结上一楼并完成结构化写库，任何缺失、启动或总结失败都会中止发送并在输入框上方 Agent 横栏要求重试。每份聊天维护单一世界时间线。[成品规则](最终项目目标.md) · [验收记录](docs/validation.json) · [版本历史](历史更新记录.md)
 
 ## 安装与开始
 
-1. 全新安装时将 `release/tavern-kitchen-0.2.39.zip`（或仓库目录）解压到宿主的 `public/scripts/extensions/third-party/`，确认 `tavern-kitchen/manifest.json` 与 `tavern-kitchen/dist/host/plugin.js` 在同一扩展目录下，刷新宿主。升级时先在原浏览器的「数据」导出后厨卡，再用新目录覆盖原扩展文件并刷新。沿用原宿主账号、地址和浏览器配置文件即可读回原聊天、IndexedDB 世界以及札记。内置「后厨教程」与幂等升级自检会在启动与切聊时自动守护兼容迁移。
+1. 全新安装时将 `release/tavern-kitchen-0.2.40.zip`（或仓库目录）解压到宿主的 `public/scripts/extensions/third-party/`，确认 `tavern-kitchen/manifest.json` 与 `tavern-kitchen/dist/host/plugin.js` 在同一扩展目录下，刷新宿主。升级时先在原浏览器的「数据」导出后厨卡，再用新目录覆盖原扩展文件并刷新。沿用原宿主账号、地址和浏览器配置文件即可读回原聊天、IndexedDB 世界以及札记。内置「后厨教程」与幂等升级自检会在启动与切聊时自动守护兼容迁移。
 2. 打开聊天，点击顶栏最右的门形图标，或在扩展设置里点击「打开后厨」。顶栏下方显示原生工作台标题栏「酒馆后厨」与六个板块（主角、世界、剧情、编剧、设置、数据）。在「设置 → API → 编辑连接」新建或导入命名连接，填好地址和模型后保存，并分别为总结、推演、编剧 Agent 绑定连接；三者均可直接选择「同酒馆主 API」，也可共用一个命名连接。
 3. 所有核心业务模块（人物、地点与地图、局势、总结与召回、自动分层与编剧）均固定默认开启，世界状态恒定注入正文；发前总结与开局世界初始化询问均固定开启且不提供关闭开关。未绑定对应 Agent 时会在输入框上方 Agent 横栏直接拦截生成并给出前往「设置 → API」的入口（缺失编剧 Agent 时软提示并放行正文）。
 
 玩家安装时直接使用随包的 `dist/`，无需准备开发环境。界面只读展示经核验的结构化状态与摘要，**不提供任何手动调整世界/摘要/地图数据或剧情校对、剧情线入口**。业务触发操作保留在对应页内：开局「世界 → 世界生成」、总结页手动补齐与楼末「手动总结」（覆盖到最新已完成楼层 `updateEnd`）、编剧「立即生成／更新札记」、数据页后厨卡导入/导出与只读恢复。切换聊天后重新按当前聊天取数，界面跟随酒馆主题。[工作台路由](core/kitchen-workspace.js) · [启动与聊天切换](core/kitchen-runtime.js) · [新手教程](core/kitchen-tutorial.js)
 
-## 0.2.39 本版变化
+## 0.2.40 本版变化
 
-- **真实模型 `{entityId}` 与跨组人物位置写回修复**：[`modules/world-records/turn-actions.js`](modules/world-records/turn-actions.js) 统一经 `entityRef` 解包 `from` / `to` / `parent` / `target` / `owner` / `holders` / `knowledge.person` 中的 `{entityId}` 对象与字符串；新增 `reconcileActionGroups` 自动拆分跨组依赖的 `set` / `link` 行并在 `places` 中支持 `所在位置`、`当前位置` 等位置字段锚定人物（不误建同名地点），同时支持通过同组/同回合 `set` 行提供的物品 `importance` 及其它 `clock` 中文日期规范化。[`modules/world-records/turn-processing.js`](modules/world-records/turn-processing.js) 在回放已缓存旧草稿时自动重分拆未提交分组，使旧卡楼层点「手动总结 / 重试」无需重调模型即可直接写入世界状态。
-- **承接 `0.2.38` 体验能力**：保留输入框上方常驻待命条、楼末更新框直接投影世界变更与「手动总结 / 重新总结」按钮、发送前总结与严格 fail-closed 拦截及全部文本 Agent「同酒馆主 API」。
+- **修复多开场白角色卡第 1 楼「来源身份不明确」阻断**：[`modules/story-summary/data/turn-source.js`](modules/story-summary/data/turn-source.js) 在同楼多个已锚定候选共享同一 `send_date`（如角色卡多开场白 `alternate_greetings`）时按正文文本消歧为 `native-text` 唯一身份，真正完全重复的候选仍按 `ambiguous` 拦截；`isRangeSourceCurrent`、`matchesRangeDigest` 与 `saveFloorWork` / `turn-processing` / `floor-summary` 同步兼容旧版已缓存指纹，旧聊升级后点「手动总结 / 重试」无需重调模型即可直接写入世界。
+- **承接 `0.2.38–0.2.39` 能力**：保留输入框上方常驻待命条、楼末世界变更与「手动总结 / 重新总结」按钮、真实模型 `{entityId}` 与跨组人物位置锚定修复及旧版失败草稿原地重拆。
 
 ## 当前能做什么
 
@@ -55,10 +55,10 @@ node scripts/check-project.mjs
 node scripts/check-ui.mjs
 python3 scripts/package.py
 node scripts/check-versions.mjs
-node scripts/check-installation.mjs release/tavern-kitchen-0.2.39.zip > release/install-verification.json
+node scripts/check-installation.mjs release/tavern-kitchen-0.2.40.zip > release/install-verification.json
 ```
 
-- 本版已通过本地 `node scripts/quality.mjs`（含 ESLint `--max-warnings 0`、版本/边界/乱码/相对导入/退役变量检查）、`node scripts/typecheck.mjs`、`node scripts/build.mjs`、`node scripts/check-project.mjs`、`node scripts/check.mjs`（含 `1442` 项单元测试 0 失败 0 跳过与 `node scripts/check-runtime.mjs` `result=PASS`）、`9` 组无头浏览器界面回归（`node scripts/check-ui.mjs`）、`python3 scripts/package.py`、`node scripts/check-versions.mjs` 及 `node scripts/check-installation.mjs release/tavern-kitchen-0.2.39.zip` 最终 ZIP 复装验真。
+- 本版已通过本地 `node scripts/quality.mjs`（含 ESLint `--max-warnings 0`、版本/边界/乱码/相对导入/退役变量检查）、`node scripts/typecheck.mjs`、`node scripts/build.mjs`、`node scripts/check-project.mjs`、`node scripts/check.mjs`（含 `1443` 项单元测试 0 失败 0 跳过与 `node scripts/check-runtime.mjs` `result=PASS`）、`9` 组无头浏览器界面回归（`node scripts/check-ui.mjs`）、`python3 scripts/package.py`、`node scripts/check-versions.mjs` 及 `node scripts/check-installation.mjs release/tavern-kitchen-0.2.40.zip` 最终 ZIP 复装验真。
 - 真实酒馆宿主与在线模型的长程游玩不在自动化验收范围内。[验收凭据](docs/validation.json)
 
 ## 署名与许可

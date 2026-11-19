@@ -1,6 +1,7 @@
 import { reviewedRounds } from './data/summary-layers.js';
 import { summaryBatchChanges } from './data/summary-undo.js';
 import { getUpdateAndSimulationBounds } from './data/turn-bounds.js';
+import { matchesRangeDigest } from './data/turn-source.js';
 import { floorSource, isNarrativeReply } from './inline/protocol.js';
 import { floorChangeText } from '../story-state/view.js';
 import { FIELD_LABELS, KINDS, NATURES } from '../world-records/domain.js';
@@ -114,7 +115,7 @@ export function projectFloorSimulation(store, chat, floor, bounds = getUpdateAnd
     if (!isNarrativeReply(message)) return { status: 'none' };
     const sim = store?.floorSimulations?.[floor];
     const source = floorSource(chat, floor);
-    if (sim && source && sim.digest === source.digest && typeof sim.text === 'string' && sim.text.trim()) {
+    if (sim && source && matchesRangeDigest(sim.digest, source, chat) && typeof sim.text === 'string' && sim.text.trim()) {
         return {
             status: 'ready',
             floor,
@@ -127,7 +128,7 @@ export function projectFloorSimulation(store, chat, floor, bounds = getUpdateAnd
         || (bounds.updateEnd >= 0 && floor <= (store?.lastSummarizedMesId ?? -1));
     // WHY: Pre-0.2.36 settled historical floors have no floorSimulations data; hide simulation box smoothly without retro-backfill.
     if (!sim && settled) return { status: 'none' };
-    if (sim && source && sim.digest !== source.digest) {
+    if (sim && source && !matchesRangeDigest(sim.digest, source, chat)) {
         return { status: 'pending', floor, text: '本楼候选已切换，正在等待推演 Agent 重新生成后台正文…', tag: '', isLatest: floor === bounds.simulationEnd };
     }
     if (floor <= bounds.simulationEnd) {
