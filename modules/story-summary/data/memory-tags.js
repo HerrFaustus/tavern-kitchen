@@ -8,8 +8,8 @@ export function prepareMemoryTags(decoded) {
     const supplied = decoded.memoryTags;
     if (supplied !== undefined && (!supplied || typeof supplied !== 'object' || Array.isArray(supplied)
         || fields.some(field => supplied[field] !== undefined && (!Array.isArray(supplied[field])
-            || supplied[field].length > 24 || supplied[field].some(value => typeof value !== 'string' || value.length > 120))))) {
-        throw new Error('记忆标签须为人物、地点、时间、关键词的短文本数组，每类最多 24 项');
+            || supplied[field].some(value => typeof value !== 'string'))))) {
+        throw new Error('记忆标签须为人物、地点、时间、关键词的短文本数组');
     }
 
     const fallback = {

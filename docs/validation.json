@@ -1,9 +1,9 @@
 {
-  "version": "0.2.40",
+  "version": "0.2.41",
   "status": "passed",
-  "validated_on": "2026-11-19",
-  "build_id": "c06d32f5341ebe291120",
-  "product": "酒馆后厨 Tavern 扩展，本地安装包（修复多开场白角色卡第 1 楼误报来源身份不明确及兼容旧版指纹落库）",
+  "validated_on": "2026-11-20",
+  "build_id": "e68d04c216af42a9f283",
+  "product": "酒馆后厨 Tavern 扩展，本地安装包（输出与篇幅不设上限、修复截断 JSON 误报并落实 DOM + 拦截器双层总结锁）",
   "environment": {
     "node": "24.22.3",
     "pnpm": "11.25.0",
@@ -28,8 +28,8 @@
       "node scripts/check-ui.mjs",
       "python3 scripts/package.py",
       "node scripts/check-versions.mjs",
-      "(cd release && shasum -a 256 -c tavern-kitchen-0.2.40.zip.sha256)",
-      "node scripts/check-installation.mjs release/tavern-kitchen-0.2.40.zip > release/install-verification.json"
+      "(cd release && shasum -a 256 -c tavern-kitchen-0.2.41.zip.sha256)",
+      "node scripts/check-installation.mjs release/tavern-kitchen-0.2.41.zip > release/install-verification.json"
     ]
   },
   "acceptance": [
@@ -101,9 +101,9 @@
     },
     {
       "id": 8,
-      "title": "全仓静态检查、类型校验、1443 项测试、9 组无头界面回归与安装包复验",
+      "title": "全仓静态检查、类型校验、1451 项测试、9 组无头界面回归与安装包复验",
       "status": "passed",
-      "expected": "quality.mjs、eslint (--max-warnings 0)、typecheck.mjs、check-project.mjs、build.mjs、test.mjs (1443/1443)、check-runtime.mjs、9 组 check-ui.mjs、package.py、check-versions.mjs 与 check-installation.mjs (0.2.40 zip) 全数通过。",
+      "expected": "quality.mjs、eslint (--max-warnings 0)、typecheck.mjs、check-project.mjs、build.mjs、test.mjs (1451/1451)、check-runtime.mjs、9 组 check-ui.mjs、package.py、check-versions.mjs 与 check-installation.mjs (0.2.41 zip) 全数通过。",
       "commands": [
         "pnpm build",
         "pnpm check",
@@ -112,7 +112,7 @@
         "node scripts/check-ui.mjs",
         "python3 scripts/package.py",
         "node scripts/check-versions.mjs",
-        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.40.zip"
+        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.41.zip"
       ]
     },
     {
@@ -213,18 +213,36 @@
       "commands": [
         "node --import tsx --test modules/world-records/turn-ledger.test.js modules/world-records/floor-processing.test.js modules/story-summary/tests/floor-summary.test.js"
       ]
+    },
+    {
+      "id": 20,
+      "title": "输出与篇幅不设上限、截断 JSON 防误抽内层子对象并自动放宽预算重试",
+      "status": "passed",
+      "expected": "generateHostDirect 不再继承宿主 openai_max_tokens 并完整透传 finishReason/truncated/usage/completion；turn-processing 移除 12000/8000 字篇幅上限，memory-tags 超 24 项自动截取；parseJsonResponse 对顶层未闭合 JSON 抛出 JSON_TRUNCATED 不误抽 memoryTags；命中截断自动携带 expandOutputBudget: true 重试一次。",
+      "commands": [
+        "node --import tsx --test modules/world-records/json-response.test.js modules/text-api/tests/runtime.test.js modules/text-api/tests/call-stats.test.js modules/world-records/floor-processing.test.js"
+      ]
+    },
+    {
+      "id": 21,
+      "title": "落实 DOM 捕获层 + generate_interceptor 双层总结锁与并发互斥",
+      "status": "passed",
+      "expected": "core/send-lock.js 在捕获阶段拦截 #send_but 点击、#send_form 提交与 #send_textarea 回车（放行 / 斜杠命令、Shift+Enter、IME 组合态与生成中），启动中/失败/总结运行中/报错锁定均给发送按钮加上 data-tk-send-locked 锁定态并保留草稿；未总结楼层发送前先锁定跑完总结再放行一次；总结运行中拒绝并发 rerunFloor。",
+      "commands": [
+        "node --import tsx --test core/send-lock.test.js core/floor-host.test.js core/kitchen-bootstrap.test.js"
+      ]
     }
   ],
   "artifacts": {
-    "zip": "release/tavern-kitchen-0.2.40.zip",
-    "checksum": "release/tavern-kitchen-0.2.40.zip.sha256",
+    "zip": "release/tavern-kitchen-0.2.41.zip",
+    "checksum": "release/tavern-kitchen-0.2.41.zip.sha256",
     "manifest": "release/release-info.json",
     "acceptance": "docs/validation.json",
     "final_zip_readback": "release/install-verification.json"
   },
   "final_verification": {
-    "build_id": "c06d32f5341ebe291120",
-    "unit_tests": "1443/1443",
+    "build_id": "e68d04c216af42a9f283",
+    "unit_tests": "1451/1451",
     "ui_suites": 9,
     "zip_checksum": "OK",
     "installation": "passed",

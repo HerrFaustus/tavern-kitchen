@@ -493,3 +493,74 @@ test('wrapped entityId refs, mixed person locations inside places group, sibling
         replayed.entities.find(e => e.name === '新手引导区')?.id);
     assert.equal(f2.stores[f2.owner].floorWork[1].done.length, 6);
 });
+
+test('truncated summary JSON auto-retries once with expanded output budget and surfaces truncation instead of empty summary', async t => {
+    const truncatedReply = `{
+  "summary": "主角进入蜂巢地下列车站台。",
+  "memoryTags": { "characters": ["主角"], "locations": ["蜂巢地下列车站台"], "times": [], "keywords": ["蜂巢"] },
+  "buckets": { "places": [ { "task": "places", "group": "g1", "type": "create", "ref": "hive", "kind": "place", "name": "蜂巢" } ], "people": [ { "field": "`;
+
+    const storage = createWorldStorage({ indexedDB: new IDBFactory() });
+    t.after(() => storage.close());
+    const service = createWorldService({ storage, getIdentity: () => '蜂巢测试' });
+    const chat = [
+        { mes: '准备进入副本', is_user: true, name: '主角', send_date: 'm0' },
+        { mes: '你睁开眼，站在蜂巢地下列车站台。', is_user: false, name: '系统', send_date: 'm1' },
+    ];
+    let storeData = {};
+    const calls = [];
+    const makeQueue = responder => createFloorProcessing({
+        read: () => ({ owner: '蜂巢测试', playerName: '主角', chat, end: 1 }),
+        store: () => storeData,
+        getService: () => service,
+        tasks: () => ['memory', 'places'].map(key => ({ key, group: 'update', label: key })),
+        requireAgent: async () => {},
+        async save(source, check, apply) {
+            check();
+            const next = structuredClone(storeData);
+            const entry = (next.floorWork ??= {})[source.end] ??= { source, digest: source.digest, done: [] };
+            apply(entry, next);
+            check();
+            storeData = next;
+        },
+        generate: async (feature, options) => {
+            calls.push({ feature, expandOutputBudget: !!options.expandOutputBudget, messageCount: options.messages.length });
+            return responder(calls.length, options);
+        },
+        chapter: {},
+    });
+
+    // Case 1: First call hits finish_reason=length mid-JSON; retry with expandOutputBudget=true succeeds.
+    const recoveringQueue = makeQueue(attempt => attempt === 1
+        ? { text: truncatedReply, finishReason: 'length', truncated: true }
+        : { text: JSON.stringify({ summary: '主角进入蜂巢地下列车站台。', buckets: { places: [{ task: 'places', group: 'g1', floor: 1, type: 'create', ref: 'hive', kind: 'place', name: '蜂巢地下列车站台', scale: 'room' }] } }), finishReason: 'stop', truncated: false });
+    await recoveringQueue.settle();
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].expandOutputBudget, false);
+    assert.equal(calls[1].expandOutputBudget, true);
+    assert.equal(calls[1].messageCount, calls[0].messageCount + 1);
+    assert.equal(storeData.summaryHistory[0].summary, '主角进入蜂巢地下列车站台。');
+
+    // Case 2: Proxy strips finish_reason and both attempts stay truncated mid-JSON -> surfaces truncation error, NOT "摘要为空或超出篇幅".
+    calls.length = 0;
+    storeData = {};
+    const failingQueue = makeQueue(() => ({ text: truncatedReply }));
+    await assert.rejects(failingQueue.settle(), /最大输出 Token 上限被截断/);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].expandOutputBudget, true);
+});
+
+test('summary, simulation prose and memoryTags have no artificial character or tag-count rejection caps', async t => {
+    const f = fixture(t, ['记录超长楼层', '超长主楼正文']);
+    f.keys = ['simulation', 'memory'];
+    const longSim = '推演'.repeat(5000);
+    const longSummary = '摘要'.repeat(7000);
+    const manyTags = Array.from({ length: 30 }, (_, i) => `关键词${i + 1}`);
+    f.reply = feature => (feature === 'world'
+        ? { text: longSim, tag: '局势进展' }
+        : { summary: longSummary, memoryTags: { characters: ['主角'], locations: ['蜂巢'], times: ['凌晨'], keywords: manyTags }, buckets: {} });
+    await f.queue.settle();
+    assert.equal(f.store().floorSimulations[1].text.length, longSim.length);
+    assert.equal(f.store().summaryHistory[0].summary.length, longSummary.length);
+    assert.equal(f.store().summaryHistory[0].memoryTags.keywords.length, 24);
+});

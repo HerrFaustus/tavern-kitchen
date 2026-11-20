@@ -161,12 +161,74 @@ function findBalancedJsonEnd(text, startIndex) {
     return -1;
 }
 
+function skipWhitespace(text, startIndex) {
+    let i = startIndex;
+    while (i < text.length && /\s/.test(text[i])) i += 1;
+    return i;
+}
+
+function findQuotedStringEnd(text, quoteIndex) {
+    const opener = text[quoteIndex];
+    if (opener !== '"' && opener !== '“') return -1;
+    const closer = opener === '“' ? '”' : '"';
+    let curlyDepth = 0;
+    let escape = false;
+    for (let i = quoteIndex + 1; i < text.length; i += 1) {
+        const ch = text[i];
+        if (escape) { escape = false; continue; }
+        if (ch === '\\') { escape = true; continue; }
+        if (closer === '”') {
+            if (ch === '“') curlyDepth += 1;
+            else if (ch === '”') {
+                if (curlyDepth > 0) curlyDepth -= 1;
+                else return i;
+            }
+        } else if (ch === '"') {
+            return i;
+        }
+    }
+    return -1;
+}
+
+function looksLikeJsonContainerStart(text, index) {
+    const ch = text[index];
+    const next = skipWhitespace(text, index + 1);
+    if (next >= text.length) return false;
+    if (ch === '{') {
+        const keyEnd = findQuotedStringEnd(text, next);
+        if (keyEnd === -1) return false;
+        const colon = skipWhitespace(text, keyEnd + 1);
+        return text[colon] === ':';
+    }
+    if (ch === '[') {
+        const first = text[next];
+        if (first === '{') return looksLikeJsonContainerStart(text, next);
+        return first === '[' || first === '"' || first === '“';
+    }
+    return false;
+}
+
+function createTruncatedJsonError() {
+    const error = new SyntaxError('模型返回的 JSON 不完整（输出可能已被截断）');
+    error.code = 'JSON_TRUNCATED';
+    return error;
+}
+
 function extractAndParseBalancedJson(text) {
     let lastError = null;
     for (let i = 0; i < text.length; i += 1) {
         if (text[i] !== '{' && text[i] !== '[') continue;
         const end = findBalancedJsonEnd(text, i);
-        if (end === -1) continue;
+        if (end === -1) {
+            // WHY: When a model output hits max_tokens mid-JSON (e.g. truncated inside `buckets`),
+            // continuing past the unclosed outer `{` would descend into and return a closed nested
+            // sub-object such as `memoryTags`, turning a truncation error into "摘要为空或超出篇幅".
+            // DO NOT keep scanning past an unclosed top-level JSON container.
+            if (i === 0 || looksLikeJsonContainerStart(text, i)) {
+                return { ok: false, truncated: true, error: createTruncatedJsonError() };
+            }
+            continue;
+        }
         const parsed = tryParseJsonCandidate(text.slice(i, end + 1));
         if (parsed.ok) return { ok: true, value: parsed.value };
         lastError = parsed.error;
@@ -186,6 +248,7 @@ export function parseJsonResponse(rawText) {
     const direct = tryParseJsonCandidate(trimmed);
     if (direct.ok) return direct.value;
 
+    let truncatedError = null;
     const fencePattern = /```(?:json)?[ \t]*(?:\r?\n)?([\s\S]*?)```/gi;
     for (const match of trimmed.matchAll(fencePattern)) {
         const block = match[1].trim();
@@ -193,9 +256,20 @@ export function parseJsonResponse(rawText) {
         if (directBlock.ok) return directBlock.value;
         const nested = extractAndParseBalancedJson(block);
         if (nested.ok) return nested.value;
+        if (nested.truncated && !truncatedError) truncatedError = nested.error;
+    }
+
+    const unclosedFence = trimmed.match(/```(?:json)?[ \t]*(?:\r?\n)([\s\S]+)$/i);
+    if (unclosedFence && !/```/.test(unclosedFence[1])) {
+        const body = unclosedFence[1].trim();
+        if (body.startsWith('{') || body.startsWith('[')) {
+            const nested = extractAndParseBalancedJson(body);
+            if (nested.ok) return nested.value;
+            if (nested.truncated) throw nested.error;
+        }
     }
 
     const balanced = extractAndParseBalancedJson(trimmed);
     if (balanced.ok) return balanced.value;
-    throw balanced.error || direct.error || new SyntaxError('模型未返回有效 JSON');
+    throw balanced.error || truncatedError || direct.error || new SyntaxError('模型未返回有效 JSON');
 }

@@ -125,3 +125,28 @@ test('parseOpening and turnOperations accept prose/fenced JSON and normalize quo
     assert.equal(ops[0].source.proof.quote, source.messages[0].text);
     assert.equal(ops[1].value, '“这本  旧帐簿 只卖 3 枚金币。”');
 });
+
+test('parseJsonResponse rejects truncated top-level JSON instead of extracting nested objects like memoryTags', () => {
+    const truncated = `{
+  "summary": "陈星宇抵达蜂巢地下列车站台并激活主线任务。",
+  "memoryTags": {
+    "characters": ["陈星宇", "周野"],
+    "locations": ["蜂巢地下列车站台"],
+    "times": ["凌晨01:30"],
+    "keywords": ["蜂巢", "地下列车"]
+  },
+  "buckets": {
+    "places": [
+      { "task": "places", "group": "pl_hive", "type": "create", "ref": "hive", "kind": "place", "name": "蜂巢" }
+    ],
+    "people": [
+      { "task": "people", "group": "p_hero", "type": "set", "target": "hero", "field": "`;
+
+    assert.throws(() => parseJsonResponse(truncated), err => err instanceof SyntaxError && err.code === 'JSON_TRUNCATED' && /不完整|截断/.test(err.message));
+    assert.throws(() => parseJsonResponse('整理如下：\n' + truncated), err => err instanceof SyntaxError && err.code === 'JSON_TRUNCATED');
+    assert.throws(() => parseJsonResponse('```json\n' + truncated), err => err instanceof SyntaxError && err.code === 'JSON_TRUNCATED');
+
+    // A stray unclosed brace in prose before a valid top-level JSON object must still recover cleanly.
+    const proseWithStrayBrace = '说明 { 以下为本轮完整结果：\n{"summary": "一切正常", "changes": []}';
+    assert.deepEqual(parseJsonResponse(proseWithStrayBrace), { summary: '一切正常', changes: [] });
+});

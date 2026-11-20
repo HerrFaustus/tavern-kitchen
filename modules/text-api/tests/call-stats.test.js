@@ -86,3 +86,37 @@ test('feature generation and the API page share scrubbed success, failure and ab
     assert.doesNotMatch(JSON.stringify(stats), /secret|fixture|redacted/);
     assert.deepEqual(await handleProfileRequest({ action: 'clear-call-stats' }), { features: {}, recent: [] });
 });
+
+test('host direct generation omits inherited chat openai_max_tokens and preserves finishReason and truncated', async () => {
+    const seen = [];
+    const mocks = {
+        'script.js': 'export const getRequestHeaders=()=>({}); export const main_api="openai";',
+        'openai.js': 'export const oai_settings={ chat_completion_source:"custom", custom_url:"https://host.test/v1", openai_max_tokens:8192, temp_openai:0.7, stream_openai:false }; export const getChatCompletionModel=()=>"host-thinking-model";',
+        'secrets.js': 'export const findSecret=async()=>"host-secret"; export const SECRET_KEYS={ CUSTOM:"custom" };',
+        'repository.js': 'export const getTextApiRepository=()=>{throw Error("unused")};',
+        'streaming-generation.js': 'export const streamingGeneration={};',
+        'provider-config.js': 'export const createAgentAdapter=config=>({ chat: async task => { globalThis.__hostDirectSeen.push({ config, task }); return { text:"{}", finishReason:"length", completion:"incomplete", truncated:true, usage:{ prompt_tokens:10, completion_tokens:20 } }; } });',
+    };
+    globalThis.__hostDirectSeen = seen;
+    try {
+        const bundle = await build({ stdin: { contents: 'export {generateFeatureText} from "./modules/text-api/host.js";', resolveDir: process.cwd() },
+            bundle: true, write: false, platform: 'node', format: 'esm',
+            plugins: [{ name: 'host-direct-fixture', setup(api) {
+                api.onResolve({ filter: /(?:script|repository|streaming-generation|provider-config|openai|secrets)\.js$/ }, args => {
+                    const name = args.path.split('/').pop();
+                    return Object.hasOwn(mocks, name) ? { path: name, namespace: 'fixture' } : null;
+                });
+                api.onLoad({ filter: /.*/, namespace: 'fixture' }, args => ({ contents: mocks[args.path] }));
+            } }] });
+        // eslint-disable-next-line no-unsanitized/method -- Local in-memory test bundle only.
+        const { generateFeatureText } = await import(await createTestModuleUrl(bundle.outputFiles[0].text));
+        const result = await generateFeatureText('summary', { messages: [{ role: 'user', content: 'hi' }] }, createPreset('@host', '同酒馆主 API'));
+        assert.equal(seen.length, 1);
+        assert.equal(seen[0].task.maxTokens, undefined);
+        assert.equal(result.finishReason, 'length');
+        assert.equal(result.truncated, true);
+        assert.deepEqual(result.usage, { prompt_tokens: 10, completion_tokens: 20 });
+    } finally {
+        delete globalThis.__hostDirectSeen;
+    }
+});

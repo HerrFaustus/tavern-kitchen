@@ -56,7 +56,20 @@ export function connectionError(error, preset) {
     return safe;
 }
 
-export async function generateText(preset, { messages, signal, onDelta, onDispatch, retryTransient = true, timeoutMs = 180000 } = {}, dependencies = {}) {
+function resolveEffectiveMaxTokens(snapshot, expandOutputBudget) {
+    if (!expandOutputBudget) return snapshot.maxTokens;
+    // WHY: Thinking models sharing the host's chat max_tokens (commonly 4096-8192) can spend most
+    // of that budget on reasoning_tokens and clip structured JSON mid-stream. On truncation retry,
+    // omitting maxTokens lets OpenAI/Google endpoints use the model's native output window while
+    // Anthropic/Claude still receives a raised explicit max_tokens.
+    if (['anthropic', 'sillytavern-claude'].includes(snapshot.provider)) {
+        if (snapshot.maxTokens == null) return null;
+        return Math.max(snapshot.maxTokens * 2, 32768);
+    }
+    return null;
+}
+
+export async function generateText(preset, { messages, signal, onDelta, onDispatch, retryTransient = true, timeoutMs = 180000, expandOutputBudget = false } = {}, dependencies = {}) {
     const snapshot = structuredClone(assertPreset(preset));
     const controller = new AbortController();
     const abort = () => controller.abort(signal.reason);
@@ -68,19 +81,20 @@ export async function generateText(preset, { messages, signal, onDelta, onDispat
             if (snapshot.provider === HOST_PROVIDER) {
                 if (!dependencies.generateHost) throw new Error(COPY.hostUnavailable);
                 onDispatch?.(messages);
-                return dependencies.generateHost(snapshot, { messages, signal: controller.signal, onDelta });
+                return dependencies.generateHost(snapshot, { messages, signal: controller.signal, onDelta, expandOutputBudget });
             }
             const config = resolveConnection(snapshot);
             if (!config.model.trim()) throw new Error(COPY.modelRequired);
             if (!config.baseUrl.trim()) throw new Error(COPY.urlRequired);
             const createAdapter = dependencies.createAdapter || (await import('../agent-core/provider-config.js')).createAgentAdapter;
             const adapter = createAdapter({ ...config, timeoutMs });
+            const effectiveMaxTokens = resolveEffectiveMaxTokens(snapshot, expandOutputBudget);
             let previous = '';
             controller.signal.throwIfAborted();
             onDispatch?.(messages);
             const result = await adapter.chat({
                 messages, signal: controller.signal, reasoning: config.reasoning, retryTransient,
-                ...(snapshot.maxTokens != null ? { maxTokens: snapshot.maxTokens } : {}),
+                ...(effectiveMaxTokens != null ? { maxTokens: effectiveMaxTokens } : {}),
                 ...(snapshot.temperature != null ? { temperature: snapshot.temperature } : {}),
                 ...(snapshot.stream ? { onStreamProgress: progress => {
                     if (typeof progress.text !== 'string') return;

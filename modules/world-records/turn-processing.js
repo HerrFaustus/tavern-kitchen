@@ -15,6 +15,22 @@ import { taskDefinitions, actionProtocol, actionRows, hasActionBuckets, reconcil
 import { parseJsonResponse } from './json-response.js';
 
 const UPDATE_KEYS = ['memory', 'overview', 'people', 'places', 'situation', 'suspense'];
+const TRUNCATED_FINISH_REASONS = new Set(['length', 'max_tokens', 'max_output_tokens', 'MAX_TOKENS']);
+const TRUNCATION_ERROR_MESSAGE = '模型输出达到最大输出 Token 上限被截断（思考内容可能占用了输出额度），请调大接口的最大输出 Token、降低思考强度，或点击重试';
+
+function isTruncatedResponse(raw) {
+    return !!raw?.truncated || TRUNCATED_FINISH_REASONS.has(raw?.finishReason);
+}
+
+function withCompactRetryHint(messages) {
+    return [
+        ...messages,
+        {
+            role: 'user',
+            content: '上一次回复因达到最大输出长度被截断，未能闭合 JSON。请重新输出完整且闭合的紧凑单行 JSON（勿加缩进换行），精简措辞，普通人物/地点/局势/悬念省略 quote，确保一次完整输出。',
+        },
+    ];
+}
 
 function backgroundSimulationsBefore(store, chat, endFloor) {
     const settledThrough = store?.lastSummarizedMesId ?? -1;
@@ -230,6 +246,34 @@ export function createFloorProcessing({ read, tasks, store, save, saveSim, getSe
         return false;
     }
 
+    async function generateJsonTurn(feature, messages, signal, check) {
+        const first = await generate(feature, { messages, signal }); check();
+        let firstTruncated = isTruncatedResponse(first);
+        if (!firstTruncated) {
+            try {
+                return parseJsonResponse(first?.text);
+            } catch (error) {
+                if (error?.code !== 'JSON_TRUNCATED') throw error;
+                firstTruncated = true;
+            }
+        }
+        // WHY: Thinking models inheriting a host chat max_tokens (e.g. 8192) often spend most of
+        // the budget on reasoning_tokens and clip dense floors mid-JSON. Retry once with an expanded
+        // output budget and compact-JSON reminder before surfacing an actionable truncation error.
+        const retry = await generate(feature, {
+            messages: withCompactRetryHint(messages),
+            signal,
+            expandOutputBudget: true,
+        }); check();
+        if (isTruncatedResponse(retry)) throw new Error(TRUNCATION_ERROR_MESSAGE);
+        try {
+            return parseJsonResponse(retry?.text);
+        } catch (error) {
+            if (error?.code === 'JSON_TRUNCATED') throw new Error(TRUNCATION_ERROR_MESSAGE);
+            throw error;
+        }
+    }
+
     async function executeSimulation({ source, steps, signal, check }) {
         const service = getService();
         const ctx = read(), data = store();
@@ -241,11 +285,10 @@ export function createFloorProcessing({ read, tasks, store, save, saveSim, getSe
         const state = await service.read(); check();
         const basis = state ? historicalWorld(state, source.end) : emptyWorld('', '', '');
         const simBrief = promptData(basis, data, source, ctx.chat, ['simulation'], ctx.playerName, { sim: true, frequency });
-        const raw = await generate('world', { messages: simulationRequest(simBrief, frequency), signal }); check();
-        const result = parseJsonResponse(raw.text);
+        const result = await generateJsonTurn('world', simulationRequest(simBrief, frequency), signal, check);
         invariant(result && typeof result === 'object' && !Array.isArray(result), '推演模型须返回 JSON 对象');
         const text = typeof result.text === 'string' ? result.text.trim() : '';
-        invariant(text && text.length <= 8000, '推演后台正文为空或超出篇幅');
+        invariant(!!text, '推演后台正文为空');
         const tag = typeof result.tag === 'string' ? result.tag.trim().slice(0, 24) : '';
         const writer = saveSim || ((src, chk, updater) => save(src, chk, (_entry, memory) => {
             (memory.floorSimulations ??= {})[src.end] = updater(memory.floorSimulations?.[src.end], memory);
@@ -337,10 +380,9 @@ export function createFloorProcessing({ read, tasks, store, save, saveSim, getSe
         let draft;
         if (missing.length) {
             await requireAgent('update'); check();
-            const raw = await generate('summary', { messages: updateRequest(brief, missing), signal }); check();
-            const result = parseJsonResponse(raw.text);
+            const result = await generateJsonTurn('summary', updateRequest(brief, missing), signal, check);
             invariant(result && typeof result === 'object' && !Array.isArray(result), '模型须返回本楼的 JSON 对象');
-            if (missing.includes('memory')) invariant(typeof result.summary === 'string' && result.summary.trim() && result.summary.length <= 12000, '摘要为空或超出篇幅');
+            if (missing.includes('memory')) invariant(typeof result.summary === 'string' && result.summary.trim(), '摘要为空');
             if (missing.some(k => k !== 'memory')) invariant(hasActionBuckets(result) || typeof result.summary === 'string', '未返回世界变化清单，无变化时请返回空数组或空分桶');
             const groups = turnActionGroups(actionRows(result), missing);
             draft = {

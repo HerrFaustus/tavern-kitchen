@@ -76,6 +76,7 @@ export function createTurnQueue({ read, tasks, complete, execute, status = () =>
     }
     return {
         settle, invalidate,
+        isBusy() { return Boolean(active || waiting); },
         cancelGeneration() { if (waiting) { waiting.abort(true); waiting = null; wake(); } },
         async beforeGeneration(abort) {
             if (!tasks().length) return;

@@ -295,3 +295,38 @@ test('saved advanced parameters cannot replace or remove the packaged prompt, me
     assert.deepEqual(JSON.parse(forwarded.custom_exclude_body),['top_p']);
     assert.doesNotMatch(forwarded.custom_include_headers,/system-prompt/);
 });
+
+test('expandOutputBudget omits max_tokens on OpenAI/Google, raises Anthropic max_tokens, and forwards through host binding', async t => {
+    const openaiWire = await service(t, 'openai-compatible');
+    const openaiPreset = createPreset('o', 'O', { provider: 'openai-compatible', baseUrl: openaiWire.url, model: 'fixture', stream: false, maxTokens: 8192 });
+    await generateText(openaiPreset, { messages });
+    await generateText(openaiPreset, { messages, expandOutputBudget: true });
+    assert.equal(openaiWire.requests[0].body.max_tokens, 8192);
+    assert.equal(openaiWire.requests[1].body.max_tokens, undefined);
+
+    const googleWire = await service(t, 'google');
+    const googlePreset = createPreset('g', 'G', { provider: 'google', baseUrl: googleWire.url, model: 'fixture', stream: false, maxTokens: 8192 });
+    await generateText(googlePreset, { messages });
+    await generateText(googlePreset, { messages, expandOutputBudget: true });
+    assert.equal(googleWire.requests[0].body.generationConfig.maxOutputTokens, 8192);
+    assert.equal(googleWire.requests[1].body.generationConfig?.maxOutputTokens, undefined);
+
+    const claudeWire = await service(t, 'anthropic');
+    const claudePreset = createPreset('c', 'C', { provider: 'anthropic', baseUrl: claudeWire.url, model: 'fixture', stream: false, maxTokens: 8192 });
+    await generateText(claudePreset, { messages });
+    await generateText(claudePreset, { messages, expandOutputBudget: true });
+    assert.equal(claudeWire.requests[0].body.max_tokens, 8192);
+    assert.equal(claudeWire.requests[1].body.max_tokens, 32768);
+
+    let hostOptions = null;
+    const hostPreset = createPreset('@host', '同酒馆主 API');
+    const hostResult = await generateText(hostPreset, { messages, expandOutputBudget: true }, {
+        generateHost: async (_preset, opts) => {
+            hostOptions = opts;
+            return { text: 'OK', finishReason: 'length', truncated: true };
+        },
+    });
+    assert.equal(hostOptions.expandOutputBudget, true);
+    assert.equal(hostResult.finishReason, 'length');
+    assert.equal(hostResult.truncated, true);
+});

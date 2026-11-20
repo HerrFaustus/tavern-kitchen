@@ -219,3 +219,87 @@ test('summarizeFloor settles unsettled floors without wiping simulation prose an
     assert.equal(rewinds[0].expected, worldSnapshot);
     assert.equal(rewinds[0].version, 0);
 });
+
+test('DOM send lock settles unsettled floors before allowing host send, blocks on failure, and prevents concurrent rerun', async t => {
+    const { parseHTML } = await import('linkedom');
+    const dom = parseHTML('<!doctype html><html><body><div id="form_sheld"><form id="send_form"><textarea id="send_textarea">下一句输入</textarea><button id="send_but" type="button" title="发送">发送</button></form></div></body></html>');
+    const f = harness();
+    const previousEvent = globalThis.Event;
+    globalThis.document = dom.document;
+    globalThis.Event = dom.Event;
+    t.after(() => { globalThis.Event = previousEvent; });
+    const { installFloorHost } = await loadFloorHost();
+
+    let store = { lastSummarizedMesId: -1, summaryHistory: [], floorWork: {} };
+    let settleBlocker = null;
+    let shouldFailSettle = false;
+    let activeSettle = false;
+    f.state.queue.isBusy = () => activeSettle;
+    f.state.queue.settle = async options => {
+        f.state.queueCalls.push(['settle', options]);
+        if (options?.update === false) return;
+        activeSettle = true;
+        try {
+            if (settleBlocker) await settleBlocker;
+            if (shouldFailSettle) throw new Error('模拟总结失败');
+            store = {
+                lastSummarizedMesId: 1,
+                summaryHistory: [{ kind: 'batch', previousEndMesId: -1, endMesId: 1, summary: '第 2 楼已总结' }],
+                floorWork: { 1: { done: ['memory', 'overview', 'people', 'places', 'situation', 'suspense'] } },
+            };
+        } finally {
+            activeSettle = false;
+        }
+    };
+
+    const hostClicks = [];
+    const sendButton = dom.document.getElementById('send_but');
+
+    const host = installFloorHost({
+        settings: { xiaobaiOs: { apps: { world: {} } } },
+        getContext: () => ({ chatId: 'c1', name1: '主角', chatMetadata: { skip: true }, chat: [
+            { is_user: true, mes: '进门。' },
+            { is_user: false, mes: '店主递来钥匙。', send_date: 'a1' },
+        ] }),
+        memory: {
+            getPublishedSummaryStore: () => store,
+            saveFloorWork: async () => {},
+            saveFloorSimulation: async () => {},
+            reconcileSettledFloorChunks: async () => {},
+            resetFloorForRerun: async () => {},
+        },
+        archive: () => ({ service: { read: async () => ({ worldId: 'w1', branchId: 'b1', version: 1, sources: {}, events: [] }), rewind: async () => {} }, initialize: async () => {} }),
+        planner: () => ({ onChapter: async () => {} }),
+        workspace: { open() {} },
+    });
+    t.after(() => { host.dispose(); f.restore(); });
+    dom.document.addEventListener('click', e => {
+        if (e.target === sendButton && !e.defaultPrevented) hostClicks.push(dom.document.getElementById('send_textarea').value);
+    });
+
+    // Case 1: Unsettled floor intercepts Send, settles first, blocks concurrent rerun mid-flight, then replays Send once.
+    let releaseSettle;
+    settleBlocker = new Promise(resolve => { releaseSettle = resolve; });
+    sendButton.dispatchEvent(new dom.Event('click', { bubbles: true, cancelable: true }));
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.deepEqual(hostClicks, []);
+    assert.equal(sendButton.dataset.tkSendLocked, 'true');
+    await assert.rejects(host.rerunFloor(1), /正在进行中/);
+
+    releaseSettle();
+    settleBlocker = null;
+    await new Promise(resolve => setTimeout(resolve, 15));
+    assert.deepEqual(hostClicks, ['下一句输入']);
+    assert.equal(sendButton.dataset.tkSendLocked, undefined);
+
+    // Case 2: Failed summary latches the lock, preserves draft, and blocks subsequent sends.
+    store = { lastSummarizedMesId: -1, summaryHistory: [], floorWork: {} };
+    shouldFailSettle = true;
+    sendButton.dispatchEvent(new dom.Event('click', { bubbles: true, cancelable: true }));
+    await new Promise(resolve => setTimeout(resolve, 15));
+    assert.deepEqual(hostClicks, ['下一句输入']);
+    assert.equal(sendButton.dataset.tkSendLocked, 'true');
+    assert.equal(dom.document.getElementById('send_textarea').value, '下一句输入');
+    sendButton.dispatchEvent(new dom.Event('click', { bubbles: true, cancelable: true }));
+    assert.deepEqual(hostClicks, ['下一句输入']);
+});

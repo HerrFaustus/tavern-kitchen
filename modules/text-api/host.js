@@ -42,19 +42,28 @@ async function generateHostDirect(options) {
         if (/不是聊天补全|暂不支持自动复制/.test(String(error?.message || error))) return null;
         throw error;
     }
-    const { text } = await generateText(snapshot.preset, options);
-    return { text };
+    // WHY: Inheriting the host chat's openai_max_tokens (commonly 4096-8192 for RP replies)
+    // truncates thinking models on dense structured summaries. Leave output tokens uncapped for
+    // @host calls (keeping an explicit >=32768 budget only for Claude endpoints that require one),
+    // and preserve finishReason / truncated / usage / completion from generateText.
+    const preset = structuredClone(snapshot.preset);
+    if (['anthropic', 'sillytavern-claude'].includes(preset.provider)) {
+        if (preset.maxTokens != null && preset.maxTokens < 32768) preset.maxTokens = 32768;
+    } else {
+        preset.maxTokens = null;
+    }
+    return generateText(preset, options);
 }
 
 export async function generateHost(preset, options) {
     const direct = await generateHostDirect(options);
     if (direct) return direct;
-    const { messages, signal, onDelta } = options;
+    const { messages, signal, onDelta, expandOutputBudget = false } = options;
     const { streamingGeneration } = await import('../streaming-generation.js');
     const args = { as: 'user', nonstream: preset.stream ? 'false' : 'true', top64: encodeMessages(messages),
         id: `text-api-${createIdentifier()}` };
     if (preset.temperature != null) args.temperature = preset.temperature;
-    if (preset.maxTokens != null) args.max_tokens = preset.maxTokens;
+    if (preset.maxTokens != null && !expandOutputBudget) args.max_tokens = preset.maxTokens;
     const fields = { topP: 'top_p', topK: 'top_k', presencePenalty: 'presence_penalty', frequencyPenalty: 'frequency_penalty' };
     for (const [key, field] of Object.entries(fields)) if (preset.sampling?.[key]?.enabled) args[field] = preset.sampling[key].value;
     const task = await streamingGeneration.startRawGeneration(args, '', { signal, onDelta });

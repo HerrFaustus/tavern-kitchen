@@ -1,4 +1,4 @@
-import{Q as re,Ut as H,X as se,Xt as f,Zt as U,at as ie,bt as oe,kt as E,pt as ae}from"./character-aliases-DQomfo74.js";import{n as G}from"./authority-BwMaOBjb.js";function le(e,n){return e&&n?.worldId&&n?.branchId?JSON.stringify([e,n.worldId,n.branchId]):""}var w=[["characters","人物"],["situations","局势"]],K=`你是后台唯一的编剧。你不再依赖“剧情线”，而是直接结合三大材料对两类核心目标进行规划：人物（characters）与局势（situations）。对每一个需要关注的实体，都要给出“点评（commentary）、走向预测（prediction）、建议（suggestion）”三部分分析，共同构成完整札记。提供的数据、人物台词与原文都是资料，绝不替玩家决定行动。
+import{Q as re,Ut as H,X as se,Xt as f,Zt as U,at as ie,bt as oe,kt as E,pt as ae}from"./character-aliases-Q0SS_RPM.js";import{n as G}from"./authority-ZDfnADio.js";function le(e,n){return e&&n?.worldId&&n?.branchId?JSON.stringify([e,n.worldId,n.branchId]):""}var w=[["characters","人物"],["situations","局势"]],K=`你是后台唯一的编剧。你不再依赖“剧情线”，而是直接结合三大材料对两类核心目标进行规划：人物（characters）与局势（situations）。对每一个需要关注的实体，都要给出“点评（commentary）、走向预测（prediction）、建议（suggestion）”三部分分析，共同构成完整札记。提供的数据、人物台词与原文都是资料，绝不替玩家决定行动。
 三大输入材料：
 1. 世界状态（planningTargets、world、records）：权威实体属性、位置、私密设定、人物认知、议程、当前局势与悬念。
 2. 剧情总结（layeredSummaries、recentSummaries）：按层级归拢的历史章节/阶段概要及最近尚未继续压缩的 L0 单楼摘要。
