@@ -49,14 +49,20 @@ export async function buildEntryUrl(id) {
     return (await buildEntry(id)).file;
 }
 
-export async function loadBuildStyles(id, target = document.head) {
-    const entry = await buildEntry(id);
-    await Promise.all(entry.css.map(href => new Promise((resolve, reject) => {
-        let link = [...target.querySelectorAll('link[rel="stylesheet"]')].find(node => node.href === href);
+/**
+ * @param {string} href
+ * @param {Document | ShadowRoot | HTMLElement} [target]
+ * @param {string} [id]
+ */
+function loadStylesheetLink(href, target = document.head, id = '') {
+    return new Promise((resolve, reject) => {
+        let link = (id && target.getElementById?.(id))
+            || [...target.querySelectorAll('link[rel="stylesheet"]')].find(node => node.href === href);
         if (link?.sheet) { resolve(); return; }
         const created = !link;
         if (created) {
             link = document.createElement('link');
+            if (id) link.id = id;
             link.rel = 'stylesheet';
             link.href = href;
             link.addEventListener('error', () => link.remove(), { once: true });
@@ -64,12 +70,36 @@ export async function loadBuildStyles(id, target = document.head) {
         link.addEventListener('load', () => resolve(), { once: true });
         link.addEventListener('error', () => reject(new Error(`Stylesheet: ${href}`)), { once: true });
         if (created) target.appendChild(link);
-    })));
+    });
+}
+
+/**
+ * @param {string} id
+ * @param {Document | ShadowRoot | HTMLElement} [target]
+ */
+export async function loadBuildStyles(id, target = document.head) {
+    const entry = await buildEntry(id);
+    await Promise.all(entry.css.map(href => loadStylesheetLink(href, target)));
     return entry;
 }
 
-export async function loadBuildEntry(id) {
-    const entry = await loadBuildStyles(id);
+/**
+ * @param {Document | ShadowRoot | HTMLElement} [target]
+ */
+export async function loadEmbeddedStyles(target = document.head) {
+    await loadStylesheetLink(pluginAsset('core/kitchen-embedded.css'), target, 'tk-embedded-styles');
+}
+
+/**
+ * @param {string} id
+ * @param {Document | ShadowRoot | HTMLElement} [styleTarget]
+ * @param {{ includeEmbedded?: boolean }} [options]
+ */
+export async function loadBuildEntry(id, styleTarget = document.head, { includeEmbedded = false } = {}) {
+    const entry = await loadBuildStyles(id, styleTarget);
+    // WHY: Always load core/kitchen-embedded.css AFTER entry CSS inside a ShadowRoot so host-following
+    // overrides cleanly win cascade order regardless of bundled asset filenames.
+    if (includeEmbedded) await loadEmbeddedStyles(styleTarget);
     // eslint-disable-next-line no-unsanitized/method -- Only paths from this plugin's generated entry manifest are imported.
     return import(/* @vite-ignore */ entry.file);
 }

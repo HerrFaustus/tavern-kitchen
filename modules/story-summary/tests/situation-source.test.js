@@ -25,6 +25,7 @@ test('situation cards on the world page wire 查看原楼 to the archive floor-s
     const ui = uiEntry(['renderFacts'], {
         $: id => document.getElementById(id),
         document,
+        surface: document.documentElement,
         summaryData,
         renderThreads,
         ARCHIVE_COPY,

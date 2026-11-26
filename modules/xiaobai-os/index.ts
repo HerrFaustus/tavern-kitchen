@@ -67,14 +67,14 @@ export async function setXiaobaiOsEnabled(enabled: boolean) {
     return settingsRepository.setEnabled(enabled);
 }
 
-export async function openXiaobaiOs(appId?: string): Promise<boolean> {
+export async function openXiaobaiOs(appId?: string, detail?: Record<string, unknown> | null): Promise<boolean> {
     if (!runtime?.lifecycle.isInitialized()) {
         const initialized = await initXiaobaiOs();
         if (!initialized) {
             return false;
         }
     }
-    return runtime?.lifecycle.isInitialized() ? runtime.lifecycle.open(appId) : false;
+    return runtime?.lifecycle.isInitialized() ? runtime.lifecycle.open(appId, detail) : false;
 }
 
 export function cleanupXiaobaiOs(): void {

@@ -30,3 +30,11 @@ export function registerMapConditions(read: NonNullable<typeof conditions>) {
     return () => { if (conditions === read) { conditions = undefined; } };
 }
 export const readMapConditions = (identity:string, atlas:MapAtlas) => conditions?.(identity,atlas) || [];
+
+export interface MapActor { id: string; name: string; locationKey: string; locationName: string; isPlayer?: boolean }
+let actors: ((identity: string, atlas: MapAtlas) => MapActor[]) | undefined;
+export function registerMapActors(read: NonNullable<typeof actors>) {
+    actors = read;
+    return () => { if (actors === read) { actors = undefined; } };
+}
+export const readMapActors = (identity: string, atlas: MapAtlas) => actors?.(identity, atlas) || [];

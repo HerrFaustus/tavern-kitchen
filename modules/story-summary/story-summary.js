@@ -1,4 +1,5 @@
-import { getKitchenMount, openKitchenTab, closeKitchenWorkspace, bindKitchenFrame } from '../../core/kitchen-workspace.js';
+import { getKitchenMount, openKitchenTab, openKitchenModal, closeKitchenWorkspace, bindKitchenSurface } from '../../core/kitchen-workspace.js';
+import { loadBuildEntry } from '../../core/build-assets.js';
 import { pruneOrphanFloorWork } from '../../core/upgrade-selfcheck.js';
 import { showAgentNotice } from '../../core/agent-status.js';
 import { refreshFloorSummaries } from './floor-summary.js';
@@ -26,11 +27,9 @@ import {
     extension_prompt_roles,
     chat_metadata,
 } from "../../../../../../script.js";
-import { EXT_ID, extensionFolderPath } from "../../core/constants.js";
-import { getSafeViewportStyles, observeViewport } from '../../shared/common/viewport.js';
+import { EXT_ID } from "../../core/constants.js";
 import { xbLog, CacheRegistry } from "../../core/debug-core.js";
 import { createModuleEvents } from "../../core/event-manager.js";
-import { postToIframe, isTrustedMessage } from "../../core/iframe-messaging.js";
 import { createMessageButtonOwnership } from "../../core/message-button-ownership.js";
 import { STORY_SUMMARY_TOGGLE_EVENT } from './runtime-events.js';
 import { panelEnabled } from '../../core/panel-policy.js';
@@ -212,8 +211,6 @@ const serviceTests = createServiceTests({
 });
 const summaryDiagnostics = createSummaryDiagnostics();
 const messageButtonOwnership = createMessageButtonOwnership();
-const iframePath = `${extensionFolderPath}/modules/story-summary/story-summary.html`;
-const MESSAGE_EVENT = "message";
 let activeSummaryExecution = null;
 
 function getStorySummaryEnablement() {
@@ -311,6 +308,9 @@ function getCurrentRecallRuntimeStat(chatId, statsList = getRecallRuntimeStats()
 
 let overlayCreated = false;
 let frameReady = false;
+let summaryUiHandle = null;
+let unbindSummarySurface = null;
+let surfaceMountGeneration = 0;
 let currentMesId = null;
 let pendingFrameMessages = [];
 let lastRecallLogText = "";
@@ -615,7 +615,7 @@ function notifySummaryState() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// iframe 通讯
+// Surface 通讯（直接内存调用，无 iframe / postMessage）
 // ═══════════════════════════════════════════════════════════════════════════
 
 function postToFrame(payload) {
@@ -629,20 +629,20 @@ function postToFrame(payload) {
         lastSummaryStatus = payload;
     }
 
-    const iframe = document.getElementById("tavernKitchen-story-summary-iframe");
-    if (!iframe?.contentWindow) return;
+    if (!summaryUiHandle) {
+        if (overlayCreated) pendingFrameMessages.push(payload);
+        return;
+    }
     if (!frameReady) {
         pendingFrameMessages.push(payload);
         return;
     }
-    postToIframe(iframe, payload, "TavernKitchen");
+    summaryUiHandle.receiveHostMessage({ source: "TavernKitchen", ...payload });
 }
 
 function flushPendingFrameMessages() {
-    if (!frameReady) return;
-    const iframe = document.getElementById("tavernKitchen-story-summary-iframe");
-    if (!iframe?.contentWindow) return;
-    pendingFrameMessages.forEach((p) => postToIframe(iframe, p, "TavernKitchen"));
+    if (!frameReady || !summaryUiHandle) return;
+    pendingFrameMessages.forEach((p) => summaryUiHandle.receiveHostMessage({ source: "TavernKitchen", ...p }));
     pendingFrameMessages = [];
     observeBackgroundTask(sendAnchorStatsToFrame(), { source: import.meta.url, operation: "flushPendingFrameMessages" });
 }
@@ -1123,74 +1123,65 @@ async function checkVectorIntegrity({ allowChunkRepair = true, readOnly = false,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Overlay 面板
+// In-Page Shadow DOM 面板
 // ═══════════════════════════════════════════════════════════════════════════
-
-let stopOverlayViewport = null;
 
 function createOverlay() {
     if (overlayCreated) return;
-    overlayCreated = true;
     const mount = getKitchenMount('memory');
-    if (mount) {
-        const host = document.createElement('div');
-        host.id = 'tavernKitchen-story-summary-overlay'; host.className = 'tk-embedded-host';
-        const frame = document.createElement('iframe');
-        frame.id = 'tavernKitchen-story-summary-iframe'; frame.title = '记忆与召回';
-        bindKitchenFrame(frame); frame.src = iframePath;
-        host.append(frame); mount.append(host);
-        window.addEventListener(MESSAGE_EVENT, handleFrameMessageEvent);
-        return;
-    }
-
-    const $overlay = $(`
-        <div id="tavernKitchen-story-summary-overlay" style="
-            position: fixed !important; left: 0 !important;
-            width: 100vw !important;
-            z-index: 99999 !important; display: none; overflow: hidden !important;
-        ">
-            <div class="xb-ss-backdrop" style="
-                position: absolute !important; inset: 0 !important;
-                background: rgba(0,0,0,.55) !important;
-                backdrop-filter: blur(4px) !important;
-            "></div>
-            <div class="xb-ss-frame-wrap" style="
-                position: absolute !important; inset: 12px !important; z-index: 1 !important;
-            ">
-                <iframe id="tavernKitchen-story-summary-iframe" class="tavernKitchen-iframe"
-                    src="${iframePath}"
-                    style="width:100% !important; height:100% !important; border:none !important; background:transparent !important;">
-                </iframe>
-            </div>
-        </div>
-    `);
-
-    $overlay.on("click", ".xb-ss-backdrop", hideOverlay);
-    document.body.appendChild($overlay[0]);
-    stopOverlayViewport = observeViewport(() => {
-        for (const [property, value] of Object.entries(getSafeViewportStyles())) {
-            $overlay[0].style.setProperty(property, value, 'important');
+    if (!mount) return;
+    overlayCreated = true;
+    const mountGen = ++surfaceMountGeneration;
+    const host = document.createElement('div');
+    host.id = 'tavernKitchen-story-summary-overlay';
+    host.className = 'tk-embedded-host';
+    host.setAttribute('aria-label', '记忆与召回');
+    const shadow = host.attachShadow({ mode: 'open' });
+    const surface = document.createElement('div');
+    surface.className = 'tk-surface tk-embedded tk-follow-host';
+    surface.dataset.kitchenTheme = 'host';
+    shadow.append(surface);
+    mount.append(host);
+    unbindSummarySurface = bindKitchenSurface(host, surface);
+    observeBackgroundTask((async () => {
+        try {
+            const mod = await loadBuildEntry('apps/story-summary', shadow, { includeEmbedded: true });
+            if (mountGen !== surfaceMountGeneration || !host.isConnected) return;
+            summaryUiHandle = mod.mountStorySummaryUI({
+                root: shadow,
+                surface,
+                postToHost: message => handleFrameMessageEvent({ data: message }),
+            });
+            host.dispatchEvent(new CustomEvent('tk-surface-ready'));
+        } catch (error) {
+            if (mountGen !== surfaceMountGeneration || !host.isConnected) return;
+            const errNode = document.createElement('p');
+            errNode.setAttribute('role', 'alert');
+            errNode.style.padding = '16px';
+            errNode.textContent = '后厨记忆界面加载失败，请刷新酒馆重试。';
+            surface.replaceChildren(errNode);
+            xbLog.error(MODULE_ID, 'Failed to mount story-summary surface', error);
         }
-    });
-    window.addEventListener(MESSAGE_EVENT, handleFrameMessageEvent);
+    })(), { source: import.meta.url, operation: 'mount-story-summary-surface' });
 }
 
 let memoryWorkspaceView = 'memory';
 function showOverlay() {
     openKitchenTab(memoryWorkspaceView);
     if (!overlayCreated) createOverlay();
-    $("#tavernKitchen-story-summary-overlay").show();
 }
 
 function hideOverlay() {
     if (getKitchenMount('memory')) closeKitchenWorkspace();
-    stopOverlayViewport?.();
-    stopOverlayViewport = null;
+    surfaceMountGeneration += 1;
+    summaryUiHandle?.destroy?.();
+    summaryUiHandle = null;
+    unbindSummarySurface?.();
+    unbindSummarySurface = null;
     document.getElementById("tavernKitchen-story-summary-overlay")?.remove();
     overlayCreated = false;
     frameReady = false;
     pendingFrameMessages = [];
-    window.removeEventListener(MESSAGE_EVENT, handleFrameMessageEvent);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1775,10 +1766,9 @@ function reportMemorySaveFailure(error) {
 }
 
 async function handleFrameMessage(event) {
-    const iframe = document.getElementById("tavernKitchen-story-summary-iframe");
-    if (!isTrustedMessage(event, iframe, "TavernKitchen-StoryFrame")) return;
-
-    const data = event.data;
+    const data = event?.data ?? event;
+    if (!data || typeof data.type !== 'string') return;
+    if (data.source && data.source !== "TavernKitchen-StoryFrame") return;
 
     switch (data.type) {
         case 'KITCHEN_CARD_INFO':
@@ -1817,7 +1807,27 @@ async function handleFrameMessage(event) {
             break;
         case 'WORLD_FIELD_SOURCE': {
             const ctx = getContext(), world = worldAuthorityForContext(ctx);
-            postToFrame({type:'WORLD_FIELD_SOURCE_RESULT', payload:worldFieldSource(world, ctx, data)});
+            const payload = worldFieldSource(world, ctx, data);
+            if (data.preferHostModal) {
+                const floorTitle = payload.floor != null ? `第 ${payload.floor + 1} 楼原文` : '原文来源';
+                const subtitle = payload.text != null && payload.name ? `${payload.name} · 第 ${payload.floor + 1} 楼` : '';
+                const modal = openKitchenModal({
+                    title: floorTitle,
+                    subtitle,
+                    text: payload.text == null ? '当前分支无法核对这条原文。' : payload.text,
+                });
+                if (modal) break;
+            }
+            postToFrame({ type: 'WORLD_FIELD_SOURCE_RESULT', payload });
+            break;
+        }
+        case 'KITCHEN_NAVIGATE': {
+            if (typeof data.route === 'string' && data.route) {
+                observeBackgroundTask(Promise.resolve(openKitchenTab(data.route, data.detail || null)), {
+                    source: import.meta.url,
+                    operation: 'kitchen-navigate',
+                });
+            }
             break;
         }
         case "FRAME_READY": {
@@ -1932,7 +1942,8 @@ async function handleFrameMessage(event) {
             break;
 
         case "CLOSE_PANEL":
-            hideOverlay();
+            if (getKitchenMount('memory')) closeKitchenWorkspace();
+            else hideOverlay();
             break;
 
         case "TOGGLE_HIDE_SUMMARIZED": {
@@ -3238,18 +3249,18 @@ jQuery(() => {
 export function openStoryMemory(floor = Math.max(0, getContext().chat.length - 1)) {
     memoryWorkspaceView = 'memory';
     openPanelForMessage(floor);
-    postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view: 'memory' });
+    postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view: 'memory', hostWideModal: true });
 }
 export function openStoryMemorySettings(view = 'settings') {
     memoryWorkspaceView = ['data', 'recall', 'settings-memory'].includes(view) ? view : 'memory';
     openPanelForMessage(Math.max(0, getContext().chat.length - 1));
-    postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view });
+    postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view, hostWideModal: true });
 }
-export function openStoryWorld(route = 'world') {
+export function openStoryWorld(route = 'world', detail = null) {
     if (!['world', 'people', 'relations'].includes(route)) return;
     memoryWorkspaceView = route === 'world' ? 'situation' : route;
     openPanelForMessage(Math.max(0, getContext().chat.length - 1));
-    postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view: route });
+    postToFrame({ type: 'KITCHEN_MEMORY_VIEW', view: route, hostWideModal: true, ...(detail ? { detail } : {}) });
 }
 export function getWorldMemorySnapshot() {
     const snapshot = getFloorSummarySnapshot(true);

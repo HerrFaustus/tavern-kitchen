@@ -11,6 +11,8 @@ import { STORY_KINDS, THREAD_STATUS } from '../story-state/records.js';
 let activePanels = null;
 export function refreshFloorSummaries() { activePanels?.schedule(); }
 
+const worldChangesCache = new WeakMap();
+
 function findBatchForFloor(history, floor) {
     return (history || []).find(item => item?.kind === 'batch'
         && floor > (item.previousEndMesId ?? -1)
@@ -41,22 +43,37 @@ function formatWorldValue(value, entitiesById) {
     return String(value);
 }
 
-function worldChangesForFloor(world, floor) {
-    if (!world?.sources || !Array.isArray(world.events)) return [];
-    const turnIds = new Set(
-        Object.values(world.sources)
-            .filter(item => item?.kind === 'narrative_turn' && item.status === 'current' && item.source?.end === floor)
-            .map(item => item.id),
-    );
-    if (!turnIds.size) return [];
+function indexWorldChangesByFloor(world) {
+    if (!world?.sources || !Array.isArray(world.events)) return null;
+    const cached = worldChangesCache.get(world);
+    const cacheStamp = `${world.version ?? ''}:${world.events.length}:${(world.entities || []).length}`;
+    if (cached && cached.stamp === cacheStamp) return cached.byFloor;
+
+    const floorByTurnId = new Map();
+    for (const item of Object.values(world.sources)) {
+        if (item?.kind === 'narrative_turn' && item.status === 'current' && Number.isInteger(item.source?.end)) {
+            floorByTurnId.set(item.id, item.source.end);
+        }
+    }
+    const byFloor = new Map();
+    if (!floorByTurnId.size) {
+        worldChangesCache.set(world, { stamp: cacheStamp, byFloor });
+        return byFloor;
+    }
+
     const entitiesById = new Map((world.entities || []).map(entity => [entity.id, entity]));
-    const lines = [];
+    const pushLine = (floor, text) => {
+        let bucket = byFloor.get(floor);
+        if (!bucket) { bucket = new Set(); byFloor.set(floor, bucket); }
+        bucket.add(text);
+    };
     for (const event of world.events) {
-        if (!turnIds.has(event?.origin?.sourceId)) continue;
+        const floor = floorByTurnId.get(event?.origin?.sourceId);
+        if (floor == null) continue;
         for (const effect of event.effects || []) {
             if (effect.type === 'entity') {
                 if (!effect.before && effect.after) {
-                    lines.push(`${KINDS[effect.after.kind] || '档案'} · 新增：${effect.after.name}`);
+                    pushLine(floor, `${KINDS[effect.after.kind] || '档案'} · 新增：${effect.after.name}`);
                     entitiesById.set(effect.after.id, effect.after);
                 } else if (effect.after?.fields) {
                     const subject = entitiesById.get(effect.id) || effect.after;
@@ -68,14 +85,14 @@ function worldChangesForFloor(world, floor) {
                             ? `关系(${entitiesById.get(field.slice(RELATION_PREFIX.length))?.name || '对象'})`
                             : (FIELD_LABELS[field] || field);
                         const val = formatWorldValue(record.value ?? record, entitiesById);
-                        lines.push(`${kindLabel} · 更新：${subjectName} ${label} → ${val}`);
+                        pushLine(floor, `${kindLabel} · 更新：${subjectName} ${label} → ${val}`);
                     }
                 }
             } else if (effect.type === 'claim' && !effect.before && effect.after) {
                 const subjectName = entitiesById.get(effect.after.entityId)?.name || effect.after.entityId;
                 const natureLabel = NATURES[effect.after.nature] || '待核';
                 const fieldLabel = FIELD_LABELS[effect.after.field] || effect.after.field;
-                lines.push(`${natureLabel} · ${subjectName} ${fieldLabel}：${formatWorldValue(effect.after.value, entitiesById)}`);
+                pushLine(floor, `${natureLabel} · ${subjectName} ${fieldLabel}：${formatWorldValue(effect.after.value, entitiesById)}`);
             } else if (effect.type === 'module' && effect.id === 'story') {
                 for (const entry of effect.after?.records || []) {
                     if (entry.eventId !== event.id) continue;
@@ -83,7 +100,7 @@ function worldChangesForFloor(world, floor) {
                     const kindLabel = STORY_KINDS[rec.kind] || '剧情';
                     const verb = rec.remove ? '结案移除' : rec.status && rec.status !== 'open' ? (THREAD_STATUS[rec.status] || '结案') : '记录';
                     const title = rec.title || rec.name || rec.label || rec.content || rec.id;
-                    lines.push(`${kindLabel} · ${verb}：${title}`);
+                    pushLine(floor, `${kindLabel} · ${verb}：${title}`);
                 }
             } else if (effect.type === 'module' && effect.id === 'map') {
                 const beforeLinks = new Set((effect.before?.atlas?.links || []).map(link => link.id));
@@ -92,12 +109,19 @@ function worldChangesForFloor(world, floor) {
                     if (beforeLinks.has(link.id)) continue;
                     const fromName = locations.get(link.from) || link.from;
                     const toName = locations.get(link.to) || link.to;
-                    lines.push(`地图 · 通道：${fromName} → ${toName}${link.label ? `（${link.label}）` : ''}`);
+                    pushLine(floor, `地图 · 通道：${fromName} → ${toName}${link.label ? `（${link.label}）` : ''}`);
                 }
             }
         }
     }
-    return [...new Set(lines)];
+    worldChangesCache.set(world, { stamp: cacheStamp, byFloor });
+    return byFloor;
+}
+
+function worldChangesForFloor(world, floor) {
+    const byFloor = indexWorldChangesByFloor(world);
+    const set = byFloor?.get(floor);
+    return set ? [...set] : [];
 }
 
 export function projectFloorChanges(store, floor, invalidFrom = null, world = null) {
@@ -144,6 +168,15 @@ function el(doc, tag, className, text = '') {
     return node;
 }
 
+function appendProseParagraphs(doc, container, text) {
+    const paragraphs = String(text || '').split(/\n{2,}/).map(part => part.trim()).filter(Boolean);
+    if (paragraphs.length <= 1) {
+        container.textContent = text;
+        return;
+    }
+    for (const part of paragraphs) container.append(el(doc, 'p', 'tk-fp-sim-para', part));
+}
+
 function appendSummarizeButton(doc, parent, { label, busy, className, onClick }) {
     const button = el(doc, 'button', className, busy ? '总结中…' : label);
     button.type = 'button';
@@ -164,9 +197,11 @@ function buildUpdateBox(doc, state, { floor, openMemory, summarizeFloor, busy, e
 
     const summary = el(doc, 'summary', 'tk-fp-head');
     const headTop = el(doc, 'span', 'tk-fp-head-top');
+    const chevron = el(doc, 'span', 'tk-fp-chevron', '▸');
+    chevron.setAttribute('aria-hidden', 'true');
     const badge = el(doc, 'span', `tk-fp-floor${state.status === 'settled' ? '' : ' is-pending'}`, `更新 · 第 ${floor + 1} 楼`);
     const statusLabel = el(doc, 'span', 'tk-fp-status', state.statusLabel);
-    headTop.append(badge, statusLabel);
+    headTop.append(chevron, badge, statusLabel);
     if (openMemory && state.status === 'settled') {
         const openBtn = el(doc, 'button', 'tk-fp-button tk-fp-head-action', '详情');
         openBtn.type = 'button';
@@ -192,7 +227,9 @@ function buildUpdateBox(doc, state, { floor, openMemory, summarizeFloor, busy, e
 
     const body = el(doc, 'div', 'tk-fp-body');
     if (state.status === 'settled') {
-        body.append(el(doc, 'div', 'tk-fp-summary', state.summaryText));
+        const summaryBox = el(doc, 'div', 'tk-fp-summary');
+        appendProseParagraphs(doc, summaryBox, state.summaryText);
+        body.append(summaryBox);
         if (state.chips.length) {
             const chips = el(doc, 'div', 'tk-fp-chips');
             for (const label of state.chips) chips.append(el(doc, 'span', 'tk-fp-chip', label));
@@ -213,7 +250,9 @@ function buildUpdateBox(doc, state, { floor, openMemory, summarizeFloor, busy, e
         if (state.warnings.length) {
             body.append(el(doc, 'p', 'tk-fp-notice', `已自动跳过 ${state.warnings.length} 条存在歧义的变化并记入日志。`));
         }
-        if (summarizeFloor) {
+        // WHY: floor-host.rerunFloor rejects non-tail settled floors via assertNoLaterHistory.
+        // Only expose "重新总结" on the latest settled tail floor so earlier floors never present a trap button.
+        if (summarizeFloor && state.canRerun) {
             const actions = el(doc, 'div', 'tk-fp-actions');
             appendSummarizeButton(doc, actions, {
                 label: '重新总结',
@@ -225,16 +264,6 @@ function buildUpdateBox(doc, state, { floor, openMemory, summarizeFloor, busy, e
         }
     } else {
         body.append(el(doc, 'p', 'tk-fp-notice', state.bodyNotice));
-        if (summarizeFloor) {
-            const actions = el(doc, 'div', 'tk-fp-actions');
-            appendSummarizeButton(doc, actions, {
-                label: '立即手动总结本楼',
-                busy,
-                className: 'menu_button tk-fp-summarize-btn',
-                onClick: () => onSummarize(floor),
-            });
-            body.append(actions);
-        }
     }
     if (error) {
         body.append(el(doc, 'p', 'tk-fp-notice tk-fp-error', error));
@@ -252,8 +281,10 @@ function buildSimulationBox(doc, sim, { existingOpen, onUserToggle }) {
 
     const summary = el(doc, 'summary', 'tk-fp-head');
     const headTop = el(doc, 'span', 'tk-fp-head-top');
+    const chevron = el(doc, 'span', 'tk-fp-chevron', '▸');
+    chevron.setAttribute('aria-hidden', 'true');
     const badge = el(doc, 'span', `tk-fp-floor is-sim${sim.status === 'ready' ? '' : ' is-pending'}`, '推演 · 后台正文');
-    headTop.append(badge);
+    headTop.append(chevron, badge);
     if (sim.tag) headTop.append(el(doc, 'span', 'tk-fp-chip', sim.tag));
     headTop.append(el(doc, 'span', 'tk-fp-status', sim.status === 'ready' ? '已推演' : '待推演'));
 
@@ -264,7 +295,9 @@ function buildSimulationBox(doc, sim, { existingOpen, onUserToggle }) {
 
     const body = el(doc, 'div', 'tk-fp-body');
     if (sim.status === 'ready') {
-        body.append(el(doc, 'div', 'tk-fp-sim-body', sim.text));
+        const simBody = el(doc, 'div', 'tk-fp-sim-body');
+        appendProseParagraphs(doc, simBody, sim.text);
+        body.append(simBody);
     } else {
         body.append(el(doc, 'p', 'tk-fp-notice', sim.text));
     }
@@ -273,7 +306,23 @@ function buildSimulationBox(doc, sim, { existingOpen, onUserToggle }) {
     return details;
 }
 
-function buildUpdateViewState(snapshot, floor, bounds) {
+function latestSettledFloor(store) {
+    let maxFloor = Number.isInteger(store?.lastSummarizedMesId) ? store.lastSummarizedMesId : -1;
+    for (const entry of store?.summaryHistory || []) {
+        if (entry?.kind === 'batch' && !entry.floorEntry?.deleted && Number.isInteger(entry.endMesId)) {
+            if (entry.endMesId > maxFloor) maxFloor = entry.endMesId;
+        }
+    }
+    for (const [key, row] of Object.entries(store?.floorWork || {})) {
+        const f = Number(key);
+        if (Number.isInteger(f) && ((row?.done?.length || 0) > 0 || row?.reviewed)) {
+            if (f > maxFloor) maxFloor = f;
+        }
+    }
+    return maxFloor;
+}
+
+function buildUpdateViewState(snapshot, floor, bounds, tailSettledFloor) {
     const { store, invalidFrom, world } = snapshot;
     const summary = projectFloorSummary(store, floor, invalidFrom);
     if (summary) {
@@ -284,6 +333,7 @@ function buildUpdateViewState(snapshot, floor, bounds) {
             ...(tags.locations || []).slice(0, 2),
         ].filter(Boolean);
         const warnings = store?.floorWork?.[floor]?.warnings || [];
+        const canRerun = summary.end >= tailSettledFloor && floor >= tailSettledFloor;
         return {
             status: 'settled',
             statusLabel: '已更新',
@@ -292,6 +342,7 @@ function buildUpdateViewState(snapshot, floor, bounds) {
             chips,
             changes,
             warnings,
+            canRerun,
         };
     }
     if (bounds.updateEnd < 0 || floor >= bounds.updateEnd) {
@@ -299,14 +350,16 @@ function buildUpdateViewState(snapshot, floor, bounds) {
             status: 'waiting',
             statusLabel: '发送下一轮前总结',
             preview: '发送下一轮消息前自动完成总结',
-            bodyNotice: '发送下一轮消息前会自动总结本楼并同步世界模块，也可点击「手动总结」立即结算本楼。',
+            bodyNotice: '发送下一轮消息前会自动总结本楼并同步世界模块，也可点击右上角「手动总结」立即结算本楼。',
+            canRerun: false,
         };
     }
     return {
         status: 'pending',
         statusLabel: '待补齐',
         preview: '当前楼层尚待总结更新',
-        bodyNotice: '该楼层尚待总结 Agent 处理，可点击「手动总结」立即补齐并同步世界模块。',
+        bodyNotice: '该楼层尚待总结 Agent 处理，可点击右上角「手动总结」立即补齐并同步世界模块。',
+        canRerun: false,
     };
 }
 
@@ -332,7 +385,7 @@ export function installFloorSummaries({ getSnapshot, summarizeFloor = null, open
         });
     }
 
-    function renderFloor(floor, textContainer, snapshot, bounds) {
+    function renderFloor(floor, textContainer, snapshot, bounds, tailSettledFloor) {
         let holder = nodes.get(floor);
         if (!holder || !holder.node.isConnected) {
             holder = { node: el(doc, 'section', 'tk-floor-summary') };
@@ -340,9 +393,7 @@ export function installFloorSummaries({ getSnapshot, summarizeFloor = null, open
             holder.node.setAttribute('aria-label', `第 ${floor + 1} 楼后厨记录`);
             nodes.set(floor, holder);
         }
-        if (holder.node.previousElementSibling !== textContainer && holder.node.parentElement !== textContainer.parentElement) {
-            textContainer.after(holder.node);
-        } else if (holder.node.previousElementSibling !== textContainer) {
+        if (holder.node.previousElementSibling !== textContainer) {
             textContainer.after(holder.node);
         }
 
@@ -354,7 +405,7 @@ export function installFloorSummaries({ getSnapshot, summarizeFloor = null, open
             ? simUserToggles.get(floor)
             : (existingSimEl ? existingSimEl.open : defaultSimOpen);
 
-        const updateState = buildUpdateViewState(snapshot, floor, bounds);
+        const updateState = buildUpdateViewState(snapshot, floor, bounds, tailSettledFloor);
         const busy = summarizingFloors.has(floor);
         const error = summarizeErrors.get(floor) || '';
         const signature = JSON.stringify({ updateState, sim, busy, error, canSummarize: !!summarizeFloor });
@@ -377,6 +428,7 @@ export function installFloorSummaries({ getSnapshot, summarizeFloor = null, open
         const snapshot = getSnapshot();
         if (!snapshot?.enabled) { clear(); return; }
         const bounds = snapshot.bounds || getUpdateAndSimulationBounds(snapshot.chat || []);
+        const tailSettledFloor = latestSettledFloor(snapshot.store);
         const live = new Set();
         for (const message of doc.querySelectorAll('#chat .mes[mesid]')) {
             const floor = Number(message.getAttribute('mesid'));
@@ -385,7 +437,7 @@ export function installFloorSummaries({ getSnapshot, summarizeFloor = null, open
             const text = message.querySelector('.mes_text');
             if (!text) continue;
             live.add(floor);
-            renderFloor(floor, text, snapshot, bounds);
+            renderFloor(floor, text, snapshot, bounds, tailSettledFloor);
         }
         for (const [floor, panel] of nodes) {
             if (!live.has(floor)) {
@@ -395,13 +447,20 @@ export function installFloorSummaries({ getSnapshot, summarizeFloor = null, open
         }
     }
 
-    function schedule() { if (timer === null) timer = setTimeout(() => { timer = null; refresh(); }, 80); }
+    function schedule() {
+        if (timer !== null) return;
+        // WHY: During active foreground streaming, defer floor-summary re-scans slightly longer
+        // so streaming markdown chunks do not re-render every floor box 12+ times per second.
+        const delay = doc.body?.dataset?.generating ? 280 : 80;
+        timer = setTimeout(() => { timer = null; refresh(); }, delay);
+    }
     function clear() { for (const panel of nodes.values()) panel.node.remove(); nodes.clear(); }
 
     const chatRoot = doc.getElementById('chat');
     if (chatRoot) {
         observer = new Observer(records => {
             if (records.some(record => !record.target.closest?.('.tk-floor-summary')
+                && !record.target.closest?.('.mes_text')
                 && [...record.addedNodes, ...record.removedNodes].some(node => node.nodeType === 1
                     && !node.classList?.contains('tk-floor-summary')
                     && !node.classList?.contains('tk-floor-box')))) schedule();

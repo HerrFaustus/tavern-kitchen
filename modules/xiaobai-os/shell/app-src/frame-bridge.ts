@@ -50,13 +50,22 @@ interface PendingRequest {
     session: FrameAppSession | null;
 }
 
+export interface DirectClientTransport {
+    sendToHost: (message: FrameMessage) => void;
+    subscribeFromHost: (listener: (message: FrameMessage) => void) => () => void;
+}
+
 function createRequestId(): string {
     return `xiaobai-os-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-export function createFrameBridge() {
+/**
+ * In-process client bridge for Xiaobai OS apps mounted directly inside the host workspace Shadow DOM.
+ */
+export function createFrameBridge(transport: DirectClientTransport) {
     const pending = new Map<string, PendingRequest>();
     const subscribers = new Set<(message: FrameMessage) => void>();
+    let unsubscribeTransport: (() => void) | null = null;
     let listening = false;
     let appSession: FrameAppSession | null = null;
 
@@ -67,13 +76,13 @@ export function createFrameBridge() {
             && type !== 'os/frame-ready'
             && type !== 'os/close';
         const outgoingRequestId = includeSession && !requestId ? createRequestId() : requestId;
-        parent.postMessage({
+        transport.sendToHost({
             source: XIAOBAI_OS_FRAME_SOURCE,
             type,
             requestId: outgoingRequestId,
             ...(includeSession ? appSession : {}),
             payload,
-        }, window.location.origin);
+        });
     }
 
     function settle(message: FrameMessage): boolean {
@@ -109,21 +118,14 @@ export function createFrameBridge() {
         return true;
     }
 
-    function handleMessage(event: MessageEvent<FrameMessage>): void {
-        if (event.origin !== window.location.origin || event.source !== parent) {
+    function handleIncoming(message: FrameMessage): void {
+        if (message?.source !== XIAOBAI_OS_FRAME_SOURCE || typeof message.type !== 'string') {
             return;
         }
-        if (event.data?.source !== XIAOBAI_OS_FRAME_SOURCE || typeof event.data.type !== 'string') {
+        if (settle(message)) {
             return;
         }
-        if (settle(event.data)) {
-            return;
-        }
-        subscribers.forEach(subscriber => subscriber(event.data));
-    }
-
-    function announceReady(): void {
-        post('os/frame-ready');
+        subscribers.forEach(subscriber => subscriber(message));
     }
 
     function start(): void {
@@ -131,15 +133,12 @@ export function createFrameBridge() {
             return;
         }
         listening = true;
-        // eslint-disable-next-line no-restricted-syntax -- The host origin, parent window and protocol source are checked above.
-        window.addEventListener('message', handleMessage);
-        // The host resets its channel on iframe load. Post readiness after the
-        // document loads so that reset precedes delivery of this queued message.
-        if (document.readyState === 'complete') {
-            announceReady();
-        } else {
-            window.addEventListener('load', announceReady, { once: true });
-        }
+        unsubscribeTransport = transport.subscribeFromHost(handleIncoming);
+        queueMicrotask(() => {
+            if (listening) {
+                post('os/frame-ready');
+            }
+        });
     }
 
     function request(type: string, payload: unknown = {}, timeoutMs = 15_000): Promise<unknown> {
@@ -186,10 +185,8 @@ export function createFrameBridge() {
     }
 
     function dispose(): void {
-        window.removeEventListener('load', announceReady);
-        if (listening) {
-            window.removeEventListener('message', handleMessage);
-        }
+        unsubscribeTransport?.();
+        unsubscribeTransport = null;
         listening = false;
         subscribers.clear();
         pending.forEach(request => {

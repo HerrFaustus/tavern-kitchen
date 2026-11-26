@@ -4,6 +4,12 @@ import { FIELD_LABELS } from '../world-records/domain.js';
 import { importantPossession, PERSON_FIELDS, PERSON_SECTIONS, POSSESSION_ROLES, RELATION_PREFIX } from '../world-records/person-fields.js';
 import { worldStoryRecords } from '../world-records/world-story-state.js';
 
+const DISPLAY_FIELD_LABELS = {
+    ...FIELD_LABELS,
+    importance: '剧情意义',
+    custodian: '保管人',
+    user: '使用人',
+};
 const el = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
 function source(record) {
     if (!Number.isInteger(record?._addedAt)) return el('small', '导入记录', 'tk-record-note');
@@ -11,22 +17,53 @@ function source(record) {
     return el('small', start === end ? `来源：第 ${end} 楼` : `来源：第 ${start}–${end} 楼`, 'tk-record-note');
 }
 function sourceButton(floor, openSource) {
-    const button = el('button', '查看原楼', 'menu_button');
+    const button = el('button', '查看原楼', 'menu_button tk-source-btn');
     button.type = 'button';
     button.onclick = () => openSource(floor);
     return button;
 }
-function section(parent, title, className) { const node = el('section', undefined, className); node.append(el('h4', title, 'standoutHeader')); parent.append(node); return node; }
-function line(parent, label, value) { if (value) { const row = el('p'); row.append(el('strong', `${label}：`), document.createTextNode(value)); parent.append(row); } }
+function section(parent, title, className = 'tk-info-card') {
+    const node = el('section', undefined, className);
+    node.append(el('h4', title, 'standoutHeader'));
+    parent.append(node);
+    return node;
+}
+function line(parent, label, value, { onClickLabel = null, onClickValue = null } = {}) {
+    if (value === undefined || value === null || value === '') return;
+    const row = el('p', undefined, 'tk-field-row');
+    if (onClickLabel) {
+        const strong = el('strong');
+        const link = el('button', label, 'tk-inline-link');
+        link.type = 'button';
+        link.onclick = () => onClickLabel();
+        strong.append(link, document.createTextNode('：'));
+        row.append(strong);
+    } else {
+        row.append(el('strong', `${label}：`));
+    }
+    if (onClickValue) {
+        const link = el('button', String(value), 'tk-inline-link');
+        link.type = 'button';
+        link.onclick = () => onClickValue();
+        row.append(link);
+    } else {
+        row.append(document.createTextNode(String(value)));
+    }
+    parent.append(row);
+}
 export function renderPersonState(parent, records, name, resolveName) {
     const state = characterStoryState(records, name, resolveName);
     if (state.presence === 'unknown' && !state.note && !state.knowledge.length) return null;
-    const group = section(parent, '在场度与认知'); group.className = 'tk-person-state';
+    const group = section(parent, '在场度与认知', 'tk-info-card tk-person-state');
     if (state.presence !== 'unknown') line(group, '在场度', PRESENCE[state.presence]);
     if (state.note) group.append(el('p', state.note, 'tk-record-note'));
     for (const knowledge of state.knowledge) {
-        const row = el('details'); row.append(el('summary', `${BELIEFS[knowledge.certainty]} · ${knowledge.content}`));
-        line(row, '依据', knowledge.evidence); line(row, '获知时间', knowledge.learnedAt); row.append(source(knowledge)); group.append(row);
+        const row = el('details', undefined, 'tk-knowledge-item');
+        row.append(el('summary', `${BELIEFS[knowledge.certainty]} · ${knowledge.content}`));
+        line(row, '依据', knowledge.evidence);
+        line(row, '获知时间', knowledge.learnedAt);
+        row.append(source(knowledge));
+        group.append(row);
     }
     return group;
 }
@@ -37,21 +74,29 @@ export function renderPersonalAgendas(parent, records, matches) {
     }
 }
 export function renderThreads(parent, records, kinds = ['plan', 'suspense', 'situation'], limit = Infinity, options = {}) {
-    const labels = { plan: '计划', goal:'目标', suspense: '悬念', situation: '局势' };
+    const labels = { plan: '计划', goal: '目标', suspense: '悬念', situation: '局势' };
     const clock = records.find(record => record.kind === 'clock');
     for (const kind of kinds) {
         const entries = records.filter(record => record.kind === kind), open = entries.filter(record => record.status === 'open');
         const closed = entries.filter(record => record.status !== 'open');
         const headerTitle = options.title || (entries.length ? `${labels[kind]}（${open.length} 未结${closed.length ? ` / ${closed.length} 已结` : ''}）` : labels[kind]);
-        const group = section(parent, headerTitle);
+        const group = section(parent, headerTitle, 'tk-info-card tk-thread-group');
         const append = (container, record) => {
             const row = el(kind === 'situation' ? 'article' : 'details');
-            if (kind !== 'situation') row.className = 'inline-drawer tk-thread-drawer';
+            row.className = kind === 'situation' ? 'tk-card-item' : 'inline-drawer tk-thread-drawer tk-card-item';
             row.dataset.recordId = record.id;
-            const head = el(kind === 'situation' ? 'h5' : 'summary', `${storyQualifier(record)}${record.title} · ${THREAD_STATUS[record.status]}`, kind === 'situation' ? undefined : 'inline-drawer-header');
-            if (kind === 'suspense' && Number.isInteger(record._addedAt)) head.append(' ', source(record));
+            const head = el(kind === 'situation' ? 'h5' : 'summary', undefined, kind === 'situation' ? 'tk-card-title' : 'inline-drawer-header tk-thread-summary');
+            const titleText = `${storyQualifier(record)}${record.title} · ${THREAD_STATUS[record.status]}`;
+            if (kind === 'situation') {
+                head.textContent = titleText;
+            } else {
+                head.append(el('span', titleText, 'tk-thread-title'));
+                if (kind === 'suspense' && Number.isInteger(record._addedAt)) {
+                    head.append(el('span', `#${record._addedAt + 1}`, 'tk-thread-floor'));
+                }
+            }
             row.append(head);
-            const body = kind === 'situation' ? row : el('div', undefined, 'inline-drawer-content');
+            const body = kind === 'situation' ? row : el('div', undefined, 'inline-drawer-content tk-thread-body');
             if (kind === 'situation') {
                 const scenery = record.flavor === 'scenery' || record.flavor === 'encounter';
                 if (record.flavor === 'encounter') line(body, '类别', '街头见闻');
@@ -64,23 +109,33 @@ export function renderThreads(parent, records, kinds = ['plan', 'suspense', 'sit
                 }
                 for (const [key, label] of Object.entries(SITUATION_FIELDS)) line(body, label, record[key]);
                 if (record._history?.length) {
-                    const history = el('section'); history.append(el('h5', '局势历史'));
+                    const history = el('section', undefined, 'tk-history-block');
+                    history.append(el('h5', '局势历史'));
                     for (const step of record._history) {
-                        const item = el('p', step.text); item.append(document.createTextNode(' '), source(step)); history.append(item);
+                        const item = el('p', step.text);
+                        item.append(document.createTextNode(' '), source(step));
+                        history.append(item);
                     }
                     body.append(history);
                 }
                 for (const item of record._developments || []) line(body, '幕后进展 · ' + item.title, item.body);
             } else if (isPersonalAgenda(record)) {
-                line(body,'持有人',record.holders?.join('、') || '待归属');
-                line(body,'具体内容',record.description);
-                line(body,'条件约束',record.conditions);
-                line(body,'当前进展',record.statusNote);
-            } else if (record.description) body.append(el('p', record.description));
+                line(body, '持有人', record.holders?.join('、') || '待归属');
+                line(body, '具体内容', record.description);
+                line(body, '条件约束', record.conditions);
+                line(body, '当前进展', record.statusNote);
+            } else if (record.description) {
+                body.append(el('p', record.description));
+            }
             const relative = relativeStoryTime(record.due, clock?.date);
             line(body, record.flavor === 'encounter' ? '散场条件' : '期限', record.due ? `${record.due}${relative ? `（${relative}）` : ''}` : '');
-            line(body, '结案原因', record.reason); body.append(source(record));
-            if (options.openSource && Number.isInteger(record._addedAt)) body.append(sourceButton(record._addedAt, options.openSource));
+            line(body, '结案原因', record.reason);
+            const sourceRow = el('div', undefined, 'tk-source-row');
+            sourceRow.append(source(record));
+            if (options.openSource && Number.isInteger(record._addedAt)) {
+                sourceRow.append(sourceButton(record._addedAt, options.openSource));
+            }
+            body.append(sourceRow);
             if (body !== row) row.append(body);
             container.append(row);
         };
@@ -89,7 +144,7 @@ export function renderThreads(parent, records, kinds = ['plan', 'suspense', 'sit
         shown.forEach(record => append(group, record));
         if (open.length > shown.length) group.append(el('p', `另有 ${open.length - shown.length} 项未结${labels[kind]}。`, 'tk-record-note'));
         if (closed.length) {
-            const history = el(kind === 'situation' ? 'section' : 'details');
+            const history = el(kind === 'situation' ? 'section' : 'details', undefined, kind === 'situation' ? 'tk-closed-section' : 'tk-closed-drawer');
             if (kind !== 'situation') history.dataset.historyId = `closed:${kind}`;
             history.append(el(kind === 'situation' ? 'h5' : 'summary', `已结 ${closed.length} 项`));
             closed.forEach(record => append(history, record));
@@ -98,7 +153,7 @@ export function renderThreads(parent, records, kinds = ['plan', 'suspense', 'sit
     }
 }
 export function createSuspenseBook({ getSnapshot, openSource }) {
-    let root, renderedWorld = '';
+    let root, renderedWorld = '', searchQuery = '';
     return {
         mount(parent) {
             root ||= el('div', undefined, 'tk-world-records');
@@ -107,7 +162,9 @@ export function createSuspenseBook({ getSnapshot, openSource }) {
         show(world) {
             const stateKey = item => item.dataset.recordId || item.dataset.historyId;
             const owner = JSON.stringify([world?.worldId, world?.branchId]);
-            const expanded = new Set(owner === renderedWorld ? [...root.querySelectorAll('details')].filter(item => item.open && stateKey(item)).map(stateKey) : []);
+            const sameWorld = owner === renderedWorld;
+            const expanded = new Set(sameWorld ? [...root.querySelectorAll('details')].filter(item => item.open && stateKey(item)).map(stateKey) : []);
+            if (!sameWorld) searchQuery = '';
             renderedWorld = owner;
             root.replaceChildren();
             const snapshot = getSnapshot(), store = snapshot?.store;
@@ -116,49 +173,117 @@ export function createSuspenseBook({ getSnapshot, openSource }) {
                 return;
             }
             const records = worldStoryRecords(world, availableStoryRecords(store));
+            const suspenseCount = records.filter(record => record.kind === 'suspense').length;
+            let filterInput = null;
+            let emptyFilterNote = null;
+            if (suspenseCount > 0) {
+                const bar = el('div', undefined, 'tk-filter-bar');
+                filterInput = el('input', undefined, 'text_pole tk-filter-input');
+                filterInput.type = 'search';
+                filterInput.placeholder = '筛选悬念关键词…';
+                filterInput.setAttribute('aria-label', '筛选悬念关键词');
+                filterInput.value = searchQuery;
+                bar.append(filterInput);
+                root.append(bar);
+                emptyFilterNote = el('p', '没有匹配的悬念记录。', 'tk-record-note');
+                emptyFilterNote.hidden = true;
+            }
             renderThreads(root, records, ['suspense'], Infinity, { openSource });
+            if (emptyFilterNote) root.append(emptyFilterNote);
             for (const item of root.querySelectorAll('details')) if (stateKey(item)) item.open = expanded.has(stateKey(item));
+            if (filterInput) {
+                const applyFilter = () => {
+                    searchQuery = filterInput.value;
+                    const q = searchQuery.trim().toLowerCase();
+                    let visible = 0;
+                    for (const row of root.querySelectorAll('[data-record-id]')) {
+                        const match = !q || (row.textContent || '').toLowerCase().includes(q);
+                        row.hidden = !match;
+                        if (match) visible++;
+                    }
+                    if (emptyFilterNote) emptyFilterNote.hidden = !q || visible > 0;
+                };
+                filterInput.addEventListener('input', applyFilter);
+                if (searchQuery) applyFilter();
+            }
         },
         isEditing: () => false,
         empty() { root.replaceChildren(el('p', '选择一段对话后查看悬念。', 'tk-record-note')); },
-        reset() { renderedWorld = ''; root?.replaceChildren(); },
+        reset() { renderedWorld = ''; searchQuery = ''; root?.replaceChildren(); },
     };
 }
-export function renderWorldAttributes(root, entities, person, aliases = [], showProof = false, personalInventory = true) {
+
+function buildPlaceLookup(entities, world) {
+    const byId = new Map();
+    for (const entity of entities || []) {
+        if (entity.kind === 'place') byId.set(entity.id, { name: entity.name, key: entity.id });
+    }
+    for (const loc of world?.modules?.map?.atlas?.locations || []) {
+        if (loc?.key && loc?.name && !byId.has(loc.key)) byId.set(loc.key, { name: loc.name, key: loc.key });
+    }
+    return byId;
+}
+
+export function renderWorldAttributes(root, entities, person, aliases = [], showProof = false, personalInventory = true, navigation = null) {
     const byId = new Map(entities.map(entity => [entity.id, entity.name]));
+    const kindById = new Map(entities.map(entity => [entity.id, entity.kind]));
+    const placeLookup = buildPlaceLookup(entities, navigation?.world);
     const fields = Object.entries(person?.fields || {}).filter(([, record]) => record.nature === 'established_fact');
     const groups = new Map();
     const group = label => {
-        if (!groups.has(label)) groups.set(label, section(root,label));
+        if (!groups.has(label)) groups.set(label, section(root, label));
         return groups.get(label);
     };
+    const isPlaceField = key => ['当前位置', '所在地', '所在位置', 'location'].includes(key);
     for (const [label, keys] of Object.entries(PERSON_SECTIONS)) {
         for (const key of keys) {
             const record = person?.fields?.[key];
             const raw = record?.nature === 'established_fact' ? record.value : null;
-            let value = raw && typeof raw === 'object' ? byId.get(raw.entityId) || JSON.stringify(raw) : raw;
+            let value = raw && typeof raw === 'object'
+                ? (byId.get(raw.entityId) || placeLookup.get(raw.entityId)?.name || JSON.stringify(raw))
+                : raw;
             if (key === '别名') value = [...new Set([
                 ...(person?.aliases || []), ...aliases, ...(raw ? [String(raw)] : []),
             ])].filter(name => name !== person?.name).join('、');
             if (value) line(group(label), key, value);
         }
     }
+    const extraLines = [];
     for (const [field, record] of fields) {
-        if (PERSON_FIELDS.has(field) || !personalInventory && ['coins','金币'].includes(field)) continue;
+        if (PERSON_FIELDS.has(field) || !personalInventory && ['coins', '金币'].includes(field)) continue;
         const value = record.value;
         if (field.startsWith(RELATION_PREFIX)) {
-            if (value?.role) line(group('关系身份'), byId.get(value.entityId) || '未知人物', '本人是对方的' + value.role);
+            if (value?.role) {
+                const peerName = byId.get(value.entityId) || '未知人物';
+                line(group('关系身份'), peerName, '本人是对方的' + value.role, {
+                    onClickLabel: navigation?.onOpenPerson && value.entityId && byId.has(value.entityId)
+                        ? () => navigation.onOpenPerson({ id: value.entityId, name: peerName })
+                        : null,
+                });
+            }
             continue;
         }
-        line(root, FIELD_LABELS[field] || field, value?.entityId ? byId.get(value.entityId) || '未知对象'
-            : typeof value === 'string' ? value : JSON.stringify(value));
+        const resolvedPlace = value?.entityId ? placeLookup.get(value.entityId) : null;
+        const textValue = value?.entityId
+            ? (byId.get(value.entityId) || resolvedPlace?.name || '未知对象')
+            : typeof value === 'string' ? value : JSON.stringify(value);
+        const canJumpPlace = Boolean(navigation?.onOpenPlace && (isPlaceField(field) || (value?.entityId && (kindById.get(value.entityId) === 'place' || resolvedPlace))));
+        extraLines.push({
+            label: DISPLAY_FIELD_LABELS[field] || field,
+            value: textValue,
+            onClickValue: canJumpPlace ? () => navigation.onOpenPlace({ key: resolvedPlace?.key || value?.entityId || '', name: textValue }) : null,
+        });
+    }
+    if (extraLines.length) {
+        const extraParent = extraLines.length && groups.size ? group('其他信息') : root;
+        for (const item of extraLines) line(extraParent, item.label, item.value, { onClickValue: item.onClickValue });
     }
     for (const other of entities) {
         if (!person || other.id === person.id) continue;
-        const roles = Object.entries(POSSESSION_ROLES).flatMap(([key,label]) => {
+        const roles = Object.entries(POSSESSION_ROLES).flatMap(([key, label]) => {
             const record = other.fields?.[key];
             const id = record?.nature === 'established_fact' && record.value?.entityId;
-            return id ? [{id, key, label, source:record.source, name:byId.get(id) || '未知对象'}] : [];
+            return id ? [{ id, key, label, source: record.source, name: byId.get(id) || '未知对象' }] : [];
         });
         const asset = other.kind === 'place' || other.fields?.['持有类别']?.nature === 'established_fact' && other.fields['持有类别'].value === '资产';
         const possession = asset || other.kind === 'item';
@@ -168,23 +293,36 @@ export function renderWorldAttributes(root, entities, person, aliases = [], show
             const labels = roles.map(role => role.label + '：' + role.name);
             if (!roles.some(role => role.key === 'owner')) labels.unshift('所有人：未知');
             line(list, other.name, labels.join('，'));
+            const proofRow = el('div', undefined, 'tk-source-row');
             for (const origin of new Map(roles.filter(role => role.id === person.id && role.source).map(role => [role.source.key, role.source])).values()) {
-                if (['world_update','turn-update','simulation'].includes(origin.module) && showProof) {
-                    const show = el('button', '查看交接原楼', 'archive-text'); show.type = 'button'; show.dataset.worldProof = origin.key;
-                    list.append(show);
-                } else if (origin.label) list.append(el('small', origin.label, 'tk-record-note'));
+                if (['world_update', 'turn-update', 'simulation'].includes(origin.module) && showProof) {
+                    const show = el('button', '查看交接原楼', 'archive-text tk-link-btn');
+                    show.type = 'button';
+                    show.dataset.worldProof = origin.key;
+                    proofRow.append(show);
+                } else if (origin.label) {
+                    proofRow.append(el('small', origin.label, 'tk-record-note'));
+                }
             }
+            if (proofRow.childElementCount) list.append(proofRow);
         }
         for (const [field, record] of Object.entries(other.fields || {})) {
             if (record.nature !== 'established_fact' || record.value?.entityId !== person.id) continue;
-            if (possession && Object.hasOwn(POSSESSION_ROLES,field)) continue;
-            if (field.startsWith(RELATION_PREFIX) && record.value.role) line(group('关系身份'),other.name,'对方是本人的' + record.value.role);
-            else line(group('直接关联'),other.name,(FIELD_LABELS[field] || field) + '为' + person.name);
+            if (possession && Object.hasOwn(POSSESSION_ROLES, field)) continue;
+            if (field.startsWith(RELATION_PREFIX) && record.value.role) {
+                line(group('关系身份'), other.name, '对方是本人的' + record.value.role, {
+                    onClickLabel: navigation?.onOpenPerson && other.kind === 'person'
+                        ? () => navigation.onOpenPerson({ id: other.id, name: other.name })
+                        : null,
+                });
+            } else {
+                line(group('直接关联'), other.name, (DISPLAY_FIELD_LABELS[field] || field) + '为' + person.name);
+            }
         }
     }
 }
 
-export function createProtagonistView({ getSnapshot, getPlayerName, getInvolvement }) {
+export function createProtagonistView({ getSnapshot, getPlayerName, getInvolvement, onOpenPlace = null, onOpenPerson = null }) {
     let root;
     return {
         mount(parent) {
@@ -195,19 +333,47 @@ export function createProtagonistView({ getSnapshot, getPlayerName, getInvolveme
         show(world) {
             const entities = world.entities;
             const { hero, names, title } = protagonistIdentity(entities, getPlayerName());
-            root.replaceChildren(el('h3', title || '主角', 'margin0'));
+            const header = el('div', undefined, 'tk-sheet-header');
+            header.append(el('h3', title || '主角', 'margin0'));
+            root.replaceChildren(header);
             if (!hero && !names.size) {
                 root.append(el('p', '尚无法确定当前玩家对应的人物。', 'tk-record-note'));
                 return;
             }
+            const badges = el('div', undefined, 'tk-status-badges');
             if (hero) {
-                renderWorldAttributes(root, entities, hero);
+                const placeLookup = buildPlaceLookup(entities, world);
+                const locRec = hero.fields?.['当前位置'] || hero.fields?.location;
+                const locRaw = locRec?.nature === 'established_fact' ? locRec.value : null;
+                const locName = locRaw?.entityId
+                    ? (entities.find(e => e.id === locRaw.entityId)?.name || placeLookup.get(locRaw.entityId)?.name || '')
+                    : (typeof locRaw === 'string' ? locRaw : '');
+                if (locName) {
+                    const chip = onOpenPlace
+                        ? el('button', `📍 ${locName}`, 'tk-status-badge is-link')
+                        : el('span', `📍 ${locName}`, 'tk-status-badge');
+                    if (onOpenPlace) {
+                        chip.type = 'button';
+                        chip.onclick = () => onOpenPlace({ key: locRaw?.entityId || '', name: locName });
+                    }
+                    badges.append(chip);
+                }
+                const moodRec = hero.fields?.['当前情绪'];
+                if (moodRec?.nature === 'established_fact' && typeof moodRec.value === 'string' && moodRec.value) {
+                    badges.append(el('span', moodRec.value, 'tk-status-badge'));
+                }
+                const bodyRec = hero.fields?.['身体状况'];
+                if (bodyRec?.nature === 'established_fact' && typeof bodyRec.value === 'string' && bodyRec.value) {
+                    badges.append(el('span', bodyRec.value, 'tk-status-badge is-warn'));
+                }
+                if (badges.childElementCount) header.append(badges);
+                renderWorldAttributes(root, entities, hero, [], false, true, { world, onOpenPlace, onOpenPerson });
             }
             const snapshot = getSnapshot();
             const records = worldStoryRecords(world, snapshot?.enabled ? availableStoryRecords(snapshot.store, snapshot.invalidFrom) : []);
             const matches = name => names.has(nameKey(name));
-            const knownNames = new Set(entities.filter(entity => ['person','subject'].includes(entity.kind))
-                .flatMap(entity => [entity.name,...(entity.aliases || [])]));
+            const knownNames = new Set(entities.filter(entity => ['person', 'subject'].includes(entity.kind))
+                .flatMap(entity => [entity.name, ...(entity.aliases || [])]));
             knownNames.add(title);
             renderPersonalAgendas(root, projectPersonalAgendas(records, knownNames), matches);
             const personal = records.filter(record => record.kind === 'person' && matches(record.name)

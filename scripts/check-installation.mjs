@@ -156,9 +156,10 @@ try {
         await missing.waitFor();
         await missing.getByRole('button',{name:'前往设置'}).click();
         await page.waitForFunction(()=>document.querySelector('#tk-workspace')?.classList.contains('openDrawer'));
-        const api = page.frameLocator('#tavernKitchen-os-iframe');
+        const api = page.locator('#tk-tool-host');
         await api.locator('[data-agent-binding="update"]').waitFor();
-        await page.waitForFunction(()=>document.querySelector('#tavernKitchen-os-iframe')?.contentDocument?.activeElement?.dataset.agentBinding === 'update');
+        assert.equal(await page.locator('#tk-workspace iframe').count(), 0, 'workspace must not spawn iframes');
+        await page.waitForFunction(()=>document.querySelector('#tk-tool-host')?.shadowRoot?.activeElement?.dataset.agentBinding === 'update');
         const editor = api.getByText('编辑连接',{exact:true});
         await editor.click();
         const picker = api.getByLabel('选择连接',{exact:true});
@@ -252,7 +253,8 @@ try {
         await page.waitForFunction(()=>!!fixture.chat_metadata.extensions?.TavernKitchen?.storySummary?.floorSimulations?.[1],undefined,{timeout:10000});
         await page.getByRole('button',{name:'酒馆后厨',exact:true}).first().click();
         await page.locator('#tk-tab-data').click();
-        const data=page.frameLocator('#tk-memory-mount iframe');
+        const data = page.locator('#tk-memory-mount .tk-embedded-host');
+        assert.equal(await page.locator('#tk-workspace iframe').count(), 0, 'memory surface must not spawn iframes');
         async function exportCard(){
             const pending=page.waitForEvent('download',{timeout:10000});
             await data.getByRole('button',{name:'导出后厨卡'}).click();

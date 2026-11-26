@@ -24,7 +24,7 @@ test('new installs keep core modules enabled without legacy removed products', (
     const host = JSON.parse(fs.readFileSync(path.join(pluginRoot, 'modules/xiaobai-os/host/app-catalog.json')));
     const shell = JSON.parse(fs.readFileSync(path.join(pluginRoot, 'modules/xiaobai-os/shell/app-catalog.json')));
     assert.deepEqual(new Set(host), new Set(['map', 'world', 'agent-api']));
-    assert.deepEqual(shell, host);
+    assert.deepEqual(new Set(shell), new Set(['map', 'agent-api']));
 });
 
 test('legacy action check settings cannot enable a check prompt', () => {

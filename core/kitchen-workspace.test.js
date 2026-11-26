@@ -43,12 +43,15 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     await workspace.open('map');
     const mount = getKitchenMount('map');
     const parent = mount.parentElement;
-    const frame = document.createElement('iframe'); mount.append(frame);
+    const surfaceHost = document.createElement('div');
+    surfaceHost.className = 'tk-embedded-host';
+    surfaceHost.attachShadow({ mode: 'open' });
+    mount.append(surfaceHost);
     await workspace.open('settings');
     await setImmediate();
     assert.equal(getKitchenMount('settings'), mount);
-    assert.equal(mount.parentElement, parent, 'tab switches must not detach a live iframe');
-    assert.equal(mount.firstElementChild, frame);
+    assert.equal(mount.parentElement, parent, 'tab switches must not detach a live surface');
+    assert.equal(mount.firstElementChild, surfaceHost);
     assert.equal(mount.getAttribute('aria-label'), 'API');
     for (const route of ['situation', 'people', 'relations']) {
         await workspace.open(route);
@@ -128,7 +131,7 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     assert.equal(document.querySelector('#tk-workspace').classList.contains('closedDrawer'), true);
     assert.equal(document.querySelector('#tk-topbar button').getAttribute('aria-expanded'), 'false');
     await workspace.open('settings');
-    assert.equal(mount.firstElementChild, frame);
+    assert.equal(mount.firstElementChild, surfaceHost);
     // Host closes drawers itself when another top-level tool is opened.
     const panel = document.querySelector('#tk-workspace');
     panel.classList.replace('openDrawer', 'closedDrawer');
@@ -138,7 +141,7 @@ test('one native workspace owns tabs, keeps the shared frame attached and recove
     assert.deepEqual(visibility.at(-1), [false, 'settings']);
     await workspace.open();
     assert.equal(workspace.isActive('settings'), true);
-    assert.equal(mount.firstElementChild, frame, 'host dismissal must preserve the frame');
+    assert.equal(mount.firstElementChild, surfaceHost, 'host dismissal must preserve the surface');
     let initializations = 0;
     workspace.configure({actions:{people:()=>{}},initializeWorld:async () => {initializations++;return '开局资料已保存';}});
     await workspace.open('opening');

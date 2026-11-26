@@ -3,8 +3,10 @@ import appIds from './app-catalog.json';
 import type { XiaobaiOsAppDescriptor } from '../types.js';
 import { AGENT_API_APP_DESCRIPTOR } from '../apps/agent-api/descriptor.js';
 import { MAP_APP_DESCRIPTOR } from '../apps/map/descriptor.js';
-import { WORLD_APP_DESCRIPTOR } from '../apps/world/descriptor.js';
-const descriptors = [AGENT_API_APP_DESCRIPTOR, MAP_APP_DESCRIPTOR, WORLD_APP_DESCRIPTOR];
+import AgentApiApp from '../apps/agent-api/ui/AgentApiApp.vue';
+import MapApp from '../apps/map/ui/MapApp.vue';
+
+const descriptors = [AGENT_API_APP_DESCRIPTOR, MAP_APP_DESCRIPTOR];
 
 interface ComponentModule {
     default: Component;
@@ -41,10 +43,12 @@ export function createAppComponentLoader(importer: () => Promise<ComponentModule
     });
 }
 
+// WHY: Static component references ensure Vite folds MapApp + AgentApiApp + settings-ui CSS
+// into the apps/xiaobai-os entry stylesheet so loadBuildStyles injects 100% of scoped Vue styles
+// directly into the surface ShadowRoot rather than leaking into document.head.
 const importers: Readonly<Record<string, () => Promise<ComponentModule>>> = Object.freeze({
-    'agent-api': () => import('../apps/agent-api/ui/AgentApiApp.vue'),
-    map: () => import('../apps/map/ui/MapApp.vue'),
-    world: () => import('../apps/world/ui/WorldApp.vue'),
+    'agent-api': () => Promise.resolve({ default: AgentApiApp }),
+    map: () => Promise.resolve({ default: MapApp }),
 });
 
 export const xiaobaiOsApps: readonly XiaobaiOsAppDefinition[] = Object.freeze(appIds.map(id => {

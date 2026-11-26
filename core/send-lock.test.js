@@ -112,3 +112,32 @@ test('send lock intercepts pre-send gate and replays exactly once after settleme
     assert.equal(dom.button.dataset.tkSendLocked, undefined);
     lock.dispose();
 });
+
+test('send lock sync passes visualOnly and ignores streaming DOM mutations inside #chat', async () => {
+    const { document } = parseHTML(`<!doctype html><html><body>
+        <div id="sheld"><div id="chat"><div class="mes"><div class="mes_text">初始</div></div></div></div>
+        <div id="form_sheld"><form id="send_form"><textarea id="send_textarea"></textarea><button id="send_but" type="button">发送</button></form></div>
+    </body></html>`);
+    const calls = [];
+    const lock = installSendLock({
+        documentTarget: document,
+        getState: opts => {
+            calls.push(opts);
+            return { locked: false, needsGate: false, reason: '' };
+        },
+    });
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0], { visualOnly: true });
+
+    // Mutating streaming tokens deep inside #chat must not trigger any lock getState scans.
+    const mesText = document.querySelector('.mes_text');
+    for (let i = 0; i < 20; i++) {
+        mesText.textContent += ` token-${i}`;
+        const span = document.createElement('span');
+        span.textContent = 'chunk';
+        mesText.append(span);
+    }
+    await new Promise(resolve => setTimeout(resolve, 15));
+    assert.equal(calls.length, 1);
+    lock.dispose();
+});

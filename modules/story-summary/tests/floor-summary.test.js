@@ -224,3 +224,53 @@ test('floor update box exposes 手动总结 button for unsettled floors and rend
     assert.match(box.textContent, /人物 · 更新：掌柜 所在地 → 青竹酒馆/);
     assert.match(box.textContent, /悬念 · 记录：柜台下的木匣/);
 });
+
+test('only the latest settled tail floor shows 重新总结 and simulation renders structured paragraphs with chevron', async t => {
+    const html = '<html><body><div id="chat">'
+        + '<div class="mes" mesid="0"><div class="mes_text">u1</div></div>'
+        + '<div class="mes" mesid="1"><div class="mes_text">a1</div></div>'
+        + '<div class="mes" mesid="2"><div class="mes_text">u2</div></div>'
+        + '<div class="mes" mesid="3"><div class="mes_text">a2</div></div>'
+        + '</div></body></html>';
+    const { document, window } = parseHTML(html);
+    const chat = [
+        { is_user: true, mes: 'u1' },
+        { is_user: false, mes: 'a1', send_date: 'r1' },
+        { is_user: true, mes: 'u2' },
+        { is_user: false, mes: 'a2', send_date: 'r2' },
+    ];
+    const s3 = floorSource(chat, 3);
+    const snapshot = {
+        enabled: true,
+        chat,
+        store: {
+            lastSummarizedMesId: 3,
+            summaryHistory: [
+                { kind: 'batch', previousEndMesId: -1, endMesId: 1, summary: '第一轮剧情总结。' },
+                { kind: 'batch', previousEndMesId: 1, endMesId: 3, summary: '第二轮剧情总结。' },
+            ],
+            floorSimulations: {
+                3: { floor: 3, digest: s3.digest, text: '第一段推演细节。\n\n第二段远景变化。', tag: '日常风味' },
+            },
+        },
+    };
+    const panel = installFloorSummaries({
+        documentTarget: document,
+        Observer: window.MutationObserver,
+        getSnapshot: () => snapshot,
+        summarizeFloor: async () => {},
+        openMemory() {},
+    });
+    t.after(panel.dispose);
+    await setTimeout(120);
+
+    const floor1 = document.querySelector('.tk-floor-summary[data-floor="1"]');
+    const floor3 = document.querySelector('.tk-floor-summary[data-floor="3"]');
+    assert.equal(floor1.querySelector('.tk-fp-summarize-btn'), null, 'non-tail settled floor must not show 重新总结');
+    const tailBtn = floor3.querySelector('.tk-fp-summarize-btn');
+    assert.ok(tailBtn && tailBtn.textContent === '重新总结', 'latest settled tail floor shows 重新总结');
+    assert.ok(floor3.querySelector('[data-tk-box="update"] .tk-fp-chevron'));
+    const sim3 = floor3.querySelector('[data-tk-box="simulation"]');
+    assert.ok(sim3.querySelector('.tk-fp-chevron'));
+    assert.equal(sim3.querySelectorAll('.tk-fp-sim-para').length, 2);
+});

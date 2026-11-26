@@ -48,7 +48,7 @@ test('save confirmation failure retains its underlying status and reason, not it
 });
 
 function panel() {
-    const nodes = new Map(), messages = [], parent = {};
+    const nodes = new Map(), messages = [];
     const $ = id => {
         if (!nodes.has(id)) nodes.set(id, {
             disabled: false, checked: false, textContent: '', hidden: false,
@@ -58,13 +58,13 @@ function panel() {
     };
     const ui = uiEntry(['canUseCurrentChatControls', 'syncCurrentChatSummaryControls', 'syncVectorBoundaryControl', 'renderSummaryStatus',
         'bindSummaryActions', 'handleParentMessage'], {
-        $, SUMMARY_FEEDBACK_COPY, ARCHIVE_COPY, WORKSPACE_COPY, PARENT_ORIGIN: 'test', window: { parent }, document: { activeElement: null },
+        $, activeEl: () => null, SUMMARY_FEEDBACK_COPY, ARCHIVE_COPY, WORKSPACE_COPY, document: { activeElement: null },
         settingsPage: 'tab-summary', currentChatSummaryState: {}, summaryStatusId: 0, localGenerating: false,
         config: { api: {}, gen: {}, trigger: {}, vector: { enabled: true }, ui: { hideSummarized: true } },
         postMsg: (type, data) => messages.push({ type, ...data }),
     });
     ui.bindSummaryActions();
-    const send = data => ui.handleParentMessage({ origin: 'test', source: parent, data: { source: 'TavernKitchen', ...data } });
+    const send = data => ui.handleParentMessage({ data: { source: 'TavernKitchen', ...data } });
     const state = overrides => send({ type: 'CHAT_SUMMARY_STATE', state: {
         hasChat: true, chatEnabled: true, effectiveEnabled: true, changing: false, ...overrides,
     } });
@@ -106,11 +106,9 @@ test('dismissal clears host cache, survives frame reopen, and cannot dismiss a n
     const diagnosticId = summaryDiagnostics.begin(summaryDiagnostics.startRun('owner', false));
     summaryDiagnostics.finish(diagnosticId, { success: false, error: new Error('fixture failure') });
     const diagnosticsBefore = summaryDiagnostics.read('owner');
-    const frame = { contentWindow: {} };
     const noop = () => {};
     const host = entry(['postToFrame', 'handleFrameMessage', 'lastSummaryStatus', 'summaryStatusSequence'], {
-        document: { getElementById: () => frame }, frameReady: true, pendingFrameMessages: [], summaryDiagnostics,
-        isTrustedMessage: () => true, postToIframe: (_frame, data) => p.send(data),
+        summaryUiHandle: { receiveHostMessage: data => p.send(data) }, overlayCreated: true, frameReady: true, pendingFrameMessages: [], summaryDiagnostics,
         flushPendingFrameMessages: noop, notifySummaryState: noop, sendSavedConfigToFrame: noop,
         sendVectorConfigToFrame: noop, sendVectorStatsToFrame: noop, sendAnchorStatsToFrame: noop,
         notifyStorySummaryChatState: noop,

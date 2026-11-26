@@ -7,7 +7,7 @@ function record(value: unknown): value is Record<string, unknown> {return !!valu
 function maintaining(state: MapClientState): boolean {return state.maintenanceStatus === 'maintaining' || state.maintenanceStatus === 'rebuilding';}
 
 /** The Map UI's host connection. Browsing state is intentionally not owned here. */
-export function useMapState(props: XiaobaiOsAppProps) {
+export function useMapState(props: XiaobaiOsAppProps, onExtraMessage?: (message: { type: string; payload?: unknown }) => void) {
     const state = ref(structuredClone(toRaw(props.initialState as MapClientState)));
     const activeRequest = ref<Action | null>(null);
     const localMessage = ref('');
@@ -93,6 +93,8 @@ export function useMapState(props: XiaobaiOsAppProps) {
                 pushedVersion += 1;
                 localError.value = true;
                 localMessage.value = (message.payload as { message?: string }).message || '地图暂时无法读取，请重新打开。';
+            } else {
+                onExtraMessage?.(message);
             }
         });
     });

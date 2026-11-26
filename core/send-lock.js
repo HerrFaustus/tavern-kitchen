@@ -52,6 +52,9 @@ export function installSendLock({
     let bypassDepth = 0;
     let disposed = false;
     let syncing = false;
+    let observer = null;
+    let observedTarget = null;
+    let syncScheduled = false;
 
     const applyVisualLock = (locked, reason) => {
         for (const button of sendButtons(doc)) {
@@ -80,15 +83,39 @@ export function installSendLock({
         }
     };
 
+    const MutationObserverCtor = doc.defaultView?.MutationObserver || globalThis.MutationObserver;
+    const attachObserver = () => {
+        if (disposed || typeof MutationObserverCtor !== 'function') return;
+        const form = doc.querySelector?.('#send_form');
+        const target = form?.parentElement || form || doc.body;
+        if (!target || observedTarget === target) return;
+        observer?.disconnect();
+        observedTarget = target;
+        // WHY: Narrow the observer to #form_sheld/#send_form once available instead of document.body
+        // so streaming tokens inserted into #chat never invoke sync() or scan chat floors.
+        observer = new MutationObserverCtor(() => scheduleSync());
+        const isNarrow = target !== doc.body;
+        observer.observe(target, isNarrow ? { childList: true, subtree: true } : { childList: true, subtree: true });
+    };
+
     const sync = () => {
+        syncScheduled = false;
         if (disposed || syncing) return;
         syncing = true;
         try {
-            const state = getState?.() || { locked: false, reason: '' };
+            attachObserver();
+            // WHY: Visual button lock only cares about locked/reason, never pendingCount full-chat scans.
+            const state = getState?.({ visualOnly: true }) || { locked: false, reason: '' };
             applyVisualLock(Boolean(state.locked), String(state.reason || ''));
         } finally {
             syncing = false;
         }
+    };
+
+    const scheduleSync = () => {
+        if (disposed || syncScheduled) return;
+        syncScheduled = true;
+        queueMicrotask(sync);
     };
 
     const triggerSend = () => {
@@ -118,7 +145,7 @@ export function installSendLock({
     const intercept = event => {
         if (disposed || bypassDepth > 0) return;
         if (isSlashInput(doc)) return;
-        const state = getState?.() || { locked: false, needsGate: false, isGenerating: false };
+        const state = getState?.({ visualOnly: false }) || { locked: false, needsGate: false, isGenerating: false };
         if (state.isGenerating) return;
         if (state.locked) {
             event.preventDefault();
@@ -152,7 +179,7 @@ export function installSendLock({
         if (!matchesSendTextarea(event.target)) return;
         if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
         if (event.isComposing || event.keyCode === 229) return;
-        const state = getState?.() || {};
+        const state = getState?.({ visualOnly: true }) || {};
         if (state.enterSends === false) return;
         intercept(event);
     };
@@ -161,12 +188,6 @@ export function installSendLock({
     doc.addEventListener('submit', onSubmit, true);
     doc.addEventListener('keydown', onKeyDown, true);
 
-    let observer = null;
-    const MutationObserverCtor = doc.defaultView?.MutationObserver || globalThis.MutationObserver;
-    if (MutationObserverCtor && doc.body) {
-        observer = new MutationObserverCtor(() => sync());
-        observer.observe(doc.body, { childList: true, subtree: true });
-    }
     sync();
 
     return {
@@ -176,6 +197,7 @@ export function installSendLock({
             if (disposed) return;
             disposed = true;
             observer?.disconnect();
+            observedTarget = null;
             doc.removeEventListener('click', onClick, true);
             doc.removeEventListener('submit', onSubmit, true);
             doc.removeEventListener('keydown', onKeyDown, true);

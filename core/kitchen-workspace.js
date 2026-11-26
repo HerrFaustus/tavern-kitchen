@@ -1,11 +1,45 @@
-import { extensionFolderPath } from './constants.js';
 import { observeBackgroundTask } from '../shared/common/async-errors.js';
 
 let workspace;
 let nativeControls;
+const surfaceRegistry = new Set();
+let hostThemeObserver = null;
+let hostThemeLastSignature = '';
+let hostThemeRafId = null;
+let hostThemeScheduled = false;
+let currentHostScheme = 'dark';
+
+function parseRgb(color) {
+    const match = String(color || '').match(/rgba?\(\s*([\d.]+)\s*[,\s]\s*([\d.]+)\s*[,\s]\s*([\d.]+)(?:\s*[,/]\s*([\d.]+))?/i);
+    if (!match) return null;
+    return [Number(match[1]), Number(match[2]), Number(match[3]), match[4] == null ? 1 : Number(match[4])];
+}
+
+function detectHostScheme(theme) {
+    const declared = String(theme.colorScheme || '').trim().toLowerCase();
+    if (declared === 'light' || declared === 'only light') return 'light';
+    if (declared === 'dark' || declared === 'only dark') return 'dark';
+    const bg = parseRgb(theme.getPropertyValue('--SmartThemeBlurTintColor')) || parseRgb(theme.backgroundColor);
+    if (bg && bg[3] > 0.15) {
+        const lum = (0.2126 * bg[0] + 0.7152 * bg[1] + 0.0722 * bg[2]) / 255;
+        return lum > 0.56 ? 'light' : 'dark';
+    }
+    const fg = parseRgb(theme.getPropertyValue('--SmartThemeBodyColor')) || parseRgb(theme.color);
+    if (fg) {
+        const lum = (0.2126 * fg[0] + 0.7152 * fg[1] + 0.0722 * fg[2]) / 255;
+        return lum < 0.45 ? 'light' : 'dark';
+    }
+    return 'dark';
+}
+
+function resolveSolidSurface(theme, scheme) {
+    const raw = parseRgb(theme.getPropertyValue('--SmartThemeBlurTintColor')) || parseRgb(theme.backgroundColor);
+    if (raw) return `rgb(${Math.round(raw[0])}, ${Math.round(raw[1])}, ${Math.round(raw[2])})`;
+    return scheme === 'light' ? '#f6f8fa' : '#1c1c21';
+}
 
 /** Read real host controls so custom Tavern themes also reach isolated frames. */
-function syncNativeControls(target) {
+function collectNativeControlMetrics(scheme = 'dark') {
     if (!nativeControls?.isConnected) {
         nativeControls = document.createElement('div');
         nativeControls.id = 'tk-native-controls';
@@ -23,10 +57,32 @@ function syncNativeControls(target) {
         document.body.append(nativeControls);
     }
     const properties = ['background-color', 'background-image', 'color', 'border', 'border-radius', 'padding', 'font-size', 'font-family', 'font-weight', 'line-height', 'filter', 'opacity', 'height', 'appearance', 'background-position', 'background-size', 'background-repeat'];
+    const fallbackChevron = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='7' viewBox='0 0 10 7'%3E%3Cpolygon points='0,0 10,0 5,7' fill='%23${scheme === 'light' ? '57606a' : 'a3aab4'}'/%3E%3C/svg%3E")`;
+    const entries = [];
     for (const control of nativeControls.children) {
         const style = getComputedStyle(control);
-        for (const property of properties) target.style.setProperty(`--tk-${control.dataset.control}-${property}`, style.getPropertyValue(property));
+        const name = control.dataset.control;
+        const bgImage = style.getPropertyValue('background-image').trim();
+        const needsSelectChevron = name === 'select' && (!bgImage || bgImage === 'none');
+        for (const property of properties) {
+            let value = style.getPropertyValue(property);
+            // WHY: Some hosts (e.g. TauriTavern or minimal custom CSS) strip select.text_pole's background-image while keeping
+            // appearance:none or custom borders, which hides Chromium's native dropdown chevron. Provide a crisp inline SVG
+            // chevron fallback only when the host supplies no background-image of its own.
+            if (needsSelectChevron) {
+                if (property === 'appearance') value = 'none';
+                else if (property === 'background-image') value = fallbackChevron;
+                else if (property === 'background-position') value = 'right 8px center';
+                else if (property === 'background-size') value = '9px 6px';
+                else if (property === 'background-repeat') value = 'no-repeat';
+                else if (property === 'padding' && parseFloat(style.paddingRight) < 20) {
+                    value = `${style.paddingTop} 24px ${style.paddingBottom} ${style.paddingLeft}`;
+                }
+            }
+            entries.push([`--tk-${name}-${property}`, value]);
+        }
     }
+    return entries;
 }
 export const KITCHEN_TABS = [['overview', '主角'], ['world', '世界'], ['memory', '剧情'], ['planner', '编剧'], ['settings', '设置'], ['data', '数据']];
 export const KITCHEN_ROUTES = {
@@ -51,65 +107,96 @@ const parentOf = id => KITCHEN_TABS.find(([key]) => KITCHEN_ROUTES[key].some(([r
 const worldTabs = new Set(['map', 'agent-api', 'settings']);
 const memoryTabs = new Set(['data', 'memory', 'recall', 'situation', 'people', 'relations', 'settings-memory']);
 export const getKitchenMount = id => workspace?.getMount(id) ?? null;
-export const openKitchenTab = id => workspace?.open(id);
+/**
+ * @param {string} id
+ * @param {Record<string, unknown> | null} [detail]
+ */
+export const openKitchenTab = (id, detail = null) => workspace?.open(id, detail != null, detail);
+/**
+ * @param {Record<string, unknown>} [options]
+ */
+export const openKitchenModal = (options = {}) => workspace?.openModal(options);
 export const closeKitchenWorkspace = () => workspace?.close();
 
-/** Same-origin feature frames inherit the host theme without sharing their DOM globals. */
-export function bindKitchenFrame(frame) {
-    // Do not paint an unthemed document while its first host palette is being applied.
-    frame.style.visibility = 'hidden';
-    frame.addEventListener('load', () => {
-        const doc = frame.contentDocument;
-        if (!doc) return;
-        doc.documentElement.classList.add('tk-embedded', 'tk-follow-host');
-        doc.documentElement.dataset.kitchenTheme = 'host';
-        doc.documentElement.removeAttribute('data-theme');
-        let link = doc.getElementById('tk-embedded-styles');
-        const preloaded = !!link;
-        if (!link) {
-            link = doc.createElement('link'); link.id = 'tk-embedded-styles';
-            link.rel = 'stylesheet';
-            link.href = new URL(`${extensionFolderPath}/core/kitchen-embedded.css`, document.baseURI).href;
-            doc.head.append(link);
-        }
-        const sync = () => {
-            const theme = getComputedStyle(document.body);
-            for (const key of ['SmartThemeBodyColor', 'SmartThemeEmColor', 'SmartThemeQuoteColor', 'SmartThemeBorderColor', 'SmartThemeBlurTintColor', 'SmartThemeChatTintColor', 'SmartThemeShadowColor']) {
-                doc.documentElement.style.setProperty(`--${key}`, theme.getPropertyValue(`--${key}`));
+function syncHostThemeToDocument(doc = document) {
+    hostThemeScheduled = false;
+    hostThemeRafId = null;
+    if (typeof getComputedStyle !== 'function' || !doc?.body || !doc?.documentElement) return;
+    try {
+        const theme = getComputedStyle(doc.body);
+        const scheme = detectHostScheme(theme);
+        const solidBg = resolveSolidSurface(theme, scheme);
+        const pairs = [
+            ['--tk-font', theme.fontFamily],
+            ['--tk-font-size', theme.fontSize],
+            ['--tk-text-shadow', theme.textShadow],
+            ['--tk-color-scheme', scheme],
+            ['--tk-surface-solid', solidBg],
+            ['--tk-motion-duration', theme.getPropertyValue('--animation-duration-2x').trim() || '200ms'],
+            ...collectNativeControlMetrics(scheme),
+        ];
+        const signature = `${scheme}|${pairs.map(([, v]) => v).join('\u001f')}`;
+        currentHostScheme = scheme;
+        if (signature !== hostThemeLastSignature) {
+            hostThemeLastSignature = signature;
+            doc.documentElement.dataset.tkScheme = scheme;
+            for (const [prop, val] of pairs) doc.documentElement.style.setProperty(prop, val);
+            for (const surface of surfaceRegistry) {
+                if (!surface.isConnected) { surfaceRegistry.delete(surface); continue; }
+                surface.dataset.tkScheme = scheme;
             }
-            doc.documentElement.style.setProperty('--tk-font', theme.fontFamily);
-            doc.documentElement.style.setProperty('--tk-font-size', theme.fontSize);
-            doc.documentElement.style.setProperty('--tk-text-shadow', theme.textShadow);
-            doc.documentElement.style.setProperty('--tk-color-scheme', theme.colorScheme);
-            doc.documentElement.style.setProperty('--tk-motion-duration', theme.getPropertyValue('--animation-duration-2x').trim() || '200ms');
-            syncNativeControls(doc.documentElement);
-            doc.dispatchEvent(new doc.defaultView.CustomEvent('kitchen-theme-change'));
-        };
-        sync();
-        const stopControls = workspace?.attachFrame(frame);
-        const reveal = () => { if (frame.contentDocument === doc) { frame.style.removeProperty('visibility'); frame.dataset.kitchenFrameReady = 'true'; } };
-        const stylesheetFailed = () => {
-            const error = doc.createElement('p'); error.setAttribute('role', 'alert');
-            error.textContent = '后厨界面样式加载失败，请刷新酒馆重试。';
-            doc.body.replaceChildren(error); reveal();
-        };
-        if (link.sheet) reveal();
-        else if (preloaded) stylesheetFailed();
-        else {
-            link.addEventListener('load', reveal, { once: true });
-            link.addEventListener('error', stylesheetFailed, { once: true });
+            if (typeof doc.defaultView?.CustomEvent === 'function') {
+                doc.dispatchEvent(new doc.defaultView.CustomEvent('kitchen-theme-change', { detail: { scheme } }));
+            }
+        } else {
+            for (const surface of surfaceRegistry) {
+                if (!surface.isConnected) { surfaceRegistry.delete(surface); continue; }
+                if (surface.dataset.tkScheme !== scheme) surface.dataset.tkScheme = scheme;
+            }
         }
-        const observer = new MutationObserver(sync);
-        for (const target of [document.documentElement, document.body]) observer.observe(target, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
-        const stop = new MutationObserver(() => {
-            if (frame.isConnected) return;
-            observer.disconnect();
-            stopControls?.();
-            stop.disconnect();
-        });
-        stop.observe(document.body, { childList: true, subtree: true });
-        frame.contentWindow.addEventListener('pagehide', () => { observer.disconnect(); stopControls?.(); stop.disconnect(); }, { once: true });
-    });
+    } catch (error) {
+        console.debug('[TavernKitchen] syncHostThemeToDocument skipped', error);
+    }
+}
+
+function ensureHostThemeSync(doc = document) {
+    syncHostThemeToDocument(doc);
+    if (hostThemeObserver || typeof doc?.defaultView?.MutationObserver !== 'function') return;
+    const schedule = () => {
+        if (hostThemeScheduled) return;
+        hostThemeScheduled = true;
+        if (typeof requestAnimationFrame === 'function') {
+            hostThemeRafId = requestAnimationFrame(() => syncHostThemeToDocument(doc));
+        } else {
+            queueMicrotask(() => syncHostThemeToDocument(doc));
+        }
+    };
+    hostThemeObserver = new doc.defaultView.MutationObserver(schedule);
+    for (const target of [doc.documentElement, doc.body]) {
+        if (target) hostThemeObserver.observe(target, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
+    }
+}
+
+/**
+ * Bind an in-page Open Shadow DOM surface to the shared host theme & focus manager.
+ * CSS custom properties (--SmartTheme*, --tk-*) cascade automatically through the shadow boundary;
+ * only data-tk-scheme is mirrored onto the shadow root container for light-scheme selector rules.
+ */
+export function bindKitchenSurface(hostElement, surfaceElement) {
+    const doc = hostElement?.ownerDocument || document;
+    if (surfaceElement) {
+        surfaceElement.classList.add('tk-surface', 'tk-embedded', 'tk-follow-host');
+        surfaceElement.dataset.kitchenTheme = 'host';
+        surfaceElement.removeAttribute('data-theme');
+        surfaceRegistry.add(surfaceElement);
+    }
+    ensureHostThemeSync(doc);
+    if (surfaceElement) surfaceElement.dataset.tkScheme = currentHostScheme;
+    const stopFocus = hostElement?.shadowRoot ? workspace?.attachSurface(hostElement.shadowRoot) : null;
+    return () => {
+        if (surfaceElement) surfaceRegistry.delete(surfaceElement);
+        stopFocus?.();
+    };
 }
 
 export function createKitchenWorkspace({ actions = {}, settingsElement, featureSwitches = {}, onToggleFeature = () => {}, onVisibility = () => {}, toggleDrawer, documentTarget = document }) {
@@ -175,7 +262,7 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
     page.append(controls, body);
     panel.append(titlebar, tabs, subnav, page);
     controls.id = 'tk-module-native-controls';
-    const frames = new Map();
+    const surfaces = new Set();
     let returnTo = null, focusRequest = null, stopFocusWatch;
     const stopWatchingFocus = () => { stopFocusWatch?.(); stopFocusWatch = undefined; };
     const syncControls = () => {
@@ -185,14 +272,20 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
         controls.hidden = !(hasEvolution || hasActions) || body.hidden;
         page.classList.toggle('tk-page-full', controls.hidden && !body.hidden);
     };
-    const isFrameVisible = frame => frame.isConnected && frame.style.visibility !== 'hidden' && (!frame.checkVisibility || frame.checkVisibility());
+    const isSurfaceVisible = surface => {
+        const host = surface?.host || surface;
+        return Boolean(host?.isConnected && host.style?.visibility !== 'hidden' && (!host.checkVisibility || host.checkVisibility()));
+    };
     const isNodeFocusable = item => item.isConnected && !item.disabled && !item.closest?.('fieldset[disabled]') && (!item.checkVisibility || item.checkVisibility());
     const restoreRequestedFocus = () => {
         if (!focusRequest || focusRequest.route !== active || !isOpen()) return false;
         if (!focusRequest.selector) { focusRequest = null; stopWatchingFocus(); return false; }
         const mount = api.getMount(active);
-        const frameDocs = [...frames].filter(([frame]) => mount?.contains(frame) && isFrameVisible(frame)).map(([, s]) => s.document);
-        for (const surface of [controls, mount, ...frameDocs]) {
+        const activeSurfaces = [...surfaces].filter(surface => {
+            const host = surface?.host || surface;
+            return mount?.contains(host) && isSurfaceVisible(surface);
+        });
+        for (const surface of [controls, mount, ...activeSurfaces]) {
             const node = [...(surface?.querySelectorAll(focusRequest.selector) || [])].find(isNodeFocusable);
             if (!node) continue;
             node.focus(); focusRequest = null; stopWatchingFocus(); return true;
@@ -220,10 +313,11 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
         const attachTargets = () => {
             const mount = focusRequest ? api.getMount(focusRequest.route) : null;
             watch(mount, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'hidden', 'style'] });
-            for (const [frame, state] of frames) {
-                if (!mount?.contains(frame)) continue;
-                watch(frame, { attributes: true, attributeFilter: ['style', 'hidden'] });
-                watch(state.document?.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'hidden', 'style'] });
+            for (const surface of surfaces) {
+                const host = surface?.host || surface;
+                if (!mount?.contains(host)) continue;
+                watch(host, { attributes: true, attributeFilter: ['style', 'hidden'] });
+                watch(surface, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'hidden', 'style'] });
             }
         };
         stopFocusWatch = () => { observer.disconnect(); observed.clear(); refreshFocusWatch = () => {}; };
@@ -252,22 +346,42 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
     trigger.setAttribute('aria-controls', panel.id); trigger.setAttribute('aria-expanded', 'false');
     const icon = doc.createElement('span'); icon.className = 'drawer-icon fa-solid fa-door-open fa-fw closedIcon'; icon.setAttribute('aria-hidden', 'true');
     trigger.append(icon); entry.append(trigger, panel);
+    let observedHolder = null;
+    let observedParent = null;
+    let entryObserver = null;
+    const attachEntryObserver = holder => {
+        const target = holder || doc.body;
+        const parent = holder?.parentElement || null;
+        if (!target || (observedHolder === target && observedParent === parent)) return;
+        entryObserver?.disconnect();
+        observedHolder = target;
+        observedParent = parent;
+        // WHY: Observe only #top-settings-holder and its direct parent with childList:true (no subtree) once attached,
+        // so late toolbar buttons and holder replacement are still caught while streaming chat tokens never fire callbacks.
+        entryObserver = new doc.defaultView.MutationObserver(() => {
+            const currentHolder = doc.getElementById('top-settings-holder');
+            if (!currentHolder) {
+                attachEntryObserver(null);
+                return;
+            }
+            if (observedHolder !== currentHolder || observedParent !== currentHolder.parentElement) attachEntryObserver(currentHolder);
+            if (!entry.isConnected || entry.parentElement !== currentHolder || entry.nextElementSibling) inject();
+        });
+        entryObserver.observe(target, holder ? { childList: true } : { childList: true, subtree: true });
+        if (holder && parent && parent !== holder) entryObserver.observe(parent, { childList: true });
+    };
     const inject = () => {
         const holder = doc.getElementById('top-settings-holder');
-        if (!holder) return false;
+        if (!holder) { attachEntryObserver(null); return false; }
         if (entry.parentElement !== holder) holder.append(entry);
         else if (entry !== holder.lastElementChild) {
-            // A normal DOM move reloads live iframes. Older WebViews use flex order for this case.
             if (holder.moveBefore) holder.moveBefore(entry, null);
-            else if (!entry.querySelector('iframe')) holder.append(entry);
+            else holder.append(entry);
         }
+        attachEntryObserver(holder);
         return true;
     };
     inject();
-    const entryObserver = new doc.defaultView.MutationObserver(() => {
-        if (!entry.isConnected || entry.nextElementSibling) inject();
-    });
-    entryObserver.observe(doc.body, { childList: true, subtree: true });
     let active = null, previousFocus = null, generation = 0, visible = false, pendingOpen = null;
     const isOpen = () => panel.classList.contains('openDrawer');
     const setOpen = (element, open) => {
@@ -370,19 +484,117 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
         }
         syncControls();
     };
+    const routeDetails = new Map();
+    let hostModal = null;
+    let hostModalFocus = null;
+    const syncHostScheme = () => ensureHostThemeSync(doc);
+    syncHostScheme();
+    const closeModal = () => {
+        if (!hostModal) return;
+        const dialog = hostModal;
+        hostModal = null;
+        if (typeof dialog.close === 'function' && dialog.open) dialog.close();
+        dialog.remove();
+        if (hostModalFocus?.isConnected) hostModalFocus.focus({ preventScroll: true });
+        hostModalFocus = null;
+    };
+    const openModal = ({ title = '', subtitle = '', text = '', content = null, wide = false, onClose = null } = {}) => {
+        closeModal();
+        syncHostScheme();
+        hostModalFocus = doc.activeElement;
+        const dialog = doc.createElement('dialog');
+        dialog.id = 'tk-host-modal';
+        dialog.className = wide ? 'tk-host-modal is-wide' : 'tk-host-modal';
+        dialog.setAttribute('aria-labelledby', 'tk-host-modal-title');
+        const head = doc.createElement('header');
+        head.className = 'tk-host-modal-head';
+        const titleWrap = doc.createElement('div');
+        titleWrap.className = 'tk-host-modal-titles';
+        const h3 = doc.createElement('h3');
+        h3.id = 'tk-host-modal-title';
+        h3.textContent = title || '详情';
+        titleWrap.append(h3);
+        if (subtitle) {
+            const sub = doc.createElement('small');
+            sub.className = 'tk-host-modal-subtitle';
+            sub.textContent = subtitle;
+            titleWrap.append(sub);
+        }
+        const closeBtn = doc.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.className = 'menu_button tk-host-modal-close';
+        closeBtn.setAttribute('aria-label', '关闭弹窗');
+        closeBtn.textContent = '✕';
+        head.append(titleWrap, closeBtn);
+        const bodyEl = doc.createElement('div');
+        bodyEl.className = 'tk-host-modal-body';
+        if (content) bodyEl.append(content);
+        else {
+            const prose = doc.createElement('div');
+            prose.className = 'tk-host-modal-prose';
+            prose.textContent = text;
+            bodyEl.append(prose);
+        }
+        dialog.append(head, bodyEl);
+        const dismiss = () => {
+            closeModal();
+            onClose?.();
+        };
+        closeBtn.addEventListener('click', dismiss);
+        dialog.addEventListener('cancel', event => { event.preventDefault(); dismiss(); });
+        dialog.addEventListener('click', event => {
+            if (event.target !== dialog) return;
+            const bounds = dialog.getBoundingClientRect();
+            if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) dismiss();
+        });
+        doc.body.append(dialog);
+        hostModal = dialog;
+        if (typeof dialog.showModal === 'function') dialog.showModal();
+        else dialog.setAttribute('open', '');
+        closeBtn.focus({ preventScroll: true });
+        return {
+            dialog,
+            body: bodyEl,
+            setTitle(nextTitle, nextSubtitle = '') {
+                h3.textContent = nextTitle || '详情';
+                const existing = titleWrap.querySelector('.tk-host-modal-subtitle');
+                if (nextSubtitle) {
+                    if (existing) existing.textContent = nextSubtitle;
+                    else {
+                        const sub = doc.createElement('small');
+                        sub.className = 'tk-host-modal-subtitle';
+                        sub.textContent = nextSubtitle;
+                        titleWrap.append(sub);
+                    }
+                } else existing?.remove();
+            },
+            setText(nextText) {
+                const prose = doc.createElement('div');
+                prose.className = 'tk-host-modal-prose';
+                prose.textContent = nextText;
+                bodyEl.replaceChildren(prose);
+            },
+            close: dismiss,
+        };
+    };
     const isWorldMountRoute = route => worldTabs.has(route) && !(route === 'settings' && mounts.get('settings').childElementCount > 0 && !worldMount.childElementCount);
     const api = {
         visitBinding,
+        openModal,
+        closeModal,
+        consumeRouteDetail(id) {
+            const route = canonicalRoute(id);
+            const value = routeDetails.get(route) ?? null;
+            routeDetails.delete(route);
+            return value;
+        },
         getControls() { return featureBar; },
         getSettingSections() { return { function: controls }; },
-        attachFrame(frame) {
-            const document = frame.contentDocument;
-            if (!document?.body) return () => {};
-            frames.set(frame, { document });
+        attachSurface(surface) {
+            if (!surface) return () => {};
+            surfaces.add(surface);
             if (focusRequest && isOpen()) ensureFocusWatch();
-            return () => {
-                if (frames.get(frame)?.document === document) frames.delete(frame);
-            };
+            return () => { surfaces.delete(surface); };
         },
 
         configure(options) {
@@ -449,12 +661,17 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
             return isWorldMountRoute(route) ? worldMount : memoryTabs.has(route) ? memoryMount : mounts.get(route);
         },
         isActive: id => isOpen() && active === canonicalRoute(id) && !body.hidden,
-        async open(id = active || 'overview', refresh = false) {
+        async open(id = active || 'overview', refresh = false, detail = null) {
             id = canonicalRoute(id);
             if (!visiblePanel(id)) id = routesFor(parentOf(id) || 'overview')[0]?.[0] || firstRoute();
             if (!id) return;
+            if (detail != null) {
+                routeDetails.set(id, detail);
+                refresh = true;
+            }
             const parent = parentOf(id);
             if (!parent) return;
+            syncHostScheme();
             const wasClosed = !isOpen();
             if (active === id && !wasClosed && !refresh) return;
             const token = ++generation;
@@ -498,13 +715,18 @@ export function createKitchenWorkspace({ actions = {}, settingsElement, featureS
             }).finally(() => { loading?.remove(); mount.removeAttribute('aria-busy'); placeControls(); });
         },
         close() {
+            closeModal();
             generation += 1;
             focusRequest = null; stopWatchingFocus();
             if (pendingOpen) void pendingOpen.then(() => { setOpen(panel, false); syncVisibility(); });
             setOpen(panel, false); syncVisibility();
             (previousFocus?.isConnected ? previousFocus : trigger).focus({ preventScroll: true });
         },
-        reset() { returnTo = focusRequest = null; stopWatchingFocus(); lastRoute.clear(); scrollByRoute.clear(); active = null; api.close(); generation += 1; },
+        reset() {
+            closeModal(); routeDetails.clear(); returnTo = focusRequest = null; stopWatchingFocus(); lastRoute.clear(); scrollByRoute.clear(); active = null; api.close(); generation += 1;
+            if (hostThemeRafId !== null && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(hostThemeRafId);
+            hostThemeRafId = null; hostThemeScheduled = false;
+        },
     };
     close.addEventListener('click', api.close);
     trigger.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); isOpen() || pendingOpen ? api.close() : navigate(); });

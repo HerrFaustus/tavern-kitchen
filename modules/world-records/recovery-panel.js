@@ -126,6 +126,8 @@ export function createWorldRecoveryPanel({ service, getIdentity, getStamp, previ
                     if (!changes.length) return [];
                     const location=turn ? `第 ${turn.source.start+1}–${turn.source.end+1} 楼` : '无对应楼层';
                     return [location+' · '+changes.map(c => {
+                        if (c.type === 'claim') return '待核记录';
+                        if (c.type === 'module') return ({ story: '剧情状态', map: '地图' })[c.id] || c.id;
                         if (c.type !== 'entity') return c.id;
                         const name = c.after?.name || c.before?.name || entityLabel(c.id);
                         if (c.after === null) return `${name} 删除对象`;

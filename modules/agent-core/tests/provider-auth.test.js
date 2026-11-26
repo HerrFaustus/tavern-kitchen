@@ -5,7 +5,7 @@ import { Buffer } from 'node:buffer';
 import test from 'node:test';
 import { build } from 'esbuild';
 import { createAgentAdapter } from '../provider-config.js';
-import { pullModelsForProvider } from '../ui/settings-panel.js';
+import { pullModelsForProvider } from '../model-list.js';
 import { buildProviderAssistantToolCallMessage, buildProviderToolResultMessage } from '../runtime/protocol.js';
 
 const providers = ['openai-compatible', 'openai-responses', 'anthropic', 'google'];

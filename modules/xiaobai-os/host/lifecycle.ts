@@ -1,17 +1,16 @@
 import {
-    createXiaobaiOsFrameBridge,
-    type XiaobaiOsFrameBridgeOptions,
+    createDirectXiaobaiOsBridge,
+    type XiaobaiOsDirectBridgeOptions,
     type XiaobaiOsHostFrameBridge,
     type XiaobaiOsHostFrameMessage,
-} from './frame-bridge.js';
+} from './direct-bridge.js';
+import type { XiaobaiOsFrameBridge } from '../shell/app-src/frame-bridge.js';
 import type { XiaobaiOsAppDescriptor, XiaobaiOsAppRuntimeRouter } from '../types.js';
 import type { CapturedChatBinding } from '../kernel/contracts.js';
 import { createStorageId } from '../kernel/identity.js';
 import type { AppStatus } from '../kernel/execution-scope.js';
 
-const STYLE_ID = 'tavernKitchen-os-host-styles';
 const HOST_ID = 'tk-tool-host';
-const IFRAME_ID = 'tavernKitchen-os-iframe';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -19,18 +18,21 @@ export interface XiaobaiOsLifecycleSnapshot {
     theme?: 'light' | 'dark';
 }
 
-type XiaobaiOsWindow = Window & {
-    MutationObserver?: typeof MutationObserver;
-};
+export type XiaobaiOsSurfaceMount = (
+    target: HTMLElement,
+    shadowRoot: ShadowRoot,
+    bridge: XiaobaiOsFrameBridge,
+) => Promise<() => void> | (() => void);
 
 export interface XiaobaiOsLifecycleOptions {
-    onFrameCreated?: (frame: HTMLIFrameElement) => void;
+    onSurfaceCreated?: (host: HTMLElement, surface: HTMLElement) => (() => void) | void;
+    mountApp?: XiaobaiOsSurfaceMount;
     embeddedMount?: () => HTMLElement | null;
     onEmbeddedClose?: () => void;
+    onNavigateKitchen?: (route: string, detail?: UnknownRecord) => void;
+    onOpenWideMap?: (payload: UnknownRecord, onSelectPlace: (placeKey: string) => void) => void;
     documentTarget?: Document;
-    windowTarget?: XiaobaiOsWindow;
-    stylesheetHref?: string;
-    frameSrc?: string;
+    windowTarget?: Window;
     subscribeChatChanged?: (handler: () => void) => () => void;
     subscribeAppDescriptorsChanged?: (handler: () => void) => () => void;
     subscribeAppStatusChanged?: (handler: (appId: string, status: AppStatus) => void) => () => void;
@@ -41,13 +43,13 @@ export interface XiaobaiOsLifecycleOptions {
     isChatBindingCurrent?: (captured: CapturedChatBinding) => boolean | Promise<boolean>;
     createActivationToken?: () => string;
     appRuntime?: Partial<XiaobaiOsAppRuntimeRouter>;
-    bridgeFactory?: (options: XiaobaiOsFrameBridgeOptions) => XiaobaiOsHostFrameBridge;
+    bridgeFactory?: (options: XiaobaiOsDirectBridgeOptions) => XiaobaiOsHostFrameBridge;
     onError?: (error: unknown) => void;
 }
 
 export interface XiaobaiOsLifecycle {
     init: () => boolean;
-    open: (appId?: string) => boolean;
+    open: (appId?: string, detail?: UnknownRecord | null) => boolean;
     closeWindow: (reason?: string) => Promise<void>;
     cleanup: () => Promise<void>;
     isInitialized: () => boolean;
@@ -66,17 +68,17 @@ function isRecord(value: unknown): value is UnknownRecord {
 }
 
 /**
- * Manages the retained tools inside the shared Kitchen workspace.
- *
+ * Manages retained Xiaobai OS tools (Map & API settings) mounted directly in-page inside an Open Shadow DOM surface.
  */
 export function createXiaobaiOsLifecycle({
-    onFrameCreated,
+    onSurfaceCreated,
+    mountApp,
     embeddedMount,
     onEmbeddedClose,
+    onNavigateKitchen,
+    onOpenWideMap,
     documentTarget = document,
-    windowTarget = window as XiaobaiOsWindow,
-    stylesheetHref,
-    frameSrc,
+    windowTarget = window,
     subscribeChatChanged = () => () => {},
     subscribeAppDescriptorsChanged = () => () => {},
     subscribeAppStatusChanged = () => () => {},
@@ -87,24 +89,20 @@ export function createXiaobaiOsLifecycle({
     isChatBindingCurrent = () => true,
     createActivationToken = createStorageId,
     appRuntime = {},
-    bridgeFactory = createXiaobaiOsFrameBridge,
+    bridgeFactory = createDirectXiaobaiOsBridge,
     onError = (error) => console.error('[TavernKitchen] 后厨工作台 运行失败', error),
 }: XiaobaiOsLifecycleOptions = {}): XiaobaiOsLifecycle {
-    if (!stylesheetHref || !frameSrc) {
-        throw new TypeError('xiaobai OS lifecycle requires stylesheetHref and frameSrc');
-    }
-    const resolvedStylesheetHref = stylesheetHref;
-    const resolvedFrameSrc = frameSrc;
-
     let initialized = false;
     let initialAppId: string | null = null;
+    let pendingFocus: { appId: string; detail: UnknownRecord } | null = null;
     let container: HTMLDivElement | null = null;
-    let iframe: HTMLIFrameElement | null = null;
     let bridge: XiaobaiOsHostFrameBridge | null = null;
+    let unmountSurfaceApp: (() => void) | null = null;
+    let unbindSurfaceTheme: (() => void) | null = null;
     let unsubscribeChatChanged: (() => void) | null = null;
     let unsubscribeAppDescriptorsChanged: (() => void) | null = null;
     let unsubscribeAppStatusChanged: (() => void) | null = null;
-    let themeObserver: MutationObserver | null = null;
+    let listeningThemeEvent = false;
     let activeApp: ActiveApp | null = null;
     let pendingApp: ActiveApp | null = null;
     let windowOpenPromise: Promise<void> | null = null;
@@ -165,19 +163,6 @@ export function createXiaobaiOsLifecycle({
         }));
     }
 
-    function addStylesheet(): HTMLLinkElement {
-        let stylesheet = documentTarget.getElementById(STYLE_ID) as HTMLLinkElement | null;
-        if (stylesheet) {
-            return stylesheet;
-        }
-        stylesheet = documentTarget.createElement('link');
-        stylesheet.id = STYLE_ID;
-        stylesheet.rel = 'stylesheet';
-        stylesheet.href = resolvedStylesheetHref;
-        documentTarget.head.append(stylesheet);
-        return stylesheet;
-    }
-
     async function deactivateActiveApp(reason: string): Promise<void> {
         appActivationGeneration += 1;
         pendingApp = null;
@@ -219,24 +204,6 @@ export function createXiaobaiOsLifecycle({
         if (bridge?.isReady()) { bridge.post('os/app-state', { appId, status }); }
     }
 
-    async function closeWindow(reason = 'closed'): Promise<void> {
-        initialAppId = null;
-        generation += 1;
-        const deactivation = deactivateActiveApp(reason);
-        bridge?.dispose();
-        bridge = null;
-        windowOpenPromise = null;
-        stopThemeObserver();
-        if (reason === 'frame-close') { onEmbeddedClose?.(); }
-        container?.remove();
-        container = null;
-        iframe = null;
-        await Promise.all([
-            deactivation,
-            Promise.resolve().then(() => appRuntime.handleWindowClosed?.(reason)).catch(reportError),
-        ]);
-    }
-
     function handleThemeChanged(): void {
         if (!bridge?.isReady()) {
             return;
@@ -245,23 +212,38 @@ export function createXiaobaiOsLifecycle({
         bridge.post('os/theme-changed', { theme: snapshot?.theme || 'light' });
     }
 
-    function startThemeObserver(): void {
-        if (themeObserver || typeof windowTarget.MutationObserver !== 'function') {
-            return;
-        }
-        themeObserver = new windowTarget.MutationObserver(handleThemeChanged);
-        const options = { attributes: true, attributeFilter: ['class', 'data-theme', 'style'] };
-        if (documentTarget.documentElement) {
-            themeObserver.observe(documentTarget.documentElement, options);
-        }
-        if (documentTarget.body) {
-            themeObserver.observe(documentTarget.body, options);
-        }
+    function startThemeListener(): void {
+        if (listeningThemeEvent) { return; }
+        listeningThemeEvent = true;
+        documentTarget.addEventListener('kitchen-theme-change', handleThemeChanged);
     }
 
-    function stopThemeObserver(): void {
-        themeObserver?.disconnect();
-        themeObserver = null;
+    function stopThemeListener(): void {
+        if (!listeningThemeEvent) { return; }
+        listeningThemeEvent = false;
+        documentTarget.removeEventListener('kitchen-theme-change', handleThemeChanged);
+    }
+
+    async function closeWindow(reason = 'closed'): Promise<void> {
+        initialAppId = null;
+        pendingFocus = null;
+        generation += 1;
+        const deactivation = deactivateActiveApp(reason);
+        unmountSurfaceApp?.();
+        unmountSurfaceApp = null;
+        unbindSurfaceTheme?.();
+        unbindSurfaceTheme = null;
+        bridge?.dispose();
+        bridge = null;
+        windowOpenPromise = null;
+        stopThemeListener();
+        if (reason === 'frame-close') { onEmbeddedClose?.(); }
+        container?.remove();
+        container = null;
+        await Promise.all([
+            deactivation,
+            Promise.resolve().then(() => appRuntime.handleWindowClosed?.(reason)).catch(reportError),
+        ]);
     }
 
     async function handleFrameReady(frameBridge: XiaobaiOsHostFrameBridge, openGeneration: number): Promise<void> {
@@ -271,8 +253,6 @@ export function createXiaobaiOsLifecycle({
             if (openGeneration === generation && frameBridge === bridge) {
                 frameBridge.post('os/error', { message: error instanceof Error ? error.message : String(error) });
             }
-            // The tracked window-open operation owns error reporting. This waiter
-            // only keeps a failed refresh from publishing a stale init snapshot.
             return;
         }
         try {
@@ -306,6 +286,32 @@ export function createXiaobaiOsLifecycle({
         if (type === 'os/close') {
             if (onEmbeddedClose) { onEmbeddedClose(); return; }
             await closeWindow('frame-close');
+            return;
+        }
+        if (type === 'os/navigate-kitchen') {
+            const route = isRecord(payload) && typeof payload.route === 'string' ? payload.route : '';
+            const detail = isRecord(payload) && isRecord(payload.detail) ? payload.detail : undefined;
+            if (route) { onNavigateKitchen?.(route, detail); }
+            return;
+        }
+        if (type === 'os/open-wide-map') {
+            const currentForMap = activeApp;
+            if (currentForMap?.appId === 'map' && isRecord(payload)) {
+                onOpenWideMap?.(payload, placeKey => {
+                    if (openGeneration === generation && frameBridge === bridge && activeApp === currentForMap && bridge.isReady()) {
+                        bridge.post('map/focus-place', { placeKey }, '', currentForMap);
+                    }
+                });
+            }
+            return;
+        }
+        if (type === 'os/consume-focus') {
+            const currentForFocus = activeApp;
+            if (currentForFocus && pendingFocus && pendingFocus.appId === currentForFocus.appId) {
+                const detail = pendingFocus.detail;
+                pendingFocus = null;
+                frameBridge.post(`${currentForFocus.appId}/focus-place`, detail, '', currentForFocus);
+            }
             return;
         }
         if (type === 'app/deactivate') {
@@ -418,7 +424,7 @@ export function createXiaobaiOsLifecycle({
                     state: state ?? null,
                 }, requestId);
             } catch (error) {
-                if (pendingApp === candidate) {pendingApp = null;}
+                if (pendingApp === candidate) { pendingApp = null; }
                 const cancelled = openGeneration !== generation
                     || frameBridge !== bridge
                     || !isLocallyCurrent(candidate);
@@ -467,7 +473,7 @@ export function createXiaobaiOsLifecycle({
             let result: unknown;
             if (['map', 'world'].includes(messageAppId) && type === messageAppId + '/model-profile') {
                 const data = isRecord(payload) ? payload : {};
-                if (!['load', 'mutate'].includes(String(data.action))) {throw new Error('未知的模型配置操作');}
+                if (!['load', 'mutate'].includes(String(data.action))) { throw new Error('未知的模型配置操作'); }
                 if (data.action === 'mutate' && (!isRecord(data.mutation) || data.mutation.type !== 'select')) {
                     throw new Error('请在 API 配置页面编辑配置');
                 }
@@ -507,25 +513,27 @@ export function createXiaobaiOsLifecycle({
     }
 
     function canOpen(): boolean {
-        if (!initialized) {
-            return false;
-        }
-        return true;
+        return initialized;
     }
 
-    function open(appId?: string): boolean {
+    function open(appId?: string, detail?: UnknownRecord | null): boolean {
         if (!canOpen()) { return false; }
         if (appId && !getAppDescriptors().some(app => app.id === appId)) { return false; }
         // Embedded tools must never fall back to the legacy desktop/modal during startup.
         const mount = embeddedMount?.();
         if (!appId || !mount?.isConnected) { return false; }
+        pendingFocus = detail && isRecord(detail) ? { appId, detail } : null;
         initialAppId = appId || null;
         if (container?.isConnected) {
             if (bridge?.isReady()) {
                 bridge.post('os/navigate', { appId: initialAppId });
                 initialAppId = null;
+                if (pendingFocus && activeApp?.appId === appId) {
+                    const nextFocus = pendingFocus.detail;
+                    pendingFocus = null;
+                    bridge.post(`${appId}/focus-place`, nextFocus, '', activeApp);
+                }
             }
-            iframe?.focus();
             return true;
         }
         generation += 1;
@@ -534,26 +542,49 @@ export function createXiaobaiOsLifecycle({
         container.id = HOST_ID;
         container.className = 'tk-embedded-host';
         container.setAttribute('aria-label', '后厨工具');
-        iframe = documentTarget.createElement('iframe');
-        iframe.id = IFRAME_ID;
-        iframe.className = 'tavernKitchen-os-frame';
-        onFrameCreated?.(iframe);
-        iframe.src = resolvedFrameSrc;
-        iframe.title = '后厨工作台';
-        iframe.setAttribute('allow', 'clipboard-read; clipboard-write');
-        container.append(iframe);
+        const shadow = container.attachShadow({ mode: 'open' });
+        const surface = documentTarget.createElement('div');
+        surface.className = 'tk-surface tk-embedded tk-follow-host';
+        surface.dataset.kitchenTheme = 'host';
+        const surfaceBody = documentTarget.createElement('div');
+        surfaceBody.className = 'tk-surface-body';
+        const appRoot = documentTarget.createElement('div');
+        appRoot.className = 'tk-os-app-root';
+        surfaceBody.append(appRoot);
+        surface.append(surfaceBody);
+        shadow.append(surface);
         mount.append(container);
-        bridge = bridgeFactory({
-            iframe,
-            windowTarget,
+        const stopTheme = onSurfaceCreated?.(container, surface);
+        unbindSurfaceTheme = typeof stopTheme === 'function' ? stopTheme : null;
+        const nextBridge = bridgeFactory({
             onReady: (frameBridge) => handleFrameReady(frameBridge, openGeneration),
             onMessage: (message, frameBridge) => handleFrameMessage(message, frameBridge, openGeneration),
         });
+        bridge = nextBridge;
         windowOpenPromise = Promise.resolve().then(async () => {
             await appRuntime.handleWindowOpened?.();
         });
         track(windowOpenPromise);
-        startThemeObserver();
+        if (mountApp && nextBridge.clientBridge) {
+            const clientBridge = nextBridge.clientBridge;
+            track(Promise.resolve().then(async () => {
+                const cleanupApp = await mountApp(appRoot, shadow, clientBridge);
+                if (openGeneration !== generation || bridge !== nextBridge) {
+                    cleanupApp?.();
+                    return;
+                }
+                unmountSurfaceApp = cleanupApp;
+            }).catch(error => {
+                if (openGeneration === generation && bridge === nextBridge) {
+                    const errNode = documentTarget.createElement('p');
+                    errNode.setAttribute('role', 'alert');
+                    errNode.textContent = '后厨工具界面加载失败，请刷新酒馆重试。';
+                    appRoot.replaceChildren(errNode);
+                }
+                reportError(error);
+            }));
+        }
+        startThemeListener();
         return true;
     }
 
@@ -576,7 +607,6 @@ export function createXiaobaiOsLifecycle({
         if (initialized) {
             return true;
         }
-        addStylesheet();
         unsubscribeChatChanged = subscribeChatChanged(handleChatChanged);
         unsubscribeAppDescriptorsChanged = subscribeAppDescriptorsChanged(handleAppDescriptorsChanged);
         unsubscribeAppStatusChanged = subscribeAppStatusChanged(handleAppStatusChanged);
@@ -587,13 +617,13 @@ export function createXiaobaiOsLifecycle({
     }
 
     async function cleanup(): Promise<void> {
-        if (!initialized && !container && !documentTarget.getElementById(STYLE_ID)) {
+        if (!initialized && !container) {
             return;
         }
         generation += 1;
         const cancellation = Promise.resolve().then(() => appRuntime.cancelAll?.('cleanup'));
         const closing = closeWindow('cleanup');
-        stopThemeObserver();
+        stopThemeListener();
         const stopping = Promise.resolve().then(() => appRuntime.stopBackground?.());
         unsubscribeChatChanged?.();
         unsubscribeChatChanged = null;
@@ -602,7 +632,6 @@ export function createXiaobaiOsLifecycle({
         unsubscribeAppStatusChanged?.();
         unsubscribeAppStatusChanged = null;
         windowTarget.removeEventListener('pagehide', handlePageHide);
-        documentTarget.getElementById(STYLE_ID)?.remove();
         initialized = false;
         await Promise.all([cancellation, closing, stopping, ...pendingOperations].map(operation => operation.catch(reportError)));
     }

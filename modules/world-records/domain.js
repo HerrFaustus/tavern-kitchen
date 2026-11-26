@@ -17,6 +17,8 @@ export const MAX_RECENT_CHECKPOINTS = 8;
 const isSha256Hex = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 export const KINDS = { person: '人物', organization: '组织', place: '地点', item: '物品', subject: '未分类' };
 export const NATURES = { established_fact: '已确认事实', rumor: '传闻', belief: '角色认知', intention: '计划', hypothesis: '推测', creative_proposal: '创作候选', unclassified: '待确认' };
+// WHY: safeField() uses FIELD_LABELS in reverse to canonicalize Chinese labels back to English schema keys.
+// DO NOT add fields whose canonical storage key is Chinese (e.g. 保管人/使用人/重要性) here; map display-only aliases in view.js instead.
 export const FIELD_LABELS = { coins: '金币', owner: '归属', location: '所在地', parent: '上级地点', description: '描述' };
 const forbidden = new Set(['__proto__', 'prototype', 'constructor']);
 export function invariant(ok, message) { if (!ok) throw new Error(message); }

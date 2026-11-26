@@ -75,3 +75,65 @@ test('dismissing an error returns the strip to the permanent standby bar and all
     assert.match(ui.status().textContent, /向量任务完成/);
     assert.equal(ui.host().hidden, false);
 });
+
+test('collapsing a send-locking error keeps a locked-collapsed bar with expand/retry until resolved', async t => {
+    const ui = mount(t);
+    let retried = 0;
+    showAgentNotice({
+        level: 'error',
+        message: '第 10 楼总结失败，已阻止发送。',
+        pinned: true,
+        locked: true,
+        retry: () => { retried += 1; },
+    });
+    const collapse = [...ui.status().querySelectorAll('button')].find(button => button.textContent === '收起');
+    assert.ok(collapse);
+    collapse.click();
+    await setImmediate();
+
+    assert.equal(ui.status().classList.contains('is-locked-collapsed'), true);
+    assert.equal(ui.status().classList.contains('is-idle'), false);
+    assert.match(ui.status().textContent, /发送已锁定/);
+
+    // Idle updates and routine info notices must not overwrite the collapsed locked warning.
+    setAgentIdleStatus({ message: '后厨待命 · 不得覆盖锁定态' });
+    assert.equal(ui.status().classList.contains('is-locked-collapsed'), true);
+    assert.equal(showAgentNotice({ level: 'info', message: '轻提示' }), null);
+
+    const retryBtn = [...ui.status().querySelectorAll('button')].find(button => button.textContent === '重试');
+    retryBtn.click();
+    await setImmediate();
+    assert.equal(retried, 1);
+
+    const expand = [...ui.status().querySelectorAll('button')].find(button => button.textContent === '展开报错');
+    assert.ok(expand);
+    expand.click();
+    await setImmediate();
+    assert.equal(ui.status().classList.contains('is-locked-collapsed'), false);
+    assert.match(ui.status().textContent, /第 10 楼总结失败/);
+
+    clearAgentNotice();
+    assert.equal(ui.status().classList.contains('is-idle'), true);
+});
+
+test('running pre-send notice renders live elapsed badge and cancel auto-send action', async t => {
+    const ui = mount(t);
+    let cancelled = 0;
+    showAgentNotice({
+        level: 'info',
+        message: '发送前正在总结第 4 楼…',
+        pinned: true,
+        showElapsed: true,
+        startedAt: Date.now() - 3200,
+        cancel: () => { cancelled += 1; },
+        cancelLabel: '取消自动发送',
+    });
+    const elapsed = ui.status().querySelector('.tk-agent-strip-elapsed');
+    assert.ok(elapsed);
+    assert.match(elapsed.textContent, /^已用 \d+s$/);
+    const cancelBtn = [...ui.status().querySelectorAll('button')].find(button => button.textContent === '取消自动发送');
+    assert.ok(cancelBtn);
+    cancelBtn.click();
+    await setImmediate();
+    assert.equal(cancelled, 1);
+});

@@ -49,9 +49,10 @@ export function startupEntry(names, dependencies) {
 }
 
 const uiSource = readFileSync(new URL('../../story-summary-ui.js', import.meta.url), 'utf8');
-const uiDeclarations = parse(uiSource, { sourceType: 'module', ecmaVersion: 'latest' }).body
-    .find(node => node.type === 'ExpressionStatement' && node.expression.type === 'CallExpression'
-        && node.expression.callee.type === 'FunctionExpression').expression.callee.body.body;
+const uiAst = parse(uiSource, { sourceType: 'module', ecmaVersion: 'latest' }).body;
+const uiRootFn = uiAst.find(node => node.type === 'ExportNamedDeclaration' && node.declaration?.type === 'FunctionDeclaration'
+    && node.declaration.id?.name === 'mountStorySummaryUI')?.declaration;
+const uiDeclarations = uiRootFn.body.body;
 
 export function uiEntry(names, dependencies) {
     const context = vm.createContext({ ...dependencies });

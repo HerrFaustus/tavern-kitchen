@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { parseHTML } from 'linkedom';
 import { uiEntry } from './helpers/story-summary-entry.js';
+import { STORY_SUMMARY_MARKUP } from '../story-summary-template.js';
 import { normalizeRecallTimeoutSec, MAX_RECALL_TIMEOUT_SEC } from '../data/recall-settings.js';
 
+const parseSurface = () => parseHTML(`<!doctype html><html><body>${STORY_SUMMARY_MARKUP}</body></html>`);
+
 test('the real settings page presents raw retrieval and drops legacy summary/anchor controls', () => {
-    const { document } = parseHTML(readFileSync(new URL('../story-summary.html', import.meta.url), 'utf8'));
+    const { document } = parseSurface();
     assert.equal(document.querySelector('[data-workspace-page="tab-l0-api"]'), null);
     for (const removedId of ['legacy-anchor-card', 'vector-atom-count', 'vector-event-count', 'vector-empty-l0-warning',
         'trigger-enabled', 'trigger-interval', 'trigger-timing', 'trigger-notify-on-complete', 'use-vector-boundary',
@@ -22,7 +24,7 @@ test('the real settings page presents raw retrieval and drops legacy summary/anc
 });
 
 test('summary and vector settings need no activation or range controls', () => {
-    const { document } = parseHTML(readFileSync(new URL('../story-summary.html', import.meta.url), 'utf8'));
+    const { document } = parseSurface();
     for (const id of ['current-chat-enabled', 'vector-enabled', 'trigger-delay-floors', 'trigger-max-per-run']) assert.equal(document.getElementById(id), null);
     assert.equal([...document.querySelectorAll('summary')].some(element => element.textContent.includes('总结范围')), false);
     assert.equal(document.getElementById('vector-config-area').classList.contains('hidden'), false);
@@ -38,7 +40,7 @@ test('summary and vector settings need no activation or range controls', () => {
 });
 
 test('story-summary page exposes zero prompt configuration forms while keeping save controls intact', () => {
-    const { document } = parseHTML(readFileSync(new URL('../story-summary.html', import.meta.url), 'utf8'));
+    const { document } = parseSurface();
     assert.equal(document.querySelector('.settings-tab, #tab-agent-api, #summary-text-api'), null);
     for (const selector of ['#tab-summary-prompts', '#tab-prompts', '#summary-style', '#btn-reset-summary-style', '#prompt-round', '#prompt-stage', '#prompt-chapter', '[data-save-layer]']) {
         assert.equal(document.querySelector(selector), null);

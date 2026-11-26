@@ -59,7 +59,7 @@ function renderNoteLayer(doc, container, layer, staleTargets) {
         group.className = 'tk-planner-group';
         group.dataset.entityGroup = key;
         const title = doc.createElement('h6');
-        title.className = 'standoutHeader tk-planner-group-title';
+        title.className = 'tk-planner-group-title';
         title.textContent = `${label}（${items.length}）`;
         group.append(title);
         for (const item of items) {
@@ -143,7 +143,7 @@ export function createPlannerSettings(root, { retry, prepare, clipboard, enabled
     note.className = 'tk-planner-note';
     note.hidden = true;
     const chapterHeading = doc.createElement('h5');
-    chapterHeading.className = 'standoutHeader';
+    chapterHeading.className = 'tk-planner-section-label';
     chapterHeading.textContent = '章节札记';
     const chapter = doc.createElement('div');
     chapter.className = 'tk-planner-note-text tk-planner-chapter';

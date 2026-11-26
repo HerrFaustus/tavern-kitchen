@@ -1,5 +1,29 @@
-/* Feature frames share SillyTavern's live theme and the outer workspace chrome. */
-:root.tk-embedded.tk-follow-host, .tk-follow-host [data-theme], .tk-follow-host .xiaobai-os-shell {
+/* Feature surfaces (in-page Shadow DOM or standalone test roots) share SillyTavern's live theme. */
+:host {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    contain: layout style;
+}
+.tk-surface {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    container-type: inline-size;
+    box-sizing: border-box;
+}
+.tk-surface-body {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    margin: 0;
+    box-sizing: border-box;
+}
+:is(:root, .tk-surface).tk-embedded.tk-follow-host, .tk-follow-host [data-theme], .tk-follow-host .xiaobai-os-shell {
     --bg: var(--SmartThemeBlurTintColor, #202024);
     --bg2: var(--SmartThemeChatTintColor, #29292e);
     --bg3: color-mix(in srgb, var(--SmartThemeBodyColor, #ddd) 8%, var(--bg));
@@ -8,6 +32,9 @@
     --bdr: var(--SmartThemeBorderColor, #555); --bdr2: var(--bdr);
     --acc: var(--txt); --hl: var(--SmartThemeQuoteColor, #d5b18a); --hl2: var(--hl);
     --inv: var(--bg);
+    --tk-error: var(--SmartThemeErrorColor, #e05252);
+    --tk-warn: var(--SmartThemeWarningColor, #d99326);
+    --tk-success: var(--SmartThemeSuccessColor, #3fb96d);
     --btn-p-hover: color-mix(in srgb, var(--txt) 90%, var(--bg));
     --btn-p-disabled: var(--bg3);
     --hl-soft: color-mix(in srgb, var(--hl) 12%, transparent);
@@ -16,122 +43,67 @@
     --xiaobai-os-ink: var(--txt); --xiaobai-os-muted: var(--txt3);
     --xiaobai-os-divider: var(--bdr); --xiaobai-os-accent: var(--hl);
     --os-radius-card: 8px; --os-radius-control: 5px; --os-shadow-card: none;
+    --os-status-height: 0px;
+    color-scheme: var(--tk-color-scheme, normal);
     font-family: var(--tk-font, sans-serif); color: var(--txt); background: var(--bg);
 }
-.tk-embedded body { font-family: var(--tk-font, sans-serif); font-size: var(--tk-font-size, 15px); color: var(--txt); background: var(--bg); }
+:is(:root, .tk-surface).tk-embedded.tk-follow-host[data-tk-scheme="light"],
+:is(:root, .tk-surface).tk-embedded.tk-follow-host[data-tk-scheme="light"] .xiaobai-os-shell {
+    --tk-error: #b91c1c;
+    --tk-warn: #9a5b00;
+    --tk-success: #15803d;
+}
+.tk-embedded.tk-follow-host [data-status-kind="error"] { color: var(--tk-error); }
+.tk-embedded.tk-follow-host [data-status-kind="success"] { color: var(--tk-success); }
+.tk-embedded.tk-follow-host [data-status-kind="loading"] { color: var(--tk-warn); }
+:is(html, .tk-surface).tk-embedded:not([data-kitchen-view="memory"]) #summary-notice { display: none !important; }
+
+.tk-embedded :is(body, .tk-surface-body) { font-family: var(--tk-font, sans-serif); font-size: var(--tk-font-size, 15px); color: var(--txt); background: var(--bg); }
 .tk-embedded :is(button, input, select, textarea) { font-family: inherit; }
-.tk-embedded #xb-frame-boot { color: var(--txt); background: var(--bg); }
 .tk-embedded:not([data-kitchen-view="settings"]) #settings-modal { display: none !important; }
-.tk-embedded:not([data-kitchen-view="settings"]) body { overflow-y: auto; }
+.tk-embedded:not([data-kitchen-view="settings"]) :is(body, .tk-surface-body) { overflow-y: auto; }
 .tk-embedded .archive-tabs { display: none; }
 .tk-embedded[data-kitchen-view="people"] .archive-people-layout { display: block; }
 .tk-embedded[data-kitchen-view="people"] #archive-profile-home { display: block; }
 .tk-embedded[data-kitchen-view="people"] .archive-profile { padding-left: 0; border-left: 0; }
 .tk-embedded[data-kitchen-view="settings"] .archive { display: none; }
-.tk-embedded[data-kitchen-view="settings"] .workspace-shell { padding-inline: 24px; }
-.tk-embedded #archive-manage-open { display: none; }
-.tk-embedded .archive { padding: 0 24px 32px; font-family: inherit; }
-.tk-embedded :is(.archive-topbar, .archive-nav) { display: none; }
-.tk-embedded .archive-content { padding-top: .3em; }
+.tk-embedded :is(.archive-topbar, .archive-nav, .archive-brand, #archive-close) { display: none; }
+.tk-embedded .archive { padding: 0 5px 16px; font-family: inherit; }
+.tk-embedded .archive-hero { padding: 4px 0; }
+.tk-embedded .archive-content { padding-top: 6px; }
 .tk-embedded #archive-people .archive-roster { margin: 0; }
 .tk-embedded #archive-people .archive-person { min-height: 2.6em; }
-.tk-embedded #archive-people .archive-avatar { display: none; }
-.tk-embedded .archive-brand, .tk-embedded #archive-close, .tk-embedded #archive-theme,
-.tk-embedded #ep_close, .tk-embedded .header-left { display: none; }
-.tk-embedded .container { max-width: none; padding: 16px 24px; }
-.tk-embedded .container > header { justify-content: flex-end; padding: 0 0 12px; margin: 0 0 16px; }
-.tk-embedded .xiaobai-os-shell { padding: 0; background: var(--bg); backdrop-filter: none; }
+.tk-embedded .xiaobai-os-shell { padding: 0; background: var(--bg); backdrop-filter: none; color-scheme: var(--tk-color-scheme, normal); }
 .tk-embedded :is(.xiaobai-os-loading, .xiaobai-os-error) { position: static; inset: auto; transform: none; max-width: none; padding: 12px 5px; border: 0; border-radius: 0; background: transparent; color: var(--txt); font: inherit; box-shadow: none; }
 .tk-embedded .tk-context-nav { flex: 0 0 auto; color: var(--txt); background: var(--bg); border-bottom: 1px solid var(--bdr); padding: 4px 16px; }
 .tk-embedded .tk-context-nav button { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; font: inherit; font-size: 13px; color: inherit; background: transparent; border: 0; border-radius: 5px; cursor: pointer; }
 .tk-embedded .tk-context-nav button:hover { background: var(--bg3); }
 .tk-embedded .xiaobai-os-stage { flex: 1; }
-.tk-embedded .world-back { display: none; }
 .tk-embedded :focus-visible { outline: 2px solid var(--hl); outline-offset: 2px; }
 .tk-embedded ::selection { background: var(--hl-soft); color: var(--txt); }
 .tk-embedded input, .tk-embedded textarea { caret-color: var(--txt); }
 .tk-embedded .btn-p:disabled { color: var(--txt3); }
 
-/* All retained OS pages use the same controls and live host palette. */
-:root.tk-embedded.tk-follow-host { --os-status-height: 0px; color-scheme: var(--tk-color-scheme, normal); }
-.tk-embedded.tk-follow-host .xiaobai-os-shell {
-    --os-status-height: 0px;
-    --xiaobai-os-screen: var(--bg); --xiaobai-os-surface: var(--bg2);
-    --xiaobai-os-ink: var(--txt); --xiaobai-os-muted: var(--txt3);
-    --xiaobai-os-divider: var(--bdr); --xiaobai-os-accent: var(--hl);
-    font-family: var(--tk-font, sans-serif);
-    color-scheme: var(--tk-color-scheme, normal);
-}
 .tk-embedded.tk-follow-host .xiaobai-os-shell .agent-api-app {
     --bg-primary: var(--bg); --bg-secondary: var(--bg2); --bg-tertiary: var(--bg3); --bg-input: var(--bg);
     --text-primary: var(--txt); --text-secondary: var(--txt3); --text-muted: var(--txt3);
     --border: var(--bdr); --border-focus: var(--hl); --accent: var(--hl); --accent-soft: var(--hl-soft);
     font-family: inherit; color-scheme: inherit;
 }
-.tk-embedded.tk-follow-host .xiaobai-os-shell .map-app {
-    --map-ground: var(--bg); --map-surface: var(--bg2); --map-ink: var(--txt); --map-muted: var(--txt3);
-    --map-accent: var(--hl); --map-tint: var(--bg3); --map-line: var(--bdr); --map-canvas-bg: var(--bg);
-    background: var(--bg); font-family: inherit; color-scheme: inherit;
-}
-.tk-embedded.tk-follow-host .xiaobai-os-shell .world-app {
-    --world-paper: var(--bg); --world-surface: var(--bg2); --world-ink: var(--txt); --world-muted: var(--txt3);
-    --world-rule: var(--bdr); --world-accent: var(--hl); --world-soft: var(--bg3);
-    color-scheme: inherit;
-}
-.tk-embedded .agent-api-scroll { padding: 20px 24px 32px; }
+.tk-embedded .agent-api-scroll { padding: 5px !important; }
 .tk-embedded .agent-api-content { max-width: none; }
-.tk-embedded .agent-api-header { margin-bottom: 24px; }
-.tk-embedded .agent-api-header h1, .tk-embedded .world-toolbar-title { font-size: 18px; letter-spacing: normal; }
-.tk-embedded .xb-agent-settings-surface .xb-assistant-preset-row {
-    padding: 0 0 16px; border: 0; border-bottom: 1px solid var(--bdr); border-radius: 0; background: none;
-}
-.tk-embedded .agent-api-state, .tk-embedded .agent-api-connection { border-radius: 5px; padding: 16px; }
-.tk-embedded .agent-api-connection { background: none; border: 0; border-top: 1px solid var(--bdr); border-radius: 0; padding-inline: 0; margin-top: 24px; }
-.tk-embedded .xb-agent-settings-surface :is(input, select, textarea, button),
-.tk-embedded .agent-api-connection button, .tk-embedded .agent-api-state button { border-radius: 5px; }
-.tk-embedded .xb-agent-settings-surface .xb-assistant-config label { font-size: 14px; }
-.tk-embedded .xb-agent-settings-surface .xb-assistant-config :is(input, select, textarea) { font-family: inherit; font-size: 14px; }
-.tk-embedded .xb-agent-settings-surface .xb-assistant-icon-button:hover { transform: none; }
-.tk-embedded .agent-api-state span { font-size: 13px; }
-.tk-embedded .map-search-bar, .tk-embedded .map-view-switch, .tk-embedded .map-notice,
-.tk-embedded .map-viewport-controls, .tk-embedded .map-place-detail, .tk-embedded .map-region-card { box-shadow: none; border-radius: 5px; }
-.tk-embedded .map-round-button, .tk-embedded .map-region-trail button,
-.tk-embedded .map-view-switch button, .tk-embedded .map-primary-button, .tk-embedded .map-secondary-button { border-radius: 5px; }
-.tk-embedded .map-app .map-primary-button, .tk-embedded .world-empty .world-primary {
-    background: var(--txt); color: var(--bg); border-radius: 5px;
-}
-.tk-embedded .map-switch[aria-checked="true"] { background: var(--map-accent); }
-.tk-embedded .map-dialog { border-radius: 8px; }
-.tk-embedded .map-dialog-header h2 { font-size: 18px; margin: 0; }
-.tk-embedded .map-empty { padding: 24px; }
-.tk-embedded .map-empty h1 { font-size: 18px; margin-top: 0; }
-.tk-embedded .map-empty p { font-size: 14px; max-width: 52ch; }
-.tk-embedded .map-setting-note, .tk-embedded .map-search-bar small { font-size: 13px !important; }
-.tk-embedded .world-horizon { display: none; }
-.tk-embedded .world-toolbar { padding: 20px 24px 12px; }
-.tk-embedded .world-listing { padding-inline: 24px; }
-.tk-embedded .world-news-list, .tk-embedded .world-empty { max-width: none; }
-.tk-embedded .world-opening { max-width: none; padding: 24px 0; }
-.tk-embedded.tk-follow-host .dice-app { max-width: none; padding: 20px 24px 32px; }
-.tk-embedded .dice-app > .dice-intro { grid-column: 1 / -1; margin: 0; }
-/* The host drawer owns the tint and blur; stacked frame backgrounds must not darken it. */
-:root.tk-embedded.tk-follow-host,
-.tk-embedded.tk-follow-host body,
+
+/* The host drawer owns the tint and blur; stacked surface backgrounds must not darken it. */
+:is(:root, .tk-surface).tk-embedded.tk-follow-host,
+.tk-embedded.tk-follow-host :is(body, .tk-surface-body),
 .tk-embedded.tk-follow-host .xiaobai-os-shell,
-.tk-embedded.tk-follow-host .xiaobai-os-shell .agent-api-app,
-.tk-embedded.tk-follow-host .xiaobai-os-shell .world-app,
-.tk-embedded.tk-follow-host .xiaobai-os-shell .map-app { background: transparent; }
-.tk-embedded.tk-follow-host body { text-shadow: var(--tk-text-shadow, none); }
-.tk-embedded .archive { padding: 0 5px 16px; }
-.tk-embedded .archive-topbar { height: 32px; justify-content: flex-end; }
-.tk-embedded .archive-hero { padding: 4px 0; }
-.tk-embedded .archive-nav { padding: 4px 0; }
-.tk-embedded .archive-search { flex: 1; }
-.tk-embedded .archive-search input { width: 100%; padding: 4px; }
-.tk-embedded .archive-content { padding-top: 6px; }
-.tk-embedded .archive-roster { margin: 6px 0 12px; }
-/* Match the host's menu_button, text_pole and inline-drawer header controls. */
-.tk-embedded.tk-follow-host button:not([role="switch"]) {
+.tk-embedded.tk-follow-host .xiaobai-os-shell .agent-api-app { background: transparent; }
+.tk-embedded.tk-follow-host :is(body, .tk-surface-body) { text-shadow: var(--tk-text-shadow, none); }
+
+/* Match the host's menu_button, text_pole and inline-drawer header controls.
+ * WHY: Wrap the exclusion list inside :where(...) (0 specificity) so semantic primary (.btn-p)
+ * and danger (.btn-del) rules below cleanly override the default button surface without selector arms races. */
+.tk-embedded.tk-follow-host button:where(:not([role="switch"]):not(.archive-person):not(.archive-event-title):not(.archive-index-button):not(.archive-text):not(.disclose):not(.entry):not(.mention):not(.tk-inline-link):not(.tk-chip-link):not(.tk-link-btn)) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -151,18 +123,35 @@
     box-shadow: none !important;
     filter: var(--tk-button-filter, none) !important;
 }
-.tk-embedded.tk-follow-host button:not([role="switch"]):not(:disabled):not([aria-disabled="true"]):is(:hover, .active, .is-active, [aria-pressed="true"], [aria-selected="true"], [aria-current="page"]) {
+.tk-embedded.tk-follow-host button:where(:not([role="switch"]):not(.archive-person):not(.archive-event-title):not(.archive-index-button):not(.archive-text):not(.disclose):not(.entry):not(.mention):not(.tk-inline-link):not(.tk-chip-link):not(.tk-link-btn):not(:disabled):not([aria-disabled="true"])):is(:hover, .active, .is-active, [aria-pressed="true"], [aria-selected="true"], [aria-current="page"]) {
     background-color: var(--tk-selected-background-color, var(--bg3)) !important;
     background-image: var(--tk-selected-background-image, none) !important;
     color: var(--tk-selected-color, var(--txt)) !important;
     border: var(--tk-selected-border, 1px solid color-mix(in srgb, var(--hl) 55%, var(--bdr))) !important;
     filter: none !important;
 }
+.tk-embedded.tk-follow-host button.btn-p:not(:disabled) {
+    border-color: color-mix(in srgb, var(--hl) 65%, var(--bdr)) !important;
+    background-color: color-mix(in srgb, var(--hl) 20%, var(--bg)) !important;
+    font-weight: 600 !important;
+    filter: none !important;
+}
+.tk-embedded.tk-follow-host button.btn-p:not(:disabled):hover {
+    background-color: color-mix(in srgb, var(--hl) 30%, var(--bg)) !important;
+}
+.tk-embedded.tk-follow-host button.btn-del:not(:disabled) {
+    border-color: color-mix(in srgb, var(--tk-error) 65%, var(--bdr)) !important;
+    color: var(--tk-error) !important;
+    filter: none !important;
+}
+.tk-embedded.tk-follow-host button.btn-del:not(:disabled):hover {
+    background-color: color-mix(in srgb, var(--tk-error) 14%, var(--bg)) !important;
+}
 .tk-embedded.tk-follow-host button:is(:disabled, [aria-disabled="true"]) {
     opacity: var(--tk-disabled-opacity, .5) !important;
     cursor: not-allowed !important;
 }
-.tk-embedded.tk-follow-host :is(.btn, .xb-assistant-config button, .agent-api-connection button) { min-height: 0; }
+.tk-embedded.tk-follow-host .btn { min-height: 0; }
 .tk-embedded.tk-follow-host :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]), textarea) {
     background-color: var(--tk-field-background-color, var(--bg2)) !important;
     background-image: var(--tk-field-background-image, none) !important;
@@ -199,59 +188,53 @@
     padding: 0 !important; margin: 3px !important; transform: none !important;
     accent-color: var(--hl); cursor: pointer;
 }
-.tk-embedded.tk-follow-host .xb-sampling-toggle > span { display: none; }
 .tk-embedded.tk-follow-host input:is([type="checkbox"], [type="radio"])::before,
 .tk-embedded.tk-follow-host input:is([type="checkbox"], [type="radio"])::after { display: none !important; }
-.tk-embedded.tk-follow-host :is(.container, .workspace-shell, .agent-api-scroll, .world-toolbar, .world-listing, .dice-app) { padding: 5px !important; }
-.tk-embedded.tk-follow-host :is(.card, .neo-card, .settings-section, .settings-collapse, .agent-api-state, .map-settings-section, .dice-feature) {
+.tk-embedded.tk-follow-host .workspace-shell { padding: 5px !important; }
+.tk-embedded.tk-follow-host :is(.neo-card, .settings-section) {
     background: transparent; border: 0; border-radius: 0; box-shadow: none;
     padding: 5px 0; margin-bottom: 12px; transform: none;
 }
-.tk-embedded.tk-follow-host :is(.card-title, .neo-card-title, .settings-section-title, .settings-collapse-header, .summary-group > summary, .xb-sampling > summary) {
+.tk-embedded.tk-follow-host :is(.neo-card-title, .settings-section-title, .summary-group > summary, .standoutHeader) {
     background-color: var(--tk-heading-background-color, transparent);
     background-image: var(--tk-heading-background-image, none);
     color: var(--tk-heading-color, var(--txt)); border: var(--tk-heading-border, 1px solid var(--bdr));
     border-radius: var(--tk-heading-border-radius, 5px);
-    padding: var(--tk-heading-padding, 5px); margin: 0 0 5px;
-    font-size: 1em; font-weight: 600; letter-spacing: normal; text-transform: none;
+    padding: var(--tk-heading-padding, 5px 8px); margin: 0 0 6px;
+    font-size: .95em; font-weight: 600; letter-spacing: normal; text-transform: none;
 }
-.tk-embedded.tk-follow-host :is(.settings-row, .form-row, .form-group) { gap: 5px; margin-bottom: 8px; }
-.tk-embedded.tk-follow-host :is(.settings-field label, .form-label) { font-size: .9em; letter-spacing: normal; text-transform: none; }
-.tk-embedded.tk-follow-host .settings-tabs { flex-wrap: wrap; gap: 5px; width: 100%; padding: 0; margin: 0 0 8px; align-self: stretch; }
-.tk-embedded.tk-follow-host .settings-tab { flex: 1 0 auto; }
+/* WHY: SillyTavern's default .text_pole and .standoutHeader hardcode var(--black30a) and dark gradients,
+ * which produce muddy dark fields and charcoal bars on light themes. Restore clean light surfaces. */
+:is(:root, .tk-surface).tk-embedded.tk-follow-host[data-tk-scheme="light"] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]), select, textarea) {
+    background-color: var(--SmartThemeChatTintColor, #ffffff) !important;
+    color: var(--SmartThemeBodyColor, #1f2328) !important;
+}
+:is(:root, .tk-surface).tk-embedded.tk-follow-host[data-tk-scheme="light"] :is(.neo-card-title, .settings-section-title, .standoutHeader) {
+    background-color: color-mix(in srgb, var(--txt) 7%, transparent);
+    background-image: none;
+    color: var(--txt);
+}
+.tk-embedded.tk-follow-host .settings-row { gap: 5px; margin-bottom: 8px; }
+.tk-embedded.tk-follow-host .settings-field label { font-size: .9em; letter-spacing: normal; text-transform: none; }
 .tk-embedded.tk-follow-host .workspace-shell > .modal-head { min-height: 40px; gap: 8px; }
-.tk-embedded.tk-follow-host #settings-close { width: 28px; height: 28px; }
 .tk-embedded.tk-follow-host .workspace-layout { gap: 10px; padding-top: 8px; }
-.tk-embedded.tk-follow-host #tab-summary :is(.settings-checkbox, .archive-setting, .settings-field) { min-height: 32px; padding: 5px 0; }
-.tk-embedded.tk-follow-host .summary-group > summary { min-height: 0; }
-.tk-embedded.tk-follow-host .nav-tabs { display: flex !important; flex-wrap: wrap; gap: 5px; padding: 0; margin-bottom: 10px; border: 0; }
-.tk-embedded.tk-follow-host .nav-item { flex: 1 0 auto; }
-.tk-embedded.tk-follow-host .nav-item::after { display: none; }
-.tk-embedded.tk-follow-host .container { padding-bottom: 5px !important; }
-.tk-embedded.tk-follow-host :is(.modal-head, .modal-body, .modal-foot, .settings-collapse-content) { padding: 8px 5px; }
+.tk-embedded.tk-follow-host :is(.modal-head, .modal-body, .modal-foot) { padding: 8px 5px; }
 .tk-embedded.tk-follow-host .modal-bg { background: rgba(0, 0, 0, .55); backdrop-filter: blur(2px); }
 .tk-embedded.tk-follow-host :is(.modal-box, .confirm-modal-box) {
-    background: var(--SmartThemeChatTintColor, var(--bg2));
+    background: var(--tk-surface-solid, var(--SmartThemeChatTintColor, var(--bg2)));
     border: 1px solid var(--bdr);
     border-radius: 10px;
-    box-shadow: none;
+    box-shadow: 0 10px 30px rgb(0 0 0 / .35);
 }
-.tk-embedded.tk-follow-host .modal-head h2 {
-    font-size: 1.05em;
-    font-weight: 600;
-    letter-spacing: normal;
-    text-transform: none;
-    margin: 0;
-}
+.tk-embedded.tk-follow-host .modal-head h2 { font-size: 1.05em; font-weight: 600; letter-spacing: normal; text-transform: none; margin: 0; }
 .tk-embedded.tk-follow-host .archive-drawer {
-    background: var(--SmartThemeChatTintColor, var(--bg2));
+    background: var(--tk-surface-solid, var(--SmartThemeChatTintColor, var(--bg2)));
     border-inline-start: 1px solid var(--bdr);
-    box-shadow: none;
+    box-shadow: -8px 0 28px rgb(0 0 0 / .32);
 }
 .tk-embedded.tk-follow-host .archive-drawer::backdrop { background: rgba(0, 0, 0, .55); backdrop-filter: blur(2px); }
-.tk-embedded.tk-follow-host .agent-api-header { margin-bottom: 12px; }
-.tk-embedded.tk-follow-host .xb-assistant-preset-row { gap: 5px; padding-bottom: 8px; }
-.tk-embedded.tk-follow-host :is(.btn-icon, .archive-icon, .modal-close, .xb-assistant-icon-button) { width: auto; min-width: 28px; height: auto; min-height: 28px; }
+.tk-embedded.tk-follow-host :is(.archive-icon, .modal-close) { width: auto; min-width: 28px; height: auto; min-height: 28px; }
+
 /* Both directions use the host's timing, regardless of a module's hover style. */
 .tk-embedded :is(button, [role="button"], summary, input, select, textarea),
 .tk-embedded :is(button, [role="button"], summary)::before,
@@ -260,18 +243,41 @@
     transition-timing-function: ease-in-out !important;
     transition-delay: 0s !important;
 }
-.tk-embedded :is(.btn, .archive-icon, .xb-assistant-icon-button):hover { transform: none !important; }
-/* Instant visibility changes stay instant rather than animating only on entry. */
-.tk-embedded :is(.view.active, .tab-pane.active, .map-place-detail) { animation: none !important; }
-.tk-embedded #xb-frame-boot { transition: none; }
+.tk-embedded :is(.btn, .archive-icon):hover { transform: none !important; }
 @media (prefers-reduced-motion: reduce) {
-    :root.tk-embedded *, :root.tk-embedded *::before, :root.tk-embedded *::after { transition-duration: 0s !important; animation-duration: 0s !important; }
+    :is(:root, .tk-surface).tk-embedded *, :is(:root, .tk-surface).tk-embedded *::before, :is(:root, .tk-surface).tk-embedded *::after { transition-duration: 0s !important; animation-duration: 0s !important; }
 }
-@media (max-width: 600px) {
-    .tk-embedded .archive, .tk-embedded .container { padding-inline: 5px; }
-    .tk-embedded .agent-api-scroll, .tk-embedded .world-toolbar, .tk-embedded .world-listing, .tk-embedded.tk-follow-host .dice-app { padding-inline: 12px; }
-    .tk-embedded .xb-agent-settings-surface :is(input, select, textarea) { font-size: 16px; }
+@container (max-width: 600px) {
+    .tk-embedded .archive { padding-inline: 5px; }
+    .tk-embedded .agent-api-scroll { padding-inline: 8px !important; }
 }
 
 .tk-module-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-block: 6px; }
 .tk-embedded :is(button, select, input, summary):focus-visible { outline: 2px solid var(--SmartThemeQuoteColor, currentColor); outline-offset: 2px; }
+.tk-embedded .tk-info-card { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--bdr); border-radius: 8px; background: var(--bg2); margin-bottom: 10px; min-width: 0; }
+.tk-embedded .tk-info-card > h4 { margin: 0 0 2px; }
+.tk-embedded .tk-card-item { border: 1px solid var(--bdr); border-radius: 6px; padding: 8px 10px; background: var(--bg); display: grid; gap: 6px; }
+.tk-embedded .tk-card-title { margin: 0; font-size: .98em; font-weight: 600; color: var(--txt); }
+.tk-embedded .tk-field-row { margin: 0; line-height: 1.55; }
+.tk-embedded .tk-source-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }
+.tk-embedded .tk-source-btn { padding: 2px 8px !important; font-size: .85em !important; }
+.tk-embedded .tk-thread-drawer { padding: 0; border: 1px solid var(--bdr); border-radius: 6px; background: var(--bg); }
+.tk-embedded .tk-thread-summary { display: flex; align-items: center; gap: 6px; padding: 8px 10px; cursor: pointer; list-style: none; font-weight: 500; line-height: 1.45; }
+.tk-embedded .tk-thread-summary::-webkit-details-marker { display: none; }
+.tk-embedded .tk-thread-summary::before { content: '▸'; flex: 0 0 auto; font-size: .85em; color: var(--txt3); transition: transform 140ms ease; }
+.tk-embedded .tk-thread-drawer[open] > .tk-thread-summary::before { transform: rotate(90deg); }
+.tk-embedded .tk-thread-title { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.tk-embedded .tk-thread-floor { flex: 0 0 auto; white-space: nowrap; font-size: .82em; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--bdr); color: var(--txt3); font-variant-numeric: tabular-nums; }
+.tk-embedded .tk-thread-body { padding: 6px 10px 10px; display: grid; gap: 6px; border-top: 1px solid var(--bdr); }
+.tk-embedded .tk-inline-link { display: inline; padding: 0 2px; margin: 0; border: 0; border-bottom: 1px dashed var(--hl); border-radius: 0; background: transparent; color: var(--hl); font: inherit; cursor: pointer; text-align: start; }
+.tk-embedded .tk-inline-link:hover { border-bottom-style: solid; }
+.tk-embedded .tk-chip-link { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid color-mix(in srgb, var(--hl) 45%, var(--bdr)); border-radius: 999px; background: var(--bg2); color: var(--hl); font: inherit; font-size: .86em; cursor: pointer; line-height: 1.35; }
+.tk-embedded .tk-chip-link:hover { background: var(--hl-soft); }
+.tk-embedded .tk-link-btn { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px; border: 0; border-radius: 4px; background: transparent; color: var(--hl); font: inherit; font-size: .88em; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.tk-embedded .tk-link-btn:hover { background: var(--hl-soft); }
+.tk-embedded .tk-status-badges { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin: 4px 0 8px; }
+.tk-embedded .tk-status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--bdr); background: var(--bg2); font-size: .82em; color: var(--txt2); line-height: 1.35; }
+.tk-embedded .tk-status-badge.is-present { border-color: color-mix(in srgb, var(--tk-success) 55%, var(--bdr)); color: var(--tk-success); }
+.tk-embedded .tk-status-badge.is-link { cursor: pointer; border-color: color-mix(in srgb, var(--hl) 55%, var(--bdr)); color: var(--hl); font: inherit; font-size: .82em; }
+.tk-embedded .tk-filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+.tk-embedded .tk-filter-input { flex: 1 1 130px; min-width: 0; width: 100%; box-sizing: border-box; }

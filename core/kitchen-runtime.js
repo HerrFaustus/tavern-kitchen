@@ -136,7 +136,7 @@ function configureWorkspace() {
                 isCurrent: identity => memory.kitchenCardMemory().read().identity === identity,
             }));
             memory.openStoryMemorySettings('data');
-            worldArchive.showRecovery(kitchen.getMount('data')?.querySelector('iframe'));
+            worldArchive.showRecovery(kitchen.getMount('data')?.querySelector('.tk-embedded-host'));
         },
         recall: async () => {
             await requireFeatures();
@@ -170,14 +170,16 @@ function configureWorkspace() {
         await requireFeatures();
         if (!kitchen.isActive(id)) return;
         if (!memory) throw new Error('剧情记忆尚未准备好，请刷新后重试。');
-        memory.openStoryWorld(id === 'situation' ? 'world' : id);
+        const detail = kitchen.consumeRouteDetail(id);
+        memory.openStoryWorld(id === 'situation' ? 'world' : id, detail);
     };
     for (const id of ['map', 'settings', 'agent-api']) actions[id] = async () => {
         await requireFeatures();
         if (!kitchen.isActive(id)) return;
         if (!settings.xiaobaiOs?.enabled) await setXiaobaiOsEnabled(true);
         const appId = id === 'settings' || id === 'agent-api' ? 'agent-api' : id;
-        if (!await openXiaobaiOs(appId)) throw new Error('此板块尚未准备好，请重试。');
+        const detail = id === 'map' ? kitchen.consumeRouteDetail('map') : null;
+        if (!await openXiaobaiOs(appId, detail)) throw new Error('此板块尚未准备好，请重试。');
     };
     kitchen.configure({
         actions, visiblePanel:() => true,
@@ -209,6 +211,8 @@ async function startWorld() {
             injectToStory: true,
         }), getAccountId: getCurrentUserHandle, getMemorySnapshot: () => memory?.getWorldMemorySnapshot(),
         getMount: id => kitchen.getMount(id), isVisible: id => kitchen.isActive(id), onError: showError,
+        openModal: options => kitchen.openModal(options),
+        onNavigate: (route, detail) => { Promise.resolve(kitchen.open(route, true, detail)).catch(showError); },
         onAuthorityChange: () => { removeWorldGeneration?.clear(); memory?.invalidateWorldContext(); } });
     const { installWorldAuthorityGeneration } = await import('../modules/world-records/generation-host.js');
     removeWorldGeneration = installWorldAuthorityGeneration({ getContext, prepare: (query, type) => {

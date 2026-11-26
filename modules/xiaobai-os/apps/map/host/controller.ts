@@ -1,7 +1,7 @@
 import type {
     MaintenanceRunner,
 } from '../../../capabilities/maintenance/runner.js';
-import type { XiaobaiOsHostFrameMessage } from '../../../host/frame-bridge.js';
+import type { XiaobaiOsHostFrameMessage } from '../../../host/direct-bridge.js';
 import type { XiaobaiOsSettingsRepository } from '../../../host/settings-repository.js';
 import type {
     XiaobaiOsAppActivationContext,
@@ -10,7 +10,7 @@ import type {
 } from '../../../types.js';
 import type { MapService } from '../application/service.js';
 import type { MapClientState, MapClientStatus } from '../types.js';
-import { readMapConditions } from '../../../../story-state/situation-links.js';
+import { readMapActors, readMapConditions } from '../../../../story-state/situation-links.js';
 import { maintenanceState } from './maintenance-state.js';
 
 type UnknownRecord = Record<string, unknown>;
@@ -96,7 +96,10 @@ export function createMapController({
         return {
             chatIdentity,
             map: view.map,
-            ...(view.map ? {localConditions:readMapConditions(chatIdentity,view.map.atlas)} : {}),
+            ...(view.map ? {
+                localConditions: readMapConditions(chatIdentity, view.map.atlas),
+                localActors: readMapActors(chatIdentity, view.map.atlas),
+            } : {}),
             writeState: view.writeState,
             ...status,
             autoMaintenance: preferences?.autoMaintenance === true,

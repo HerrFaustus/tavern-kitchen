@@ -27,6 +27,14 @@ function available(element: HTMLElement): boolean {
         && element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden';
 }
 
+function activeElementOf(node: Node | null | undefined): Element | null {
+    const rootNode = node?.getRootNode?.();
+    if (rootNode && 'activeElement' in rootNode) {
+        return (rootNode as Document | ShadowRoot).activeElement;
+    }
+    return document.activeElement;
+}
+
 function focusLayer(layer: HTMLElement): void {
     // Selector lists use DOM order, not selector priority. Try autofocus before
     // ordinary controls, and the dialog container only if neither can focus.
@@ -34,7 +42,7 @@ function focusLayer(layer: HTMLElement): void {
         for (const target of layer.querySelectorAll<HTMLElement>(selector)) {
             if (!available(target)) { continue; }
             target.focus({ preventScroll: true });
-            if (target.ownerDocument.activeElement === target) { return; }
+            if (activeElementOf(target) === target) { return; }
         }
     }
     layer.focus({ preventScroll: true });
@@ -46,14 +54,14 @@ function restoreFocus(navigation: AppNavigation | null, origin: Element | null =
     // page update. Let that update enqueue before waiting for its DOM flush.
     queueMicrotask(() => { observeBackgroundTask(nextTick(() => {
         if (root && (!root.isConnected || navigation?.root.value !== root)) { return; }
-        const current = document.activeElement;
+        const current = activeElementOf(root);
         // An APP, a newly opened layer, or the user may already have chosen a
         // focus target. Repair only focus lost with the outgoing UI.
         if (current instanceof HTMLElement && current !== document.body && available(current)) { return; }
         const layer = navigation ? topModalLayer(navigation) : undefined;
         if (origin instanceof HTMLElement && available(origin) && (!root || root.contains(origin)) && (!layer || layer.contains(origin))) {
             origin.focus({ preventScroll: true });
-            if (document.activeElement === origin) { return; }
+            if (activeElementOf(origin) === origin) { return; }
         }
         if (layer) { focusLayer(layer); }
         else { root?.focus({ preventScroll: true }); }
@@ -69,7 +77,7 @@ export function useAppBack(handler: () => boolean, enabled: () => boolean = () =
     };
     watch(enabled, (active, _, cleanup) => {
         if (active && navigation) {
-            const origin = document.activeElement;
+            const origin = activeElementOf(navigation.root.value);
             const remove = navigation.stack.add(() => back(origin));
             cleanup(() => { remove(); restoreFocus(navigation, origin); });
         }
@@ -90,7 +98,8 @@ export function useAppLayer(element: Ref<HTMLElement | null>, back: () => void, 
     }, { flush: 'post' });
     watch(() => modal() ? element.value : null, async (layer, _, cleanup) => {
         if (!layer) { return; }
-        const origin = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        const active = activeElementOf(navigation?.root.value ?? layer);
+        const origin = active instanceof HTMLElement ? active : null;
         cleanup(() => restoreFocus(navigation, origin));
         await nextTick();
         if (!layer.isConnected || !modal() || navigation && topModalLayer(navigation) !== layer) { return; }

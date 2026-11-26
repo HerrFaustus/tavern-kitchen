@@ -1,32 +1,22 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { setImmediate } from 'node:timers/promises';
-import { createXiaobaiOsFrameBridge, XIAOBAI_OS_FRAME_SOURCE, type XiaobaiOsFrameBridgeOptions } from '../host/frame-bridge.js';
+import { createDirectXiaobaiOsBridge, type XiaobaiOsDirectBridgeOptions } from '../host/direct-bridge.js';
 
-function harness(t: TestContext, callbacks: Partial<XiaobaiOsFrameBridgeOptions> = {}) {
-    const target = Object.assign(new EventTarget(), { location: { origin: 'http://host.test' } });
-    const previous = Object.getOwnPropertyDescriptor(globalThis, 'window');
-    Object.defineProperty(globalThis, 'window', { configurable: true, value: target });
-    t.after(() => {
-        if (previous) { Object.defineProperty(globalThis, 'window', previous); }
-        else { Reflect.deleteProperty(globalThis, 'window'); }
-    });
-    const contentWindow = { postMessage() {} };
-    const iframe = Object.assign(new EventTarget(), { contentWindow }) as unknown as HTMLIFrameElement;
-    const bridge = createXiaobaiOsFrameBridge({ ...callbacks, iframe, windowTarget: target as unknown as Window });
+function harness(t: TestContext, callbacks: Partial<XiaobaiOsDirectBridgeOptions> = {}) {
+    const bridge = createDirectXiaobaiOsBridge(callbacks);
     t.after(() => bridge.dispose());
+    const client = bridge.clientBridge!;
     return {
         bridge,
-        send(type: string, overrides: Record<string, unknown> = {}) {
-            target.dispatchEvent(Object.assign(new Event('message'), {
-                origin: target.location.origin, source: contentWindow,
-                data: { source: XIAOBAI_OS_FRAME_SOURCE, type }, ...overrides,
-            }));
+        client,
+        send(type: string, payload: unknown = {}) {
+            client.post(type, payload);
         },
     };
 }
 
-test('frame callbacks log sync throws and async rejections instead of leaving rejected event tasks', async t => {
+test('direct bridge callbacks log sync throws and async rejections instead of leaving rejected tasks', async t => {
     const log = t.mock.method(console, 'error', () => undefined);
     const readyError = new Error('ready failed');
     const messageError = new Error('message failed');
@@ -41,7 +31,7 @@ test('frame callbacks log sync throws and async rejections instead of leaving re
     assert.deepEqual(log.mock.calls.map(call => call.arguments[1]), [readyError, messageError]);
 });
 
-test('untrusted, premature and disposed frame messages never invoke callbacks or report failures', async t => {
+test('premature and disposed direct bridge messages never invoke callbacks or report failures', async t => {
     const log = t.mock.method(console, 'error', () => undefined);
     const calls: string[] = [];
     const h = harness(t, {
@@ -49,12 +39,13 @@ test('untrusted, premature and disposed frame messages never invoke callbacks or
         onMessage: message => { calls.push(message.type); },
     });
     h.send('app/request');
-    h.send('os/frame-ready', { origin: 'http://elsewhere.test' });
-    h.send('os/frame-ready', { source: {} });
-    h.send('os/frame-ready', { data: { source: 'wrong-channel', type: 'os/frame-ready' } });
+    await setImmediate();
     assert.equal(h.bridge.isReady(), false);
     h.send('os/frame-ready');
+    await setImmediate();
+    assert.equal(h.bridge.isReady(), true);
     h.send('app/accepted');
+    await setImmediate();
     h.bridge.dispose();
     h.send('app/late');
     await setImmediate();

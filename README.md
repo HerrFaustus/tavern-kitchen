@@ -1,33 +1,36 @@
-# 酒馆后厨 0.2.41
+# 酒馆后厨 0.2.42
 
 酒馆后厨（Tavern Kitchen）是一个 SillyTavern 扩展。系统以**零手工调整、极简自动流**为核心，每次正文回复后自动维护世界状态、非形式化「后台正文」延伸、剧情摘要与创作札记，并把已确认状态与最近/召回原文提供给下一次续写。
 
-`0.2.41` 已完成构建、9 组无头浏览器界面回归与 ZIP 安装包实机复验（构建 `e68d04c216af42a9f283`，`release/tavern-kitchen-0.2.41.zip`），全面取消总结/推演篇幅与「同酒馆主 API」继承的 `max_tokens` 输出上限，修复思考模型截断 JSON 误报「摘要为空或超出篇幅」的问题，并落实 DOM 捕获层 + `generate_interceptor` 双层「总结锁」与并发互斥防重入。宿主生成角色正文；每条回复完成后只跑推演，玩家发送下一轮前强制锁定并总结上一楼完成结构化写库，任何缺失、启动或总结失败都会锁定发送并在输入框上方 Agent 横栏要求重试。每份聊天维护单一世界时间线。[成品规则](最终项目目标.md) · [验收记录](docs/validation.json) · [版本历史](历史更新记录.md) · [GitHub Release](https://github.com/HerrFaustus/tavern-kitchen/releases/tag/v0.2.41)
+`0.2.42` 已完成构建、9 组无头浏览器界面回归与 ZIP 安装包实机复验（构建 `3cb232141b021b32121a`，`release/tavern-kitchen-0.2.42.zip`），一次性落地前端体验、视觉、深浅主题、跨模块联动、流式 DOM 性能、历史死代码清理与零 iframe 统一挂载共 27 项全量优化（Phase 1–4，涵盖 `A1–A11`、`B1–B7`、`C1–C3`、`D1–D3`、`E1–E2`、`F1`）。宿主生成角色正文；每条回复完成后只跑推演，玩家发送下一轮前强制锁定并总结上一楼完成结构化写库，任何缺失、启动或总结失败都会锁定发送并在输入框上方 Agent 横栏要求重试。每份聊天维护单一世界时间线。[成品规则](最终项目目标.md) · [验收记录](docs/validation.json) · [版本历史](历史更新记录.md) · [GitHub Release](https://github.com/HerrFaustus/tavern-kitchen/releases/tag/v0.2.42)
 
 ## 安装与开始
 
-1. 全新安装时将 `release/tavern-kitchen-0.2.41.zip`（或仓库目录）解压到宿主的 `public/scripts/extensions/third-party/`，确认 `tavern-kitchen/manifest.json` 与 `tavern-kitchen/dist/host/plugin.js` 在同一扩展目录下，刷新宿主。升级时先在原浏览器的「数据」导出后厨卡，再用新目录覆盖原扩展文件并刷新。沿用原宿主账号、地址和浏览器配置文件即可读回原聊天、IndexedDB 世界以及札记。内置「后厨教程」与幂等升级自检会在启动与切聊时自动守护兼容迁移。
-2. 打开聊天，点击顶栏最右的门形图标，或在扩展设置里点击「打开后厨」。顶栏下方显示原生工作台标题栏「酒馆后厨」与六个板块（主角、世界、剧情、编剧、设置、数据）。在「设置 → API → 编辑连接」新建或导入命名连接，填好地址和模型后保存，并分别为总结、推演、编剧 Agent 绑定连接；三者均可直接选择「同酒馆主 API」，也可共用一个命名连接。
+1. 全新安装时将 `release/tavern-kitchen-0.2.42.zip`（或仓库目录）解压到宿主的 `public/scripts/extensions/third-party/`，确认 `tavern-kitchen/manifest.json` 与 `tavern-kitchen/dist/host/plugin.js` 在同一扩展目录下，刷新宿主。升级时先在原浏览器的「数据」导出后厨卡，再用新目录覆盖原扩展文件并刷新。沿用原宿主账号、地址和浏览器配置文件即可读回原聊天、IndexedDB 世界以及札记。内置「后厨教程」与幂等升级自检会在启动与切聊时自动守护兼容迁移。
+2. 打开聊天，点击顶栏最右的门形图标，或在扩展设置里点击「打开后厨」。顶栏下方显示原生工作台标题栏「酒馆后厨」与六个板块（主角、世界、剧情、编剧、设置、数据）。在「设置 → API → 编辑连接」新建或导入命名连接，填好地址和模型后保存，并分别为总结、推演、编剧 Agent 绑定连接；三者均可直接选择「同酒馆主 API」（支持一键全绑），也可共用一个命名连接。
 3. 所有核心业务模块（人物、地点与地图、局势、总结与召回、自动分层与编剧）均固定默认开启，世界状态恒定注入正文；发前总结与开局世界初始化询问均固定开启且不提供关闭开关。未绑定对应 Agent 时会在输入框上方 Agent 横栏直接拦截生成并给出前往「设置 → API」的入口（缺失编剧 Agent 时软提示并放行正文）。
 
-玩家安装时直接使用随包的 `dist/`，无需准备开发环境。界面只读展示经核验的结构化状态与摘要，**不提供任何手动调整世界/摘要/地图数据或剧情校对、剧情线入口**。业务触发操作保留在对应页内：开局「世界 → 世界生成」、总结页手动补齐与楼末「手动总结」（覆盖到最新已完成楼层 `updateEnd`）、编剧「立即生成／更新札记」、数据页后厨卡导入/导出与只读恢复。切换聊天后重新按当前聊天取数，界面跟随酒馆主题。[工作台路由](core/kitchen-workspace.js) · [启动与聊天切换](core/kitchen-runtime.js) · [新手教程](core/kitchen-tutorial.js)
+玩家安装时直接使用随包的 `dist/`，无需准备开发环境。界面只读展示经核验的结构化状态与摘要，**不提供任何手动调整世界/摘要/地图数据或剧情校对、剧情线入口**。业务触发操作保留在对应页内：开局「世界 → 世界生成」、总结页手动补齐与楼末「手动总结」（覆盖到最新已完成楼层 `updateEnd`）、编剧「立即生成／更新札记」、数据页后厨卡导入/导出与只读恢复。切换聊天后重新按当前聊天取数，界面跟随酒馆深浅主题。[工作台路由](core/kitchen-workspace.js) · [启动与聊天切换](core/kitchen-runtime.js) · [新手教程](core/kitchen-tutorial.js)
 
-## 0.2.41 本版变化
+## 0.2.42 本版变化
 
-- **输出与篇幅不设上限 + 修复截断 JSON 误报「摘要为空或超出篇幅」**：
-  - [`modules/text-api/host.js`](modules/text-api/host.js) 的 `generateHostDirect` 不再继承宿主聊天预设的 `openai_max_tokens`（OpenAI/Google 等渠道首调即不传 `max_tokens` 走模型原生输出上限，Claude 系至少放宽至 `32768`），并完整透传 `finishReason`、`truncated`、`usage` 与 `completion`；[`modules/text-api/runtime.js`](modules/text-api/runtime.js) 新增 `expandOutputBudget` 供手动填了小上限的独立配置在截断时自动放开重试。
-  - [`modules/world-records/turn-processing.js`](modules/world-records/turn-processing.js) 移除总结 `12000` 字与推演 `8000` 字的硬篇幅上限，[`modules/story-summary/data/memory-tags.js`](modules/story-summary/data/memory-tags.js) 超出 24 项标签时自动去重截取不再报错；[`modules/world-records/json-response.js`](modules/world-records/json-response.js) 对顶层未闭合 JSON 立即抛出 `JSON_TRUNCATED`（不再误抽出 `memoryTags`），`turn-processing.js` 命中截断时自动放宽上限并附紧凑单行 JSON 提醒重试一次；[`modules/world-records/turn-actions.js`](modules/world-records/turn-actions.js) 同步要求输出紧凑单行 JSON 并尽量省略非必要 `quote`。
-- **落实双层「总结锁」（DOM 捕获层发前硬锁 + `generate_interceptor` + 并发互斥）**：
-  - 新增零依赖 [`core/send-lock.js`](core/send-lock.js)，在捕获阶段拦截 `#send_but` 点击、`#send_form` 提交与 `#send_textarea` 回车发送（自动放行 `/` 斜杠命令、`Shift+Enter` 与中文输入法组合态），并在启动中/启动失败/总结运行中/报错锁定时将发送按钮置为锁定态（`data-tk-send-locked="true"`，`aria-disabled="true"`），同时保留输入框可编辑与草稿不丢失。
-  - [`core/kitchen-bootstrap.js`](core/kitchen-bootstrap.js) 与 [`core/floor-host.js`](core/floor-host.js) 全程挂载 `installSendLock` 与 `busyOp` / `queue.isBusy()` 并发锁：有未总结楼层时点击发送先自动锁定、跑完开局询问与逐楼总结落库后再放行原发送；任何报错均保持锁死并重弹置顶报错条；总结进行中禁止 `rerunFloor` 并发回退世界状态。
-- **承接 `0.2.38–0.2.40` 能力**：保留多开场白角色卡第 1 楼 `native-text` 消歧、常驻待命条、楼末世界变更与「手动总结 / 重新总结」按钮及 `{entityId}` / 跨组人物位置写回修复。
+- **视觉、排版与深浅主题全量修复（`A1–A11`）**：
+  - `319px` 桌面窄侧栏下 6 大顶栏板块单行排满不折行；取消全局 `button !important` 暴力覆盖并改用 `:where(...)` 低权重作用域，恢复人物行左对齐、地图树与行内提及样式以及主/次/危险按钮清晰视觉层级。
+  - 修复召回轮次下拉框横向溢出（`+37px → 0`）、设置底栏半透明压字重影（改为独立滚动主区 + 不透明固定底栏）、嵌入式与宿主 `<select>` 下拉箭头（含无宿主图标时的 SVG 兜底）、浅色主题输入框/标题条发灰与低对比度状态色、360px 手机端抽屉宽度及教程弹窗底部按钮竖排、楼尾推演框展开重复预览与缺旋转箭头、悬念/局势来源间距与报错提示串台、地图页空操作栏和列表挤占首屏等问题。
+- **日常交互补全与宽屏查阅联动（`B1–B7`、`C1–C3`）**：
+  - 阻断报错点「收起」保持紧凑红色锁条不再误退回「待命」；发前总结运行中实时显示秒表计时与「取消自动发送」；非尾楼不再误显「重新总结」；宿主居中不透明宽弹窗承接「查看原楼」与「大图查看」交互式区域地图；「设置 → API」新增「一键全绑同酒馆主 API」与切连接未保存草稿提醒；记忆表面内支持 `Esc` 优先关子弹窗或收起侧栏；离线教程 4 节内容与恢复预览中文模块名对齐现行架构。
+  - 为总结、人物、局势、悬念与地图列表全面补齐本地即时搜索/筛选及「全部展开/收起」；打通总结 ↔ 人物 ↔ 地图 ↔ 原楼跨模块点击跳转（含地点「在此地的人物」徽章）；主角与人物页顶部新增状态摘要徽章区并统一多端卡片层级。
+- **流式 DOM 性能优化、死代码清理与零 iframe 架构统一（`D1–D3`、`E1–E2`、`F1`）**：
+  - 收窄 `send-lock`、`agent-status` 与 `kitchen-workspace` 的全树 `MutationObserver`，`floorProgress()` 改为事件驱动缓存计数，彻底消除流式吐字期全扫 `chat[]`；宿主主题同步改用单例 `ensureHostThemeSync` + `requestAnimationFrame` 合批与签名去重；楼尾双框引入 `WeakMap` 变更索引与流式防抖，总结条目超 30 条自动开启分页。
+  - **彻底拆除 `story-summary.html` 与 `xiaobai-os.html` 双层 iframe（`F1`）**：全部侧栏子应用改以 Open Shadow DOM（`.tk-embedded-host` + `.tk-surface` 容器查询）原位挂载并走内存直连桥接（零 `<iframe>`、零 `postMessage` 跨窗拷贝与二次文档启动），与酒馆全局样式双向隔离且天然继承 `--SmartTheme*` 主题变量。
+  - 累计清理 5 份主样式表退役样式（`story-summary.css` 由 `2,899` 行精简至 `209` 行）及 `113` 个零生产引用死代码/旧 iframe 壳文件（含 `82` 个未入包 3D/旧地图 UI 文件、`modules/agent-core/ui/`、`modules/xiaobai-os/apps/world/ui/`、`modules/debug-panel/`、`widgets/message-toolbar.js` 及 `story-summary.html`、`xiaobai-os.html`、`first-party-iframe-app.js`、`frame-bridge.ts`、`host.css` 等），移除 `three`、`@types/three`、`meshoptimizer`、`showdown` 四项冗余依赖，构建收敛为 `8` 入口、`675` 模块、`45` 分块。
 
 ## 当前能做什么
 
 | 入口 | 用法与数据边界 |
 | --- | --- |
 | 主角 | 只读查看玩家的属性、位置、关系、持有物和个人计划。用玩家名、明确别名或地图玩家绑定辨认主角，同名且无法区分时分别保留。[身份匹配](modules/story-state/protagonist-identity.js) · [主角页](modules/story-state/view.js) |
-| 世界 | 「人物」按姓名和身份/位置/近期记录展示只读档案，重名实体带出身辨识与交接原楼跳转；所有权缺依据时显示未知。「局势」分只读事态和风物；「地图」支持区域图、局部二维/三维场景浏览；「世界生成」用于开局建档。[只读状态视图](modules/story-state/view.js) · [地图浏览](modules/xiaobai-os/apps/map/ui/AtlasBrowser.vue) · [地点详情](modules/xiaobai-os/apps/map/ui/MapApp.vue) |
+| 世界 | 「人物」支持搜索、在场筛选、状态与地点标签及交接原楼跳转；「局势」分只读事态和风物并支持关键词筛选与原楼居中查看；「地图」支持地点搜索、区域示意、居中大图交互弹窗、局部示意与「在此地的人物」点击联动；「世界生成」用于开局建档。[只读状态视图](modules/story-state/view.js) · [地图浏览](modules/xiaobai-os/apps/map/ui/AtlasBrowser.vue) · [地点详情](modules/xiaobai-os/apps/map/ui/MapApp.vue) |
 | 剧情 | 「总结」页头显示已总结与待总结楼数及「手动补齐总结」按钮（覆盖到最新已完成楼层 `updateEnd`），按分层树展开自动压缩节点与逐楼来源；「召回」按轮展示检索模式、焦点人物、命中/重排得分与裁剪片段（包含已结算楼的后台正文）；「悬念」跟踪未解与结案事项。不再提供「剧情线」与「校对」。[总结与召回界面](modules/story-summary/story-summary-ui.js) · [分层摘要](modules/story-summary/data/summary-layers.js) |
 | 编剧 | 单作家直接面向**世界状态、剧情总结（分层 + 近期 `L0`）与相关原文（近期对白含后台正文 + `recallRawMemory` 早期召回）**围绕「人物」与「局势」生成点评、走向预测与建议。全局稿默认折叠，章节稿供正文选用；支持手动更新，并在自动 `L2` 章节压缩完成后触发 `onChapter()`。仅打开或展开札记时不调用模型。[编剧入口](modules/story-planner/host.js) · [札记构造](modules/story-planner/notes.js) |
 | 设置 | 下设三个子页：「API」管理命名连接、总结/推演/编剧三类 Agent 绑定、向量与重排服务及调用统计，全部文本 Agent 可选「同酒馆主 API」；「剧情与召回」提供隐藏已总结楼层（默认开启）、保留原文轮数（默认 `0`，即隐藏全部已总结楼层）、早期原文召回注入、召回超时及向量索引补齐/重建；「世界与推演」仅保留街头见闻/推演风味偏好（关闭/偶尔/频繁），世界状态注入与发前总结固定开启。[连接设置](modules/text-api/settings-ui.js) · [世界偏好设置](modules/xiaobai-os/apps/world/evolution-view.ts) |
@@ -60,10 +63,10 @@ node scripts/check-project.mjs
 node scripts/check-ui.mjs
 python3 scripts/package.py
 node scripts/check-versions.mjs
-node scripts/check-installation.mjs release/tavern-kitchen-0.2.40.zip > release/install-verification.json
+node scripts/check-installation.mjs release/tavern-kitchen-0.2.42.zip > release/install-verification.json
 ```
 
-- 本版已通过本地 `node scripts/quality.mjs`（含 ESLint `--max-warnings 0`、版本/边界/乱码/相对导入/退役变量检查）、`node scripts/typecheck.mjs`、`node scripts/build.mjs`、`node scripts/check-project.mjs`、`node scripts/check.mjs`（含 `1443` 项单元测试 0 失败 0 跳过与 `node scripts/check-runtime.mjs` `result=PASS`）、`9` 组无头浏览器界面回归（`node scripts/check-ui.mjs`）、`python3 scripts/package.py`、`node scripts/check-versions.mjs` 及 `node scripts/check-installation.mjs release/tavern-kitchen-0.2.40.zip` 最终 ZIP 复装验真。
+- 本版已通过本地 `node scripts/quality.mjs`（含 ESLint `--max-warnings 0`、版本/边界/乱码/相对导入/退役变量检查）、`node scripts/typecheck.mjs`、`node scripts/build.mjs`、`node scripts/check-project.mjs`、`node scripts/check.mjs`（含 `1455` 项单元测试 0 失败 0 跳过与 `node scripts/check-runtime.mjs` `result=PASS`）、`9` 组无头浏览器界面回归（`node scripts/check-ui.mjs`）、`python3 scripts/package.py`、`node scripts/check-versions.mjs` 及 `node scripts/check-installation.mjs release/tavern-kitchen-0.2.42.zip` 最终 ZIP 复装验真。
 - 真实酒馆宿主与在线模型的长程游玩不在自动化验收范围内。[验收凭据](docs/validation.json)
 
 ## 署名与许可

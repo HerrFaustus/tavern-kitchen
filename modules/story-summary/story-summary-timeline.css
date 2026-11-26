@@ -87,7 +87,7 @@
     color: var(--hl);
 }
 
-@media (max-width: 768px) {
+@container (max-width: 768px) {
     .timeline {
         --tl-touch-size: 44px;
     }

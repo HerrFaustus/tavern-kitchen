@@ -6,7 +6,7 @@ import { plannerSnapshot } from '../story-planner/notes.js';
 import { ambientControl, ambientPrompt, mapLocalConditions } from '../story-state/ambient.js';
 import { readInvolvement } from '../story-state/involvement.js';
 import { protagonistIdentity } from '../story-state/protagonist-identity.js';
-import { registerInvolvement, registerMapConditions, registerSituationCatalog } from '../story-state/situation-links.js';
+import { registerInvolvement, registerMapActors, registerMapConditions, registerSituationCatalog } from '../story-state/situation-links.js';
 import { availableStoryRecords } from '../story-state/records.js';
 import { resolveStateInjectionDepth } from './authority.js';
 import { worldStoryRecords } from './world-story-state.js';
@@ -25,7 +25,7 @@ import { captureRangeSource, isRangeSourceCurrent } from '../story-summary/data/
 import { memoryDigest } from '../story-summary/data/memory-policy.js';
 import { buildUpdateContext, UPDATE_PREFIX } from './update-context.js';
 
-export function createWorldArchive({ getContext, createOpening, getAccountId = () => 'default-user', getMemorySnapshot, getAmbientPreferences, active = () => true, ordered = false, recoverMemory, getMount, isVisible, onError, onAuthorityChange = () => {} }) {
+export function createWorldArchive({ getContext, createOpening, getAccountId = () => 'default-user', getMemorySnapshot, getAmbientPreferences, active = () => true, ordered = false, recoverMemory, getMount, isVisible, onError, onAuthorityChange = () => {}, openModal = null, onNavigate = null }) {
     const sourceIdentity = () => storyIdentityKey(captureStoryIdentity(getContext()));
     const identity = (branch = getMemorySnapshot()?.store?.dataBranch) => { const story = sourceIdentity(); return story ? JSON.stringify([getAccountId(), story, ...(branch ? [branch] : [])]) : ''; };
     const storage = createWorldStorage();
@@ -89,6 +89,34 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
     const unregisterAuthority = registerWorldAuthority('world-records', authority.read);
     const unregisterConditions = registerMapConditions((key, atlas) => key && key === captureStoryIdentity(getContext())?.key
         ? mapLocalConditions(authority.read()?.state, getMemorySnapshot(), atlas) : []);
+    const unregisterActors = registerMapActors((key, atlas) => {
+        if (!key || key !== captureStoryIdentity(getContext())?.key || !atlas?.locations?.length) return [];
+        const world = authority.read()?.state;
+        const locations = atlas.locations || [];
+        const locByKey = new Map(locations.map(loc => [loc.key, loc]));
+        const locByName = new Map(locations.map(loc => [String(loc.name || '').trim().toLowerCase(), loc]));
+        const out = [];
+        const seen = new Set();
+        const heroId = protagonistIdentity(world?.entities || [], getContext().name1).hero?.id || '';
+        for (const entity of world?.entities || []) {
+            if (entity.kind !== 'person') continue;
+            const locField = entity.fields?.['当前位置'] || entity.fields?.location;
+            if (locField?.nature !== 'established_fact') continue;
+            const raw = locField.value;
+            const candidateKey = raw?.entityId || '';
+            const candidateName = raw?.entityId
+                ? (world.entities.find(item => item.id === raw.entityId)?.name || '')
+                : (typeof raw === 'string' ? raw.trim() : '');
+            const matched = (candidateKey && locByKey.get(candidateKey))
+                || (candidateName && locByName.get(candidateName.toLowerCase()));
+            if (!matched) continue;
+            const dedupe = `${entity.id}:${matched.key}`;
+            if (seen.has(dedupe)) continue;
+            seen.add(dedupe);
+            out.push({ id: entity.id, name: entity.name, locationKey: matched.key, locationName: matched.name, isPlayer: entity.id === heroId });
+        }
+        return out;
+    });
     const unregisterCatalog = registerSituationCatalog(key => {
         if (!key || captureStoryIdentity(getContext())?.key !== key) return [];
         const memory = getMemorySnapshot();
@@ -98,34 +126,55 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
     });
     const involvementFor = (world, options) => readInvolvement(world, getMemorySnapshot(), getContext().name1, options);
     const disconnectFocus = registerInvolvement(key => key && captureStoryIdentity(getContext())?.key === key ? involvementFor(authority.read()?.state, {includeAgendas:true}) : []);
-    const protagonist = createProtagonistView({ getInvolvement: involvementFor, getSnapshot: getMemorySnapshot, getPlayerName: () => getContext().name1 });
+    const protagonist = createProtagonistView({
+        getInvolvement: involvementFor,
+        getSnapshot: getMemorySnapshot,
+        getPlayerName: () => getContext().name1,
+        onOpenPlace: onNavigate ? target => onNavigate('map', { placeKey: target.key, placeName: target.name }) : null,
+        onOpenPerson: onNavigate ? target => onNavigate('people', { personId: target.id, personName: target.name }) : null,
+    });
     const bookOptions = {getSnapshot:getMemorySnapshot, openSource(floor) {
         const context = getContext(), message = context.chat?.[floor], snapshot = getMemorySnapshot();
         const available = message && snapshot?.enabled && snapshot.invalidFrom == null && !snapshot.store?.summaryInvalid && snapshot.store?.sourceInvalidFromFloor == null;
+        const bodyText = available ? String(message.mes || '') : '当前聊天无法核对这条原文。';
+        if (typeof openModal === 'function') {
+            openModal({
+                title: `第 ${floor + 1} 楼原文`,
+                subtitle: available && message.name ? `${message.name} · 第 ${floor + 1} 楼` : '',
+                text: bodyText,
+            });
+            return;
+        }
         const content = document.createElement('div'), title = document.createElement('h3'), text = document.createElement('p');
         title.textContent = '第 ' + (floor + 1) + ' 楼' + (available && message.name ? ' · ' + message.name : '');
         text.style.whiteSpace = 'pre-wrap';
-        text.textContent = available ? String(message.mes || '') : '当前聊天无法核对这条原文。';
+        text.textContent = bodyText;
         content.append(title, text);
         return new context.Popup(content, context.POPUP_TYPE.TEXT).show().catch(onError);
     }};
     views = { overview: protagonist, suspense: createSuspenseBook(bookOptions) };
     let disposed = false, scheduled = false, epoch = 0;
-    const frameBindings = new Map();
-    function attachFrameMount(key, frame, mount) {
-        if (!frame || disposed) return;
-        const previous = frameBindings.get(key);
-        if (previous?.frame !== frame) {
-            if (previous?.onLoad) previous.frame.removeEventListener('load', previous.onLoad);
-            frameBindings.set(key, { frame, onLoad: mount });
-            frame.addEventListener('load', mount);
+    const surfaceBindings = new Map();
+    function attachSurfaceMount(key, surfaceHost, mount) {
+        if (!surfaceHost || disposed) return;
+        const previous = surfaceBindings.get(key);
+        if (previous?.host !== surfaceHost) {
+            if (previous?.onReady) {
+                previous.host.removeEventListener?.('tk-surface-ready', previous.onReady);
+                previous.host.removeEventListener?.('load', previous.onReady);
+            }
+            surfaceBindings.set(key, { host: surfaceHost, onReady: mount });
+            surfaceHost.addEventListener?.('tk-surface-ready', mount);
+            surfaceHost.addEventListener?.('load', mount);
         }
         mount();
     }
-    function showRecovery(frame) {
-        attachFrameMount('recovery', frame, () => {
+    function showRecovery(surfaceHost) {
+        attachSurfaceMount('recovery', surfaceHost, () => {
             if (disposed || !isVisible('data')) return;
-            const target = frame.contentDocument?.getElementById('world-recovery');
+            const target = surfaceHost.shadowRoot?.getElementById?.('world-recovery')
+                || surfaceHost.querySelector?.('#world-recovery')
+                || surfaceHost.contentDocument?.getElementById?.('world-recovery');
             if (!target) return;
             recoveryPanel.mount(target);
             recoveryPanel.refresh().catch(onError);
@@ -295,6 +344,6 @@ export function createWorldArchive({ getContext, createOpening, getAccountId = (
             const state = active() ? await sync() : await service.read(); if (isVisible(route) && !disposed) { if (state) view.show(state); else view.empty(); }
         },
         reset() { epoch++; latestState = null; recoveryPanel.reset(); service.invalidate(); authority.reset(); for (const view of Object.values(views)) view.reset(); },
-        dispose() { disposed = true; for (const binding of frameBindings.values()) binding.frame.removeEventListener('load', binding.onLoad); frameBindings.clear(); recoveryPanel.reset(); service.invalidate(); authority.reset(); disconnectFocus(); unregisterConditions(); unregisterCatalog(); unregisterTurns(); unregisterBridge(); unregisterAuthority(); unsubscribe(); unregisterMemory(); for (const view of Object.values(views)) view.reset(); storage.close().catch(error => onError(error)); },
+        dispose() { disposed = true; for (const binding of surfaceBindings.values()) { binding.host.removeEventListener?.('tk-surface-ready', binding.onReady); binding.host.removeEventListener?.('load', binding.onReady); } surfaceBindings.clear(); recoveryPanel.reset(); service.invalidate(); authority.reset(); disconnectFocus(); unregisterConditions(); unregisterActors(); unregisterCatalog(); unregisterTurns(); unregisterBridge(); unregisterAuthority(); unsubscribe(); unregisterMemory(); for (const view of Object.values(views)) view.reset(); storage.close().catch(error => onError(error)); },
     };
 }

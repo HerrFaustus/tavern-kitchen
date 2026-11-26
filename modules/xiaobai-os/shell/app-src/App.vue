@@ -2,9 +2,12 @@
 import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, type Component } from 'vue';
 import { xiaobaiOsApps, type XiaobaiOsAppDefinition } from '../app-catalog.js';
 import KitchenToolView from './components/KitchenToolView.vue';
-import { createFrameBridge, HostRequestError, type FrameMessage } from './frame-bridge.js';
+import { HostRequestError, type FrameMessage, type XiaobaiOsFrameBridge } from './frame-bridge.js';
 import { observeBackgroundTask } from '../../../../shared/common/async-errors.js';
 
+const props = defineProps<{
+    bridge: XiaobaiOsFrameBridge;
+}>();
 
 interface AppStatus {
     state: 'loading' | 'ready' | 'failed';
@@ -33,7 +36,7 @@ interface PendingAppOpening {
     latestState?: unknown;
 }
 
-const bridge = createFrameBridge();
+const bridge = props.bridge;
 const root = ref<HTMLElement | null>(null);
 const device = ref<InstanceType<typeof KitchenToolView> | null>(null);
 const initialized = ref(false);
@@ -63,7 +66,7 @@ function applyAvailableApps(apps: readonly HostAppDescriptor[]): void {
     const activeRemoved = activeApp.value && !nextIds.has(activeApp.value.id);
     const pendingRemoved = pendingAppOpening && !nextIds.has(pendingAppOpening.appId);
     availableIds.value = nextIds;
-    if (!activeRemoved && !pendingRemoved) {return;}
+    if (!activeRemoved && !pendingRemoved) { return; }
     navigationGeneration += 1;
     pendingAppOpening = null;
     activeApp.value = null;
@@ -92,7 +95,7 @@ function applyInit(payload: InitPayload): void {
 function navigate(appId: string | null): void {
     if (!appId) { return; }
     const app = availableApps.value.find(item => item.id === appId);
-    if (app && activeApp.value?.id !== app.id) { observeBackgroundTask(openApp(app), { source: import.meta.url, operation: "navigate" }); }
+    if (app && activeApp.value?.id !== app.id) { observeBackgroundTask(openApp(app), { source: import.meta.url, operation: 'navigate' }); }
 }
 
 function handleHostMessage(message: FrameMessage): void {
@@ -196,7 +199,7 @@ async function openApp(app: XiaobaiOsAppDefinition): Promise<void> {
         };
         bridge.clearAppSession();
     } finally {
-        if (pendingAppOpening === opening) {pendingAppOpening = null;}
+        if (pendingAppOpening === opening) { pendingAppOpening = null; }
     }
 }
 
@@ -256,47 +259,43 @@ function handleRenderFailure(error: unknown): void {
     bridge.post('os/app-ui-failure', { appId: app.id, phase: 'ui-render' });
 }
 
-function handleFrameError(event: ErrorEvent): void {
-    if (!activeApp.value || appLoading.value || appFailure.value) { return; }
-    event.preventDefault();
-    handleRenderFailure(event.error ?? new Error(event.message || '应用页面出了问题'));
-}
-
-function handleUnhandledRejection(event: PromiseRejectionEvent): void {
-    if (!activeApp.value || appLoading.value || appFailure.value) { return; }
-    event.preventDefault();
-    handleRenderFailure(event.reason);
-}
-
-function reloadFrame(): void {
-    window.location.reload();
+function reloadSurface(): void {
+    observeBackgroundTask(retryApp(), { source: import.meta.url, operation: 'reload-surface' });
 }
 
 function goBack(): void { device.value?.back(); }
 function handleKeydown(event: KeyboardEvent): void {
     if (event.key !== 'Escape' || event.defaultPrevented) { return; }
     event.preventDefault();
+    event.stopPropagation();
     if (!device.value?.back()) { bridge.post('os/close'); }
 }
 
+function activeElementInRoot(node: Node | null): Element | null {
+    const rootNode = node?.getRootNode?.();
+    if (rootNode && 'activeElement' in rootNode) {
+        return (rootNode as Document | ShadowRoot).activeElement;
+    }
+    return document.activeElement;
+}
+
 onMounted(async () => {
-    previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const active = activeElementInRoot(root.value);
+    previousFocus = active instanceof HTMLElement ? active : null;
     unsubscribe = bridge.subscribe(handleHostMessage);
     bridge.start();
-    window.addEventListener('error', handleFrameError);
-    window.addEventListener('unhandledrejection', handleUnhandledRejection);
     await nextTick();
-    root.value?.focus();
+    root.value?.focus({ preventScroll: true });
 });
 
 onBeforeUnmount(() => {
     navigationGeneration += 1;
     pendingAppOpening = null;
-    window.removeEventListener('error', handleFrameError);
-    window.removeEventListener('unhandledrejection', handleUnhandledRejection);
     unsubscribe();
     bridge.dispose();
-    previousFocus?.focus();
+    if (previousFocus?.isConnected) {
+        previousFocus.focus({ preventScroll: true });
+    }
 });
 </script>
 
@@ -325,7 +324,7 @@ onBeforeUnmount(() => {
             @back="goBack"
             @render-failed="handleRenderFailure"
             @retry="retryApp"
-            @reload="reloadFrame"
+            @reload="reloadSurface"
         />
     </main>
 </template>

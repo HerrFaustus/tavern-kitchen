@@ -17,7 +17,7 @@ export function startKitchenBootstrap({ documentTarget = document, loadRuntime =
     };
     const showStartupFailure = () => {
         const error = startupError || new Error('后厨启动失败');
-        showAgentNotice({ level: 'error', message: `后厨启动失败，发送已锁定：${error.message || error}。请重试。`, error, pinned: true,
+        showAgentNotice({ level: 'error', message: `后厨启动失败，发送已锁定：${error.message || error}。请重试。`, error, pinned: true, locked: true,
             retry: () => documentTarget.defaultView.location.reload() });
     };
     const sendLock = installSendLock({

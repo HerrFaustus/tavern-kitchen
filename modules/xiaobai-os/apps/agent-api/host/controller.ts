@@ -1,7 +1,7 @@
 import { handleProfileRequest } from '../../../../text-api/profile-service.js';
 import type { XiaobaiOsAgentGateway } from '../../../capabilities/agent/gateway.js';
 import type { XiaobaiOsExecutionScope } from '../../../kernel/execution-scope.js';
-import type { XiaobaiOsHostFrameMessage } from '../../../host/frame-bridge.js';
+import type { XiaobaiOsHostFrameMessage } from '../../../host/direct-bridge.js';
 import type { XiaobaiOsAppActivationContext, XiaobaiOsAppRuntime } from '../../../types.js';
 import type { AgentApiClientState } from '../types.js';
 import { observeBackgroundTask } from '../../../../../shared/common/async-errors.js';

@@ -1,7 +1,7 @@
-import { getKitchenMount, closeKitchenWorkspace, bindKitchenFrame } from '../../../core/kitchen-workspace.js';
+import { getKitchenMount, openKitchenTab, openKitchenModal, closeKitchenWorkspace, bindKitchenSurface } from '../../../core/kitchen-workspace.js';
+import { loadBuildEntry } from '../../../core/build-assets.js';
 import { observeBackgroundTask } from '../../../shared/common/async-errors.js';
 import { getRequestHeaders } from '../../../../../../../script.js';
-import { extensionFolderPath } from '../../../core/constants.js';
 import { createAgentApiModule } from '../apps/agent-api/module.js';
 import {
     createMapContextCapabilityRegistration,
@@ -46,9 +46,6 @@ import {
     subscribeWorldPromptEvents,
     subscribeXiaobaiOsChatChanged,
 } from './sillytavern-runtime-adapters.js';
-
-const hostStylesheet = `${extensionFolderPath}/modules/xiaobai-os/host.css`;
-const frameSource = `${extensionFolderPath}/modules/xiaobai-os/shell/xiaobai-os.html`;
 
 export function createProductionBootstrap(
     settings: XiaobaiOsSettingsRepository,
@@ -168,13 +165,135 @@ export function createProductionBootstrap(
         },
     };
 
+    const openWideMapModal = (
+        payload: Record<string, unknown>,
+        onSelectPlace: (placeKey: string) => void,
+    ): void => {
+        const svgNs = 'http://www.w3.org/2000/svg';
+        const wrap = document.createElement('div');
+        wrap.className = 'tk-wide-map-wrap';
+        const hint = document.createElement('p');
+        hint.className = 'tk-wide-map-hint';
+        hint.textContent = '点击任意地点节点可切换侧栏定位并关闭此窗。';
+        const svg = document.createElementNS(svgNs, 'svg');
+        svg.setAttribute('class', 'tk-wide-map-svg');
+        svg.setAttribute('viewBox', typeof payload.viewBox === 'string' && payload.viewBox ? payload.viewBox : '0 0 600 400');
+        svg.setAttribute('role', 'img');
+        svg.setAttribute('aria-label', typeof payload.label === 'string' && payload.label ? payload.label : '区域地图大图');
+        const defs = document.createElementNS(svgNs, 'defs');
+        const marker = document.createElementNS(svgNs, 'marker');
+        const markerId = 'tk-wide-map-arrow';
+        marker.setAttribute('id', markerId);
+        marker.setAttribute('viewBox', '0 0 10 10');
+        marker.setAttribute('refX', '8');
+        marker.setAttribute('refY', '5');
+        marker.setAttribute('markerWidth', '5');
+        marker.setAttribute('markerHeight', '5');
+        marker.setAttribute('orient', 'auto');
+        const arrowPath = document.createElementNS(svgNs, 'path');
+        arrowPath.setAttribute('d', 'M0 0L10 5L0 10Z');
+        arrowPath.setAttribute('fill', 'currentColor');
+        marker.append(arrowPath);
+        defs.append(marker);
+        svg.append(defs);
+
+        const routes = Array.isArray(payload.routes) ? payload.routes : [];
+        for (const item of routes) {
+            if (!item || typeof item !== 'object') { continue; }
+            const r = item as Record<string, unknown>;
+            const line = document.createElementNS(svgNs, 'line');
+            line.setAttribute('x1', String(Number(r.x1) || 0));
+            line.setAttribute('y1', String(Number(r.y1) || 0));
+            line.setAttribute('x2', String(Number(r.x2) || 0));
+            line.setAttribute('y2', String(Number(r.y2) || 0));
+            line.setAttribute('stroke', 'currentColor');
+            line.setAttribute('stroke-width', '2');
+            if (!r.bidirectional) { line.setAttribute('marker-end', `url(#${markerId})`); }
+            if (typeof r.title === 'string' && r.title) {
+                const t = document.createElementNS(svgNs, 'title');
+                t.textContent = r.title;
+                line.append(t);
+            }
+            svg.append(line);
+        }
+
+        let modalHandle: { close?: () => void } | null = null;
+        const selectedKey = typeof payload.selected === 'string' ? payload.selected : '';
+        const currentKey = typeof payload.current === 'string' ? payload.current : '';
+        const nodes = Array.isArray(payload.nodes) ? payload.nodes : [];
+        for (const item of nodes) {
+            if (!item || typeof item !== 'object') { continue; }
+            const n = item as Record<string, unknown>;
+            const key = typeof n.key === 'string' ? n.key : '';
+            const name = typeof n.name === 'string' ? n.name : key;
+            const x = Number(n.x) || 0;
+            const y = Number(n.y) || 0;
+            const g = document.createElementNS(svgNs, 'g');
+            g.setAttribute('role', 'button');
+            g.setAttribute('tabindex', '0');
+            g.setAttribute('aria-label', `查看${name}`);
+            g.setAttribute('transform', `translate(${x} ${y})`);
+            if (key === selectedKey) {
+                const ring = document.createElementNS(svgNs, 'circle');
+                ring.setAttribute('r', '19');
+                ring.setAttribute('class', 'ring');
+                g.append(ring);
+            }
+            const dot = document.createElementNS(svgNs, 'circle');
+            dot.setAttribute('r', '12');
+            if (key === currentKey) { dot.setAttribute('class', 'here'); }
+            g.append(dot);
+            const text = document.createElementNS(svgNs, 'text');
+            text.setAttribute('y', '39');
+            text.setAttribute('text-anchor', 'middle');
+            text.textContent = name;
+            g.append(text);
+            if (key === currentKey) {
+                const hereLabel = document.createElementNS(svgNs, 'text');
+                hereLabel.setAttribute('y', '63');
+                hereLabel.setAttribute('text-anchor', 'middle');
+                hereLabel.textContent = '当前位置';
+                g.append(hereLabel);
+            }
+            const pick = () => {
+                if (key) { onSelectPlace(key); }
+                modalHandle?.close?.();
+            };
+            g.addEventListener('click', pick);
+            g.addEventListener('keydown', event => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    pick();
+                }
+            });
+            svg.append(g);
+        }
+        wrap.append(hint, svg);
+        modalHandle = openKitchenModal({
+            title: typeof payload.label === 'string' && payload.label ? `${payload.label} · 区域地图` : '区域地图',
+            wide: true,
+            content: wrap,
+        }) || null;
+    };
+
     return createXiaobaiOsBootstrap({
         composition: productionComposition,
-        stylesheetHref: hostStylesheet,
-        frameSrc: frameSource,
         embeddedMount: () => getKitchenMount('map'),
         onEmbeddedClose: closeKitchenWorkspace,
-        onFrameCreated: bindKitchenFrame,
+        onNavigateKitchen: (route, detail) => {
+            observeBackgroundTask(Promise.resolve(openKitchenTab(route, detail || null)), {
+                source: import.meta.url,
+                operation: 'navigate-kitchen',
+            });
+        },
+        onOpenWideMap: openWideMapModal,
+        onSurfaceCreated: bindKitchenSurface,
+        mountApp: async (target, shadowRoot, clientBridge) => {
+            const mod = await loadBuildEntry('apps/xiaobai-os', shadowRoot, { includeEmbedded: true }) as {
+                mountXiaobaiOsApp: (el: HTMLElement, bridge: typeof clientBridge) => () => void;
+            };
+            return mod.mountXiaobaiOsApp(target, clientBridge);
+        },
         subscribeChatChanged: subscribeXiaobaiOsChatChanged,
         getInitSnapshot: getSillyTavernShellSnapshot,
         captureChatBinding: references.capture,

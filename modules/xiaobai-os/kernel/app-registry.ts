@@ -9,7 +9,7 @@ import type {
     XiaobaiOsAppDescriptor,
     XiaobaiOsAppRuntime,
 } from '../types.js';
-import type { XiaobaiOsHostFrameMessage } from '../host/frame-bridge.js';
+import type { XiaobaiOsHostFrameMessage } from '../host/direct-bridge.js';
 import {
     XiaobaiOsExecutionScope,
     type AppFailure,

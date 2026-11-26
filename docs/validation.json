@@ -1,9 +1,9 @@
 {
-  "version": "0.2.41",
+  "version": "0.2.42",
   "status": "passed",
-  "validated_on": "2026-11-20",
-  "build_id": "e68d04c216af42a9f283",
-  "product": "酒馆后厨 Tavern 扩展，本地安装包（输出与篇幅不设上限、修复截断 JSON 误报并落实 DOM + 拦截器双层总结锁）",
+  "validated_on": "2026-11-26",
+  "build_id": "3cb232141b021b32121a",
+  "product": "酒馆后厨 Tavern 扩展，本地安装包（0.2.42 前端视觉/深浅主题/交互/跨模块联动/流式性能优化、死代码清理与零 iframe Open Shadow DOM 架构统一全量交付）",
   "environment": {
     "node": "24.22.3",
     "pnpm": "11.25.0",
@@ -28,8 +28,8 @@
       "node scripts/check-ui.mjs",
       "python3 scripts/package.py",
       "node scripts/check-versions.mjs",
-      "(cd release && shasum -a 256 -c tavern-kitchen-0.2.41.zip.sha256)",
-      "node scripts/check-installation.mjs release/tavern-kitchen-0.2.41.zip > release/install-verification.json"
+      "(cd release && shasum -a 256 -c tavern-kitchen-0.2.42.zip.sha256)",
+      "node scripts/check-installation.mjs release/tavern-kitchen-0.2.42.zip > release/install-verification.json"
     ]
   },
   "acceptance": [
@@ -101,9 +101,9 @@
     },
     {
       "id": 8,
-      "title": "全仓静态检查、类型校验、1451 项测试、9 组无头界面回归与安装包复验",
+      "title": "全仓静态检查、类型校验、1455 项测试、9 组无头界面回归与安装包复验",
       "status": "passed",
-      "expected": "quality.mjs、eslint (--max-warnings 0)、typecheck.mjs、check-project.mjs、build.mjs、test.mjs (1451/1451)、check-runtime.mjs、9 组 check-ui.mjs、package.py、check-versions.mjs 与 check-installation.mjs (0.2.41 zip) 全数通过。",
+      "expected": "quality.mjs、eslint (--max-warnings 0)、typecheck.mjs、check-project.mjs、build.mjs、test.mjs (1455/1455)、check-runtime.mjs、9 组 check-ui.mjs、package.py、check-versions.mjs 与 check-installation.mjs (0.2.42 zip) 全数通过。",
       "commands": [
         "pnpm build",
         "pnpm check",
@@ -112,7 +112,7 @@
         "node scripts/check-ui.mjs",
         "python3 scripts/package.py",
         "node scripts/check-versions.mjs",
-        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.41.zip"
+        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.42.zip"
       ]
     },
     {
@@ -231,22 +231,47 @@
       "commands": [
         "node --import tsx --test core/send-lock.test.js core/floor-host.test.js core/kitchen-bootstrap.test.js"
       ]
+    },
+    {
+      "id": 22,
+      "title": "0.2.42 前端全量优化（Phase 1 + Phase 2 + Phase 3 共 26 项）",
+      "status": "passed",
+      "expected": "覆盖 A1–A11 视觉/深浅主题/窄屏与手机端排版、B1–B7 阻断锁条/秒表取消/尾楼重跑约束/居中宽弹窗/API 脏草稿与一键全绑/Esc 关侧栏/教程汉化、C1–C3 五页检索过滤/跨模块跳转/卡片层级统一、D1–D3 流式 DOM 观察收窄与缓存计数/rAF 主题去重/WeakMap 变更索引与自动分页、E1–E2 清理 5 份主样式表死样式与 105 个零引用死代码文件及 4 项冗余依赖。",
+      "commands": [
+        "node --import tsx --test core/agent-status.test.js core/send-lock.test.js modules/story-summary/tests/floor-summary.test.js scripts/kitchen.test.mjs",
+        "node scripts/check-workspace-layout.mjs",
+        "node scripts/check-summary-workspace.mjs",
+        "node scripts/check-summary-footer.mjs",
+        "node scripts/check-api-workspace.mjs",
+        "node scripts/check-place-map.mjs"
+      ]
+    },
+    {
+      "id": 23,
+      "title": "Phase 4（F1）：彻底拆除双层 iframe，统一为 Open Shadow DOM 与内存直连桥接",
+      "status": "passed",
+      "expected": "拆除 story-summary.html 与 xiaobai-os.html 双层 iframe（#tk-workspace 内 iframe 数量恒为 0），改以 Open Shadow DOM（.tk-embedded-host + .tk-surface container-type:inline-size）与内存直连桥接原位挂载，保留与酒馆主样式双向隔离并原生继承 --SmartTheme* 主题变量；再删除 8 个废弃 iframe 壳文件，构建收敛为 8 入口 675 模块 45 分块；9 组无头浏览器回归与 29 张零 iframe 双主题实拍全部零溢出零报错。",
+      "commands": [
+        "node --import tsx --test core/kitchen-workspace.test.js modules/xiaobai-os/tests/frame-bridge.test.ts modules/xiaobai-os/tests/host-lifecycle.test.ts modules/story-summary/tests/raw-memory-ui.test.js modules/story-summary/tests/summary-controls.test.js modules/story-summary/tests/situation-source.test.js",
+        "node scripts/check-ui.mjs",
+        "node scripts/check-installation.mjs release/tavern-kitchen-0.2.42.zip"
+      ]
     }
   ],
   "artifacts": {
-    "zip": "release/tavern-kitchen-0.2.41.zip",
-    "checksum": "release/tavern-kitchen-0.2.41.zip.sha256",
+    "zip": "release/tavern-kitchen-0.2.42.zip",
+    "checksum": "release/tavern-kitchen-0.2.42.zip.sha256",
     "manifest": "release/release-info.json",
     "acceptance": "docs/validation.json",
     "final_zip_readback": "release/install-verification.json"
   },
   "final_verification": {
-    "build_id": "e68d04c216af42a9f283",
-    "unit_tests": "1451/1451",
+    "build_id": "3cb232141b021b32121a",
+    "unit_tests": "1455/1455",
     "ui_suites": 9,
     "zip_checksum": "OK",
     "installation": "passed",
-    "installation_notes": "ZIP 解压后由真实清单入口启动：未安装/全关时零请求零写入且缺绑定被拦截；常驻待命条与三类 Agent 绑定/失败重试正常；发前总结 50 楼与第 40 楼阻塞重试通过；旧档升级、后厨卡导入导出、交易与来源恢复回归通过。"
+    "installation_notes": "ZIP 解压后由真实清单入口启动：工作台零 iframe（全部子面以 Open Shadow DOM + 内存直连桥接原位挂载）；未安装/全关时零请求零写入且缺绑定被拦截；常驻待命条、锁错折叠条与三类 Agent 绑定/失败重试正常；发前总结 50 楼与第 40 楼阻塞重试通过；旧档升级、后厨卡导入导出、交易与来源恢复回归通过；8 入口 675 模块 45 分块构建（ZIP 851 文件）与 29 张零 iframe 多视口深浅主题实拍零瑕疵。"
   },
   "limitations": [
     "单元测试、运行时与无头浏览器回归在本地（http://kitchen.test 桩域、fake-indexeddb 与本地模型桩）执行；SillyTavern、TauriTavern 与在线模型长程游玩不在自动化验收范围。",

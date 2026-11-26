@@ -9,9 +9,13 @@ import MapViewport from './MapViewport.vue';
 import { layoutWorldMap } from './world-map.js';
 
 const props = defineProps<{map: MapDomainV1; selected: string; current?: string; feature: string}>();
-const emit = defineEmits<{select:[key: string, feature?: string]}>();
+const emit = defineEmits<{
+    select: [key: string, feature?: string];
+    enlarge: [payload: Record<string, unknown>];
+}>();
 const focusSequence = ref(0);
 const mode = ref<'list'|'map'|'local'>('list');
+const searchQuery = ref('');
 const place = computed(() => props.map.atlas.locations.find(location => location.key === props.selected));
 const localFeatures = computed(() => place.value && isMapSceneLocation(place.value) ? placeFeatures(props.map,place.value) : []);
 watch(localFeatures, items => { if (!items.length && mode.value === 'local') { mode.value = 'map'; } });
@@ -40,16 +44,66 @@ function returnToPlayer() {
     if (props.current) { reveal(props.current,''); emit('select',props.current); focusSequence.value++; }
 }
 const rows = computed(() => {
+    const q = searchQuery.value.trim().toLowerCase();
     const visible: {node: AtlasEntry; depth:number}[] = [];
-    function visit(nodes: AtlasEntry[], depth: number) {
-        for (const node of nodes) {
-            visible.push({node,depth});
-            if (expanded.value.has(node.id)) { visit(node.children,depth + 1); }
+    if (!q) {
+        function visit(nodes: AtlasEntry[], depth: number) {
+            for (const node of nodes) {
+                visible.push({node,depth});
+                if (expanded.value.has(node.id)) { visit(node.children,depth + 1); }
+            }
         }
+        visit(roots.value,0);
+        return visible;
     }
-    visit(roots.value,0);
+    function visitFiltered(nodes: AtlasEntry[], depth: number): boolean {
+        let any = false;
+        for (const node of nodes) {
+            const selfMatch = node.name.toLowerCase().includes(q);
+            const childRows: {node: AtlasEntry; depth:number}[] = [];
+            const visitSub = (subs: AtlasEntry[], d: number): boolean => {
+                let matched = false;
+                for (const sub of subs) {
+                    const subSelf = sub.name.toLowerCase().includes(q);
+                    const start = childRows.length;
+                    childRows.push({ node: sub, depth: d });
+                    const subChild = visitSub(sub.children, d + 1);
+                    if (subSelf || subChild) {
+                        matched = true;
+                    } else {
+                        childRows.splice(start);
+                    }
+                }
+                return matched;
+            };
+            const childMatch = visitSub(node.children, depth + 1);
+            if (selfMatch || childMatch) {
+                visible.push({ node, depth }, ...childRows);
+                any = true;
+            }
+        }
+        return any;
+    }
+    visitFiltered(roots.value, 0);
     return visible;
 });
+function enlargeMap() {
+    emit('enlarge', {
+        label: scope.value.label || '区域地图',
+        viewBox: drawing.value.viewBox,
+        selected: props.selected,
+        current: props.current || '',
+        nodes: drawing.value.nodes.map(({ location, x, y }) => ({ key: location.key, name: location.name, x, y })),
+        routes: drawing.value.routes.map(route => ({
+            x1: route.from.x,
+            y1: route.from.y,
+            x2: route.endX,
+            y2: route.endY,
+            bidirectional: route.link.bidirectional,
+            title: `${route.from.location.name} ${route.link.bidirectional ? '↔' : '→'} ${route.to.location.name} ${route.link.label || ''}`.trim(),
+        })),
+    });
+}
 const scope = computed(() => {
     const atlas = props.map.atlas;
     const trail = locationTrail(atlas,props.selected).reverse();
@@ -85,16 +139,23 @@ const focusPoint = computed<[number,number] | undefined>(() => {
         <button type="button" class="menu_button" :aria-pressed="mode === 'map'" @click="mode = 'map'">区域地图</button>
         <button v-if="localFeatures.length" type="button" class="menu_button" :aria-pressed="mode === 'local'" @click="mode = 'local'">局部地图</button>
         <button v-if="current" type="button" class="menu_button" @click="returnToPlayer">回到当前位置</button>
+        <button v-if="mode === 'map' && drawing.nodes.length" type="button" class="menu_button" @click="enlargeMap">大图查看</button>
     </nav>
-    <section v-if="mode === 'list'" aria-label="地点列表" class="geo-list">
-        <div v-for="{node,depth} in rows" :key="node.id" class="geo-row" :style="{paddingInlineStart:depth * 1.1 + 'em'}">
-            <button v-if="node.children.length" class="disclose" type="button" :aria-expanded="expanded.has(node.id)" :aria-label="(expanded.has(node.id) ? '收起' : '展开') + node.name" @click="toggle(node.id)">{{ expanded.has(node.id) ? '▾' : '▸' }}</button>
-            <span v-else class="spacer" />
-            <button class="entry" type="button" :aria-current="!!node.key && node.key === selected && (node.feature ?? '') === feature" @click="node.key ? emit('select',node.key,node.feature) : toggle(node.id)">
-                <small>{{ levels[depth] }}</small> {{ node.name }} <small v-if="node.key && node.key === current && !node.feature">· 当前位置</small>
-            </button>
+    <template v-if="mode === 'list'">
+        <div class="tk-filter-bar map-list-search">
+            <input v-model="searchQuery" type="search" class="tk-filter-input" placeholder="筛选地点或要素…" aria-label="筛选地点或要素">
         </div>
-    </section>
+        <section aria-label="地点列表" class="geo-list">
+            <div v-for="{node,depth} in rows" :key="node.id" class="geo-row" :style="{paddingInlineStart:depth * 1.1 + 'em'}">
+                <button v-if="node.children.length" class="disclose" type="button" :aria-expanded="expanded.has(node.id) || !!searchQuery.trim()" :aria-label="(expanded.has(node.id) ? '收起' : '展开') + node.name" @click="toggle(node.id)">{{ expanded.has(node.id) || !!searchQuery.trim() ? '▾' : '▸' }}</button>
+                <span v-else class="spacer" />
+                <button class="entry" type="button" :aria-current="!!node.key && node.key === selected && (node.feature ?? '') === feature" @click="node.key ? emit('select',node.key,node.feature) : toggle(node.id)">
+                    <small>{{ levels[depth] }}</small> {{ node.name }} <small v-if="node.key && node.key === current && !node.feature">· 当前位置</small>
+                </button>
+            </div>
+            <p v-if="!rows.length" class="geo-empty">没有匹配的地点。</p>
+        </section>
+    </template>
     <LocalMap v-else-if="mode === 'local' && place" :place="place.name" :features="localFeatures" :selected="feature" @select="emit('select',selected,$event)" />
     <section v-else aria-label="区域地图">
         <small>{{ scope.label }} · 位置示意</small>
@@ -115,10 +176,14 @@ const focusPoint = computed<[number,number] | undefined>(() => {
     </section>
 </template>
 <style scoped>
-nav {display:flex; gap:.35em; flex-wrap:wrap; align-items:center; margin-bottom:.65em}
+nav {display:flex; gap:.35em; flex-wrap:wrap; align-items:center; margin-bottom:.6em}
 nav button[aria-pressed=true] {box-shadow:inset 0 -2px currentColor}
+.map-list-search {margin-bottom:.45em}
+.geo-list {max-height:min(36vh, 260px); overflow-y:auto; padding-inline-end:2px}
+.geo-empty {margin:.4em 0; opacity:.75; font-size:.9em}
 .geo-row {display:flex; align-items:baseline; min-height:2em}
-.entry,.disclose {background:transparent; color:inherit; border:0; font:inherit; cursor:pointer; text-align:start}
+.entry,.disclose {background:transparent; color:inherit; border:0; font:inherit; cursor:pointer; text-align:start; padding:.15em .25em; border-radius:4px}
+.entry:hover,.disclose:hover {background:var(--bg3, rgba(128,128,128,.12))}
 .entry small {opacity:.7}
 .entry[aria-current=true] {font-weight:bold; text-decoration:underline; text-underline-offset:.22em}
 .disclose,.spacer {width:1.6em; flex:none}
@@ -131,6 +196,6 @@ nav button[aria-pressed=true] {box-shadow:inset 0 -2px currentColor}
 .atlas circle {stroke:currentColor; stroke-width:2; fill:var(--SmartThemeBlurTintColor,#333)}
 .atlas .here,.atlas text {fill:currentColor}
 .atlas .ring {fill:none; stroke-dasharray:4 3}
-.atlas text {font-size:20px;paint-order:stroke;stroke:var(--SmartThemeBlurTintColor,#333);stroke-width:3px}
+.atlas text {font-size:22px;paint-order:stroke;stroke:var(--SmartThemeBlurTintColor,#333);stroke-width:3px}
 </style>
 

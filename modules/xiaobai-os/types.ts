@@ -1,4 +1,4 @@
-import type { XiaobaiOsHostFrameMessage } from './host/frame-bridge.js';
+import type { XiaobaiOsHostFrameMessage } from './host/direct-bridge.js';
 
 export interface XiaobaiOsSettings<TApps extends object = Record<string, unknown>> {
     enabled: boolean;

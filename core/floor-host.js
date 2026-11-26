@@ -30,11 +30,15 @@ export function floorTasks(settings) {
 export function installFloorHost({ settings, getContext, memory, archive, planner, workspace }) {
     let streamStart = null, failure, batch = 0, openingGate = null;
     let busyOp = null, activeManualOp = null, openingConfirmed = false, openingCheckSeq = 0;
+    let autoSendCancelled = false;
+    let progressCache = null;
     let sendLock = { sync() {}, triggerSend() {}, dispose() {} };
+    const invalidateProgress = () => { progressCache = null; };
     const isGenerating = () => streamStart !== null || Boolean(globalThis.document?.body?.dataset?.generating);
     const hasDraftText = () => Boolean(globalThis.document?.querySelector?.('#send_textarea')?.value?.trim());
     const retryFromFailure = () => {
         failure = null;
+        invalidateProgress();
         clearAgentNotice();
         sendLock.sync();
         const replay = hasDraftText() ? () => sendLock.triggerSend() : null;
@@ -49,7 +53,7 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
         // latch also suppresses status(null) until the user retries or settings change.
         failure = { message, error };
         sendLock.sync();
-        showAgentNotice({ level:'error', message, error, pinned:true, retry:retryFromFailure });
+        showAgentNotice({ level:'error', message, error, pinned:true, locked:true, retry:retryFromFailure });
     };
     const isFloorSettled = (store, floor) => {
         const updateKeys = floorTasks(settings).filter(task => task.group === 'update').map(task => task.key);
@@ -65,6 +69,10 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
     const floorProgress = () => {
         const ctx = getContext(), chat = ctx?.chat || [];
         const store = memory?.getPublishedSummaryStore?.() || {};
+        const cacheKey = `${ctx?.chatId || ''}|${chat.length}|${store.lastSummarizedMesId ?? -1}|${(store.summaryHistory || []).length}|${Object.keys(store.floorWork || {}).length}`;
+        if (progressCache && progressCache.key === cacheKey && progressCache.store === store) {
+            return progressCache.value;
+        }
         const bounds = getUpdateAndSimulationBounds(chat);
         let totalReplies = 0, settledCount = 0;
         for (let i = 0; i <= bounds.updateEnd; i++) {
@@ -72,7 +80,9 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
             totalReplies++;
             if (isFloorSettled(store, i)) settledCount++;
         }
-        return { totalReplies, settledCount, pendingCount: Math.max(0, totalReplies - settledCount) };
+        const value = { totalReplies, settledCount, pendingCount: Math.max(0, totalReplies - settledCount) };
+        progressCache = { key: cacheKey, store, value };
+        return value;
     };
     const refreshOpeningConfirmed = () => {
         const ctx = getContext();
@@ -197,29 +207,45 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
             sendLock.sync();
         });
     };
+    const cancelAutoSend = () => {
+        if (busyOp !== 'send-gate' || autoSendCancelled) return;
+        autoSendCancelled = true;
+        showAgentNotice({
+            message: '已取消本次自动发送 · 正在完成当前总结，输入框草稿已保留…',
+            level: 'info',
+            pinned: true,
+            showElapsed: true,
+        });
+    };
     function render(info) {
         failure = info?.error ? info : null;
         if (!info) {
+            invalidateProgress();
             syncIdleStatus();
             clearAgentNotice();
             return;
         }
         sendLock.sync();
         const hasChat = (getContext().chat || []).length > 0;
+        const canCancelAutoSend = !info.error && busyOp === 'send-gate' && !autoSendCancelled;
         showAgentNotice({
             message: hasChat && Number.isInteger(info.floor) ? `第 ${info.floor + 1} 楼 · ${info.message}` : info.message,
             level: info.error ? 'error' : 'info',
             agent: info.agent || null,
             error: info.error || null,
             retry: info.error ? () => retryQueueFailure(info) : null,
+            cancel: canCancelAutoSend ? cancelAutoSend : null,
+            cancelLabel: '取消自动发送',
             recoveryRoute: info.error ? resolveFailureRoute(info.error) : null,
             pinned: !!info.error,
+            locked: !!info.error,
+            showElapsed: !info.error,
         });
     }
     const queue = createFloorProcessing({ read, tasks:() => floorTasks(settings), store:() => memory.getPublishedSummaryStore() || {},
         save: memory.saveFloorWork, saveSim: memory.saveFloorSimulation, getService: () => archive().service, requireAgent, generate:generateFeatureText,
-        chapter, onUpdateSettled: floor => { syncIdleStatus(); return memory.reconcileSettledFloorChunks?.(floor); }, status:render });
-    const getLockState = () => {
+        chapter, onUpdateSettled: floor => { invalidateProgress(); syncIdleStatus(); return memory.reconcileSettledFloorChunks?.(floor); }, status:render });
+    const getLockState = ({ visualOnly = false } = {}) => {
         const ctx = getContext();
         const hasChat = (ctx?.chat || []).length > 0;
         const enterSetting = ctx?.powerUserSettings?.send_on_enter;
@@ -242,6 +268,17 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
                 reason: `总结未完成，发送已锁定：${failure.message || '请先在上方横栏重试'}`,
             };
         }
+        // WHY: Visual button lock sync never needs to scan chat floors; skipping floorProgress() here
+        // prevents streaming DOM updates from scanning long chat histories on every token.
+        if (visualOnly) {
+            return {
+                locked: false,
+                needsGate: false,
+                isGenerating: isGenerating(),
+                enterSends,
+                reason: '',
+            };
+        }
         const { pendingCount } = floorProgress();
         const maybeNeedsOpening = hasChat && !openingConfirmed && !ctx?.chatMetadata?.[OPENING_SKIP_KEY];
         return {
@@ -256,6 +293,8 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
         if (busyOp) return;
         const startOwner = getChatIdentity(getContext());
         busyOp = 'send-gate';
+        autoSendCancelled = false;
+        invalidateProgress();
         sendLock.sync();
         try {
             if (!await ensureOpening('normal')) return;
@@ -268,11 +307,15 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
                     message: `发送已锁定 · 正在总结未完成楼层（待总结 ${pendingCount || 1} 楼），完成后自动发送…`,
                     level: 'info',
                     pinned: true,
+                    showElapsed: true,
+                    cancel: replaySend ? cancelAutoSend : null,
+                    cancelLabel: '取消自动发送',
                 });
                 await queue.settle();
             }
             if (getChatIdentity(getContext()) !== startOwner) return;
             if (failure) return;
+            invalidateProgress();
             const remaining = floorProgress().pendingCount;
             if (remaining > 0) {
                 notifyFailure(`仍有 ${remaining} 楼未完成总结，发送已锁定，请点击「重试」。`, new Error('仍有未完成总结的楼层'));
@@ -282,8 +325,14 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
             clearAgentNotice();
             // WHY: Release the DOM send lock right before replaying the single intercepted send
             // so the host receives the user's message once all prior floors are settled.
+            const skipReplay = autoSendCancelled;
             busyOp = null;
+            autoSendCancelled = false;
             sendLock.sync();
+            if (skipReplay) {
+                showAgentNotice({ message: '总结已完成，已取消自动发送，输入框草稿已保留。', level: 'success', timeoutMs: 4000 });
+                return;
+            }
             replaySend?.();
         } catch (error) {
             if (error?.name !== 'AbortError' && !failure) {
@@ -292,6 +341,7 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
         } finally {
             if (busyOp === 'send-gate') {
                 busyOp = null;
+                autoSendCancelled = false;
                 sendLock.sync();
             }
         }
@@ -313,6 +363,7 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
                     retry: Number.isInteger(failure.floor) ? () => retryQueueFailure(failure) : retryFromFailure,
                     recoveryRoute: failure.error ? resolveFailureRoute(failure.error) : null,
                     pinned: true,
+                    locked: true,
                 });
                 return;
             }
@@ -320,6 +371,7 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
                 level: 'info',
                 message: state?.reason || '总结正在进行中，完成前已锁定发送…',
                 pinned: true,
+                showElapsed: true,
             });
         },
         onPreSend: replay => runPreSendGate(replay),
@@ -328,7 +380,7 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
     // The structured summary is settled before the next new send so a swipe or
     // regenerate never replaces the latest floor after it was already summarized.
     const kick = () => { const ticket=++batch; queueMicrotask(() => { if (ticket === batch && !failure && archive() && streamStart === null) queue.settle({ update:false }).catch(error => { if (error.name !== 'AbortError' && !failure) console.warn('[TavernKitchen] 逐楼处理已中断',error); }); }); };
-    const settingsChanged = () => { failure = null; syncIdleStatus(); clearAgentNotice(); queue.invalidate(); kick(); };
+    const settingsChanged = () => { failure = null; invalidateProgress(); syncIdleStatus(); clearAgentNotice(); queue.invalidate(); kick(); };
     const events = createModuleEvents('ordered-floors');
     const replacingTypes = new Set(['swipe', 'regenerate']);
     registerGenerateInterceptor('ordered-floors', async (_chat, _size, abort, type) => {
@@ -351,6 +403,7 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
     });
     for (const event of ['MESSAGE_RECEIVED','GENERATION_ENDED','GROUP_WRAPPER_FINISHED']) if (event_types[event]) events.on(event_types[event], () => {
         if (event !== 'MESSAGE_RECEIVED' || !document.body?.dataset?.generating) streamStart = null;
+        invalidateProgress();
         syncIdleStatus();
         kick();
     });
@@ -361,10 +414,11 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
             openingConfirmed = false;
             refreshOpeningConfirmed();
         }
+        invalidateProgress();
         syncIdleStatus();
         queue.invalidate(); kick();
     });
-    events.on(event_types.GENERATION_STOPPED, () => { streamStart = null; queue.cancelGeneration(); syncIdleStatus(); kick(); });
+    events.on(event_types.GENERATION_STOPPED, () => { streamStart = null; queue.cancelGeneration(); invalidateProgress(); syncIdleStatus(); kick(); });
     window.addEventListener('tavernKitchen:floor-settings', settingsChanged);
     const onSummarySaved = () => {
         // WHY: executeRollback may finish deleting stale floorWork slightly after MESSAGE_SWIPED's microtask kick latched a source-change failure;
@@ -373,6 +427,7 @@ export function installFloorHost({ settings, getContext, memory, archive, planne
             failure = null;
             clearAgentNotice();
         }
+        invalidateProgress();
         syncIdleStatus();
         kick();
     };

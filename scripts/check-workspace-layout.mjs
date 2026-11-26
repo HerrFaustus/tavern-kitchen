@@ -47,12 +47,27 @@ try {
         const configure = () => workspace.configure({
             actions: { data() {}, suspense() {}, settings() {}, planner() {}, overview() {}, people() {}, situation() {}, opening() {}, map() {
                 const mount = workspace.getMount('map');
-                if (mount.querySelector('iframe')) return;
-                const frame = globalThis.document.createElement('iframe');
-                frame.onload = () => workspace.attachFrame(frame);
-                frame.srcdoc = '<html class="tk-embedded"><head><link rel="stylesheet" href="/embedded.css"><style>html,body{height:100%;margin:0}body{display:grid;grid-template-rows:minmax(0,1fr);color:#ddd;background:#202024}main{overflow:auto;min-height:0}</style></head><body><main>' +
-                    '<p>地图记录</p>'.repeat(60) + '<p>最后一条地点记录</p></main></body></html>';
-                mount.append(frame);
+                if (mount.querySelector('.tk-embedded-host')) return;
+                const host = globalThis.document.createElement('div');
+                host.className = 'tk-embedded-host';
+                const shadow = host.attachShadow({ mode: 'open' });
+                const style = globalThis.document.createElement('style');
+                style.textContent = ':host{display:block;height:100%;width:100%}.tk-surface{display:grid;grid-template-rows:minmax(0,1fr);height:100%;color:#ddd;background:#202024}main{overflow:auto;min-height:0}';
+                const surface = globalThis.document.createElement('div');
+                surface.className = 'tk-surface tk-embedded';
+                const mainEl = globalThis.document.createElement('main');
+                for (let i = 0; i < 60; i++) {
+                    const p = globalThis.document.createElement('p');
+                    p.textContent = '地图记录';
+                    mainEl.append(p);
+                }
+                const last = globalThis.document.createElement('p');
+                last.textContent = '最后一条地点记录';
+                mainEl.append(last);
+                surface.append(mainEl);
+                shadow.append(style, surface);
+                mount.append(host);
+                workspace.attachSurface(shadow);
             } },
             configurePanel(id, bar) {
                 if (id === 'map') {
@@ -73,9 +88,9 @@ try {
         configure();
         await workspace.open('map');
     });
-    const frame = page.frameLocator('iframe');
-    const main = frame.locator('main');
+    const main = page.locator('#tk-world-mount main');
     await page.locator('.tk-workspace-titlebar .tk-workspace-app-title').filter({hasText:'酒馆后厨'}).waitFor();
+    assert.equal(await page.locator('#tk-workspace iframe').count(), 0, 'workspace must mount surfaces directly without iframes');
     assert.ok(await page.locator('#tk-tab-world').evaluate(el => el.classList.contains('menu_button') && el.classList.contains('is-active')));
     assert.ok(await page.locator('.tk-subnav button').filter({hasText:'地图'}).evaluate(el => el.classList.contains('menu_button') && el.classList.contains('is-active')));
     assert.equal(await page.locator('#tk-tab-api').count(), 0);
@@ -83,6 +98,16 @@ try {
     for (const width of [319,1280]) {
         await page.setViewportSize({width,height:780});
         await page.locator('#tk-module-native-controls').waitFor({state:'visible'});
+        if (width === 319) {
+            const tabRows = await page.locator('#tk-workspace .tk-tabs button').evaluateAll(buttons => {
+                const tops = buttons.map(btn => Math.round(btn.getBoundingClientRect().top));
+                const nav = buttons[0]?.parentElement;
+                return { count: buttons.length, uniqueTops: new Set(tops).size, fits: nav ? nav.scrollWidth <= nav.clientWidth + 1 : false };
+            });
+            assert.equal(tabRows.count, 6);
+            assert.equal(tabRows.uniqueTops, 1, 'all 6 topbar tabs must stay on a single line at 319px');
+            assert.equal(tabRows.fits, true, 'topbar tabs must not overflow horizontally at 319px');
+        }
         assert.ok(await page.getByLabel('随剧情更新').isVisible());
         await main.waitFor({state:'visible'});
         const height = await main.evaluate(el => el.clientHeight);
@@ -131,14 +156,29 @@ try {
         docFits: globalThis.document.documentElement.scrollWidth <= globalThis.document.documentElement.clientWidth,
         links: el.querySelectorAll('a[href]').length,
         hasPlaceholder: (el.textContent || '').includes('待做'),
+        footerButtons: [...el.querySelectorAll('.tk-tutorial-footer .menu_button')].map(btn => {
+            const rect = btn.getBoundingClientRect();
+            return { text: btn.textContent.trim(), width: rect.width, height: rect.height };
+        }),
     }));
     assert.ok(tutorialLayout.fits && tutorialLayout.docFits, 'tutorial dialog must fit cleanly at 360px');
     assert.equal(tutorialLayout.links, 0);
     assert.equal(tutorialLayout.hasPlaceholder, false);
+    for (const btn of tutorialLayout.footerButtons) {
+        assert.ok(btn.height > 0 && btn.height <= 46 && btn.width >= btn.height, `tutorial footer button wrapped vertically: ${JSON.stringify(btn)}`);
+    }
     await dialog.getByRole('button', { name: '下一节' }).click();
     assert.match(await dialog.locator('.tk-tutorial-step').innerText(), /^2 \//);
     await dialog.getByRole('button', { name: '我知道了' }).click();
     assert.equal(await dialog.evaluate(el => el.open), false);
+
+    // Verify centered host modal (B4) opens cleanly and dismisses on Escape
+    await page.evaluate(() => globalThis.workspace.openModal({ title: '第 4 楼原文', subtitle: '阿棠 · 第 4 楼', text: '守卫阿棠接过县衙钥匙。' }));
+    const hostModal = page.locator('#tk-host-modal');
+    await hostModal.waitFor({ state: 'visible' });
+    assert.match(await hostModal.innerText(), /守卫阿棠接过县衙钥匙/);
+    await page.keyboard.press('Escape');
+    assert.equal(await hostModal.count(), 0);
     assert.deepEqual(errors, []);
     console.log('Verified host disclosures, reading height, scroll restoration, keyboard focus, last route, 360px fit and offline tutorial.');
 } finally {

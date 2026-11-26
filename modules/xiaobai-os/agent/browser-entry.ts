@@ -1,5 +1,5 @@
 import { createAgentAdapter } from '../../agent-core/provider-config.js';
-import { pullModelsForProvider } from '../../agent-core/ui/settings-panel.js';
+import { pullModelsForProvider } from '../../agent-core/model-list.js';
 import { setHostChatCompletionsRequestHeadersProvider } from '../../../shared/host-llm/chat-completions/client.js';
 
 type UnknownRecord = Record<string, unknown>;

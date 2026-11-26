@@ -22,9 +22,11 @@
 .text-api summary { cursor: pointer; padding: 10px 0; font-weight: 500; }
 .text-api .text-api-check { flex-direction: row; align-items: center; }
 .text-api .text-api-status { min-height: 20px; margin: 12px 0 0; font-size: 13px; overflow-wrap: anywhere; }
-.text-api .text-api-status[data-error=true] { color: var(--danger, #c65353); }
+.text-api .text-api-status[data-error=true] { color: var(--tk-error, var(--SmartThemeErrorColor, #c65353)); }
+.text-api .text-api-quick-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: .55em 0 .25em; }
+.text-api .text-api-quick-actions button { font-size: .9em; }
 .text-api :focus-visible { outline: 2px solid var(--accent, #7878be); outline-offset: 2px; }
-@media (max-width: 420px) { .text-api .text-api-grid { grid-template-columns: 1fr; } .text-api .text-api-presets { gap: 3px; } .text-api .text-api-icon { width: 32px; } }
+@container (max-width: 420px) { .text-api .text-api-grid { grid-template-columns: 1fr; } .text-api .text-api-presets { gap: 3px; } .text-api .text-api-icon { width: 32px; } }
 
 .text-api h2 { font-size: 1em; margin: 12px 0 4px; }
 .text-api .text-api-imports { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }

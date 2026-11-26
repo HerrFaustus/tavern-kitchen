@@ -2,6 +2,7 @@
 
 import { buildTimelineTree, selectTimelineTree, timelineLabel, timelineLabels } from './timeline-tree.js';
 import { buildCharacterIdentity } from './data/character-aliases.js';
+import { characterStoryState, PRESENCE } from '../story-state/records.js';
 
 export const ARCHIVE_COPY = Object.freeze({
     allEvents: '全部剧情', allSubjects: '全部对象', unknownRole: '未标注',
@@ -51,20 +52,28 @@ export function getArchiveStateFacts(data, section) {
     return data.facts.filter(fact => !fact.retracted && !/^对.+的/.test(fact.p) && (!section || getWorldFactSection(fact) === section));
 }
 
-// Presentation state belongs to this iframe. Data and all writes remain owned by story-summary-ui.
-export function createSummaryArchive({ getData, hasChat, getSelectedCharacter, onSelectCharacter, onTimelineChange, onFactsChange, postMsg, setHtml, h }) {
-    const $ = id => document.getElementById(id);
+// Presentation state belongs to this surface. Data and all writes remain owned by story-summary-ui.
+export function createSummaryArchive({ getData, hasChat, getSelectedCharacter, onSelectCharacter, onTimelineChange, onFactsChange, onJumpPerson, postMsg, setHtml, h, root = document, surface = document.documentElement }) {
+    const $ = id => (typeof root.getElementById === 'function' ? root.getElementById(id) : root.querySelector(`#${id}`));
+    const qs = selector => root.querySelector(selector);
+    const qsa = selector => root.querySelectorAll(selector);
+    const activeEl = () => ('activeElement' in root && root.activeElement) || document.activeElement;
     const detail = $('archive-detail');
     let view = 'story';
     let role = '';
     let subject = '';
     let descending = true;
+    let storyQuery = '';
+    let peopleQuery = '';
+    let peoplePresentOnly = false;
+    let worldQuery = '';
+    let hostWideModal = false;
     const expanded = new Set();
     let initialExpansion = true;
     let detailEventId = null;
     let restoreFocus = null, openPerson = null, rosterScroll = 0, sourceKey = null;
 
-    const worldSection = () => document.documentElement.classList.contains('tk-embedded') ? document.documentElement.dataset.kitchenView === 'lore' ? 'lore' : 'world' : undefined;
+    const worldSection = () => surface.classList.contains('tk-embedded') ? surface.dataset.kitchenView === 'lore' ? 'lore' : 'world' : undefined;
     const worldFacts = () => getArchiveStateFacts(getData(), worldSection());
 
     function closeDialogs() {
@@ -80,7 +89,7 @@ export function createSummaryArchive({ getData, hasChat, getSelectedCharacter, o
 
     function openDialog(dialog) {
         if (!dialog.open) {
-            restoreFocus = document.activeElement;
+            restoreFocus = activeEl();
             dialog.showModal();
             postMsg('FULLSCREEN_OPENED');
         }
@@ -89,20 +98,33 @@ export function createSummaryArchive({ getData, hasChat, getSelectedCharacter, o
     function openFloorSource(floor) {
         if (!Number.isInteger(floor) || floor < 0) return;
         sourceKey = `floor:${floor}`;
+        if (hostWideModal) {
+            postMsg('WORLD_FIELD_SOURCE', { key: sourceKey, floor, chatId: getData().chatId, branchId: getData().branchId, preferHostModal: true });
+            return;
+        }
         $('archive-detail-title').textContent = `第 ${floor + 1} 楼原文`;
         $('archive-detail-body').textContent = '正在读取原楼…';
         openDialog(detail);
         postMsg('WORLD_FIELD_SOURCE', { key: sourceKey, floor, chatId: getData().chatId, branchId: getData().branchId });
     }
 
+    function eventSourceFloor(event) {
+        if (Number.isInteger(event?._addedAt) && event._addedAt >= 0) return event._addedAt;
+        if (Number.isInteger(event?.floor) && event.floor >= 0) return event.floor;
+        return null;
+    }
+
     function showEvent(event) {
+        if (!event) return;
+        const floor = eventSourceFloor(event);
         detailEventId = event.id;
         $('archive-detail-title').textContent = ARCHIVE_COPY.eventDetail;
         setHtml($('archive-detail-body'), `
             <div class="archive-muted">${h(event.timeLabel || ARCHIVE_COPY.noTime)}</div>
             <h3 class="archive-detail-heading">${h(event.title || ARCHIVE_COPY.untitled)}</h3>
             <p class="archive-detail-text">${h(event.summary || '')}</p>
-            ${event.participants?.length ? `<h3>${ARCHIVE_COPY.participants}</h3><div class="archive-participants">${event.participants.map(name => `<span class="archive-text">${h(name)}</span>`).join('')}</div>` : ''}
+            ${event.participants?.length ? `<h3>${ARCHIVE_COPY.participants}</h3><div class="archive-participants">${event.participants.map(name => `<button type="button" class="tk-chip-link" data-jump-person="${h(name)}">${h(name)}</button>`).join('')}</div>` : ''}
+            ${floor != null ? `<div class="tk-source-row"><button type="button" class="btn btn-sm" data-open-floor="${floor}">查看第 ${floor + 1} 楼原文</button></div>` : ''}
             `);
         openDialog(detail);
     }
@@ -122,7 +144,7 @@ export function createSummaryArchive({ getData, hasChat, getSelectedCharacter, o
             initialExpansion = false;
         }
         return selectTimelineTree(roots, {
-            level: role, query: '', descending,
+            level: role, query: storyQuery, descending,
         });
     }
 
@@ -137,14 +159,25 @@ export function createSummaryArchive({ getData, hasChat, getSelectedCharacter, o
                 <div class="timeline-children">${node.children.map(timelineItem).join('')}</div></details>`;
         }
         const { round: event, index } = node;
+        const floor = eventSourceFloor(event);
         return `<article class="archive-event">
             <div class="archive-event-time">${h(event.timeLabel || '')}</div>
             <div class="archive-event-main">
-                <button class="archive-event-title" data-archive-event="${index}">${h(event.title || ARCHIVE_COPY.untitled)}</button>
+                <button type="button" class="archive-event-title" data-archive-event="${index}">${h(event.title || ARCHIVE_COPY.untitled)}</button>
                 <p>${h(event.summary || '')}</p>
-                <div class="archive-event-meta">${(event.participants || []).map(name => `<span class="archive-text">${h(name)}</span>`).join('')}<span>${h(event.memoryRole || ARCHIVE_COPY.unknownRole)}</span></div>
+                <div class="archive-event-meta">${(event.participants || []).map(name => `<button type="button" class="tk-chip-link" data-jump-person="${h(name)}">${h(name)}</button>`).join('')}<span>${h(event.memoryRole || ARCHIVE_COPY.unknownRole)}</span>${floor != null ? `<button type="button" class="tk-link-btn" data-open-floor="${floor}">第 ${floor + 1} 楼原文</button>` : ''}</div>
             </div>
         </article>`;
+    }
+
+    function syncTreeToggle(units) {
+        const toggle = $('archive-tree-toggle');
+        if (!toggle) return;
+        const unitIds = (units || []).map(unit => unit.id).filter(Boolean);
+        toggle.hidden = unitIds.length === 0;
+        if (!unitIds.length) return;
+        const allOpen = unitIds.every(id => expanded.has(id));
+        toggle.textContent = allOpen ? '收起全部' : '展开全部';
     }
 
     function refreshIndexes() {
@@ -159,6 +192,9 @@ export function createSummaryArchive({ getData, hasChat, getSelectedCharacter, o
         setHtml($('archive-story-index'), (roles.length > 1 ? ['', ...roles] : []).map(item => `<button class="archive-index-button" data-archive-role="${h(item)}" aria-pressed="${item === role}">${h(timelineLabel(item) || ARCHIVE_COPY.allEvents)}<span>${item ? counts[item] : totalUnits}</span></button>`).join(''));
         $('archive-story-heading').textContent = (timelineLabel(role || (roles.length === 1 ? roles[0] : '')) || ARCHIVE_COPY.allEvents) + '（' + (role ? counts[role] : totalUnits) + '）';
         $('archive-order').textContent = descending ? ARCHIVE_COPY.newest : ARCHIVE_COPY.oldest;
+        syncTreeToggle(data.narrativeUnits);
+        const storyToolbar = $('archive-story-toolbar');
+        if (storyToolbar) storyToolbar.hidden = !totalUnits;
         const facts = worldFacts();
         const subjects = [...new Set(facts.map(f => f.s))];
         if (subject && !subjects.includes(subject)) subject = '';
@@ -167,6 +203,11 @@ export function createSummaryArchive({ getData, hasChat, getSelectedCharacter, o
         $('archive-world-heading').textContent = worldSection() === 'lore' ? '设定' : worldSection() === 'world' ? '局势' : '世界状态';
         $('archive-world-hint').textContent = worldSection() === 'lore' ? '规则、地理、历史等背景记录。' : '当前状态与变化；未明确分类的旧记录也暂列于此。';
         $('archive-world-hint').hidden = !worldSection();
+        const worldToolbar = $('archive-world-toolbar');
+        if (worldToolbar) {
+            const hasSituations = (data.storyRecords || []).some(record => record.kind === 'situation');
+            worldToolbar.hidden = !facts.length && !hasSituations;
+        }
         $('archive-people-count').textContent = getArchiveCharacters(data).length;
     }
 
@@ -174,10 +215,12 @@ export function createSummaryArchive({ getData, hasChat, getSelectedCharacter, o
         const data = getData();
         const characters = getArchiveCharacters(data);
         const roster = $('archive-roster'), page = $('archive-people');
+        const toolbar = $('archive-people-toolbar');
         const current = hasChat() && characters.find(entry => entry.id === getSelectedCharacter());
         if (!current || current.id !== openPerson) openPerson = null;
         const showDetail = !!current && (characters.length === 1 || !!openPerson);
         roster.hidden = showDetail;
+        if (toolbar) toolbar.hidden = showDetail || !hasChat() || characters.length <= 1;
         $('archive-people-back').hidden = !(showDetail && characters.length > 1);
         const layout = page.querySelector('.archive-people-layout');
         layout.hidden = !hasChat() || (characters.length > 1 && !showDetail);
@@ -194,22 +237,60 @@ export function createSummaryArchive({ getData, hasChat, getSelectedCharacter, o
             setHtml(roster, '<p class="archive-empty">' + (hasChat() ? '这段对话尚无人物记录。' : '选择一段对话后查看人物档案。') + '</p>');
             return;
         }
-        setHtml(roster, characters.map(person => {
-            const entity = data.entities?.find(item => item.id === person.id);
+        const identity = buildCharacterIdentity(data.entities, data.characterAliases);
+        const resolve = value => identity.isAmbiguous(value) ? null : identity.resolveName(value);
+        const q = peopleQuery.trim().toLowerCase();
+        const entityById = new Map((data.entities || []).map(item => [item.id, item]));
+        const items = characters.map(person => {
+            const entity = entityById.get(person.id);
             const fields = entity?.fields || {};
             const entry = ['身份','职务','称号','当前位置','阵营'].map(key => fields[key]).find(field => field?.nature === 'established_fact' && typeof field.value === 'string' && field.value);
+            const locField = fields['当前位置'] || fields.location;
+            const locVal = locField?.nature === 'established_fact' ? locField.value : null;
+            const locName = locVal?.entityId ? (entityById.get(locVal.entityId)?.name || '') : (typeof locVal === 'string' ? locVal : '');
             const duplicate = characters.some(other => other.id !== person.id && other.name === person.name);
             const recent = !duplicate && data.storyRecords?.find(record => record.kind === 'person' && record.name === person.name && record.note);
+            const state = characterStoryState(data.storyRecords || [], person.name, resolve);
             const hint = entry?.value || recent?.note || (duplicate ? '档案 ' + person.id : '尚无身份资料');
-            return `<button class="archive-person" data-archive-person="${h(person.id)}"><strong>${h(person.name)}</strong><span>${h(hint)}</span></button>`;
+            return { person, hint, locName, presence: state.presence };
+        }).filter(item => {
+            if (peoplePresentOnly && item.presence !== 'present') return false;
+            if (!q) return true;
+            return `${item.person.name} ${item.hint} ${item.locName}`.toLowerCase().includes(q);
+        });
+        if (!items.length) {
+            setHtml(roster, `<p class="archive-empty">${ARCHIVE_COPY.noResults}</p>`);
+            return;
+        }
+        setHtml(roster, items.map(({ person, hint, locName, presence }) => {
+            const badges = [
+                presence && presence !== 'unknown' ? `<span class="tk-status-badge${presence === 'present' ? ' is-present' : ''}">${h(PRESENCE[presence] || presence)}</span>` : '',
+                locName ? `<span class="tk-status-badge">📍 ${h(locName)}</span>` : '',
+            ].filter(Boolean).join('');
+            return `<button type="button" class="archive-person" data-archive-person="${h(person.id)}"><div class="archive-person-top"><strong>${h(person.name)}</strong>${badges}</div><span class="archive-person-hint">${h(hint)}</span></button>`;
         }).join(''));
+    }
+
+    function selectPersonByTarget(target) {
+        if (!target) return false;
+        const characters = getArchiveCharacters(getData());
+        const identity = buildCharacterIdentity(getData().entities, getData().characterAliases);
+        const wantId = target.id || '';
+        const wantName = target.name ? identity.resolveName(target.name) : '';
+        const found = characters.find(c => (wantId && c.id === wantId) || (wantName && (c.name === wantName || c.name === target.name)));
+        if (!found) return false;
+        if (detail.open) closeDialogs();
+        openPerson = found.id;
+        onSelectCharacter(found.id);
+        $('archive-person-name')?.focus({ preventScroll: true });
+        return true;
     }
 
     function switchView(next) {
         closeDialogs();
         view = next;
-        document.querySelector('.archive-hero').hidden = view !== 'story';
-        document.querySelectorAll('.archive-tab').forEach(tab => {
+        qs('.archive-hero').hidden = view !== 'story';
+        qsa('.archive-tab').forEach(tab => {
             const selected = tab.dataset.view === view;
             tab.setAttribute('aria-selected', String(selected));
             tab.tabIndex = selected ? 0 : -1;
@@ -228,12 +309,20 @@ export function createSummaryArchive({ getData, hasChat, getSelectedCharacter, o
         role = '';
         subject = '';
         descending = true;
+        storyQuery = '';
+        peopleQuery = '';
+        peoplePresentOnly = false;
+        worldQuery = '';
+        if ($('archive-story-search')) $('archive-story-search').value = '';
+        if ($('archive-people-search')) $('archive-people-search').value = '';
+        if ($('archive-world-search')) $('archive-world-search').value = '';
+        if ($('archive-people-presence-toggle')) $('archive-people-presence-toggle').setAttribute('aria-pressed', 'false');
     }
 
-    document.querySelectorAll('.archive-tab').forEach(tab => {
+    qsa('.archive-tab').forEach(tab => {
         tab.addEventListener('click', () => switchView(tab.dataset.view));
         tab.addEventListener('keydown', event => {
-            const tabs = [...document.querySelectorAll('.archive-tab')];
+            const tabs = [...qsa('.archive-tab')];
             const index = tabs.indexOf(tab);
             const target = { ArrowLeft: (index + tabs.length - 1) % tabs.length, ArrowRight: (index + 1) % tabs.length, Home: 0, End: tabs.length - 1 }[event.key];
             if (target == null) return;
@@ -254,8 +343,33 @@ export function createSummaryArchive({ getData, hasChat, getSelectedCharacter, o
         refreshIndexes();
         onTimelineChange({ page: 0 });
     });
+    $('archive-tree-toggle')?.addEventListener('click', () => {
+        const unitIds = (getData().narrativeUnits || []).map(unit => unit.id).filter(Boolean);
+        const allOpen = unitIds.length > 0 && unitIds.every(id => expanded.has(id));
+        if (allOpen) expanded.clear();
+        else for (const id of unitIds) expanded.add(id);
+        syncTreeToggle(getData().narrativeUnits);
+        onTimelineChange();
+    });
+    $('archive-story-search')?.addEventListener('input', event => {
+        storyQuery = event.target.value || '';
+        onTimelineChange({ page: 0 });
+    });
+    $('archive-people-search')?.addEventListener('input', event => {
+        peopleQuery = event.target.value || '';
+        refreshRoster();
+    });
+    $('archive-people-presence-toggle')?.addEventListener('click', event => {
+        peoplePresentOnly = !peoplePresentOnly;
+        event.currentTarget.setAttribute('aria-pressed', String(peoplePresentOnly));
+        refreshRoster();
+    });
+    $('archive-world-search')?.addEventListener('input', event => {
+        worldQuery = event.target.value || '';
+        onFactsChange();
+    });
     $('archive-close').addEventListener('click', () => postMsg('CLOSE_PANEL'));
-    document.querySelectorAll('[data-close-archive]').forEach(button => button.addEventListener('click', closeDialogs));
+    qsa('[data-close-archive]').forEach(button => button.addEventListener('click', closeDialogs));
     for (const dialog of [detail]) {
         dialog.addEventListener('cancel', event => { event.preventDefault(); closeDialogs(); });
         dialog.addEventListener('click', event => {
@@ -264,17 +378,27 @@ export function createSummaryArchive({ getData, hasChat, getSelectedCharacter, o
             if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) closeDialogs();
         });
     }
-    document.addEventListener('click', event => {
+    const clickTarget = surface || root;
+    clickTarget.addEventListener('click', event => {
         const unit = event.target.closest('.timeline-unit > summary')?.parentElement;
         if (unit) {
             if (unit.open) expanded.delete(unit.dataset.unit);
             else expanded.add(unit.dataset.unit);
+            syncTreeToggle(getData().narrativeUnits);
         }
         const button = event.target.closest('button');
         if (!button) return;
         if (button.dataset.archiveRole != null) { role = button.dataset.archiveRole; refreshIndexes(); onTimelineChange({ page: 0 }); }
         if (button.dataset.archiveSubject != null) { subject = button.dataset.archiveSubject; refreshIndexes(); onFactsChange(); }
         if (button.dataset.archiveEvent != null) showEvent((getData().rounds || [])[Number(button.dataset.archiveEvent)]);
+        if (button.dataset.openFloor != null) openFloorSource(Number(button.dataset.openFloor));
+        if (button.dataset.jumpPerson) {
+            const target = { name: button.dataset.jumpPerson };
+            if (detail.open) closeDialogs();
+            if (onJumpPerson) onJumpPerson(target);
+            else selectPersonByTarget(target);
+            return;
+        }
         if (button.dataset.archivePerson != null) {
             if (detail.open) closeDialogs();
             const name = button.dataset.archivePerson;
@@ -287,6 +411,10 @@ export function createSummaryArchive({ getData, hasChat, getSelectedCharacter, o
         }
         if (button.dataset.worldProof) {
             sourceKey = button.dataset.worldProof;
+            if (hostWideModal) {
+                postMsg('WORLD_FIELD_SOURCE', { key: sourceKey, chatId: getData().chatId, branchId: getData().branchId, preferHostModal: true });
+                return;
+            }
             $('archive-detail-title').textContent = '交接来源';
             $('archive-detail-body').textContent = '正在读取原楼…';
             openDialog(detail);
@@ -299,12 +427,18 @@ export function createSummaryArchive({ getData, hasChat, getSelectedCharacter, o
             if (!detail.open || !sourceKey || result.key !== sourceKey || result.chatId !== data.chatId || result.branchId !== data.branchId) return;
             $('archive-detail-body').textContent = result.text == null ? '当前分支无法核对这条原文。' : '第 ' + (result.floor + 1) + ' 楼 · ' + result.name + '\n\n' + result.text;
         },
+        setHostWideModal(enabled) { hostWideModal = Boolean(enabled); },
+        selectPersonByTarget,
+        getWorldQuery: () => worldQuery,
         closeDialogs, reset, switchView, timelineEvents, timelineItem, refreshIndexes, refreshRoster, openFloorSource,
-        hasTimelineFilter: () => !!role,
+        hasTimelineFilter: () => !!role || !!storyQuery.trim(),
         isPeopleVisible: () => view === 'people',
         isStoryVisible: () => view === 'story',
         worldFacts,
-        filteredFacts: () => worldFacts().filter(f => (!subject || f.s === subject)),
+        filteredFacts: () => {
+            const q = worldQuery.trim().toLowerCase();
+            return worldFacts().filter(f => (!subject || f.s === subject) && (!q || `${f.s} ${f.p} ${f.o}`.toLowerCase().includes(q)));
+        },
         refresh() {
             refreshIndexes(); refreshRoster();
             if (detail.open && detailEventId != null) {

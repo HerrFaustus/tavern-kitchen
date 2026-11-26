@@ -1,4 +1,4 @@
-import type { MapCondition } from '../../../story-state/situation-links.js';
+import type { MapActor, MapCondition } from '../../../story-state/situation-links.js';
 import type { XiaobaiOsFileState } from '../../kernel/contracts.js';
 import type { MapDomainV1 } from '../../domains/map/types.js';
 
@@ -28,6 +28,7 @@ export interface MapClientState {
     autoMaintenance: boolean;
     projectToChat: boolean;
     localConditions?: MapCondition[];
+    localActors?: MapActor[];
     maintenanceStatus?: MapMaintenanceStatus;
     /** Latest in-memory result, available for inspection; not an unread notification. */
     maintenanceMessage?: string;

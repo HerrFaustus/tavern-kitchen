@@ -22,7 +22,8 @@ const state = {chatIdentity:'fiction',status:'ready',map:{atlas:{
     links:[{id:'1',from:'dock',to:'town',kind:'path',bidirectional:false}],
     actors:[{actorKey:'player',locationKey:'dock'}]},scenes:{}}};
 let publish;
-const bridge = {subscribe:listener=>{publish=listener;return ()=>{};}, request:async()=>({result:{presets:[],bindings:{}}})};
+const posted = [];
+const bridge = {subscribe:listener=>{publish=listener;return ()=>{};}, post:(type,payload)=>{posted.push({type,payload});}, request:async()=>({result:{presets:[],bindings:{}}})};
 async function inspect() {
     createApp(MapApp,{initialState:state,bridge}).mount('#app');
     await nextTick();
@@ -87,11 +88,31 @@ async function inspect() {
     const outbound = Array.from(document.querySelectorAll('article li button')).find(b=>b.textContent==='集市').parentElement.textContent;
     await click(labelled('查看旅舍'));
     await click(named('回到当前位置'));
-    const controlHeight = document.querySelector('.place-index > .tk-module-actions').getBoundingClientRect().height;
+    const controlEl = document.querySelector('.place-index > .tk-module-actions');
+    const controlHeight = controlEl ? controlEl.getBoundingClientRect().height : 0;
     const dataHeight = document.querySelector('.place-index > .tk-module-data').getBoundingClientRect().height;
     const hasFooter = document.querySelector('.place-index > footer') !== null;
     const hasPromptSection = document.querySelector('.place-index [data-setting-section], .place-index [data-settings-group]') !== null;
-    return {controlRatio:controlHeight / (controlHeight + dataHeight),hasFooter,hasPromptSection,controlHeight,dataHeight,nearby,beforeFestival,duringFestival,afterFestival,fromProse,fromFeatureLink,north,west,unknown,initial,collapsed,atmosphere,feature,edges,oneWay,mapNodes,destination,incoming,outbound,current:title(),player:state.map.atlas.actors[0].locationKey};
+    await click(named('大图查看'));
+    const enlargedPosted = posted.some(item => item.type === 'os/open-wide-map' && item.payload?.nodes?.length === 3);
+    publish({type:'map/state',payload:{state:{...state,localActors:[{id:'p1',name:'小孟',locationKey:'dock',locationName:'旧渡口'}]}}});
+    await nextTick();
+    await click(named('小孟'));
+    const jumpedPerson = posted.some(item => item.type === 'os/navigate-kitchen' && item.payload?.route === 'people' && item.payload?.detail?.personName === '小孟');
+    publish({type:'map/focus-place',payload:{placeKey:'inn'}});
+    await nextTick();
+    const focusedPlace = title();
+    await click(named('地点列表'));
+    const searchInput = document.querySelector('.map-list-search input');
+    searchInput.value = '旅舍';
+    searchInput.dispatchEvent(new Event('input',{bubbles:true}));
+    await nextTick();
+    const filteredRows = rows().map(value => value.replace(/\\s+/g,''));
+    searchInput.value = '';
+    searchInput.dispatchEvent(new Event('input',{bubbles:true}));
+    await nextTick();
+    await click(named('回到当前位置'));
+    return {controlRatio:controlHeight / (controlHeight + dataHeight),hasFooter,hasPromptSection,controlHeight,dataHeight,enlargedPosted,jumpedPerson,focusedPlace,filteredRows,nearby,beforeFestival,duringFestival,afterFestival,fromProse,fromFeatureLink,north,west,unknown,initial,collapsed,atmosphere,feature,edges,oneWay,mapNodes,destination,incoming,outbound,current:title(),player:state.map.atlas.actors[0].locationKey};
 }
 inspect().then(result=>fetch('/result',{method:'POST',body:JSON.stringify(result)}))
     .catch(error=>fetch('/result',{method:'POST',body:JSON.stringify(error?.stack || String(error))}));
@@ -123,7 +144,12 @@ try {
     assert.equal(typeof result, 'object', String(result));
     assert.deepEqual(result.initial.slice(0,4).map(value=>value.replace(/\s+/g,'')),['▾世界群岛','▾地区北岸','▾地点旧渡口·当前位置','地点要素吊机']);
     assert.deepEqual([result.fromProse,result.fromFeatureLink,result.north,result.west,result.unknown],['集市','吊机','仓门','吊机','旧桶']);
-    assert.ok(result.controlRatio > 0 && result.controlRatio <= .46, JSON.stringify(result));
+    assert.equal(result.controlHeight, 0, JSON.stringify(result));
+    assert.ok(result.dataHeight > 0, JSON.stringify(result));
+    assert.equal(result.enlargedPosted, true);
+    assert.equal(result.jumpedPerson, true);
+    assert.equal(result.focusedPlace, '旅舍');
+    assert.ok(result.filteredRows.some(row => row.includes('旅舍')) && !result.filteredRows.some(row => row.includes('集市')), JSON.stringify(result.filteredRows));
     assert.equal(result.hasFooter, false);
     assert.equal(result.hasPromptSection, false);
     assert.equal(result.nearby,true);

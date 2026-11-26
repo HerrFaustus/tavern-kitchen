@@ -9,7 +9,8 @@ const root = path.resolve(process.argv[2] || developmentRoot);
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const fixture = (await build({absWorkingDir:root,entryPoints:['scripts/fixtures/proposal-workspace.js'],
-    bundle:true,write:false,format:'esm',platform:'browser',nodePaths:[path.join(developmentRoot,'node_modules')]})).outputFiles[0].text;
+    bundle:true,write:false,format:'esm',platform:'browser',nodePaths:[path.join(developmentRoot,'node_modules')],
+    external:['/scripts/extensions/third-party/tavern-kitchen/core/build-assets.js']})).outputFiles[0].text;
 const cardFixture = (await build({absWorkingDir:root,entryPoints:['scripts/fixtures/card-roundtrip.js'],
     bundle:true,write:false,format:'esm',platform:'browser',nodePaths:[path.join(developmentRoot,'node_modules')]})).outputFiles[0].text;
 const css = await fs.readFile(path.join(root,'style.css'),'utf8');
@@ -39,21 +40,22 @@ try {
         return {context,page};
     }
     const {page} = await openFixture();
-    const frame=page.frameLocator('iframe');
-    assert.equal(await frame.locator('#world-proposals').count(), 0);
+    const surface = page.locator('#tk-memory-mount .tk-embedded-host');
+    assert.equal(await page.locator('#tk-workspace iframe').count(), 0);
+    assert.equal(await surface.locator('#world-proposals').count(), 0);
     await page.evaluate(() => globalThis.fixture.service.syncTurns(globalThis.fixture.chat));
 
     // Moving unchanged content must not be mistaken for a changed source.
     const beforeRecovery = await page.evaluate(() => globalThis.fixture.read());
     const originalBranch = beforeRecovery.branchId;
     await page.evaluate(async()=>{globalThis.fixture.chat.unshift({mes:'更早的开场。',send_date:'opening'});await globalThis.fixture.workspace.open('data');});
-    const recovery=frame.locator('#world-recovery');
+    const recovery = surface.locator('#world-recovery');
     await recovery.waitFor({state:'visible'});
     await recovery.locator('details > summary').click();
     assert.doesNotMatch(await recovery.innerText(),/正文来源有变/);
     for (const width of [319,1280]) {
         await page.setViewportSize({width,height:780});
-        const size=await frame.locator('#data-page').evaluate(el=>({width:el.clientWidth,scrollWidth:el.scrollWidth}));
+        const size=await surface.locator('#data-page').evaluate(el=>({width:el.clientWidth,scrollWidth:el.scrollWidth}));
         assert.ok(size.scrollWidth<=size.width,`data page overflows at ${width}px`);
     }
     await page.evaluate(()=>{globalThis.fixture.chat.shift();globalThis.fixture.chat[1].mes='主角没有购买铁剑。';});

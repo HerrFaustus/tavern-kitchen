@@ -1,5 +1,4 @@
-import { createKitchenWorkspace } from '../../core/kitchen-workspace.js';
-import { isTrustedMessage } from '../../core/iframe-messaging.js';
+import { createKitchenWorkspace, bindKitchenSurface } from '../../core/kitchen-workspace.js';
 import { createWorldArchive } from '../../modules/world-records/host.js';
 import { getWorldBridge } from '../../modules/world-records/bridge.js';
 import { storyIdentityKey, readWorldSources } from '../../modules/world-records/sources.js';
@@ -44,24 +43,35 @@ export async function mountFixture() {
         conflicts:[],acknowledgedReceipts:input.executionReceipts.map(item=>item.commandId)},input);
     memory.store.summaryHistory.push({worldUpdate:update,sourceReceipt:receipt,summary:'买下铁剑。',endMesId:1});
     await archive.prepare();
-    let frame;
-    function openView(view) {
-        if (!frame) {
-            frame = globalThis.document.createElement('iframe');
-            frame.addEventListener('load',()=>workspace.attachFrame(frame));
-            // eslint-disable-next-line no-restricted-syntax -- The listener checks the origin and owning iframe below.
-            globalThis.addEventListener('message',event=>{
-                if (!isTrustedMessage(event,frame,'TavernKitchen-StoryFrame')) return;
-                const reply = data => frame.contentWindow.postMessage({source:'TavernKitchen',...data},globalThis.location.origin);
-                if (event.data.type === 'FRAME_READY') {
-                    reply({type:'LOAD_PANEL_CONFIG',config:{}});
-                    reply({type:'KITCHEN_MEMORY_VIEW',view:workspace.isActive('situation') ? 'world' : workspace.isActive('data') ? 'data' : 'people'});
-                }
+    let host = null;
+    let ui = null;
+    async function openView(view) {
+        if (!host) {
+            const { loadBuildEntry } = await import(/* @vite-ignore */ '/scripts/extensions/third-party/tavern-kitchen/core/build-assets.js');
+            host = globalThis.document.createElement('div');
+            host.className = 'tk-embedded-host';
+            const shadow = host.attachShadow({ mode: 'open' });
+            const surface = globalThis.document.createElement('div');
+            surface.className = 'tk-surface tk-embedded tk-follow-host';
+            shadow.append(surface);
+            workspace.getMount('situation').append(host);
+            bindKitchenSurface(host, surface);
+            const mod = await loadBuildEntry('apps/story-summary', shadow, { includeEmbedded: true });
+            ui = mod.mountStorySummaryUI({
+                root: shadow,
+                surface,
+                postToHost(msg) {
+                    if (msg.type === 'FRAME_READY') {
+                        ui.receiveHostMessage({ source:'TavernKitchen', type:'LOAD_PANEL_CONFIG', config:{} });
+                        ui.receiveHostMessage({ source:'TavernKitchen', type:'KITCHEN_MEMORY_VIEW', view:workspace.isActive('situation') ? 'world' : workspace.isActive('data') ? 'data' : 'people' });
+                    }
+                },
             });
-            frame.src='/scripts/extensions/third-party/tavern-kitchen/modules/story-summary/story-summary.html';
-            workspace.getMount('situation').append(frame);
-        } else frame.contentWindow.postMessage({source:'TavernKitchen',type:'KITCHEN_MEMORY_VIEW',view},globalThis.location.origin);
-        if (view === 'data') archive.showRecovery(frame);
+            host.dispatchEvent(new CustomEvent('tk-surface-ready'));
+        } else if (ui) {
+            ui.receiveHostMessage({ source:'TavernKitchen', type:'KITCHEN_MEMORY_VIEW', view });
+        }
+        if (view === 'data') archive.showRecovery(host);
     }
     workspace.configure({ actions:{situation:()=>openView('world'),people:()=>openView('people'),data:()=>openView('data')} });
     globalThis.fixture = {workspace,archive,service,errors,chat,read:async()=>{const next=await service.read();

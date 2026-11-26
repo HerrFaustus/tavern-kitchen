@@ -1,30 +1,41 @@
+import './story-summary.css';
+import './story-summary-timeline.css';
+import './summary-status.css';
+import './settings-config.css';
+import './archive.css';
+import './workspace.css';
 import { protagonistIdentity } from '../story-state/protagonist-identity.js';
-import { projectPersonalAgendas } from '../story-state/records.js';
+import { characterStoryState, PRESENCE, projectPersonalAgendas } from '../story-state/records.js';
 import { renderWorldAttributes, renderPersonalAgendas, renderPersonState, renderThreads } from '../story-state/view.js';
 import { buildCharacterIdentity } from './data/character-aliases.js';
 import { WORKSPACE_COPY } from './workspace-copy.js';
 // story-summary-ui.js
-// iframe 内 UI 逻辑
+// Direct in-page Open Shadow DOM surface UI for summary, people, situation, recall, data & memory settings.
 
 import { ARCHIVE_COPY, createSummaryArchive, getArchiveCharacters } from './archive-view.js';
+import { STORY_SUMMARY_MARKUP } from './story-summary-template.js';
 import { DEFAULT_SUMMARY_DELAY_FLOORS } from './data/summary-delay.js';
 import { normalizeSummaryWorkflow, SUMMARY_BATCH_FLOORS } from './data/summary-workflow.js';
 import { DEFAULT_RECALL_TIMEOUT_SEC, MAX_RECALL_TIMEOUT_SEC, normalizeRecallTimeoutSec } from './data/recall-settings.js';
 import { SUMMARY_FEEDBACK_COPY } from './feedback-copy.js';
 import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
 
-(function () {
-    'use strict';
+export function mountStorySummaryUI({ root = document, surface: providedSurface = null, postToHost = () => {} } = {}) {
     let archiveView;
     let settingsDirty = false;
     const dirtyFields = new Set();
     let settingsSnapshot;
     let settingsSaving = false;
+    let pagerResizeObserver = null;
+    let surfaceKeydownHandler = null;
+    let destroyed = false;
     // ═══════════════════════════════════════════════════════════════════════════
     // DOM Helpers
     // ═══════════════════════════════════════════════════════════════════════════
 
-    const $ = id => document.getElementById(id);
+    const $ = id => (typeof root.getElementById === 'function' ? root.getElementById(id) : root.querySelector(`#${id}`));
+    const qs = selector => root.querySelector(selector);
+    const activeEl = () => ('activeElement' in root && root.activeElement) || document.activeElement;
     const h = v => String(v ?? '').replace(/[&<>"']/g, c =>
         ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
     );
@@ -36,16 +47,24 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
         const fragment = range.createContextualFragment(String(html ?? ''));
         el.replaceChildren(fragment);
     };
-    
+
+    let surface = providedSurface;
+    if (!surface) {
+        surface = qs('.tk-surface') || document.documentElement;
+    }
+    if (!$('archive-story')) {
+        const bodyHost = surface.querySelector('.tk-surface-body') || (() => {
+            const body = document.createElement('div');
+            body.className = 'tk-surface-body';
+            surface.append(body);
+            return body;
+        })();
+        setHtml(bodyHost, STORY_SUMMARY_MARKUP);
+    }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // Constants
     // ═══════════════════════════════════════════════════════════════════════════
-
-    const PARENT_ORIGIN = (() => {
-        try { return new URL(document.referrer).origin; }
-        catch { return window.location.origin; }
-    })();
 
     const VECTOR_PROVIDER_DEFAULTS = {
         siliconflow: { url: 'https://api.siliconflow.cn/v1', needKey: true, canFetch: true },
@@ -68,13 +87,9 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
     function setStatusText(el, message, kind = '') {
         if (!el) return;
         el.textContent = message || '';
-        el.style.color = kind === 'error'
-            ? '#ef4444'
-            : kind === 'success'
-                ? '#22c55e'
-                : kind === 'loading'
-                    ? '#f59e0b'
-                    : '';
+        el.style.color = '';
+        if (kind) el.dataset.statusKind = kind;
+        else delete el.dataset.statusKind;
     }
 
     
@@ -158,6 +173,8 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
     let localGenerating = false;
     let vectorGenerating = false;
     let currentCharacterId = null;
+    let pendingPersonTarget = null;
+    let hostWideModalEnabled = false;
     let lastRecallLogText = '';
     let recallHistoryEntries = [];
     let selectedRecallRoundId = '';
@@ -182,7 +199,7 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
     // ═══════════════════════════════════════════════════════════════════════════
 
     function postMsg(type, data = {}) {
-        window.parent.postMessage({ source: 'TavernKitchen-StoryFrame', type, ...data }, PARENT_ORIGIN);
+        postToHost({ source: 'TavernKitchen-StoryFrame', type, ...data });
     }
 
     function nextConfigSaveRequestId() {
@@ -298,7 +315,7 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
         status.textContent = String((isError ? data.message : data.statusText) || '');
         $('summary-notice').hidden = !status.textContent;
         $('btn-dismiss-summary').hidden = !isError;
-        if (!status.textContent && document.activeElement === $('btn-dismiss-summary')) $('btn-generate').focus();
+        if (!status.textContent && activeEl() === $('btn-dismiss-summary')) $('btn-generate').focus();
     }
 
     function bindSummaryActions() {
@@ -510,7 +527,7 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
     }
 
     function openSettings() {
-        document.documentElement.dataset.kitchenView = 'settings';
+        surface.dataset.kitchenView = 'settings';
         settingsDirty = false;
         dirtyFields.clear();
         settingsSnapshot = structuredClone(config);
@@ -523,7 +540,7 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
         showPanelConfigLoadState(panelConfigLoad.status, panelConfigLoad.error);
 
         $('settings-modal').classList.add('active');
-        document.querySelector('.archive').inert = true;
+        qs('.archive').inert = true;
         postMsg('SETTINGS_OPENED');
     }
 
@@ -635,7 +652,7 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
         if (!visible) return;
         const total = tlTotalPages();
         const strip = $('tl-pg-strip');
-        const focused = document.activeElement;
+        const focused = activeEl();
         const hadPagerFocus = pager.contains(focused);
         // Keep existing buttons so selecting or refreshing a page retains keyboard focus.
         while (strip.children.length > total) strip.lastElementChild.remove();
@@ -654,7 +671,7 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
         });
         const num = $('tl-pg-num');
         num.max = total;
-        if (syncPageNumber || document.activeElement !== num) num.value = tlCurrentPage + 1;
+        if (syncPageNumber || activeEl() !== num) num.value = tlCurrentPage + 1;
         const atStart = tlCurrentPage <= 0;
         const atEnd = tlCurrentPage >= total - 1;
         $('tl-pg-first').disabled = atStart;
@@ -680,6 +697,11 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
         }
         const events = archiveView.timelineEvents();
         tlRootCount = events.length;
+        // WHY: Long stories with >30 timeline nodes auto-enable pagination once unless the user explicitly toggled it.
+        if (localStorage.getItem(TL_PAGING_KEY) === null && !tlPagingEnabled && events.length > 30) {
+            tlPagingEnabled = true;
+            $('tl-paging-toggle')?.setAttribute('aria-pressed', 'true');
+        }
         const container = $('timeline-list');
         if (!events.length) {
             setHtml(container, summaryData.rounds.length
@@ -752,12 +774,30 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
         const outRels = rels.filter(r => resolve(r.from) === name);
         const inRels = rels.filter(r => resolve(r.to) === name);
 
+        const jumpToPerson = target => {
+            if (!target) return;
+            if (surface.dataset.kitchenView === 'people') {
+                archiveView.selectPersonByTarget(target);
+                return;
+            }
+            if (hostWideModalEnabled) {
+                postMsg('KITCHEN_NAVIGATE', { route: 'people', detail: { personId: target.id || '', personName: target.name || '' } });
+                return;
+            }
+            archiveView.switchView('people');
+            archiveView.selectPersonByTarget(target);
+        };
+        const jumpToPlace = target => {
+            if (!target) return;
+            postMsg('KITCHEN_NAVIGATE', { route: 'map', detail: { placeKey: target.key || '', placeName: target.name || '' } });
+        };
+
         setHtml(c, `
             <div class="prof-name">${h(name)}</div>
             ${[[outRels,'对','to'],[inRels,'来自','from']].filter(([items]) => items.length).map(([items,label,target]) => `
-                <div class="prof-rels"><div class="rels-group">
-                    <div class="rels-group-title">${label === '对' ? h(name) + '对别人的羁绊' : '别人对' + h(name) + '的羁绊'}</div>
-                    ${items.map(r => `<div class="rel-item"><span class="rel-target">${label}${h(r[target])}：</span>
+                <div class="prof-rels tk-info-card"><div class="rels-group">
+                    <div class="rels-group-title standoutHeader">${label === '对' ? h(name) + '对别人的羁绊' : '别人对' + h(name) + '的羁绊'}</div>
+                    ${items.map(r => `<div class="rel-item"><span class="rel-target">${label}<button type="button" class="tk-inline-link" data-jump-person="${h(r[target])}">${h(r[target])}</button>：</span>
                         <span class="rel-label">${h(r.label || '—')}</span>
                         ${r.trend ? `<span class="rel-trend ${TREND_CLASS[r.trend] || ''}">${h(r.trend)}</span>` : ''}
                     </div>`).join('')}
@@ -766,14 +806,38 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
         const entities = summaryData.entities || [];
         const person = entities.find(entity => entity.id === character.id) || identity.entityFor(name);
         const records = summaryData.storyRecords || [];
+        const personState = characterStoryState(records, name, resolve);
+        const badges = document.createElement('div');
+        badges.className = 'tk-status-badges';
+        if (personState.presence !== 'unknown') {
+            const presenceBadge = document.createElement('span');
+            presenceBadge.className = `tk-status-badge${personState.presence === 'present' ? ' is-present' : ''}`;
+            presenceBadge.textContent = PRESENCE[personState.presence] || personState.presence;
+            badges.append(presenceBadge);
+        }
+        const locRec = person?.fields?.['当前位置'] || person?.fields?.location;
+        const locRaw = locRec?.nature === 'established_fact' ? locRec.value : null;
+        const locName = locRaw?.entityId ? (entities.find(e => e.id === locRaw.entityId)?.name || '') : (typeof locRaw === 'string' ? locRaw : '');
+        if (locName) {
+            const locBtn = document.createElement('button');
+            locBtn.type = 'button';
+            locBtn.className = 'tk-status-badge is-link';
+            locBtn.textContent = `📍 ${locName}`;
+            locBtn.onclick = () => jumpToPlace({ key: locRaw?.entityId || '', name: locName });
+            badges.append(locBtn);
+        }
         const state = renderPersonState(c, records, name, resolve);
         renderPersonalAgendas(c, agendas, holder => resolve(holder) === name);
         renderUnassigned();
         const attributes = document.createElement('section');
-        renderWorldAttributes(attributes,entities,person,identity.aliasesFor(name,person),true,person?.id === protagonistIdentity(entities,summaryData.playerName).hero?.id);
+        renderWorldAttributes(attributes, entities, person, identity.aliasesFor(name, person), true, person?.id === protagonistIdentity(entities, summaryData.playerName).hero?.id, {
+            onOpenPerson: jumpToPerson,
+            onOpenPlace: jumpToPlace,
+        });
         const title = c.querySelector('.prof-name');
         if (state) title.after(state);
         if (attributes.childElementCount) title.after(attributes);
+        if (badges.childElementCount) title.after(badges);
         if (c.childElementCount === 1) { const hint = document.createElement('p'); hint.textContent = '目前只记下了姓名，尚无其他资料。'; c.append(hint); }
     }
 
@@ -813,15 +877,16 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
             cancelBtn.textContent = cancelText;
 
             const doc = typeof document === 'undefined' ? null : document;
-            const previousFocus = doc?.activeElement;
+            const previousFocus = activeEl();
             const onKeyDown = (event) => {
                 if (event.key !== 'Escape') return;
                 event.preventDefault();
+                event.stopPropagation();
                 close(false);
             };
 
             const close = (result) => {
-                doc?.removeEventListener?.('keydown', onKeyDown);
+                doc?.removeEventListener?.('keydown', onKeyDown, true);
                 modal.classList.remove('active');
                 postMsg('CONFIRM_CLOSED');
                 okBtn.onclick = null;
@@ -836,7 +901,7 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
             cancelBtn.onclick = () => close(false);
             if (closeBtn) closeBtn.onclick = () => close(false);
             backdrop.onclick = () => close(false);
-            doc?.addEventListener?.('keydown', onKeyDown);
+            doc?.addEventListener?.('keydown', onKeyDown, true);
 
             modal.classList.add('active');
             cancelBtn.focus?.();
@@ -1035,9 +1100,7 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
     // ═══════════════════════════════════════════════════════════════════════════
 
     function handleParentMessage(e) {
-        if (e.origin !== PARENT_ORIGIN || e.source !== window.parent) return;
-
-        const d = e.data;
+        const d = e && Object.hasOwn(e, 'data') ? e.data : e;
         if (!d || d.source !== 'TavernKitchen') return;
 
         switch (d.type) {
@@ -1052,13 +1115,17 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
             case 'KITCHEN_MEMORY_VIEW': {
                 const modal = $('settings-modal');
                 const viewName = d.view || 'memory';
+                if (d.hostWideModal) {
+                    hostWideModalEnabled = true;
+                    archiveView.setHostWideModal(true);
+                }
                 const dataView = viewName === 'relations' ? 'people'
                     : ['settings', 'settings-memory'].includes(viewName) ? 'settings'
                         : viewName;
-                document.documentElement.dataset.kitchenView = dataView;
+                surface.dataset.kitchenView = dataView;
                 $('data-page').hidden = viewName !== 'data';
                 $('recall-page').hidden = viewName !== 'recall';
-                document.querySelector('.archive').inert = ['data', 'recall', 'settings'].includes(dataView);
+                qs('.archive').inert = ['data', 'recall', 'settings'].includes(dataView);
                 if (viewName === 'data') postMsg('KITCHEN_CARD_INFO');
                 if (viewName === 'recall') postMsg('REQUEST_RECALL_HISTORY');
                 if (dataView === 'settings') {
@@ -1067,7 +1134,16 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
                     modal.classList.remove('active');
                     const archiveTab = { memory: 'story', world: 'world', lore: 'world', people: 'people', relations: 'people' }[viewName];
                     if (archiveTab) archiveView.switchView(archiveTab, { notify: false });
+                    if (archiveTab === 'people' && (d.detail?.personId || d.detail?.personName)) {
+                        const target = { id: d.detail.personId || '', name: d.detail.personName || '' };
+                        if (!archiveView.selectPersonByTarget(target)) pendingPersonTarget = target;
+                    }
                 }
+                break;
+            }
+            case 'KITCHEN_SELECT_PERSON': {
+                const target = { id: d.personId || d.id || '', name: d.personName || d.name || '' };
+                if (!archiveView.selectPersonByTarget(target)) pendingPersonTarget = target;
                 break;
             }
             case 'CHAT_SUMMARY_STATE':
@@ -1125,6 +1201,10 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
                     if (p.stats) updateStats(p.stats);
                     updateCharacterSelector();
                     archiveView.refresh();
+                    if (pendingPersonTarget) {
+                        const target = pendingPersonTarget;
+                        if (archiveView.selectPersonByTarget(target)) pendingPersonTarget = null;
+                    }
                 }
                 break;
 
@@ -1229,8 +1309,10 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
         };
         $('btn-export-kitchen-card').onclick = () => { setCardBusy(); postMsg('KITCHEN_CARD_EXPORT'); };
         $('btn-import-kitchen-card').onclick = () => $('kitchen-card-file').click();
-        $('kitchen-card-file').onchange = async event => {
-            const file = event.target.files?.[0]; if (!file) return;
+        const cardFileInput = $('kitchen-card-file');
+        cardFileInput.onchange = async event => {
+            const input = event.target || cardFileInput;
+            const file = input.files?.[0]; if (!file) return;
             try {
                 if (file.size > 50 * 1024 * 1024) throw new Error('后厨卡超过 50 MB');
                 const text = await file.text(), card = JSON.parse(text);
@@ -1238,7 +1320,10 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
                 if (!await showConfirm('导入后厨卡', '导入后将采用卡内数据，替换当前聊天的后厨数据。', '导入', '取消')) return;
                 setCardBusy(); postMsg('KITCHEN_CARD_IMPORT', { text });
             } catch (error) { $('kitchen-card-status').textContent = error.message; }
-            finally { event.target.value = ''; }
+            // WHY: Inside a ShadowRoot, WHATWG event dispatch clears event.target to null once synchronous
+            // dispatch ends (before `await` resumes). Always clear the captured input element instead.
+            // DO NOT: Access `event.target` after an `await` inside a Shadow DOM event listener.
+            finally { input.value = ''; }
         };
 
         // Settings workspace (设置 → 剧情与召回)
@@ -1282,7 +1367,10 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
         $('tl-pg-next').onclick = () => renderTimeline(summaryData.rounds, { page: tlCurrentPage + 1 });
         $('tl-pg-last').onclick = () => renderTimeline(summaryData.rounds, { page: tlTotalPages() - 1 });
         const tlPgStrip = $('tl-pg-strip');
-        new ResizeObserver(revealTlCurrentPage).observe(tlPgStrip);
+        if (typeof ResizeObserver === 'function') {
+            pagerResizeObserver = new ResizeObserver(revealTlCurrentPage);
+            pagerResizeObserver.observe(tlPgStrip);
+        }
         tlPgStrip.addEventListener('click', (e) => {
             const btn = e.target.closest('.tl-pg-btn');
             if (btn) renderTimeline(summaryData.rounds, { page: parseInt(btn.dataset.page, 10) });
@@ -1309,8 +1397,15 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
             }
         });
 
-        // Parent messages
-        window.onmessage = handleParentMessage;
+        surfaceKeydownHandler = event => {
+            if (event.key !== 'Escape' || event.defaultPrevented) return;
+            if ($('confirm-modal')?.classList.contains('active')) return;
+            if ($('archive-detail')?.open) return;
+            event.preventDefault();
+            event.stopPropagation();
+            postMsg('CLOSE_PANEL');
+        };
+        surface.addEventListener('keydown', surfaceKeydownHandler);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -1325,7 +1420,20 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
             onSelectCharacter: selectCharacter,
             onTimelineChange: options => renderTimeline(summaryData.rounds, options),
             onFactsChange: () => renderFacts(summaryData.facts),
-            postMsg, setHtml, h,
+            onJumpPerson: target => {
+                if (!target) return;
+                if (surface.dataset.kitchenView === 'people') {
+                    archiveView.selectPersonByTarget(target);
+                    return;
+                }
+                if (hostWideModalEnabled) {
+                    postMsg('KITCHEN_NAVIGATE', { route: 'people', detail: { personId: target.id || '', personName: target.name || '' } });
+                    return;
+                }
+                archiveView.switchView('people');
+                archiveView.selectPersonByTarget(target);
+            },
+            postMsg, setHtml, h, root, surface,
         });
         $('settings-save').textContent = '保存设置';
         loadConfig();
@@ -1346,24 +1454,16 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
         syncCurrentChatSummaryControls();
 
         // The host is the only appearance source; legacy local theme choices are ignored.
-        document.documentElement.dataset.kitchenTheme = 'host';
-        document.documentElement.classList.add('tk-follow-host');
+        surface.dataset.kitchenTheme = 'host';
+        surface.classList.add('tk-follow-host');
 
-
-
-
-        // Notify parent
-        postMsg('FRAME_READY');
-        document.body.classList.remove('xb-frame-loading');
+        // WHY: Defer FRAME_READY by one microtask so callers assigning `handle = mountStorySummaryUI(...)`
+        // have the returned handle available before their FRAME_READY listener invokes receiveHostMessage().
+        // DO NOT: Call postMsg('FRAME_READY') synchronously inside init().
+        queueMicrotask(() => {
+            if (!destroyed) postMsg('FRAME_READY');
+        });
     }
-
-    // Start
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
-    } else {
-        init();
-    }
-
 
     function renderFacts(facts) {
         summaryData.facts = facts || [];
@@ -1371,15 +1471,21 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
         const container = $('facts-list');
         if (!container) return;
         container.parentElement.querySelector('.tk-story-situations')?.remove();
-        const situationPage = document.documentElement.dataset.kitchenView === 'world';
+        const situationPage = surface.dataset.kitchenView === 'world';
         container.hidden = false;
         if (situationPage) {
             const situations = document.createElement('div'); situations.className = 'tk-story-situations';
             const records = summaryData.storyRecords || [];
+            const q = (archiveView.getWorldQuery?.() || '').trim().toLowerCase();
             for (const [scenery, title] of [[false, '事态'], [true, '风物']]) {
                 const group = document.createElement('div');
                 group.dataset.situationGroup = scenery ? 'scenery' : 'affairs';
-                const filtered = records.filter(record => record.kind !== 'situation' || scenery === ['scenery','encounter'].includes(record.flavor));
+                const filtered = records.filter(record => {
+                    if (record.kind !== 'situation') return true;
+                    if (scenery !== ['scenery', 'encounter'].includes(record.flavor)) return false;
+                    if (!q) return true;
+                    return `${record.title || ''} ${record.description || ''} ${record.category || ''} ${record.phase || ''} ${record.period || ''} ${record.trend || ''} ${record.stakes || ''}`.toLowerCase().includes(q);
+                });
                 renderThreads(group, filtered, ['situation'], Infinity, { title,
                     openSource: floor => archiveView.openFloorSource(floor) });
                 situations.append(group);
@@ -1397,7 +1503,7 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
         }
 
         if (!stateFacts.length) {
-            setHtml(container, `<div class="archive-empty">${archiveView.worldFacts().length ? ARCHIVE_COPY.noResults : document.documentElement.dataset.kitchenView === 'lore' ? '暂无设定记录' : ARCHIVE_COPY.noFacts}</div>`);
+            setHtml(container, `<div class="archive-empty">${archiveView.worldFacts().length ? ARCHIVE_COPY.noResults : surface.dataset.kitchenView === 'lore' ? '暂无设定记录' : ARCHIVE_COPY.noFacts}</div>`);
             return;
         }
 
@@ -1424,4 +1530,31 @@ import { SUMMARY_CONFIG_LOCAL_STORAGE_KEY } from './data/config-local-cache.js';
         setHtml(container, html);
     }
 
-})();
+    init();
+
+    return {
+        root,
+        surface,
+        receiveHostMessage(payload) {
+            if (destroyed) return;
+            handleParentMessage(payload?.source === 'TavernKitchen' ? payload : { source: 'TavernKitchen', ...payload });
+        },
+        destroy() {
+            destroyed = true;
+            pagerResizeObserver?.disconnect();
+            pagerResizeObserver = null;
+            if (surfaceKeydownHandler) {
+                surface.removeEventListener('keydown', surfaceKeydownHandler);
+                surfaceKeydownHandler = null;
+            }
+            if (settingsSaveTimeoutId) {
+                clearTimeout(settingsSaveTimeoutId);
+                settingsSaveTimeoutId = null;
+            }
+            for (const pending of pendingConfigSaveRequests.values()) {
+                if (pending.timeoutId) clearTimeout(pending.timeoutId);
+            }
+            pendingConfigSaveRequests.clear();
+        },
+    };
+}

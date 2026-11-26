@@ -122,6 +122,29 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
         draft = id === HOST_BINDING ? createPreset(id, COPY.host) : saved && createPreset(saved.id, saved.name, saved);
         render();
     }
+    function isDraftDirty() {
+        if (!draft || !settings || selected === HOST_BINDING) return false;
+        const saved = settings.presets.find(preset => preset.id === selected);
+        if (!saved) return false;
+        const baseline = createPreset(saved.id, saved.name, saved);
+        return JSON.stringify(draft) !== JSON.stringify(baseline);
+    }
+    async function bindAllToHost() {
+        if (busy) return;
+        fields.disabled = busy = true;
+        feedback('正在将全部文本 Agent 绑定为同酒馆主 API…');
+        try {
+            for (const key of Object.keys(AGENT_BINDINGS)) {
+                settings = await request('mutate', { mutation: { type: 'bind-agent', agent: key, id: HOST_BINDING } });
+            }
+            if (!destroyed) {
+                render();
+                feedback('已将全部文本 Agent 绑定为同酒馆主 API');
+            }
+        } finally {
+            fields.disabled = busy = false;
+        }
+    }
     async function mutate(mutation, selection = null) {
         if (busy) return;
         busy = true; fields.disabled = true;
@@ -227,6 +250,13 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
                 id => ({ mutation: { type: 'bind-agent', agent: key, id } }), help);
             selector.dataset.agentBinding = key;
         }
+        const allBoundToHost = Object.keys(AGENT_BINDINGS).every(key => readAgentBinding(settings, key).id === HOST_BINDING);
+        const quickRow = element('div', null, 'text-api-quick-actions');
+        const bindAllBtn = button('一键全绑同酒馆主 API', bindAllToHost);
+        bindAllBtn.dataset.bindAllHost = '';
+        bindAllBtn.disabled = busy || allBoundToHost;
+        quickRow.append(bindAllBtn);
+        bindings.append(quickRow);
         for (const key of ['embedding', 'rerank']) {
             bindingRow(recall, PROFILE_FEATURES[key], settings.bindings[key] || '', profileChoices(settings, key),
                 id => ({ feature: key, mutation: id ? {type:'select', id} : {type:'clear'} }));
@@ -272,7 +302,18 @@ export function mountTextApiSettings(root, { feature, namespace, transport, libr
         const toolbar = element('fieldset', null, 'text-api-presets');
         toolbar.disabled = busy;
         const choices = settings.presets.map(preset => ({ value: preset.id, label: preset.name }));
-        const selector = select(choices, selected, value => {
+        const selector = select(choices, selected, async value => {
+            if (value === selected) return;
+            if (isDraftDirty()) {
+                const confirmed = await request('dialog', {
+                    kind: 'confirm',
+                    message: '当前连接有未保存的修改，切换连接将放弃未保存内容，是否继续？',
+                });
+                if (!confirmed) {
+                    selector.value = selected;
+                    return;
+                }
+            }
             choose(value);
         });
         control('选择连接', selector, toolbar);

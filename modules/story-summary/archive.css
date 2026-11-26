@@ -1,6 +1,6 @@
 /* The archive owns page layout; the selected theme still owns shared surfaces and editors. */
-:root { --archive-accent: #416b93; --archive-accent-soft: #eaf1f8; }
-:root[data-theme="dark"] { --archive-accent: #9bbedd; --archive-accent-soft: #263a4c; }
+:host, .tk-surface, :root { --archive-accent: #416b93; --archive-accent-soft: #eaf1f8; }
+:host([data-theme="dark"]), .tk-surface[data-theme="dark"], :root[data-theme="dark"] { --archive-accent: #9bbedd; --archive-accent-soft: #263a4c; }
 .archive {
     width: 100%; max-width: 1450px; margin: 0 auto; padding: 0 48px 56px;
     font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
@@ -22,22 +22,18 @@
     place-items: center; background: transparent; color: var(--txt3); font-size: 24px; line-height: 1;
 }
 .archive-icon:hover { background: var(--bg3); color: var(--txt); }
-.archive-icon svg, .archive-search svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.archive-icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
 .archive-icon svg circle { fill: var(--bg); }
 .archive-hero { padding: 12px 0 24px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
 .archive-meta { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--txt3); }
 .archive-meta b, .archive-muted b { font-weight: 500; }
 .archive-muted { color: var(--txt3); font-size: 12px; }
-.archive-generate { gap: 8px; padding-bottom: 3px; flex-wrap: nowrap; flex-shrink: 0; }
-.archive-generate .btn { min-height: 42px; border-radius: 7px; padding: 9px 18px; font-size: 13px; }
 .archive-nav { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--bdr); background: var(--bg); }
 .archive-tabs { display: flex; gap: 34px; }
 .archive-tab { position: relative; border: 0; background: transparent; color: var(--txt3); font-size: 15px; padding: 16px 2px; min-height: 54px; }
 .archive-tab span { font-size: 11px; margin-left: 4px; color: var(--txt3); font-weight: 400; }
 .archive-tab[aria-selected="true"] { color: var(--txt); font-weight: 600; }
 .archive-tab[aria-selected="true"]::after { content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 2px; background: var(--txt); }
-.archive-search { display: flex; gap: 9px; align-items: center; color: var(--txt3); }
-.archive-search input { width: 150px; border: 0; background: none; color: var(--txt); font: inherit; font-size: 12px; padding: 8px 0; min-width: 0; }
 .archive-content { padding-top: 30px; }
 .archive-story, .archive-world-layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 56px; }
 .archive-label { color: var(--txt3); font-size: 11px; margin: 9px 0 18px; }
@@ -45,11 +41,6 @@
 .archive-index-button span { font-size: 11px; }
 .archive-index-button[aria-pressed="true"] { border-left: 2px solid var(--archive-accent); padding-left: 13px; color: var(--archive-accent); }
 .archive-index-button:hover { color: var(--txt); background: var(--bg3); }
-.archive-keywords { margin-top: 32px; color: var(--txt3); font-size: 12px; }
-.archive-keywords summary, .archive-aliases summary { cursor: pointer; min-height: 40px; display: list-item; padding: 10px 0; }
-.archive-keyword-list { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 8px 0; }
-.archive-keyword-list .tag { padding: 0; border: 0; border-radius: 0; box-shadow: none; background: none; transform: none; color: var(--txt3); font-size: 12px; }
-.archive-keyword-list .tag.p, .archive-keyword-list .tag.s { color: var(--archive-accent); }
 .archive-reading { min-width: 0; max-width: 940px; }
 .archive-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 24px; }
 .archive-section-head h2 { font-size: 18px; font-weight: 500; line-height: 1.5; margin: 0; }
@@ -73,22 +64,11 @@
 .archive-person { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 7px 12px; border: 0; border-radius: 6px; color: var(--txt2); background: none; font-size: 13px; overflow-wrap: anywhere; text-align: left; }
 .archive-person[aria-pressed="true"] { color: var(--archive-accent); background: var(--archive-accent-soft); }
 .archive-person:hover { background: var(--bg3); }
-.archive-avatar { flex: 0 0 28px; width: 28px; height: 28px; border-radius: 50%; display: inline-grid; place-items: center; background: var(--bg3); color: var(--txt); }
 .archive-profile { min-width: 0; }
-.archive-profile .prof-arc { padding: 0; margin-bottom: 24px; }
 .archive-profile .prof-name { font: 400 30px/1.5 'Noto Serif CJK SC', 'Songti SC', SimSun, serif; margin-bottom: 12px; }
-.archive-profile .prof-traj { font-size: 14px; line-height: 1.9; color: var(--txt2); margin-bottom: 22px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.archive-profile .prof-prog-wrap { margin-bottom: 25px; }
-.archive-profile .prof-prog-inner { background: var(--archive-accent); }
-.archive-profile .prof-moments { border-left: 1px solid var(--bdr); background: none; padding: 0 0 0 16px; }
-.archive-profile .prof-moments-title { font-size: 12px; margin: 0 0 14px; letter-spacing: 0; }
-.archive-profile .prof-moment { padding-left: 0; margin-bottom: 16px; font-size: 13px; line-height: 1.9; overflow-wrap: anywhere; }
-.archive-profile .prof-moment::before { width: 5px; height: 5px; left: -19px; top: 9px; background: var(--archive-accent); }
 .archive-profile .rel-item { padding: 6px 0; flex-wrap: wrap; }
 .archive-profile .rel-label { font-size: 13px; overflow-wrap: anywhere; min-width: 100px; }
 .archive-profile .rel-target { font-size: 13px; white-space: normal; }
-.archive-aliases { margin-top: 24px; font-size: 12px; }
-#aliases-list { max-height: none; overflow: visible; padding: 8px 0; }
 .archive-world-index { min-width: 0; }
 .archive #facts-list { max-height: none; overflow: visible; padding: 0; }
 .archive .fact-group { margin: 0 0 34px; }
@@ -114,22 +94,17 @@
 .archive-setting { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 0; border-bottom: 1px solid var(--bdr2); font-size: 13px; min-height: 64px; }
 .archive-setting input[type="checkbox"] { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--archive-accent); }
 .archive-setting input[type="number"] { width: 70px; padding: 8px; border: 1px solid var(--bdr); border-radius: 5px; background: var(--bg); color: var(--txt); }
-.archive-setting-link { width: 100%; border: 0; border-bottom: 1px solid var(--bdr2); background: none; color: var(--txt); text-align: left; }
-.archive-drawer .vector-boundary-container { margin: 0; display: flex; gap: 12px; }
-.archive-drawer .vector-boundary-container .archive-setting { flex: 1; }
-.archive-cause { display: block; text-align: left; font-size: 14px; border: 0; background: transparent; color: var(--archive-accent); padding: 8px 0; min-height: 44px; }
-.archive-detail-edit { margin-top: 24px; }
 .archive-reading .tl-pager { margin-bottom: 24px; }
 .archive-reading .tl-pg-btn, .archive-reading .tl-pg-num { min-height: 40px; }
 .archive-reading .tl-pg-btn.cur { background: var(--archive-accent); color: var(--bg); border-color: var(--archive-accent); }
 .archive #tl-paging-toggle[aria-pressed="true"] { color: var(--archive-accent); }
-@media (max-width: 1050px) {
+@container (max-width: 1050px) {
     .archive { padding-inline: 28px; }
     .archive-story, .archive-world-layout { grid-template-columns: 150px minmax(0, 1fr); gap: 30px; }
 
 
 }
-@media (max-width: 768px) {
+@container (max-width: 768px) {
     .archive { padding: 0 20px 32px; }
     .archive-topbar { height: 58px; }
     .archive-brand { font-size: 14px; }
@@ -137,15 +112,9 @@
     .archive-hero { padding: 6px 0 10px; gap: 8px; }
     .archive-meta { gap: 4px 8px; font-size: 11px; }
     .archive-meta > span { white-space: nowrap; }
-    .archive-generate { padding: 0; gap: 6px; }
-    .archive-generate .btn { padding: 8px 10px; min-height: 40px; font-size: 12px; }
     .archive-tabs { gap: 22px; }
     .archive-tab { font-size: 14px; }
     .archive-nav { gap: 12px; }
-    .archive-search input { width: 0; padding: 8px 0; }
-    .archive-search:focus-within input { width: 92px; }
-    .archive-nav:has(.archive-search:focus-within) .archive-tab span { display: none; }
-    .archive-nav:has(.archive-search:focus-within) .archive-tabs { gap: 12px; }
     .archive-content { padding-top: 10px; }
     .archive-story, .archive-people-layout, .archive-world-layout { display: block; }
     .archive-index > .archive-label { display: none; }
@@ -153,8 +122,6 @@
     .archive-index-button { flex: 0 0 auto; width: auto; max-width: 200px; border: 0; padding: 10px 0; font-size: 12px; }
     .archive-index-button[aria-pressed="true"] { border: 0; padding: 10px 0; }
     .archive-index-button span { font-size: 10px; }
-    .archive-keywords { margin: 0 0 4px; }
-    .archive-keywords summary { min-height: 36px; padding: 6px 0; }
     .archive-section-head { margin-bottom: 18px; }
     .archive-section-head h2 { font-size: 16px; }
     .archive-reading > .archive-section-head h2 { display: none; }
@@ -181,12 +148,11 @@
     .archive-drawer-body { padding: 23px 20px; height: calc(100% - 69px); }
     .archive-reading .tl-pg-btn, .archive-reading .tl-pg-num { min-height: 44px; }
 }
-@media (max-width: 420px) {
+@container (max-width: 420px) {
     .archive { padding: 0 12px 24px; }
     .archive-topbar { height: auto; min-height: 52px; padding: 8px 0; flex-wrap: wrap; gap: 8px; }
     .archive-topbar .archive-actions { flex-wrap: wrap; max-width: 100%; justify-content: flex-end; }
     .archive-hero { flex-wrap: wrap; gap: 10px; }
-    .archive-generate { flex-wrap: wrap; max-width: 100%; }
     .archive-nav { flex-wrap: wrap; gap: 8px; }
     .archive-tabs { gap: 14px; flex-wrap: wrap; }
     .archive-roster { grid-template-columns: minmax(0, 1fr); gap: 0; }
@@ -196,47 +162,106 @@
 .timeline-unit > summary:focus-visible { outline: 2px solid var(--archive-accent); outline-offset: 2px; }
 .timeline-unit-text { display: block; color: var(--txt2); line-height: 1.8; margin-top: 4px; white-space: pre-wrap; }
 .timeline-unit blockquote { margin: 8px 0; padding-inline-start: 8px; color: var(--txt3); overflow-wrap: anywhere; }
-.timeline-plot-snapshots { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--bdr); border-radius: 5px; display: grid; gap: 4px; font-size: 12px; line-height: 1.55; }
-.timeline-plot-snapshots .archive-label { margin: 0 0 2px; }
-.timeline-plot-snapshot { color: var(--txt2); overflow-wrap: anywhere; }
 .timeline-children { margin-block: 8px; padding-inline-start: clamp(8px, 2vw, 20px); border-inline-start: 1px solid var(--bdr); }
-html.tk-embedded {
+:is(html, .tk-surface).tk-embedded {
     --archive-accent: var(--SmartThemeQuoteColor, var(--hl, #9bbedd));
     --archive-accent-soft: var(--SmartThemeBlurTintColor, transparent);
 }
-html.tk-embedded .archive {
+:is(html, .tk-surface).tk-embedded .archive {
     font-family: var(--tk-font, inherit);
     padding: 0 5px 16px;
 }
-html.tk-embedded .archive-story,
-html.tk-embedded .archive-world-layout {
+:is(html, .tk-surface).tk-embedded .archive-story,
+:is(html, .tk-surface).tk-embedded .archive-world-layout {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 10px;
 }
-html.tk-embedded #archive-story-index,
-html.tk-embedded .archive-world-index {
+:is(html, .tk-surface).tk-embedded #archive-story-index,
+:is(html, .tk-surface).tk-embedded .archive-world-index {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
     margin-bottom: 4px;
 }
-html.tk-embedded .archive-index-button {
+:is(html, .tk-surface).tk-embedded .archive-index-button {
     width: auto;
     flex: 0 0 auto;
-    border-left: 1px solid var(--bdr);
+    border: 1px solid var(--bdr);
+    border-radius: 6px;
+    padding: 4px 9px;
+    font-size: 12px;
+    background: var(--bg2);
+    color: var(--txt2);
 }
-html.tk-embedded .archive-section-head {
+:is(html, .tk-surface).tk-embedded .archive-index-button[aria-pressed="true"] {
+    border-color: color-mix(in srgb, var(--archive-accent) 65%, var(--bdr));
+    background: color-mix(in srgb, var(--archive-accent) 16%, var(--bg2));
+    color: var(--txt);
+    font-weight: 600;
+    padding: 4px 9px;
+}
+:is(html, .tk-surface).tk-embedded .archive-section-head {
     margin-bottom: 10px;
 }
-html.tk-embedded .archive-profile .prof-name,
-html.tk-embedded .archive-drawer-body .archive-detail-heading {
+:is(html, .tk-surface).tk-embedded .archive-event {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+    padding: 9px 0 12px 12px;
+    border-left: 2px solid var(--bdr);
+    position: relative;
+}
+:is(html, .tk-surface).tk-embedded .archive-event::before {
+    content: '';
+    position: absolute;
+    left: -5px;
+    top: 14px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--archive-accent);
+}
+:is(html, .tk-surface).tk-embedded .archive-event-time {
+    padding-top: 0;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--txt3);
+}
+:is(html, .tk-surface).tk-embedded .archive-event-main {
+    padding: 0;
+    border-left: 0;
+}
+:is(html, .tk-surface).tk-embedded .archive-event-main::before { display: none; }
+:is(html, .tk-surface).tk-embedded .archive-event-title {
+    font-size: 1.03em;
+    font-weight: 600;
+    min-height: 0;
+    padding: 1px 0;
+    text-align: left;
+}
+:is(html, .tk-surface).tk-embedded .archive-event-main p {
+    margin: 5px 0 6px;
+    font-size: .92em;
+    line-height: 1.75;
+}
+:is(html, .tk-surface).tk-embedded .archive-event-meta {
+    gap: 4px 8px;
+    font-size: 11.5px;
+}
+:is(html, .tk-surface).tk-embedded .archive .archive-text,
+:is(html, .tk-surface).tk-embedded .archive-drawer .archive-text {
+    min-height: 28px;
+    padding: 3px 6px;
+    border-radius: 4px;
+}
+:is(html, .tk-surface).tk-embedded .archive-profile .prof-name,
+:is(html, .tk-surface).tk-embedded .archive-drawer-body .archive-detail-heading {
     font-family: var(--tk-font, inherit);
     font-size: 1.35em;
     font-weight: 600;
 }
-html.tk-embedded .archive-event-title,
-html.tk-embedded .archive .fact-group-title {
+:is(html, .tk-surface).tk-embedded .archive .fact-group-title {
     font-size: 1.05em;
     font-weight: 600;
 }
